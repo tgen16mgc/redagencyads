@@ -1685,54 +1685,104 @@ function BarList({ rows, metric, currency }: { rows: NormalizedRow[]; metric: "s
 
 function VerdictCard({ verdict, language }: { verdict: AiVerdict; language: ReportLanguage }) {
   const isVietnamese = language === "vi";
+  const nextActions = [...verdict.budget_moves, ...verdict.tests].filter(Boolean).slice(0, 3);
+  const highlights = verdict.winners.filter(Boolean).slice(0, 3);
+  const risks = verdict.risks.filter(Boolean).slice(0, 3);
+  const detailRows = [
+    { title: isVietnamese ? "Điểm yếu" : "Losers", rows: verdict.losers },
+    { title: isVietnamese ? "Điều chỉnh ngân sách" : "Budget moves", rows: verdict.budget_moves },
+    { title: isVietnamese ? "Thử nghiệm đề xuất" : "Tests", rows: verdict.tests },
+    { title: isVietnamese ? "Giả định dữ liệu" : "Assumptions", rows: verdict.assumptions },
+  ];
   return (
     <div className="flex flex-col gap-4 rounded-lg border bg-muted/20 p-4" data-print-expand>
-      <div className="grid gap-4 xl:grid-cols-[1.4fr_0.6fr]">
+      <div className="grid gap-4 xl:grid-cols-[1fr_360px]">
         <div>
           <div className="text-xs font-medium uppercase text-muted-foreground">
             {isVietnamese ? "Phân tích và đánh giá hiệu quả tháng - AI powered" : "Monthly performance analysis - AI powered"}
           </div>
-          <p className="mt-2 text-base font-medium leading-7 md:text-lg">{verdict.verdict}</p>
+          <p className="mt-2 max-w-5xl text-base font-medium leading-7 md:text-lg">{compactText(verdict.verdict, 420)}</p>
         </div>
-        <div className="flex flex-col gap-2">
+        <div className="rounded-lg border bg-background p-3">
           <div className="flex flex-wrap gap-1.5">
             <Badge variant="outline">{verdict.provider}</Badge>
             <Badge variant="secondary">{verdict.confidence} confidence</Badge>
           </div>
-          <MiniList
-            title={isVietnamese ? "Đề xuất tối ưu kỳ tiếp theo" : "Next-period optimization recommendations"}
-            rows={[...verdict.budget_moves, ...verdict.tests].slice(0, 4)}
-          />
+          <Separator className="my-3" />
+          <div className="text-xs font-medium uppercase text-muted-foreground">
+            {isVietnamese ? "Đề xuất tối ưu kỳ tiếp theo" : "Next-period optimization recommendations"}
+          </div>
+          <CompactList rows={nextActions} emptyLabel={isVietnamese ? "Chưa có đề xuất." : "No recommendations."} />
         </div>
       </div>
-      <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-        <MiniList title={isVietnamese ? "Điểm hiệu quả" : "Winners"} rows={verdict.winners} />
-        <MiniList title={isVietnamese ? "Rủi ro" : "Risks"} rows={verdict.risks} />
-        <MiniList title={isVietnamese ? "Điểm yếu" : "Losers"} rows={verdict.losers} />
-        <MiniList title={isVietnamese ? "Điều chỉnh ngân sách" : "Budget moves"} rows={verdict.budget_moves} />
-        <MiniList title={isVietnamese ? "Thử nghiệm đề xuất" : "Tests"} rows={verdict.tests} />
-        <MiniList title={isVietnamese ? "Giả định dữ liệu" : "Assumptions"} rows={verdict.assumptions} />
+
+      <div className="grid gap-3 md:grid-cols-2">
+        <InsightSummary
+          title={isVietnamese ? "Điểm hiệu quả" : "What is working"}
+          rows={highlights}
+          emptyLabel={isVietnamese ? "Chưa có tín hiệu tốt rõ ràng." : "No clear positive signal."}
+        />
+        <InsightSummary
+          title={isVietnamese ? "Rủi ro cần xử lý" : "Risks to address"}
+          rows={risks}
+          emptyLabel={isVietnamese ? "Chưa có rủi ro rõ ràng." : "No clear risk."}
+        />
       </div>
+
+      <details className="rounded-lg border bg-background p-3" data-print-hidden>
+        <summary className="cursor-pointer text-sm font-medium">
+          {isVietnamese ? "Xem chi tiết AI" : "View AI detail"}
+        </summary>
+        <div className="mt-3 grid gap-3 md:grid-cols-2">
+          {detailRows.map((group) => (
+            <InsightSummary key={group.title} title={group.title} rows={group.rows.filter(Boolean).slice(0, 5)} emptyLabel={isVietnamese ? "Không có dữ liệu." : "No items."} />
+          ))}
+        </div>
+      </details>
     </div>
   );
 }
 
-function MiniList({ title, rows }: { title: string; rows: string[] }) {
+function InsightSummary({ title, rows, emptyLabel }: { title: string; rows: string[]; emptyLabel: string }) {
   const visibleRows = rows.filter(Boolean);
   return (
-    <div className="rounded-md border bg-background p-2">
-      <div className="mb-1 text-xs font-medium uppercase text-muted-foreground">{title}</div>
+    <div className="rounded-lg border bg-background p-3">
+      <div className="text-xs font-medium uppercase text-muted-foreground">{title}</div>
       {visibleRows.length ? (
-        <div className="flex flex-col gap-1">
-          {visibleRows.map((row) => (
-            <p key={row} className="text-xs leading-5">
-              {row}
-            </p>
+        <ul className="mt-2 flex flex-col gap-2">
+          {visibleRows.map((row, index) => (
+            <li key={`${row}-${index}`} className="grid grid-cols-[18px_1fr] gap-2 text-sm leading-5">
+              <span className="mt-1 size-1.5 rounded-full bg-primary" />
+              <span>{compactText(row, 180)}</span>
+            </li>
           ))}
-        </div>
+        </ul>
       ) : (
-        <p className="text-xs text-muted-foreground">No items.</p>
+        <p className="mt-2 text-sm text-muted-foreground">{emptyLabel}</p>
       )}
     </div>
   );
+}
+
+function CompactList({ rows, emptyLabel }: { rows: string[]; emptyLabel: string }) {
+  if (!rows.length) return <p className="mt-2 text-sm text-muted-foreground">{emptyLabel}</p>;
+  return (
+    <ol className="mt-2 flex flex-col gap-2">
+      {rows.map((row, index) => (
+        <li key={`${row}-${index}`} className="grid grid-cols-[20px_1fr] gap-2 text-sm leading-5">
+          <span className="flex size-5 items-center justify-center rounded-full bg-muted text-[11px] font-medium text-muted-foreground">
+            {index + 1}
+          </span>
+          <span>{compactText(row, 170)}</span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function compactText(value: string, maxLength: number) {
+  if (value.length <= maxLength) return value;
+  const clipped = value.slice(0, maxLength).trim();
+  const sentenceEnd = Math.max(clipped.lastIndexOf("."), clipped.lastIndexOf("!"), clipped.lastIndexOf("?"));
+  return `${(sentenceEnd > maxLength * 0.55 ? clipped.slice(0, sentenceEnd + 1) : clipped).trim()}...`;
 }
