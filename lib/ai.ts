@@ -1,5 +1,44 @@
 import type { AiInsightTable, AiVerdict } from "@/lib/types";
 
+const OPENROUTER_FREE_MODELS = [
+  "moonshotai/kimi-k2.6:free",
+  "openrouter/owl-alpha",
+  "nvidia/nemotron-3-super-120b-a12b:free",
+] as const;
+
+function openRouterModels() {
+  const requested = process.env.OPENROUTER_MODEL;
+  if (requested && OPENROUTER_FREE_MODELS.includes(requested as (typeof OPENROUTER_FREE_MODELS)[number])) {
+    return [requested, ...OPENROUTER_FREE_MODELS.filter((model) => model !== requested)];
+  }
+  return [...OPENROUTER_FREE_MODELS];
+}
+
+async function openRouterCompletion(prompt: string) {
+  const errors: string[] = [];
+  for (const model of openRouterModels()) {
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        "http-referer": process.env.OPENROUTER_SITE_URL || "https://meta-ads-dashboard.vercel.app",
+        "x-title": "Red Agency Ads Tool",
+      },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.2,
+        response_format: { type: "json_object" },
+      }),
+    });
+    const json = await response.json();
+    if (response.ok) return json.choices?.[0]?.message?.content || "";
+    errors.push(`${model}: ${json?.error?.message || response.status}`);
+  }
+  throw new Error(`OpenRouter free model request failed. ${errors.join(" | ")}`);
+}
+
 function fallback(prompt: string): AiVerdict {
   return {
     provider: "prompt",
@@ -53,24 +92,7 @@ export async function generateVerdict(prompt: string, provider: "auto" | "openai
     return parseVerdict(json.choices?.[0]?.message?.content || "", "openai");
   }
   if ((provider === "openrouter" || provider === "auto") && process.env.OPENROUTER_API_KEY) {
-    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-        "http-referer": process.env.OPENROUTER_SITE_URL || "https://meta-ads-dashboard.vercel.app",
-        "x-title": "Meta Ads Analysis Dashboard",
-      },
-      body: JSON.stringify({
-        model: process.env.OPENROUTER_MODEL || "openai/gpt-4o-mini",
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0.2,
-        response_format: { type: "json_object" },
-      }),
-    });
-    const json = await response.json();
-    if (!response.ok) throw new Error(json?.error?.message || "OpenRouter verdict request failed.");
-    return parseVerdict(json.choices?.[0]?.message?.content || "", "openrouter");
+    return parseVerdict(await openRouterCompletion(prompt), "openrouter");
   }
   return fallback(prompt);
 }
@@ -138,24 +160,7 @@ export async function generateInsights(prompt: string, provider: "auto" | "opena
     return parseInsights(json.choices?.[0]?.message?.content || "", "openai");
   }
   if ((provider === "openrouter" || provider === "auto") && process.env.OPENROUTER_API_KEY) {
-    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-        "http-referer": process.env.OPENROUTER_SITE_URL || "https://meta-ads-dashboard.vercel.app",
-        "x-title": "Red Agency Ads Tool",
-      },
-      body: JSON.stringify({
-        model: process.env.OPENROUTER_MODEL || "openai/gpt-4o-mini",
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0.2,
-        response_format: { type: "json_object" },
-      }),
-    });
-    const json = await response.json();
-    if (!response.ok) throw new Error(json?.error?.message || "OpenRouter insights request failed.");
-    return parseInsights(json.choices?.[0]?.message?.content || "", "openrouter");
+    return parseInsights(await openRouterCompletion(prompt), "openrouter");
   }
   return insightFallback(prompt);
 }
