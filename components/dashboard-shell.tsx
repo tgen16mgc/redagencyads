@@ -78,6 +78,13 @@ const workflowItems = [
   { label: "Verdict", icon: BrainIcon },
 ];
 
+const appSections = [
+  { label: "Ads analysis", value: "ads", icon: BarChart3Icon },
+  { label: "Competitor spy", value: "competitor", icon: SearchIcon },
+] as const;
+
+type ActiveView = (typeof appSections)[number]["value"];
+
 const packItems: { label: string; value: KpiPack }[] = [
   { label: "Auto: lead/message", value: "lead_gen" },
   { label: "Messages", value: "messages" },
@@ -160,6 +167,7 @@ export function DashboardShell() {
   const [compareMode, setCompareMode] = React.useState<CompareMode>("off");
   const [provider, setProvider] = React.useState<Provider>("auto");
   const [language, setLanguage] = React.useState<ReportLanguage>("en");
+  const [activeView, setActiveView] = React.useState<ActiveView>("ads");
   const [report, setReport] = React.useState<DashboardReport | null>(null);
   const [previousReport, setPreviousReport] = React.useState<DashboardReport | null>(null);
   const [verdict, setVerdict] = React.useState<AiVerdict | null>(null);
@@ -431,17 +439,51 @@ export function DashboardShell() {
         </SidebarHeader>
         <SidebarContent>
           <SidebarGroup>
-            <SidebarGroupLabel>Workflow</SidebarGroupLabel>
+            <SidebarGroupLabel>Functions</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {workflowItems.map(({ label, icon: Icon }) => (
-                  <SidebarMenuItem key={label}>
-                    <SidebarMenuButton isActive={label === "Analyze"}>
+                {appSections.map(({ label, value, icon: Icon }) => (
+                  <SidebarMenuItem key={value}>
+                    <SidebarMenuButton
+                      isActive={activeView === value}
+                      onClick={() => setActiveView(value)}
+                      aria-current={activeView === value ? "page" : undefined}
+                    >
                       <Icon />
                       <span>{label}</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+          {activeView === "ads" ? (
+            <SidebarGroup>
+              <SidebarGroupLabel>Workflow</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {workflowItems.map(({ label, icon: Icon }) => (
+                    <SidebarMenuItem key={label}>
+                      <SidebarMenuButton isActive={label === "Analyze"}>
+                        <Icon />
+                        <span>{label}</span>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          ) : null}
+          <SidebarGroup>
+            <SidebarGroupLabel>AI setup</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton>
+                    <SparklesIcon />
+                    <span>{provider === "openrouter" ? "OpenRouter" : provider === "openai" ? "OpenAI" : provider === "prompt" ? "Prompt only" : "Auto provider"}</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
@@ -465,10 +507,11 @@ export function DashboardShell() {
               <img src="/red-agency-logo.png" alt="Red Agency" className="size-11 rounded-lg object-contain" />
               <div>
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  Meta Graph API <ChevronRightIcon /> campaign-first analysis
+                  {activeView === "ads" ? "Meta Graph API" : "Ad library notes"} <ChevronRightIcon />{" "}
+                  {activeView === "ads" ? "campaign-first analysis" : "competitor intelligence"}
                 </div>
                 <h1 className="font-heading text-2xl font-semibold tracking-tight md:text-3xl">
-                  Ads analysis dashboard
+                  {activeView === "ads" ? "Ads analysis dashboard" : "Competitor spy"}
                 </h1>
               </div>
             </div>
@@ -477,11 +520,13 @@ export function DashboardShell() {
                 <ShieldCheckIcon />
                 HttpOnly token session
               </Badge>
-              {report ? <Badge variant="outline">Pulled {new Date(report.pulledAt).toLocaleString()}</Badge> : null}
-              <Button type="button" variant="outline" onClick={exportPdf} disabled={!report} data-print-hidden>
-                <DownloadIcon data-icon="inline-start" />
-                Export PDF
-              </Button>
+              {activeView === "ads" && report ? <Badge variant="outline">Pulled {new Date(report.pulledAt).toLocaleString()}</Badge> : null}
+              {activeView === "ads" ? (
+                <Button type="button" variant="outline" onClick={exportPdf} disabled={!report} data-print-hidden>
+                  <DownloadIcon data-icon="inline-start" />
+                  Export PDF
+                </Button>
+              ) : null}
             </div>
           </header>
 
@@ -492,6 +537,8 @@ export function DashboardShell() {
             </Alert>
           ) : null}
 
+          {activeView === "ads" ? (
+            <>
           <Card>
             <CardHeader>
               <CardTitle>Scope</CardTitle>
@@ -638,23 +685,6 @@ export function DashboardShell() {
                 onGenerate={runInsights}
               />
 
-              <CompetitorSpyPanel
-                names={competitorNames}
-                market={competitorMarket}
-                platform={competitorPlatform}
-                notes={competitorNotes}
-                result={competitorResult}
-                loading={loading === "competitor"}
-                language={language}
-                copiedPrompt={copiedCompetitorPrompt}
-                onNamesChange={setCompetitorNames}
-                onMarketChange={setCompetitorMarket}
-                onPlatformChange={setCompetitorPlatform}
-                onNotesChange={setCompetitorNotes}
-                onGenerate={runCompetitorSpy}
-                onCopyPrompt={copyCompetitorPrompt}
-              />
-
               <section className="grid gap-4 xl:grid-cols-[1.4fr_0.9fr]">
                 <Card>
                   <CardHeader>
@@ -739,6 +769,28 @@ export function DashboardShell() {
               </section>
             </>
           ) : null}
+            </>
+          ) : (
+            <CompetitorSpyPanel
+              names={competitorNames}
+              market={competitorMarket}
+              platform={competitorPlatform}
+              result={competitorResult}
+              notes={competitorNotes}
+              loading={loading === "competitor"}
+              language={language}
+              provider={provider}
+              copiedPrompt={copiedCompetitorPrompt}
+              onNamesChange={setCompetitorNames}
+              onMarketChange={setCompetitorMarket}
+              onPlatformChange={setCompetitorPlatform}
+              onNotesChange={setCompetitorNotes}
+              onLanguageChange={setLanguage}
+              onProviderChange={setProvider}
+              onGenerate={runCompetitorSpy}
+              onCopyPrompt={copyCompetitorPrompt}
+            />
+          )}
         </main>
       </SidebarInset>
     </SidebarProvider>
@@ -1217,11 +1269,14 @@ function CompetitorSpyPanel({
   result,
   loading,
   language,
+  provider,
   copiedPrompt,
   onNamesChange,
   onMarketChange,
   onPlatformChange,
   onNotesChange,
+  onLanguageChange,
+  onProviderChange,
   onGenerate,
   onCopyPrompt,
 }: {
@@ -1232,15 +1287,23 @@ function CompetitorSpyPanel({
   result: CompetitorSpyResult | null;
   loading: boolean;
   language: ReportLanguage;
+  provider: Provider;
   copiedPrompt: boolean;
   onNamesChange: (value: string) => void;
   onMarketChange: (value: string) => void;
   onPlatformChange: (value: CompetitorPlatform) => void;
   onNotesChange: (value: string) => void;
+  onLanguageChange: (value: ReportLanguage) => void;
+  onProviderChange: (value: Provider) => void;
   onGenerate: () => void;
   onCopyPrompt: () => void;
 }) {
   const isVietnamese = language === "vi";
+  const id = React.useId();
+  const hasCompetitors = names
+    .split(/[\n,]/)
+    .map((name) => name.trim())
+    .filter(Boolean).length > 0;
   const themeRows = result?.themes.slice(0, 4) || [];
   const briefs = result?.test_briefs.slice(0, 4) || [];
   const competitors = result?.competitors.slice(0, 4) || [];
@@ -1258,11 +1321,11 @@ function CompetitorSpyPanel({
             </CardDescription>
           </div>
           <div className="flex flex-wrap gap-2" data-print-hidden>
-            <Button type="button" onClick={onGenerate} disabled={loading}>
+            <Button type="button" onClick={onGenerate} disabled={loading || !hasCompetitors} aria-busy={loading}>
               {loading ? <Spinner data-icon="inline-start" /> : <SearchIcon data-icon="inline-start" />}
               {loading ? (isVietnamese ? "Đang phân tích sâu..." : "Deep scan running...") : isVietnamese ? "Phân tích đối thủ" : "Analyze competitors"}
             </Button>
-            <Button type="button" variant="outline" onClick={onCopyPrompt}>
+            <Button type="button" variant="outline" onClick={onCopyPrompt} disabled={!hasCompetitors}>
               <ClipboardIcon data-icon="inline-start" />
               {copiedPrompt ? "Copied" : "Copy spy prompt"}
             </Button>
@@ -1272,25 +1335,35 @@ function CompetitorSpyPanel({
       <CardContent className="grid gap-4 xl:grid-cols-[360px_1fr]">
         <div className="flex flex-col gap-3 rounded-lg border bg-muted/20 p-3" data-print-hidden>
           <Field>
-            <FieldLabel>{isVietnamese ? "Đối thủ" : "Competitors"}</FieldLabel>
+            <FieldLabel htmlFor={`${id}-competitors`}>{isVietnamese ? "Đối thủ" : "Competitors"}</FieldLabel>
             <Textarea
+              id={`${id}-competitors`}
               value={names}
               onChange={(event) => onNamesChange(event.target.value)}
-              placeholder={isVietnamese ? "Mỗi dòng một đối thủ" : "One competitor per line"}
+              placeholder={isVietnamese ? "VD:\nSeoul Spa\nKangnam\nNha khoa Paris" : "Example:\nCompetitor A\nCompetitor B\nCompetitor C"}
               className="min-h-24 resize-none"
+              aria-describedby={`${id}-competitors-help`}
             />
+            <FieldDescription id={`${id}-competitors-help`}>
+              {isVietnamese ? "Nhập 1 đối thủ mỗi dòng hoặc ngăn cách bằng dấu phẩy." : "Enter one competitor per line or comma-separated."}
+            </FieldDescription>
           </Field>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-1">
             <Field>
-              <FieldLabel>{isVietnamese ? "Thị trường / offer" : "Market / offer"}</FieldLabel>
+              <FieldLabel htmlFor={`${id}-market`}>{isVietnamese ? "Thị trường / offer" : "Market / offer"}</FieldLabel>
               <Input
+                id={`${id}-market`}
                 value={market}
                 onChange={(event) => onMarketChange(event.target.value)}
-                placeholder={isVietnamese ? "VD: spa, NLM, lead form..." : "E.g. spa, NLM, lead form..."}
+                placeholder={isVietnamese ? "VD: trị nám HCM, tư vấn qua inbox" : "Example: acne clinic leads, free consult"}
+                aria-describedby={`${id}-market-help`}
               />
+              <FieldDescription id={`${id}-market-help`}>
+                {isVietnamese ? "Nêu ngành, địa bàn, offer chính hoặc funnel." : "Add category, geo, core offer, or funnel."}
+              </FieldDescription>
             </Field>
             <Field>
-              <FieldLabel>{isVietnamese ? "Nền tảng" : "Platform"}</FieldLabel>
+              <FieldLabel id={`${id}-platform-label`}>{isVietnamese ? "Nền tảng" : "Platform"}</FieldLabel>
               <Select
                 items={competitorPlatformItems}
                 value={platform}
@@ -1298,7 +1371,7 @@ function CompetitorSpyPanel({
                   if (value) onPlatformChange(value as CompetitorPlatform);
                 }}
               >
-                <SelectTrigger className="w-full">
+                <SelectTrigger className="w-full" aria-labelledby={`${id}-platform-label`} aria-describedby={`${id}-platform-help`}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -1311,20 +1384,77 @@ function CompetitorSpyPanel({
                   </SelectGroup>
                 </SelectContent>
               </Select>
+              <FieldDescription id={`${id}-platform-help`}>
+                {isVietnamese ? "Chọn nguồn ghi chú quảng cáo." : "Choose source for pasted ad notes."}
+              </FieldDescription>
+            </Field>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-1">
+            <Field>
+              <FieldLabel id={`${id}-language-label`}>{isVietnamese ? "Ngôn ngữ" : "Language"}</FieldLabel>
+              <Select
+                items={languageItems}
+                value={language}
+                onValueChange={(value) => {
+                  if (value) onLanguageChange(value as ReportLanguage);
+                }}
+              >
+                <SelectTrigger className="w-full" aria-labelledby={`${id}-language-label`}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {languageItems.map((item) => (
+                      <SelectItem key={item.value} value={item.value}>
+                        {item.label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field>
+              <FieldLabel id={`${id}-provider-label`}>Provider</FieldLabel>
+              <Select
+                items={providerItems}
+                value={provider}
+                onValueChange={(value) => {
+                  if (value) onProviderChange(value as Provider);
+                }}
+              >
+                <SelectTrigger className="w-full" aria-labelledby={`${id}-provider-label`}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {providerItems.map((item) => (
+                      <SelectItem key={item.value} value={item.value}>
+                        {item.label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
             </Field>
           </div>
           <Field>
-            <FieldLabel>{isVietnamese ? "Ghi chú ads library" : "Ad-library notes"}</FieldLabel>
+            <FieldLabel htmlFor={`${id}-notes`}>{isVietnamese ? "Ghi chú ads library" : "Ad-library notes"}</FieldLabel>
             <Textarea
+              id={`${id}-notes`}
               value={notes}
               onChange={(event) => onNotesChange(event.target.value)}
-              placeholder={isVietnamese ? "Paste copy, CTA, offer, format, link..." : "Paste copy, CTA, offer, format, links..."}
-              className="min-h-24 resize-none"
+              placeholder={
+                isVietnamese
+                  ? "VD: Kangnam - video before/after, CTA Nhắn tin, offer soi da miễn phí, hook trị nám 7 ngày..."
+                  : "Example: Competitor A - UGC video, Send Message CTA, free audit offer, proof-led hook..."
+              }
+              className="min-h-28 resize-none"
+              aria-describedby={`${id}-notes-help`}
             />
-            <FieldDescription>
+            <FieldDescription id={`${id}-notes-help`}>
               {isVietnamese
-                ? "Có ghi chú thật thì confidence cao hơn. Vercel Hobby cho phép tối đa khoảng 5 phút."
-                : "Real ad notes raise confidence. Vercel Hobby allows roughly 5 minutes max."}
+                ? "Paste copy, CTA, format, offer, link. Có dữ liệu thật -> confidence cao hơn. Vercel Hobby tối đa khoảng 5 phút."
+                : "Paste copy, CTA, format, offer, link. Real data -> higher confidence. Vercel Hobby max roughly 5 minutes."}
             </FieldDescription>
           </Field>
         </div>
