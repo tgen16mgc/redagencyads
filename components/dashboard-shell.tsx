@@ -550,12 +550,7 @@ export function DashboardShell() {
                 ))}
               </section>
 
-              <DecisionPanel
-                report={report}
-                targetCost={Number(targetCost || 0)}
-                targetRoas={Number(targetRoas || 0)}
-                maxFrequency={Number(maxFrequency || 0)}
-              />
+              <StructurePanel report={report} maxFrequency={Number(maxFrequency || 0)} />
 
               <PerformanceCharts
                 report={report}
@@ -1168,20 +1163,15 @@ function formatSignedPct(value: number | null) {
   return `${sign}${value.toLocaleString("vi-VN", { maximumFractionDigits: 1 })}%`;
 }
 
-function DecisionPanel({
+function StructurePanel({
   report,
-  targetCost,
-  targetRoas,
   maxFrequency,
 }: {
   report: DashboardReport;
-  targetCost: number;
-  targetRoas: number;
   maxFrequency: number;
 }) {
   const currency = report.account.currency || "VND";
   const spec = getPackChartSpec(report.selectedPack);
-  const action = rowDecision(report.totals, report.selectedPack, targetCost, targetRoas, maxFrequency);
   const evidence = packEvidence(report);
   const topAdset = [...report.adsetRows].sort((a, b) => sortByDrilldown(a, b, spec.drilldownKey, spec.higherIsBetter))[0];
   const activeAdsets = new Set(report.adsetRows.map((row) => row.adsetId || row.id)).size;
@@ -1189,24 +1179,17 @@ function DecisionPanel({
   const avgAdsPerAdset = activeAdsets ? activeAds / activeAdsets : 0;
   const topSpend = Math.max(0, ...report.adsetRows.map((row) => row.spend));
   const spendConcentration = report.totals.spend ? (topSpend / report.totals.spend) * 100 : 0;
-  const targetSummary = targetCost
-    ? `${formatMetric(targetCost, "currency", currency)} target cost`
-    : targetRoas
-      ? `${formatMetric(targetRoas, "ratio", currency)} target ROAS`
-      : "No target set";
 
   return (
-    <section className="grid gap-4 xl:grid-cols-[1fr_1fr]">
+    <section className="grid gap-4 xl:grid-cols-[0.85fr_1.15fr]">
       <Card>
         <CardHeader>
-          <CardTitle>Decision read</CardTitle>
+          <CardTitle>Pack context</CardTitle>
           <CardDescription>
             Pack: {report.selectedPack}. {report.packReason}
           </CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-2">
-          <DecisionTile label="Action" value={action.label} detail={action.reason} intent={action.intent} />
-          <DecisionTile label="Target" value={targetSummary} detail="Targets unlock 3x kill and scale checks." />
+        <CardContent className="grid gap-3">
           <DecisionTile
             label="Pack evidence"
             value={`${evidence.confidence} confidence`}
@@ -1221,7 +1204,7 @@ function DecisionPanel({
           <DecisionTile
             label="Why charts matter"
             value={spec.operatorQuestion}
-            detail="Trend -> efficiency -> fatigue -> drilldown."
+            detail="Trend, efficiency, guardrail, drilldown."
           />
         </CardContent>
       </Card>
@@ -1530,8 +1513,8 @@ type PackChartSpec = {
 
 function getPackChartSpec(pack: KpiPack): PackChartSpec {
   const shared = {
-    diagnosticTitle: "Creative fatigue",
-    diagnosticDescription: "Frequency and CTR. Meta fatigue check flags frequency over 3 with CTR decay.",
+    diagnosticTitle: "Fatigue guardrail",
+    diagnosticDescription: "Frequency plus CTR is a common quick fatigue proxy. True creative fatigue needs creative-level CTR drop over time.",
     diagnosticKeys: ["frequency", "ctr"] as ChartKey[],
     referenceLine: { value: 3 },
   };
@@ -1603,7 +1586,7 @@ function getPackChartSpec(pack: KpiPack): PackChartSpec {
       efficiencyDescription: "CPM and frequency. Rising CPM with rising frequency usually signals saturation.",
       efficiencyKeys: ["cpm", "frequency"],
       diagnosticTitle: "Delivery saturation",
-      diagnosticDescription: "Frequency and CTR. Frequency over 4 is a saturation signal in the ads budget rules.",
+      diagnosticDescription: "Frequency plus CTR is a delivery saturation guardrail. Frequency over 4 deserves review for awareness campaigns.",
       diagnosticKeys: ["frequency", "ctr"],
       referenceLine: { value: 4 },
       drilldownTitle: "Ad set CPM",
