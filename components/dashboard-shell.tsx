@@ -101,6 +101,7 @@ const languageItems = [
 ] as const;
 
 type ReportLanguage = (typeof languageItems)[number]["value"];
+const COMPETITOR_SPY_TIMEOUT_MS = 10 * 60 * 1000;
 
 const compareItems: { label: string; value: CompareMode }[] = [
   { label: "No compare", value: "off" },
@@ -356,7 +357,7 @@ export function DashboardShell() {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ prompt: competitorPrompt(), provider }),
-        timeoutMs: 90000,
+        timeoutMs: COMPETITOR_SPY_TIMEOUT_MS,
       });
       setCompetitorResult(data.competitor);
     } catch (err) {
@@ -1259,7 +1260,7 @@ function CompetitorSpyPanel({
           <div className="flex flex-wrap gap-2" data-print-hidden>
             <Button type="button" onClick={onGenerate} disabled={loading}>
               {loading ? <Spinner data-icon="inline-start" /> : <SearchIcon data-icon="inline-start" />}
-              {isVietnamese ? "Phân tích đối thủ" : "Analyze competitors"}
+              {loading ? (isVietnamese ? "Đang phân tích sâu..." : "Deep scan running...") : isVietnamese ? "Phân tích đối thủ" : "Analyze competitors"}
             </Button>
             <Button type="button" variant="outline" onClick={onCopyPrompt}>
               <ClipboardIcon data-icon="inline-start" />
@@ -1322,8 +1323,8 @@ function CompetitorSpyPanel({
             />
             <FieldDescription>
               {isVietnamese
-                ? "Có ghi chú thật thì confidence cao hơn. Nếu chỉ có tên, AI sẽ đánh dấu là giả định."
-                : "Real ad notes raise confidence. Name-only reads are marked as hypotheses."}
+                ? "Có ghi chú thật thì confidence cao hơn. Phân tích sâu có thể mất tới 10 phút."
+                : "Real ad notes raise confidence. Deep competitor analysis can take up to 10 minutes."}
             </FieldDescription>
           </Field>
         </div>

@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { generateCompetitorSpy } from "@/lib/ai";
 
+export const runtime = "nodejs";
+export const maxDuration = 600;
+
 const bodySchema = z.object({
   prompt: z.string().min(100),
   provider: z.enum(["auto", "openai", "openrouter", "prompt"]).default("auto"),

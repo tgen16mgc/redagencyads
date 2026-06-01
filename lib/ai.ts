@@ -7,6 +7,7 @@ const OPENROUTER_FREE_MODELS = [
 ] as const;
 
 const OPENROUTER_MODEL_TIMEOUT_MS = Number(process.env.OPENROUTER_MODEL_TIMEOUT_MS || 30000);
+const OPENROUTER_COMPETITOR_MODEL_TIMEOUT_MS = Number(process.env.OPENROUTER_COMPETITOR_MODEL_TIMEOUT_MS || 180000);
 
 function openRouterModels() {
   const requested = process.env.OPENROUTER_MODEL;
@@ -17,11 +18,11 @@ function openRouterModels() {
   return [...OPENROUTER_FREE_MODELS];
 }
 
-async function openRouterCompletion(prompt: string) {
+async function openRouterCompletion(prompt: string, modelTimeoutMs = OPENROUTER_MODEL_TIMEOUT_MS) {
   const errors: string[] = [];
   for (const model of openRouterModels()) {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), OPENROUTER_MODEL_TIMEOUT_MS);
+    const timeout = setTimeout(() => controller.abort(), modelTimeoutMs);
     try {
       const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
@@ -43,7 +44,7 @@ async function openRouterCompletion(prompt: string) {
       if (response.ok) return json.choices?.[0]?.message?.content || "";
       errors.push(`${model}: ${json?.error?.message || response.status}`);
     } catch (error) {
-      const message = error instanceof DOMException && error.name === "AbortError" ? `timed out after ${Math.round(OPENROUTER_MODEL_TIMEOUT_MS / 1000)}s` : error instanceof Error ? error.message : "request failed";
+      const message = error instanceof DOMException && error.name === "AbortError" ? `timed out after ${Math.round(modelTimeoutMs / 1000)}s` : error instanceof Error ? error.message : "request failed";
       errors.push(`${model}: ${message}`);
     } finally {
       clearTimeout(timeout);
@@ -243,7 +244,7 @@ export async function generateCompetitorSpy(prompt: string, provider: "auto" | "
     return parseCompetitorSpy(json.choices?.[0]?.message?.content || "", "openai");
   }
   if ((provider === "openrouter" || provider === "auto") && process.env.OPENROUTER_API_KEY) {
-    return parseCompetitorSpy(await openRouterCompletion(prompt), "openrouter");
+    return parseCompetitorSpy(await openRouterCompletion(prompt, OPENROUTER_COMPETITOR_MODEL_TIMEOUT_MS), "openrouter");
   }
   return competitorFallback(prompt);
 }
