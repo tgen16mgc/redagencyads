@@ -1,4 +1,4 @@
-import type { CompareMode, CompetitorPlatform, DashboardReport, InsightAction, InsightRow, KpiCard, KpiPack, MetaAccount, MetaCampaign, NormalizedRow } from "@/lib/types";
+import type { CompareMode, CompetitorPlatform, CompetitorSpyAd, DashboardReport, InsightAction, InsightRow, KpiCard, KpiPack, MetaAccount, MetaCampaign, NormalizedRow } from "@/lib/types";
 
 const ZERO_ROW: Omit<NormalizedRow, "id" | "level" | "name"> = {
   spend: 0,
@@ -366,6 +366,7 @@ export function buildCompetitorSpyPrompt(args: {
   market: string;
   platform: CompetitorPlatform;
   notes: string;
+  extractedAds?: CompetitorSpyAd[];
   report?: DashboardReport | null;
 }) {
   const payload = {
@@ -373,6 +374,20 @@ export function buildCompetitorSpyPrompt(args: {
     market_or_offer: args.market || "Not specified",
     platform_focus: args.platform,
     pasted_ad_library_notes: args.notes || "No pasted competitor ad notes provided.",
+    extracted_ads: (args.extractedAds || []).slice(0, 40).map((ad) => ({
+      source: ad.source,
+      competitor: ad.competitorName,
+      page: ad.pageName,
+      platform: ad.platform,
+      body: ad.body,
+      headline: ad.headline,
+      description: ad.description,
+      cta: ad.cta,
+      format: ad.format,
+      start_date: ad.startDate,
+      snapshot_url: ad.snapshotUrl,
+      landing_url: ad.landingUrl,
+    })),
     current_account_context: args.report
       ? {
           account: args.report.account.name,
@@ -393,6 +408,7 @@ export function buildCompetitorSpyPrompt(args: {
 
 Use the competitor ads framework:
 - Identify likely positioning, repeated messaging themes, offers, CTA patterns, creative formats, and platform gaps.
+- If extracted_ads are present, treat them as primary evidence and cite ad-level patterns.
 - If pasted ad-library notes are present, treat them as evidence.
 - If only competitor names are provided, clearly mark findings as hypotheses and do not claim live scraping.
 - Use competitor insights for original test ideas only. Do not copy competitor ads, copy, claims, or visual designs.

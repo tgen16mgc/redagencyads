@@ -31,7 +31,7 @@ import {
   ShieldCheckIcon,
   SparklesIcon,
 } from "lucide-react";
-import type { AiInsightTable, AiVerdict, CompareMode, CompetitorPlatform, CompetitorSpyResult, DashboardReport, KpiPack, MetaAccount, MetaCampaign, NormalizedRow } from "@/lib/types";
+import type { AiInsightTable, AiVerdict, CompareMode, CompetitorFetchResult, CompetitorFetchSource, CompetitorPlatform, CompetitorSpyAd, CompetitorSpyResult, DashboardReport, KpiPack, MetaAccount, MetaCampaign, NormalizedRow } from "@/lib/types";
 import { buildCompetitorSpyPrompt, buildInsightPrompt, comparisonDeltas, formatMetric } from "@/lib/metrics";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -125,6 +125,11 @@ const competitorPlatformItems: { label: string; value: CompetitorPlatform }[] = 
   { label: "Mixed", value: "mixed" },
 ];
 
+const competitorFetchItems: { label: string; value: CompetitorFetchSource }[] = [
+  { label: "Apify scraper", value: "apify" },
+  { label: "Meta official API", value: "meta_official" },
+];
+
 function defaultDates() {
   const until = new Date();
   until.setDate(until.getDate() - 1);
@@ -177,6 +182,13 @@ export function DashboardShell() {
   const [competitorPlatform, setCompetitorPlatform] = React.useState<CompetitorPlatform>("meta");
   const [competitorNotes, setCompetitorNotes] = React.useState("");
   const [competitorResult, setCompetitorResult] = React.useState<CompetitorSpyResult | null>(null);
+  const [competitorFetchSource, setCompetitorFetchSource] = React.useState<CompetitorFetchSource>("apify");
+  const [competitorCountry, setCompetitorCountry] = React.useState("VN");
+  const [competitorLimit, setCompetitorLimit] = React.useState(20);
+  const [competitorLibraryUrls, setCompetitorLibraryUrls] = React.useState("");
+  const [competitorAds, setCompetitorAds] = React.useState<CompetitorSpyAd[]>([]);
+  const [competitorFetchWarnings, setCompetitorFetchWarnings] = React.useState<string[]>([]);
+  const [competitorFetchedAt, setCompetitorFetchedAt] = React.useState("");
   const [copiedPrompt, setCopiedPrompt] = React.useState(false);
   const [copiedCompetitorPrompt, setCopiedCompetitorPrompt] = React.useState(false);
   const [token, setToken] = React.useState("");
@@ -338,6 +350,14 @@ export function DashboardShell() {
       .slice(0, 8);
   }
 
+  function competitorUrlList() {
+    return competitorLibraryUrls
+      .split(/[\n,]/)
+      .map((url) => url.trim())
+      .filter(Boolean)
+      .slice(0, 8);
+  }
+
   function competitorPrompt() {
     return withReportLanguage(
       buildCompetitorSpyPrompt({
@@ -345,6 +365,7 @@ export function DashboardShell() {
         market: competitorMarket,
         platform: competitorPlatform,
         notes: competitorNotes,
+        extractedAds: competitorAds,
         report,
       }),
       language,
@@ -352,10 +373,43 @@ export function DashboardShell() {
     );
   }
 
+  async function fetchSpyAds() {
+    const competitors = competitorList();
+    const libraryUrls = competitorUrlList();
+    if (!competitors.length && !libraryUrls.length) {
+      setError("Add competitor names or Meta Ad Library URLs before fetching ads.");
+      return;
+    }
+    setError("");
+    setLoading("spy-fetch");
+    try {
+      const data = await jsonFetch<{ result: CompetitorFetchResult }>("/api/spy/meta", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          source: competitorFetchSource,
+          competitors,
+          country: competitorCountry,
+          limit: competitorLimit,
+          libraryUrls,
+        }),
+        timeoutMs: COMPETITOR_SPY_TIMEOUT_MS,
+      });
+      setCompetitorAds(data.result.ads);
+      setCompetitorFetchWarnings(data.result.warnings);
+      setCompetitorFetchedAt(data.result.fetchedAt);
+      if (!data.result.ads.length) setError(data.result.warnings[0] || "No competitor ads returned.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not fetch competitor ads.");
+    } finally {
+      setLoading("");
+    }
+  }
+
   async function runCompetitorSpy() {
     const competitors = competitorList();
-    if (!competitors.length) {
-      setError("Add at least one competitor name.");
+    if (!competitors.length && !competitorAds.length) {
+      setError("Add competitors or fetch ads first.");
       return;
     }
     setError("");
@@ -377,8 +431,8 @@ export function DashboardShell() {
 
   async function copyCompetitorPrompt() {
     const competitors = competitorList();
-    if (!competitors.length) {
-      setError("Add at least one competitor name before copying the prompt.");
+    if (!competitors.length && !competitorAds.length) {
+      setError("Add competitors or fetch ads before copying the prompt.");
       return;
     }
     await navigator.clipboard.writeText(competitorPrompt());
@@ -777,7 +831,15 @@ export function DashboardShell() {
               platform={competitorPlatform}
               result={competitorResult}
               notes={competitorNotes}
+              fetchSource={competitorFetchSource}
+              country={competitorCountry}
+              limit={competitorLimit}
+              libraryUrls={competitorLibraryUrls}
+              ads={competitorAds}
+              fetchWarnings={competitorFetchWarnings}
+              fetchedAt={competitorFetchedAt}
               loading={loading === "competitor"}
+              fetchLoading={loading === "spy-fetch"}
               language={language}
               provider={provider}
               copiedPrompt={copiedCompetitorPrompt}
@@ -785,8 +847,13 @@ export function DashboardShell() {
               onMarketChange={setCompetitorMarket}
               onPlatformChange={setCompetitorPlatform}
               onNotesChange={setCompetitorNotes}
+              onFetchSourceChange={setCompetitorFetchSource}
+              onCountryChange={setCompetitorCountry}
+              onLimitChange={setCompetitorLimit}
+              onLibraryUrlsChange={setCompetitorLibraryUrls}
               onLanguageChange={setLanguage}
               onProviderChange={setProvider}
+              onFetchAds={fetchSpyAds}
               onGenerate={runCompetitorSpy}
               onCopyPrompt={copyCompetitorPrompt}
             />
@@ -1266,8 +1333,16 @@ function CompetitorSpyPanel({
   market,
   platform,
   notes,
+  fetchSource,
+  country,
+  limit,
+  libraryUrls,
+  ads,
+  fetchWarnings,
+  fetchedAt,
   result,
   loading,
+  fetchLoading,
   language,
   provider,
   copiedPrompt,
@@ -1275,8 +1350,13 @@ function CompetitorSpyPanel({
   onMarketChange,
   onPlatformChange,
   onNotesChange,
+  onFetchSourceChange,
+  onCountryChange,
+  onLimitChange,
+  onLibraryUrlsChange,
   onLanguageChange,
   onProviderChange,
+  onFetchAds,
   onGenerate,
   onCopyPrompt,
 }: {
@@ -1284,8 +1364,16 @@ function CompetitorSpyPanel({
   market: string;
   platform: CompetitorPlatform;
   notes: string;
+  fetchSource: CompetitorFetchSource;
+  country: string;
+  limit: number;
+  libraryUrls: string;
+  ads: CompetitorSpyAd[];
+  fetchWarnings: string[];
+  fetchedAt: string;
   result: CompetitorSpyResult | null;
   loading: boolean;
+  fetchLoading: boolean;
   language: ReportLanguage;
   provider: Provider;
   copiedPrompt: boolean;
@@ -1293,8 +1381,13 @@ function CompetitorSpyPanel({
   onMarketChange: (value: string) => void;
   onPlatformChange: (value: CompetitorPlatform) => void;
   onNotesChange: (value: string) => void;
+  onFetchSourceChange: (value: CompetitorFetchSource) => void;
+  onCountryChange: (value: string) => void;
+  onLimitChange: (value: number) => void;
+  onLibraryUrlsChange: (value: string) => void;
   onLanguageChange: (value: ReportLanguage) => void;
   onProviderChange: (value: Provider) => void;
+  onFetchAds: () => void;
   onGenerate: () => void;
   onCopyPrompt: () => void;
 }) {
@@ -1304,6 +1397,12 @@ function CompetitorSpyPanel({
     .split(/[\n,]/)
     .map((name) => name.trim())
     .filter(Boolean).length > 0;
+  const hasLibraryUrls = libraryUrls
+    .split(/[\n,]/)
+    .map((url) => url.trim())
+    .filter(Boolean).length > 0;
+  const canFetch = hasCompetitors || hasLibraryUrls;
+  const canAnalyze = canFetch || ads.length > 0;
   const themeRows = result?.themes.slice(0, 4) || [];
   const briefs = result?.test_briefs.slice(0, 4) || [];
   const competitors = result?.competitors.slice(0, 4) || [];
@@ -1321,11 +1420,15 @@ function CompetitorSpyPanel({
             </CardDescription>
           </div>
           <div className="flex flex-wrap gap-2" data-print-hidden>
-            <Button type="button" onClick={onGenerate} disabled={loading || !hasCompetitors} aria-busy={loading}>
+            <Button type="button" variant="outline" onClick={onFetchAds} disabled={fetchLoading || !canFetch} aria-busy={fetchLoading}>
+              {fetchLoading ? <Spinner data-icon="inline-start" /> : <RefreshCcwIcon data-icon="inline-start" />}
+              {fetchLoading ? (isVietnamese ? "Đang lấy ads..." : "Fetching ads...") : isVietnamese ? "Lấy ads" : "Fetch ads"}
+            </Button>
+            <Button type="button" onClick={onGenerate} disabled={loading || !canAnalyze} aria-busy={loading}>
               {loading ? <Spinner data-icon="inline-start" /> : <SearchIcon data-icon="inline-start" />}
               {loading ? (isVietnamese ? "Đang phân tích sâu..." : "Deep scan running...") : isVietnamese ? "Phân tích đối thủ" : "Analyze competitors"}
             </Button>
-            <Button type="button" variant="outline" onClick={onCopyPrompt} disabled={!hasCompetitors}>
+            <Button type="button" variant="outline" onClick={onCopyPrompt} disabled={!canAnalyze}>
               <ClipboardIcon data-icon="inline-start" />
               {copiedPrompt ? "Copied" : "Copy spy prompt"}
             </Button>
@@ -1389,6 +1492,79 @@ function CompetitorSpyPanel({
               </FieldDescription>
             </Field>
           </div>
+          <Separator />
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-1">
+            <Field>
+              <FieldLabel id={`${id}-source-label`}>{isVietnamese ? "Công cụ lấy ads" : "Ads spy tool"}</FieldLabel>
+              <Select
+                items={competitorFetchItems}
+                value={fetchSource}
+                onValueChange={(value) => {
+                  if (value) onFetchSourceChange(value as CompetitorFetchSource);
+                }}
+              >
+                <SelectTrigger className="w-full" aria-labelledby={`${id}-source-label`} aria-describedby={`${id}-source-help`}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {competitorFetchItems.map((item) => (
+                      <SelectItem key={item.value} value={item.value}>
+                        {item.label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              <FieldDescription id={`${id}-source-help`}>
+                {isVietnamese
+                  ? "Apify cần APIFY_TOKEN + APIFY_META_ADS_ACTOR_ID. Meta official dùng token session nhưng có thể thiếu ads thương mại."
+                  : "Apify needs APIFY_TOKEN + APIFY_META_ADS_ACTOR_ID. Meta official uses session token but may miss commercial ads."}
+              </FieldDescription>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor={`${id}-country`}>{isVietnamese ? "Quốc gia" : "Country"}</FieldLabel>
+              <Input
+                id={`${id}-country`}
+                value={country}
+                onChange={(event) => onCountryChange(event.target.value.toUpperCase().slice(0, 2))}
+                placeholder="VN"
+                aria-describedby={`${id}-country-help`}
+              />
+              <FieldDescription id={`${id}-country-help`}>
+                {isVietnamese ? "Mã 2 chữ cái. VD: VN, US, SG." : "Two-letter code. Example: VN, US, SG."}
+              </FieldDescription>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor={`${id}-limit`}>{isVietnamese ? "Số ads tối đa" : "Max ads"}</FieldLabel>
+              <Input
+                id={`${id}-limit`}
+                type="number"
+                min={1}
+                max={80}
+                value={limit}
+                onChange={(event) => onLimitChange(Number(event.target.value || 20))}
+                aria-describedby={`${id}-limit-help`}
+              />
+              <FieldDescription id={`${id}-limit-help`}>
+                {isVietnamese ? "Khuyên dùng 20-40 để không timeout." : "Use 20-40 to avoid timeout."}
+              </FieldDescription>
+            </Field>
+          </div>
+          <Field>
+            <FieldLabel htmlFor={`${id}-urls`}>{isVietnamese ? "Meta Ad Library URLs" : "Meta Ad Library URLs"}</FieldLabel>
+            <Textarea
+              id={`${id}-urls`}
+              value={libraryUrls}
+              onChange={(event) => onLibraryUrlsChange(event.target.value)}
+              placeholder="https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=VN&view_all_page_id=..."
+              className="min-h-20 resize-none"
+              aria-describedby={`${id}-urls-help`}
+            />
+            <FieldDescription id={`${id}-urls-help`}>
+              {isVietnamese ? "Tùy chọn. Paste URL page/search từ Meta Ad Library, mỗi dòng 1 URL." : "Optional. Paste page/search URLs from Meta Ad Library, one per line."}
+            </FieldDescription>
+          </Field>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-1">
             <Field>
               <FieldLabel id={`${id}-language-label`}>{isVietnamese ? "Ngôn ngữ" : "Language"}</FieldLabel>
@@ -1461,6 +1637,7 @@ function CompetitorSpyPanel({
 
         {result ? (
           <div className="flex flex-col gap-3" data-print-expand>
+            <SpyAdsPanel ads={ads} warnings={fetchWarnings} fetchedAt={fetchedAt} language={language} />
             <div className="rounded-lg border bg-background p-3">
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant="secondary">{result.provider}</Badge>
@@ -1544,16 +1721,19 @@ function CompetitorSpyPanel({
             </div>
           </div>
         ) : (
-          <Empty className="border">
-            <EmptyHeader>
-              <EmptyTitle>{isVietnamese ? "Chưa có competitor spy" : "No competitor spy yet"}</EmptyTitle>
-              <EmptyDescription>
-                {isVietnamese
-                  ? "Nhập đối thủ, paste ghi chú từ Meta Ad Library nếu có, rồi phân tích."
-                  : "Add competitors, paste Meta Ad Library notes when available, then analyze."}
-              </EmptyDescription>
-            </EmptyHeader>
-          </Empty>
+          <div className="flex flex-col gap-3">
+            <SpyAdsPanel ads={ads} warnings={fetchWarnings} fetchedAt={fetchedAt} language={language} />
+            <Empty className="border">
+              <EmptyHeader>
+                <EmptyTitle>{isVietnamese ? "Chưa có phân tích AI" : "No AI analysis yet"}</EmptyTitle>
+                <EmptyDescription>
+                  {isVietnamese
+                    ? "Lấy ads hoặc paste ghi chú, rồi phân tích."
+                    : "Fetch ads or paste notes, then analyze."}
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          </div>
         )}
       </CardContent>
     </Card>
@@ -1562,6 +1742,89 @@ function CompetitorSpyPanel({
 
 function platformLabel(platform: CompetitorPlatform) {
   return competitorPlatformItems.find((item) => item.value === platform)?.label || platform;
+}
+
+function SpyAdsPanel({
+  ads,
+  warnings,
+  fetchedAt,
+  language,
+}: {
+  ads: CompetitorSpyAd[];
+  warnings: string[];
+  fetchedAt: string;
+  language: ReportLanguage;
+}) {
+  const isVietnamese = language === "vi";
+  return (
+    <div className="rounded-lg border bg-background p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <div className="text-xs font-medium uppercase text-muted-foreground">
+            {isVietnamese ? "Ads đã lấy" : "Fetched ads"}
+          </div>
+          <p className="text-sm text-muted-foreground">
+            {ads.length
+              ? isVietnamese
+                ? `${ads.length} ads trong session${fetchedAt ? ` - ${new Date(fetchedAt).toLocaleString()}` : ""}.`
+                : `${ads.length} ads in session${fetchedAt ? ` - ${new Date(fetchedAt).toLocaleString()}` : ""}.`
+              : isVietnamese
+                ? "Chưa lấy ads."
+                : "No ads fetched yet."}
+          </p>
+        </div>
+        {ads.length ? <Badge variant="secondary">{ads.length} ads</Badge> : null}
+      </div>
+      {warnings.length ? (
+        <div className="mt-3 flex flex-col gap-2">
+          {warnings.slice(0, 3).map((warning, index) => (
+            <Alert key={`${warning}-${index}`}>
+              <AlertTitle>{isVietnamese ? "Lưu ý nguồn dữ liệu" : "Data source note"}</AlertTitle>
+              <AlertDescription>{warning}</AlertDescription>
+            </Alert>
+          ))}
+        </div>
+      ) : null}
+      {ads.length ? (
+        <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+          {ads.slice(0, 12).map((ad, index) => (
+            <div key={`${ad.source}-${ad.id}-${index}`} className="rounded-md border p-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-semibold">{ad.pageName || ad.competitorName || "Unknown advertiser"}</div>
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    <Badge variant="outline">{ad.source}</Badge>
+                    {ad.platform ? <Badge variant="secondary">{compactText(ad.platform, 24)}</Badge> : null}
+                    {ad.format ? <Badge variant="outline">{compactText(ad.format, 18)}</Badge> : null}
+                  </div>
+                </div>
+                {ad.snapshotUrl ? (
+                  <Button type="button" variant="ghost" size="sm" onClick={() => window.open(ad.snapshotUrl, "_blank", "noopener,noreferrer")}>
+                    View
+                  </Button>
+                ) : null}
+              </div>
+              {ad.imageUrl ? (
+                <img src={ad.imageUrl} alt="" className="mt-3 aspect-video w-full rounded-md border object-cover" loading="lazy" />
+              ) : null}
+              <p className="mt-3 line-clamp-2 text-sm font-medium" data-print-expand>
+                {compactText(ad.headline || ad.body || "No ad copy returned.", 160)}
+              </p>
+              {ad.description || ad.body ? (
+                <p className="mt-2 line-clamp-3 text-xs leading-5 text-muted-foreground" data-print-expand>
+                  {compactText(ad.description || ad.body || "", 220)}
+                </p>
+              ) : null}
+              <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                {ad.cta ? <span>CTA: {compactText(ad.cta, 28)}</span> : null}
+                {ad.startDate ? <span>Start: {ad.startDate.slice(0, 10)}</span> : null}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function getCompareRange(range: { since: string; until: string }, mode: CompareMode) {

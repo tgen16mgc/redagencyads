@@ -155,6 +155,34 @@ export type AiInsightTable = {
 };
 
 export type CompetitorPlatform = "meta" | "google" | "linkedin" | "tiktok" | "mixed";
+export type CompetitorFetchSource = "meta_official" | "apify";
+
+export type CompetitorSpyAd = {
+  id: string;
+  source: CompetitorFetchSource;
+  competitorName?: string;
+  pageName?: string;
+  platform?: string;
+  body?: string;
+  headline?: string;
+  description?: string;
+  cta?: string;
+  format?: string;
+  startDate?: string;
+  endDate?: string;
+  snapshotUrl?: string;
+  imageUrl?: string;
+  videoUrl?: string;
+  landingUrl?: string;
+  raw?: unknown;
+};
+
+export type CompetitorFetchResult = {
+  source: CompetitorFetchSource;
+  ads: CompetitorSpyAd[];
+  warnings: string[];
+  fetchedAt: string;
+};
 
 export type CompetitorSpyResult = {
   summary: string;
