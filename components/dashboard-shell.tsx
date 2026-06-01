@@ -566,6 +566,16 @@ export function DashboardShell() {
 
               {previousReport ? <ComparisonPanel current={report} previous={previousReport} mode={compareMode} /> : null}
 
+              <AiVerdictPanel
+                provider={provider}
+                loading={loading === "ai"}
+                verdict={verdict}
+                copiedPrompt={copiedPrompt}
+                onProviderChange={setProvider}
+                onGenerate={runAi}
+                onCopyPrompt={copyPrompt}
+              />
+
               <InsightPanel
                 insights={insights}
                 loading={loading === "insights"}
@@ -653,59 +663,15 @@ export function DashboardShell() {
                 </Card>
               </section>
 
-              <section className="grid gap-4 xl:grid-cols-[0.9fr_1.4fr]">
+              <section>
                 <Card>
                   <CardHeader>
                     <CardTitle>Breakdowns</CardTitle>
                     <CardDescription>Platform and age/gender signal for diagnosis.</CardDescription>
                   </CardHeader>
-                  <CardContent className="flex flex-col gap-4">
+                  <CardContent className="grid gap-4 xl:grid-cols-2">
                     <BarList rows={report.platformRows} metric="spend" currency={report.account.currency || "VND"} />
-                    <Separator />
                     <BarList rows={report.ageGenderRows} metric="leads" currency={report.account.currency || "VND"} />
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader>
-                    <CardTitle>AI verdict</CardTitle>
-                    <CardDescription>OpenAI/OpenRouter server-side if env key exists. Prompt fallback always available.</CardDescription>
-                  </CardHeader>
-                  <CardContent className="flex flex-col gap-4">
-                    <div className="flex flex-col gap-3 md:flex-row md:items-end">
-                      <Field className="md:w-64">
-                        <FieldLabel>Provider</FieldLabel>
-                        <Select
-                          items={providerItems}
-                          value={provider}
-                          onValueChange={(value) => {
-                            if (value) setProvider(value as Provider);
-                          }}
-                        >
-                          <SelectTrigger className="w-full">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectGroup>
-                              {providerItems.map((item) => (
-                                <SelectItem key={item.value} value={item.value}>
-                                  {item.label}
-                                </SelectItem>
-                              ))}
-                            </SelectGroup>
-                          </SelectContent>
-                        </Select>
-                      </Field>
-                      <Button onClick={runAi} disabled={loading === "ai"}>
-                        {loading === "ai" ? <Spinner data-icon="inline-start" /> : <SparklesIcon data-icon="inline-start" />}
-                        Generate verdict
-                      </Button>
-                      <Button type="button" variant="outline" onClick={copyPrompt}>
-                        <ClipboardIcon data-icon="inline-start" />
-                        {copiedPrompt ? "Copied" : "Copy prompt"}
-                      </Button>
-                    </div>
-                    {verdict ? <VerdictCard verdict={verdict} /> : null}
                   </CardContent>
                 </Card>
               </section>
@@ -981,6 +947,82 @@ function ComparisonPanel({ current, previous, mode }: { current: DashboardReport
   );
 }
 
+function AiVerdictPanel({
+  provider,
+  loading,
+  verdict,
+  copiedPrompt,
+  onProviderChange,
+  onGenerate,
+  onCopyPrompt,
+}: {
+  provider: Provider;
+  loading: boolean;
+  verdict: AiVerdict | null;
+  copiedPrompt: boolean;
+  onProviderChange: (value: Provider) => void;
+  onGenerate: () => void;
+  onCopyPrompt: () => void;
+}) {
+  return (
+    <Card data-print-break data-print-flow>
+      <CardHeader>
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <CardTitle>AI verdict</CardTitle>
+            <CardDescription>Kimi-first analysis when OpenRouter is configured. Prompt fallback stays available.</CardDescription>
+          </div>
+          <div className="flex flex-col gap-2 md:flex-row md:items-end" data-print-hidden>
+            <Field className="md:w-56">
+              <FieldLabel>Provider</FieldLabel>
+              <Select
+                items={providerItems}
+                value={provider}
+                onValueChange={(value) => {
+                  if (value) onProviderChange(value as Provider);
+                }}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {providerItems.map((item) => (
+                      <SelectItem key={item.value} value={item.value}>
+                        {item.label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </Field>
+            <Button onClick={onGenerate} disabled={loading}>
+              {loading ? <Spinner data-icon="inline-start" /> : <SparklesIcon data-icon="inline-start" />}
+              Generate verdict
+            </Button>
+            <Button type="button" variant="outline" onClick={onCopyPrompt}>
+              <ClipboardIcon data-icon="inline-start" />
+              {copiedPrompt ? "Copied" : "Copy prompt"}
+            </Button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {verdict ? (
+          <VerdictCard verdict={verdict} />
+        ) : (
+          <Empty className="border">
+            <EmptyHeader>
+              <EmptyTitle>No AI verdict yet</EmptyTitle>
+              <EmptyDescription>Generate after pulling report. Export will include this section once available.</EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function InsightPanel({
   insights,
   loading,
@@ -994,16 +1036,17 @@ function InsightPanel({
   hasComparison: boolean;
   onGenerate: () => void;
 }) {
+  const visibleRows = insights?.rows.slice(0, 5) || [];
   return (
-    <Card>
+    <Card data-print-flow>
       <CardHeader>
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
-            <CardTitle>AI insight table</CardTitle>
+            <CardTitle>AI insight brief</CardTitle>
             <CardDescription>
               {compareMode !== "off" && hasComparison
-                ? "Comparison prompt: delta, cause, next action."
-                : "Current prompt: health, waste, winners, tests."}
+                ? "Top comparison deltas, causes, and actions."
+                : "Top action items. Full raw performance stays in drilldown tables."}
             </CardDescription>
           </div>
           <Button type="button" onClick={onGenerate} disabled={loading} data-print-hidden>
@@ -1020,32 +1063,33 @@ function InsightPanel({
               <Badge variant="outline">{insights.confidence} confidence</Badge>
               <span className="text-sm text-muted-foreground">{insights.summary}</span>
             </div>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Area</TableHead>
-                  <TableHead>Insight</TableHead>
-                  <TableHead>Evidence</TableHead>
-                  <TableHead>Action</TableHead>
-                  <TableHead>Priority</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {insights.rows.map((row, index) => (
-                  <TableRow key={`${row.area}-${index}`}>
-                    <TableCell className="font-medium">{row.area}</TableCell>
-                    <TableCell>{row.insight}</TableCell>
-                    <TableCell className="text-muted-foreground">{row.evidence}</TableCell>
-                    <TableCell>{row.action}</TableCell>
-                    <TableCell>
-                      <Badge variant={row.priority === "high" ? "destructive" : row.priority === "medium" ? "secondary" : "outline"}>
-                        {row.priority}
-                      </Badge>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+              {visibleRows.map((row, index) => (
+                <div key={`${row.area}-${index}`} className="rounded-lg border bg-background p-3" data-print-expand>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="truncate text-sm font-medium">{row.area}</div>
+                    <Badge variant={row.priority === "high" ? "destructive" : row.priority === "medium" ? "secondary" : "outline"}>
+                      {row.priority}
+                    </Badge>
+                  </div>
+                  <p className="mt-2 line-clamp-2 text-sm font-medium leading-5" data-print-expand>
+                    {row.insight}
+                  </p>
+                  <p className="mt-2 line-clamp-2 text-xs leading-5 text-muted-foreground" data-print-expand>
+                    {row.evidence}
+                  </p>
+                  <Separator className="my-2" />
+                  <p className="line-clamp-2 text-sm leading-5" data-print-expand>
+                    {row.action}
+                  </p>
+                </div>
+              ))}
+            </div>
+            {insights.rows.length > visibleRows.length ? (
+              <p className="text-xs text-muted-foreground" data-print-hidden>
+                Showing top {visibleRows.length} of {insights.rows.length}. Use performance tables for deeper drilldown.
+              </p>
+            ) : null}
           </div>
         ) : (
           <Empty className="border">
@@ -1790,40 +1834,44 @@ function BarList({ rows, metric, currency }: { rows: NormalizedRow[]; metric: "s
 
 function VerdictCard({ verdict }: { verdict: AiVerdict }) {
   return (
-    <div className="flex max-h-72 flex-col gap-2 overflow-auto rounded-lg border bg-muted/20 p-3">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="line-clamp-2 text-sm font-medium leading-5">{verdict.verdict}</div>
-          <div className="mt-1 flex flex-wrap gap-1.5">
+    <div className="flex flex-col gap-4 rounded-lg border bg-muted/20 p-4" data-print-expand>
+      <div className="grid gap-4 xl:grid-cols-[1.4fr_0.6fr]">
+        <div>
+          <div className="text-xs font-medium uppercase text-muted-foreground">Verdict</div>
+          <p className="mt-2 text-base font-medium leading-7 md:text-lg">{verdict.verdict}</p>
+        </div>
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-wrap gap-1.5">
             <Badge variant="outline">{verdict.provider}</Badge>
             <Badge variant="secondary">{verdict.confidence} confidence</Badge>
           </div>
+          <MiniList title="Next actions" rows={[...verdict.budget_moves, ...verdict.tests].slice(0, 4)} />
         </div>
       </div>
-      <div className="grid gap-2 md:grid-cols-2">
+      <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
         <MiniList title="Winners" rows={verdict.winners} />
         <MiniList title="Risks" rows={verdict.risks} />
-        <MiniList title="Budget" rows={verdict.budget_moves} />
+        <MiniList title="Losers" rows={verdict.losers} />
+        <MiniList title="Budget moves" rows={verdict.budget_moves} />
         <MiniList title="Tests" rows={verdict.tests} />
+        <MiniList title="Assumptions" rows={verdict.assumptions} />
       </div>
     </div>
   );
 }
 
 function MiniList({ title, rows }: { title: string; rows: string[] }) {
-  const visibleRows = rows.slice(0, 2);
-  const hiddenCount = Math.max(0, rows.length - visibleRows.length);
+  const visibleRows = rows.filter(Boolean);
   return (
     <div className="rounded-md border bg-background p-2">
       <div className="mb-1 text-xs font-medium uppercase text-muted-foreground">{title}</div>
       {visibleRows.length ? (
         <div className="flex flex-col gap-1">
           {visibleRows.map((row) => (
-            <p key={row} className="line-clamp-2 text-xs leading-5">
+            <p key={row} className="text-xs leading-5">
               {row}
             </p>
           ))}
-          {hiddenCount ? <p className="text-xs text-muted-foreground">+{hiddenCount} more</p> : null}
         </div>
       ) : (
         <p className="text-xs text-muted-foreground">No items.</p>

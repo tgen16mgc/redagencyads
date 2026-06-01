@@ -8,8 +8,9 @@ const OPENROUTER_FREE_MODELS = [
 
 function openRouterModels() {
   const requested = process.env.OPENROUTER_MODEL;
-  if (requested && OPENROUTER_FREE_MODELS.includes(requested as (typeof OPENROUTER_FREE_MODELS)[number])) {
-    return [requested, ...OPENROUTER_FREE_MODELS.filter((model) => model !== requested)];
+  const kimi = OPENROUTER_FREE_MODELS[0];
+  if (requested && requested !== kimi && OPENROUTER_FREE_MODELS.includes(requested as (typeof OPENROUTER_FREE_MODELS)[number])) {
+    return [kimi, requested, ...OPENROUTER_FREE_MODELS.filter((model) => model !== kimi && model !== requested)];
   }
   return [...OPENROUTER_FREE_MODELS];
 }
@@ -73,6 +74,9 @@ function parseVerdict(text: string, provider: AiVerdict["provider"]): AiVerdict 
 
 export async function generateVerdict(prompt: string, provider: "auto" | "openai" | "openrouter" | "prompt") {
   if (provider === "prompt") return fallback(prompt);
+  if ((provider === "openrouter" || provider === "auto") && process.env.OPENROUTER_API_KEY) {
+    return parseVerdict(await openRouterCompletion(prompt), "openrouter");
+  }
   if ((provider === "openai" || provider === "auto") && process.env.OPENAI_API_KEY) {
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -90,9 +94,6 @@ export async function generateVerdict(prompt: string, provider: "auto" | "openai
     const json = await response.json();
     if (!response.ok) throw new Error(json?.error?.message || "OpenAI verdict request failed.");
     return parseVerdict(json.choices?.[0]?.message?.content || "", "openai");
-  }
-  if ((provider === "openrouter" || provider === "auto") && process.env.OPENROUTER_API_KEY) {
-    return parseVerdict(await openRouterCompletion(prompt), "openrouter");
   }
   return fallback(prompt);
 }
@@ -141,6 +142,9 @@ function parseInsights(text: string, provider: AiInsightTable["provider"]): AiIn
 
 export async function generateInsights(prompt: string, provider: "auto" | "openai" | "openrouter" | "prompt") {
   if (provider === "prompt") return insightFallback(prompt);
+  if ((provider === "openrouter" || provider === "auto") && process.env.OPENROUTER_API_KEY) {
+    return parseInsights(await openRouterCompletion(prompt), "openrouter");
+  }
   if ((provider === "openai" || provider === "auto") && process.env.OPENAI_API_KEY) {
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -158,9 +162,6 @@ export async function generateInsights(prompt: string, provider: "auto" | "opena
     const json = await response.json();
     if (!response.ok) throw new Error(json?.error?.message || "OpenAI insights request failed.");
     return parseInsights(json.choices?.[0]?.message?.content || "", "openai");
-  }
-  if ((provider === "openrouter" || provider === "auto") && process.env.OPENROUTER_API_KEY) {
-    return parseInsights(await openRouterCompletion(prompt), "openrouter");
   }
   return insightFallback(prompt);
 }

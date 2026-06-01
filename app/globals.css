@@ -147,9 +147,25 @@
     padding: 0 !important;
   }
 
+  [data-print-break] {
+    break-before: page;
+  }
+
+  [data-print-expand] {
+    max-height: none !important;
+    overflow: visible !important;
+    display: block !important;
+    -webkit-line-clamp: unset !important;
+    line-clamp: unset !important;
+  }
+
   [data-slot="card"] {
     break-inside: avoid;
     box-shadow: none !important;
+  }
+
+  [data-print-flow] {
+    break-inside: auto !important;
   }
 
   main {
