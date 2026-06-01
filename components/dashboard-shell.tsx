@@ -93,6 +93,13 @@ const providerItems = [
 
 type Provider = (typeof providerItems)[number]["value"];
 
+const languageItems = [
+  { label: "English", value: "en" },
+  { label: "Tiếng Việt", value: "vi" },
+] as const;
+
+type ReportLanguage = (typeof languageItems)[number]["value"];
+
 const compareItems: { label: string; value: CompareMode }[] = [
   { label: "No compare", value: "off" },
   { label: "WoW", value: "wow" },
@@ -121,7 +128,7 @@ async function jsonFetch<T>(url: string, init?: RequestInit & { timeoutMs?: numb
     return json as T;
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
-      throw new Error("Request timed out. Try again.");
+      throw new Error(`Request timed out after ${Math.round((init?.timeoutMs ?? 15000) / 1000)}s. Try again.`);
     }
     throw error;
   } finally {
@@ -140,10 +147,8 @@ export function DashboardShell() {
   const [until, setUntil] = React.useState(dates.until);
   const [pack, setPack] = React.useState<KpiPack | "auto">("auto");
   const [compareMode, setCompareMode] = React.useState<CompareMode>("off");
-  const [targetCost, setTargetCost] = React.useState("");
-  const [targetRoas, setTargetRoas] = React.useState("");
-  const [maxFrequency, setMaxFrequency] = React.useState("3");
   const [provider, setProvider] = React.useState<Provider>("auto");
+  const [language, setLanguage] = React.useState<ReportLanguage>("en");
   const [report, setReport] = React.useState<DashboardReport | null>(null);
   const [previousReport, setPreviousReport] = React.useState<DashboardReport | null>(null);
   const [verdict, setVerdict] = React.useState<AiVerdict | null>(null);
@@ -268,7 +273,8 @@ export function DashboardShell() {
       const data = await jsonFetch<{ verdict: AiVerdict }>("/api/ai/verdict", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ prompt: report.prompt, provider }),
+        body: JSON.stringify({ prompt: withReportLanguage(report.prompt, language, "verdict"), provider }),
+        timeoutMs: 90000,
       });
       setVerdict(data.verdict);
     } catch (err) {
@@ -283,12 +289,12 @@ export function DashboardShell() {
     setError("");
     setLoading("insights");
     try {
-      const prompt = buildInsightPrompt({ report, previousReport, compareMode });
+      const prompt = withReportLanguage(buildInsightPrompt({ report, previousReport, compareMode }), language, "insights");
       const data = await jsonFetch<{ insights: AiInsightTable }>("/api/ai/insights", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ prompt, provider }),
-        timeoutMs: 30000,
+        timeoutMs: 90000,
       });
       setInsights(data.insights);
     } catch (err) {
@@ -307,6 +313,15 @@ export function DashboardShell() {
 
   function exportPdf() {
     window.print();
+  }
+
+  function withReportLanguage(prompt: string, lang: ReportLanguage, type: "verdict" | "insights") {
+    if (lang !== "vi") return prompt;
+    const sectionHint =
+      type === "verdict"
+        ? "Use Vietnamese for all user-facing values. Make the verdict useful for these report sections: \"Phân tích và đánh giá hiệu quả tháng - AI powered\" and \"Đề xuất tối ưu kỳ tiếp theo\"."
+        : "Use Vietnamese for all user-facing values. Keep insight/action text concise for dashboard cards.";
+    return `${prompt}\n\nLanguage requirement:\n- ${sectionHint}\n- Keep JSON keys exactly as requested; translate only string values.`;
   }
 
   if (authenticated === null) {
@@ -494,34 +509,6 @@ export function DashboardShell() {
                     </SelectContent>
                   </Select>
                 </Field>
-                <Field>
-                  <FieldLabel>Target cost</FieldLabel>
-                  <Input
-                    inputMode="decimal"
-                    value={targetCost}
-                    onChange={(event) => setTargetCost(event.target.value)}
-                    placeholder="Optional"
-                  />
-                  <FieldDescription>Used for 3x kill and scale flags.</FieldDescription>
-                </Field>
-                <Field>
-                  <FieldLabel>Target ROAS</FieldLabel>
-                  <Input
-                    inputMode="decimal"
-                    value={targetRoas}
-                    onChange={(event) => setTargetRoas(event.target.value)}
-                    placeholder="Optional"
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel>Max freq.</FieldLabel>
-                  <Input
-                    inputMode="decimal"
-                    value={maxFrequency}
-                    onChange={(event) => setMaxFrequency(event.target.value)}
-                    placeholder="3"
-                  />
-                </Field>
                 <Field className="justify-end">
                   <FieldLabel className="sr-only">Pull data</FieldLabel>
                   <Button onClick={pullReport} disabled={!accountId || loading === "report"} className="w-full">
@@ -550,14 +537,7 @@ export function DashboardShell() {
                 ))}
               </section>
 
-              <StructurePanel report={report} maxFrequency={Number(maxFrequency || 0)} />
-
-              <PerformanceCharts
-                report={report}
-                targetCost={Number(targetCost || 0)}
-                targetRoas={Number(targetRoas || 0)}
-                maxFrequency={Number(maxFrequency || 0)}
-              />
+              <PerformanceCharts report={report} />
 
               {previousReport ? <ComparisonPanel current={report} previous={previousReport} mode={compareMode} /> : null}
 
@@ -566,7 +546,9 @@ export function DashboardShell() {
                 loading={loading === "ai"}
                 verdict={verdict}
                 copiedPrompt={copiedPrompt}
+                language={language}
                 onProviderChange={setProvider}
+                onLanguageChange={setLanguage}
                 onGenerate={runAi}
                 onCopyPrompt={copyPrompt}
               />
@@ -576,6 +558,7 @@ export function DashboardShell() {
                 loading={loading === "insights"}
                 compareMode={compareMode}
                 hasComparison={Boolean(previousReport)}
+                language={language}
                 onGenerate={runInsights}
               />
 
@@ -600,9 +583,6 @@ export function DashboardShell() {
                           rows={report.campaignRows}
                           currency={report.account.currency || "VND"}
                           pack={report.selectedPack}
-                          targetCost={Number(targetCost || 0)}
-                          targetRoas={Number(targetRoas || 0)}
-                          maxFrequency={Number(maxFrequency || 0)}
                         />
                       </TabsContent>
                       <TabsContent value="adsets" className="mt-3">
@@ -610,9 +590,6 @@ export function DashboardShell() {
                           rows={report.adsetRows}
                           currency={report.account.currency || "VND"}
                           pack={report.selectedPack}
-                          targetCost={Number(targetCost || 0)}
-                          targetRoas={Number(targetRoas || 0)}
-                          maxFrequency={Number(maxFrequency || 0)}
                         />
                       </TabsContent>
                       <TabsContent value="ads" className="mt-3">
@@ -620,9 +597,6 @@ export function DashboardShell() {
                           rows={report.adRows}
                           currency={report.account.currency || "VND"}
                           pack={report.selectedPack}
-                          targetCost={Number(targetCost || 0)}
-                          targetRoas={Number(targetRoas || 0)}
-                          maxFrequency={Number(maxFrequency || 0)}
                         />
                       </TabsContent>
                       <TabsContent value="daily" className="mt-3">
@@ -947,7 +921,9 @@ function AiVerdictPanel({
   loading,
   verdict,
   copiedPrompt,
+  language,
   onProviderChange,
+  onLanguageChange,
   onGenerate,
   onCopyPrompt,
 }: {
@@ -955,19 +931,49 @@ function AiVerdictPanel({
   loading: boolean;
   verdict: AiVerdict | null;
   copiedPrompt: boolean;
+  language: ReportLanguage;
   onProviderChange: (value: Provider) => void;
+  onLanguageChange: (value: ReportLanguage) => void;
   onGenerate: () => void;
   onCopyPrompt: () => void;
 }) {
+  const isVietnamese = language === "vi";
   return (
     <Card data-print-break data-print-flow>
       <CardHeader>
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
-            <CardTitle>AI verdict</CardTitle>
-            <CardDescription>Kimi-first analysis when OpenRouter is configured. Prompt fallback stays available.</CardDescription>
+            <CardTitle>{isVietnamese ? "Báo cáo AI" : "AI verdict"}</CardTitle>
+            <CardDescription>
+              {isVietnamese
+                ? "Phân tích hiệu quả và đề xuất tối ưu bằng AI. Prompt fallback luôn khả dụng."
+                : "AI-powered monthly analysis and next-period recommendations. Prompt fallback stays available."}
+            </CardDescription>
           </div>
           <div className="flex flex-col gap-2 md:flex-row md:items-end" data-print-hidden>
+            <Field className="md:w-40">
+              <FieldLabel>{isVietnamese ? "Ngôn ngữ" : "Language"}</FieldLabel>
+              <Select
+                items={languageItems}
+                value={language}
+                onValueChange={(value) => {
+                  if (value) onLanguageChange(value as ReportLanguage);
+                }}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {languageItems.map((item) => (
+                      <SelectItem key={item.value} value={item.value}>
+                        {item.label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </Field>
             <Field className="md:w-56">
               <FieldLabel>Provider</FieldLabel>
               <Select
@@ -1004,7 +1010,7 @@ function AiVerdictPanel({
       </CardHeader>
       <CardContent>
         {verdict ? (
-          <VerdictCard verdict={verdict} />
+          <VerdictCard verdict={verdict} language={language} />
         ) : (
           <Empty className="border">
             <EmptyHeader>
@@ -1023,30 +1029,37 @@ function InsightPanel({
   loading,
   compareMode,
   hasComparison,
+  language,
   onGenerate,
 }: {
   insights: AiInsightTable | null;
   loading: boolean;
   compareMode: CompareMode;
   hasComparison: boolean;
+  language: ReportLanguage;
   onGenerate: () => void;
 }) {
   const visibleRows = insights?.rows.slice(0, 5) || [];
+  const isVietnamese = language === "vi";
   return (
     <Card data-print-flow>
       <CardHeader>
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
-            <CardTitle>AI insight brief</CardTitle>
+            <CardTitle>{isVietnamese ? "Tóm tắt insight AI" : "AI insight brief"}</CardTitle>
             <CardDescription>
-              {compareMode !== "off" && hasComparison
-                ? "Top comparison deltas, causes, and actions."
-                : "Top action items. Full raw performance stays in drilldown tables."}
+              {isVietnamese
+                ? compareMode !== "off" && hasComparison
+                  ? "Các thay đổi chính, nguyên nhân và hành động đề xuất."
+                  : "Các hành động ưu tiên. Dữ liệu chi tiết nằm trong bảng drilldown."
+                : compareMode !== "off" && hasComparison
+                  ? "Top comparison deltas, causes, and actions."
+                  : "Top action items. Full raw performance stays in drilldown tables."}
             </CardDescription>
           </div>
           <Button type="button" onClick={onGenerate} disabled={loading} data-print-hidden>
             {loading ? <Spinner data-icon="inline-start" /> : <FileTextIcon data-icon="inline-start" />}
-            Generate insights
+            {isVietnamese ? "Tạo insight" : "Generate insights"}
           </Button>
         </div>
       </CardHeader>
@@ -1082,15 +1095,19 @@ function InsightPanel({
             </div>
             {insights.rows.length > visibleRows.length ? (
               <p className="text-xs text-muted-foreground" data-print-hidden>
-                Showing top {visibleRows.length} of {insights.rows.length}. Use performance tables for deeper drilldown.
+                {isVietnamese
+                  ? `Đang hiển thị ${visibleRows.length}/${insights.rows.length} insight ưu tiên. Xem bảng hiệu quả để drilldown sâu hơn.`
+                  : `Showing top ${visibleRows.length} of ${insights.rows.length}. Use performance tables for deeper drilldown.`}
               </p>
             ) : null}
           </div>
         ) : (
           <Empty className="border">
             <EmptyHeader>
-              <EmptyTitle>No insight table yet</EmptyTitle>
-              <EmptyDescription>Generate after report pull. It adapts to compare mode.</EmptyDescription>
+              <EmptyTitle>{isVietnamese ? "Chưa có insight AI" : "No insight table yet"}</EmptyTitle>
+              <EmptyDescription>
+                {isVietnamese ? "Tạo sau khi kéo báo cáo. Nội dung sẽ theo chế độ so sánh." : "Generate after report pull. It adapts to compare mode."}
+              </EmptyDescription>
             </EmptyHeader>
           </Empty>
         )}
@@ -1163,96 +1180,6 @@ function formatSignedPct(value: number | null) {
   return `${sign}${value.toLocaleString("vi-VN", { maximumFractionDigits: 1 })}%`;
 }
 
-function StructurePanel({
-  report,
-  maxFrequency,
-}: {
-  report: DashboardReport;
-  maxFrequency: number;
-}) {
-  const currency = report.account.currency || "VND";
-  const spec = getPackChartSpec(report.selectedPack);
-  const evidence = packEvidence(report);
-  const topAdset = [...report.adsetRows].sort((a, b) => sortByDrilldown(a, b, spec.drilldownKey, spec.higherIsBetter))[0];
-  const activeAdsets = new Set(report.adsetRows.map((row) => row.adsetId || row.id)).size;
-  const activeAds = new Set(report.adRows.map((row) => row.adId || row.id)).size;
-  const avgAdsPerAdset = activeAdsets ? activeAds / activeAdsets : 0;
-  const topSpend = Math.max(0, ...report.adsetRows.map((row) => row.spend));
-  const spendConcentration = report.totals.spend ? (topSpend / report.totals.spend) * 100 : 0;
-
-  return (
-    <section className="grid gap-4 xl:grid-cols-[0.85fr_1.15fr]">
-      <Card>
-        <CardHeader>
-          <CardTitle>Pack context</CardTitle>
-          <CardDescription>
-            Pack: {report.selectedPack}. {report.packReason}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-3">
-          <DecisionTile
-            label="Pack evidence"
-            value={`${evidence.confidence} confidence`}
-            detail={evidence.reason}
-            intent={evidence.confidence === "low" ? "warning" : "neutral"}
-          />
-          <DecisionTile
-            label="Best drilldown"
-            value={topAdset ? topAdset.name : "No ad set"}
-            detail={topAdset ? `${metricLabel(spec.drilldownKey)} ${formatChartValue(metricValue(topAdset, spec.drilldownKey), spec.drilldownFormat, currency)}` : "No row returned."}
-          />
-          <DecisionTile
-            label="Why charts matter"
-            value={spec.operatorQuestion}
-            detail="Trend, efficiency, guardrail, drilldown."
-          />
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Structure health</CardTitle>
-          <CardDescription>Ads-skill structure checks before AI explains anything.</CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-2">
-          <DecisionTile label="Campaigns" value={String(report.campaignRows.length)} detail="Meta prefers fewer campaigns per goal." intent={report.campaignRows.length > 5 ? "danger" : report.campaignRows.length > 3 ? "warning" : "neutral"} />
-          <DecisionTile label="Ads / ad set" value={avgAdsPerAdset.toFixed(1)} detail="Creative diversity proxy. Aim for 5+ standard, 10+ ASC." intent={avgAdsPerAdset < 3 ? "danger" : avgAdsPerAdset < 5 ? "warning" : "neutral"} />
-          <DecisionTile label="Spend concentration" value={formatMetric(spendConcentration, "percent", currency)} detail="Top ad set spend share." intent={spendConcentration > 70 ? "warning" : "neutral"} />
-          <DecisionTile label="Frequency cap" value={maxFrequency ? formatMetric(maxFrequency, "ratio", currency) : "3x"} detail="Prospecting fatigue guardrail." />
-        </CardContent>
-      </Card>
-    </section>
-  );
-}
-
-function DecisionTile({
-  label,
-  value,
-  detail,
-  intent = "neutral",
-}: {
-  label: string;
-  value: string;
-  detail: string;
-  intent?: "neutral" | "warning" | "danger" | "good";
-}) {
-  const intentClass =
-    intent === "danger"
-      ? "border-destructive/40 bg-destructive/5"
-      : intent === "warning"
-        ? "border-primary/30 bg-primary/5"
-        : intent === "good"
-          ? "border-emerald-500/30 bg-emerald-500/5"
-          : "";
-  return (
-    <div className={`rounded-lg border p-3 ${intentClass}`}>
-      <div className="text-xs font-medium text-muted-foreground">{label}</div>
-      <div className="mt-1 line-clamp-1 text-base font-semibold">{value}</div>
-      <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{detail}</p>
-    </div>
-  );
-}
-
 const performanceChartConfig = {
   spend: { label: "Spend", color: "var(--chart-1)" },
   messages: { label: "Messages", color: "var(--chart-2)" },
@@ -1275,17 +1202,7 @@ const performanceChartConfig = {
   result: { label: "Result metric", color: "var(--chart-2)" },
 } satisfies ChartConfig;
 
-function PerformanceCharts({
-  report,
-  targetCost,
-  targetRoas,
-  maxFrequency,
-}: {
-  report: DashboardReport;
-  targetCost: number;
-  targetRoas: number;
-  maxFrequency: number;
-}) {
+function PerformanceCharts({ report }: { report: DashboardReport }) {
   const currency = report.account.currency || "VND";
   const spec = getPackChartSpec(report.selectedPack);
   const dailyData = report.dailyRows.map((row) => ({
@@ -1381,12 +1298,6 @@ function PerformanceCharts({
                     />
                   }
                 />
-                {targetCost && spec.efficiencyKeys.some((key) => key !== "roas") ? (
-                  <ReferenceLine y={targetCost} stroke="var(--destructive)" strokeDasharray="4 4" />
-                ) : null}
-                {targetRoas && spec.efficiencyKeys.includes("roas") ? (
-                  <ReferenceLine y={targetRoas} stroke="var(--destructive)" strokeDasharray="4 4" />
-                ) : null}
                 {spec.efficiencyKeys.map((key) => (
                   <Line key={key} type="monotone" dataKey={key} stroke={`var(--color-${key})`} strokeWidth={2} dot={false} />
                 ))}
@@ -1410,7 +1321,7 @@ function PerformanceCharts({
                 <CartesianGrid vertical={false} />
                 <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={8} minTickGap={18} />
                 <YAxis hide />
-                {spec.referenceLine ? <ReferenceLine y={maxFrequency || spec.referenceLine.value} stroke="var(--destructive)" strokeDasharray="4 4" /> : null}
+                {spec.referenceLine ? <ReferenceLine y={spec.referenceLine.value} stroke="var(--destructive)" strokeDasharray="4 4" /> : null}
                 {spec.diagnosticKeys.includes("ctr") ? <ReferenceLine y={1} stroke="var(--chart-2)" strokeDasharray="2 4" /> : null}
                 <ChartTooltip
                   content={
@@ -1662,17 +1573,11 @@ function PerformanceTable({
   currency,
   daily = false,
   pack,
-  targetCost = 0,
-  targetRoas = 0,
-  maxFrequency = 0,
 }: {
   rows: NormalizedRow[];
   currency: string;
   daily?: boolean;
   pack?: KpiPack;
-  targetCost?: number;
-  targetRoas?: number;
-  maxFrequency?: number;
 }) {
   if (!rows.length) {
     return (
@@ -1701,7 +1606,7 @@ function PerformanceTable({
       </TableHeader>
       <TableBody>
         {rows.map((row) => {
-          const action = pack ? rowDecision(row, pack, targetCost, targetRoas, maxFrequency) : null;
+          const action = pack ? rowDecision(row, pack) : null;
           return (
             <TableRow key={`${row.level}-${row.id}-${row.date || ""}`}>
               <TableCell className="max-w-72 truncate font-medium">{daily ? row.date : row.name}</TableCell>
@@ -1727,31 +1632,20 @@ function PerformanceTable({
   );
 }
 
-function rowDecision(row: NormalizedRow, pack: KpiPack, targetCost: number, targetRoas: number, maxFrequency: number) {
-  const spec = getPackChartSpec(pack);
+function rowDecision(row: NormalizedRow, pack: KpiPack) {
   const result = primaryResult(row, pack);
-  const cost = metricValue(row, spec.drilldownKey);
-  const freqLimit = maxFrequency || (pack === "awareness" ? 4 : 3);
-  if (row.spend > 0 && result === 0 && targetCost && row.spend >= targetCost * 3 && pack !== "awareness") {
-    return { label: "Pause candidate", reason: "Spend passed 3x target with zero result.", intent: "danger" as const };
-  }
+  const freqLimit = pack === "awareness" ? 4 : 3;
   if (row.frequency >= freqLimit && row.ctr < 1) {
     return { label: "Fix creative", reason: `Frequency >= ${freqLimit} and CTR below 1%.`, intent: "danger" as const };
   }
   if (row.ctr < 0.5 && row.impressions > 1000) {
     return { label: "Fix creative", reason: "CTR below Meta fail threshold.", intent: "warning" as const };
   }
-  if (pack === "sales_roas" && targetRoas && row.roas >= targetRoas && row.frequency < freqLimit) {
-    return { label: "Scale", reason: "ROAS clears target and frequency is controlled.", intent: "good" as const };
+  if (result > 0 && row.ctr >= 1 && row.frequency < freqLimit) {
+    return { label: "Healthy", reason: "Has result signal with CTR and frequency in guardrail.", intent: "good" as const };
   }
-  if (pack === "sales_roas" && targetCost && row.purchases > 0 && row.cpaPurchase <= targetCost * 0.9 && row.frequency < freqLimit) {
-    return { label: "Scale", reason: "Purchase CPA beats target by 10%+.", intent: "good" as const };
-  }
-  if (targetCost && result > 0 && cost > 0 && cost <= targetCost * 0.9 && row.frequency < freqLimit) {
-    return { label: "Scale", reason: "Cost/result beats target by 10%+.", intent: "good" as const };
-  }
-  if ((!targetCost && pack !== "sales_roas") || (pack === "sales_roas" && !targetCost && !targetRoas)) {
-    return { label: "Need target", reason: "Set target cost or ROAS to unlock scale/kill rules.", intent: "warning" as const };
+  if (row.spend > 0 && result === 0) {
+    return { label: "Review", reason: "Spend exists but primary result is zero.", intent: "warning" as const };
   }
   return { label: "Watch", reason: "No hard scale or kill signal.", intent: "neutral" as const };
 }
@@ -1762,32 +1656,6 @@ function primaryResult(row: NormalizedRow, pack: KpiPack) {
   if (pack === "sales_roas") return row.purchases;
   if (pack === "traffic") return row.linkClicks;
   return row.reach;
-}
-
-function packEvidence(report: DashboardReport) {
-  const totals = report.totals;
-  const text = report.selectedCampaigns.map((campaign) => `${campaign.objective || ""} ${campaign.name}`).join(" ").toLowerCase();
-  const evidence = [
-    { label: "name/objective", hit: packTextMatch(report.selectedPack, text) },
-    { label: "messages", hit: report.selectedPack === "messages" && totals.messages > 0 },
-    { label: "leads", hit: report.selectedPack === "lead_gen" && totals.leads > 0 },
-    { label: "purchases/ROAS", hit: report.selectedPack === "sales_roas" && (totals.purchases > 0 || totals.roas > 0) },
-    { label: "clicks", hit: report.selectedPack === "traffic" && totals.linkClicks > 0 },
-    { label: "delivery", hit: report.selectedPack === "awareness" && totals.reach > 0 },
-  ].filter((item) => item.hit);
-  const confidence = evidence.length >= 2 ? "high" : evidence.length === 1 ? "medium" : "low";
-  return {
-    confidence,
-    reason: evidence.length ? evidence.map((item) => item.label).join(", ") : "No strong objective/action evidence. Override if needed.",
-  };
-}
-
-function packTextMatch(pack: KpiPack, text: string) {
-  if (pack === "messages") return /message|mess|inbox|chat/.test(text);
-  if (pack === "lead_gen") return /lead|form|demo|booking/.test(text);
-  if (pack === "sales_roas") return /sale|purchase|conversion|shop|catalog|roas/.test(text);
-  if (pack === "traffic") return /traffic|click|landing/.test(text);
-  return /awareness|reach|impression|brand/.test(text);
 }
 
 function BarList({ rows, metric, currency }: { rows: NormalizedRow[]; metric: "spend" | "leads"; currency: string }) {
@@ -1815,12 +1683,15 @@ function BarList({ rows, metric, currency }: { rows: NormalizedRow[]; metric: "s
   );
 }
 
-function VerdictCard({ verdict }: { verdict: AiVerdict }) {
+function VerdictCard({ verdict, language }: { verdict: AiVerdict; language: ReportLanguage }) {
+  const isVietnamese = language === "vi";
   return (
     <div className="flex flex-col gap-4 rounded-lg border bg-muted/20 p-4" data-print-expand>
       <div className="grid gap-4 xl:grid-cols-[1.4fr_0.6fr]">
         <div>
-          <div className="text-xs font-medium uppercase text-muted-foreground">Verdict</div>
+          <div className="text-xs font-medium uppercase text-muted-foreground">
+            {isVietnamese ? "Phân tích và đánh giá hiệu quả tháng - AI powered" : "Monthly performance analysis - AI powered"}
+          </div>
           <p className="mt-2 text-base font-medium leading-7 md:text-lg">{verdict.verdict}</p>
         </div>
         <div className="flex flex-col gap-2">
@@ -1828,16 +1699,19 @@ function VerdictCard({ verdict }: { verdict: AiVerdict }) {
             <Badge variant="outline">{verdict.provider}</Badge>
             <Badge variant="secondary">{verdict.confidence} confidence</Badge>
           </div>
-          <MiniList title="Next actions" rows={[...verdict.budget_moves, ...verdict.tests].slice(0, 4)} />
+          <MiniList
+            title={isVietnamese ? "Đề xuất tối ưu kỳ tiếp theo" : "Next-period optimization recommendations"}
+            rows={[...verdict.budget_moves, ...verdict.tests].slice(0, 4)}
+          />
         </div>
       </div>
       <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-        <MiniList title="Winners" rows={verdict.winners} />
-        <MiniList title="Risks" rows={verdict.risks} />
-        <MiniList title="Losers" rows={verdict.losers} />
-        <MiniList title="Budget moves" rows={verdict.budget_moves} />
-        <MiniList title="Tests" rows={verdict.tests} />
-        <MiniList title="Assumptions" rows={verdict.assumptions} />
+        <MiniList title={isVietnamese ? "Điểm hiệu quả" : "Winners"} rows={verdict.winners} />
+        <MiniList title={isVietnamese ? "Rủi ro" : "Risks"} rows={verdict.risks} />
+        <MiniList title={isVietnamese ? "Điểm yếu" : "Losers"} rows={verdict.losers} />
+        <MiniList title={isVietnamese ? "Điều chỉnh ngân sách" : "Budget moves"} rows={verdict.budget_moves} />
+        <MiniList title={isVietnamese ? "Thử nghiệm đề xuất" : "Tests"} rows={verdict.tests} />
+        <MiniList title={isVietnamese ? "Giả định dữ liệu" : "Assumptions"} rows={verdict.assumptions} />
       </div>
     </div>
   );

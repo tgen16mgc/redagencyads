@@ -6,6 +6,8 @@ const OPENROUTER_FREE_MODELS = [
   "nvidia/nemotron-3-super-120b-a12b:free",
 ] as const;
 
+const OPENROUTER_MODEL_TIMEOUT_MS = Number(process.env.OPENROUTER_MODEL_TIMEOUT_MS || 30000);
+
 function openRouterModels() {
   const requested = process.env.OPENROUTER_MODEL;
   const kimi = OPENROUTER_FREE_MODELS[0];
@@ -18,24 +20,34 @@ function openRouterModels() {
 async function openRouterCompletion(prompt: string) {
   const errors: string[] = [];
   for (const model of openRouterModels()) {
-    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-        "http-referer": process.env.OPENROUTER_SITE_URL || "https://meta-ads-dashboard.vercel.app",
-        "x-title": "Red Agency Ads Tool",
-      },
-      body: JSON.stringify({
-        model,
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0.2,
-        response_format: { type: "json_object" },
-      }),
-    });
-    const json = await response.json();
-    if (response.ok) return json.choices?.[0]?.message?.content || "";
-    errors.push(`${model}: ${json?.error?.message || response.status}`);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), OPENROUTER_MODEL_TIMEOUT_MS);
+    try {
+      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        signal: controller.signal,
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          "http-referer": process.env.OPENROUTER_SITE_URL || "https://meta-ads-dashboard.vercel.app",
+          "x-title": "Red Agency Ads Tool",
+        },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: "user", content: prompt }],
+          temperature: 0.2,
+          response_format: { type: "json_object" },
+        }),
+      });
+      const json = await response.json();
+      if (response.ok) return json.choices?.[0]?.message?.content || "";
+      errors.push(`${model}: ${json?.error?.message || response.status}`);
+    } catch (error) {
+      const message = error instanceof DOMException && error.name === "AbortError" ? `timed out after ${Math.round(OPENROUTER_MODEL_TIMEOUT_MS / 1000)}s` : error instanceof Error ? error.message : "request failed";
+      errors.push(`${model}: ${message}`);
+    } finally {
+      clearTimeout(timeout);
+    }
   }
   throw new Error(`OpenRouter free model request failed. ${errors.join(" | ")}`);
 }
