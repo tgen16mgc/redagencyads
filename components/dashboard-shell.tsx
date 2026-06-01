@@ -140,6 +140,9 @@ export function DashboardShell() {
   const [until, setUntil] = React.useState(dates.until);
   const [pack, setPack] = React.useState<KpiPack | "auto">("auto");
   const [compareMode, setCompareMode] = React.useState<CompareMode>("off");
+  const [targetCost, setTargetCost] = React.useState("");
+  const [targetRoas, setTargetRoas] = React.useState("");
+  const [maxFrequency, setMaxFrequency] = React.useState("3");
   const [provider, setProvider] = React.useState<Provider>("auto");
   const [report, setReport] = React.useState<DashboardReport | null>(null);
   const [previousReport, setPreviousReport] = React.useState<DashboardReport | null>(null);
@@ -491,6 +494,34 @@ export function DashboardShell() {
                     </SelectContent>
                   </Select>
                 </Field>
+                <Field>
+                  <FieldLabel>Target cost</FieldLabel>
+                  <Input
+                    inputMode="decimal"
+                    value={targetCost}
+                    onChange={(event) => setTargetCost(event.target.value)}
+                    placeholder="Optional"
+                  />
+                  <FieldDescription>Used for 3x kill and scale flags.</FieldDescription>
+                </Field>
+                <Field>
+                  <FieldLabel>Target ROAS</FieldLabel>
+                  <Input
+                    inputMode="decimal"
+                    value={targetRoas}
+                    onChange={(event) => setTargetRoas(event.target.value)}
+                    placeholder="Optional"
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel>Max freq.</FieldLabel>
+                  <Input
+                    inputMode="decimal"
+                    value={maxFrequency}
+                    onChange={(event) => setMaxFrequency(event.target.value)}
+                    placeholder="3"
+                  />
+                </Field>
                 <Field className="justify-end">
                   <FieldLabel className="sr-only">Pull data</FieldLabel>
                   <Button onClick={pullReport} disabled={!accountId || loading === "report"} className="w-full">
@@ -519,7 +550,19 @@ export function DashboardShell() {
                 ))}
               </section>
 
-              <PerformanceCharts report={report} />
+              <DecisionPanel
+                report={report}
+                targetCost={Number(targetCost || 0)}
+                targetRoas={Number(targetRoas || 0)}
+                maxFrequency={Number(maxFrequency || 0)}
+              />
+
+              <PerformanceCharts
+                report={report}
+                targetCost={Number(targetCost || 0)}
+                targetRoas={Number(targetRoas || 0)}
+                maxFrequency={Number(maxFrequency || 0)}
+              />
 
               {previousReport ? <ComparisonPanel current={report} previous={previousReport} mode={compareMode} /> : null}
 
@@ -548,13 +591,34 @@ export function DashboardShell() {
                         <TabsTrigger value="daily">Daily</TabsTrigger>
                       </TabsList>
                       <TabsContent value="campaigns" className="mt-3">
-                        <PerformanceTable rows={report.campaignRows} currency={report.account.currency || "VND"} />
+                        <PerformanceTable
+                          rows={report.campaignRows}
+                          currency={report.account.currency || "VND"}
+                          pack={report.selectedPack}
+                          targetCost={Number(targetCost || 0)}
+                          targetRoas={Number(targetRoas || 0)}
+                          maxFrequency={Number(maxFrequency || 0)}
+                        />
                       </TabsContent>
                       <TabsContent value="adsets" className="mt-3">
-                        <PerformanceTable rows={report.adsetRows} currency={report.account.currency || "VND"} />
+                        <PerformanceTable
+                          rows={report.adsetRows}
+                          currency={report.account.currency || "VND"}
+                          pack={report.selectedPack}
+                          targetCost={Number(targetCost || 0)}
+                          targetRoas={Number(targetRoas || 0)}
+                          maxFrequency={Number(maxFrequency || 0)}
+                        />
                       </TabsContent>
                       <TabsContent value="ads" className="mt-3">
-                        <PerformanceTable rows={report.adRows} currency={report.account.currency || "VND"} />
+                        <PerformanceTable
+                          rows={report.adRows}
+                          currency={report.account.currency || "VND"}
+                          pack={report.selectedPack}
+                          targetCost={Number(targetCost || 0)}
+                          targetRoas={Number(targetRoas || 0)}
+                          maxFrequency={Number(maxFrequency || 0)}
+                        />
                       </TabsContent>
                       <TabsContent value="daily" className="mt-3">
                         <PerformanceTable rows={report.dailyRows} currency={report.account.currency || "VND"} daily />
@@ -1060,6 +1124,108 @@ function formatSignedPct(value: number | null) {
   return `${sign}${value.toLocaleString("vi-VN", { maximumFractionDigits: 1 })}%`;
 }
 
+function DecisionPanel({
+  report,
+  targetCost,
+  targetRoas,
+  maxFrequency,
+}: {
+  report: DashboardReport;
+  targetCost: number;
+  targetRoas: number;
+  maxFrequency: number;
+}) {
+  const currency = report.account.currency || "VND";
+  const spec = getPackChartSpec(report.selectedPack);
+  const action = rowDecision(report.totals, report.selectedPack, targetCost, targetRoas, maxFrequency);
+  const evidence = packEvidence(report);
+  const topAdset = [...report.adsetRows].sort((a, b) => sortByDrilldown(a, b, spec.drilldownKey, spec.higherIsBetter))[0];
+  const activeAdsets = new Set(report.adsetRows.map((row) => row.adsetId || row.id)).size;
+  const activeAds = new Set(report.adRows.map((row) => row.adId || row.id)).size;
+  const avgAdsPerAdset = activeAdsets ? activeAds / activeAdsets : 0;
+  const topSpend = Math.max(0, ...report.adsetRows.map((row) => row.spend));
+  const spendConcentration = report.totals.spend ? (topSpend / report.totals.spend) * 100 : 0;
+  const targetSummary = targetCost
+    ? `${formatMetric(targetCost, "currency", currency)} target cost`
+    : targetRoas
+      ? `${formatMetric(targetRoas, "ratio", currency)} target ROAS`
+      : "No target set";
+
+  return (
+    <section className="grid gap-4 xl:grid-cols-[1fr_1fr]">
+      <Card>
+        <CardHeader>
+          <CardTitle>Decision read</CardTitle>
+          <CardDescription>
+            Pack: {report.selectedPack}. {report.packReason}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-3 md:grid-cols-2">
+          <DecisionTile label="Action" value={action.label} detail={action.reason} intent={action.intent} />
+          <DecisionTile label="Target" value={targetSummary} detail="Targets unlock 3x kill and scale checks." />
+          <DecisionTile
+            label="Pack evidence"
+            value={`${evidence.confidence} confidence`}
+            detail={evidence.reason}
+            intent={evidence.confidence === "low" ? "warning" : "neutral"}
+          />
+          <DecisionTile
+            label="Best drilldown"
+            value={topAdset ? topAdset.name : "No ad set"}
+            detail={topAdset ? `${metricLabel(spec.drilldownKey)} ${formatChartValue(metricValue(topAdset, spec.drilldownKey), spec.drilldownFormat, currency)}` : "No row returned."}
+          />
+          <DecisionTile
+            label="Why charts matter"
+            value={spec.operatorQuestion}
+            detail="Trend -> efficiency -> fatigue -> drilldown."
+          />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Structure health</CardTitle>
+          <CardDescription>Ads-skill structure checks before AI explains anything.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-3 md:grid-cols-2">
+          <DecisionTile label="Campaigns" value={String(report.campaignRows.length)} detail="Meta prefers fewer campaigns per goal." intent={report.campaignRows.length > 5 ? "danger" : report.campaignRows.length > 3 ? "warning" : "neutral"} />
+          <DecisionTile label="Ads / ad set" value={avgAdsPerAdset.toFixed(1)} detail="Creative diversity proxy. Aim for 5+ standard, 10+ ASC." intent={avgAdsPerAdset < 3 ? "danger" : avgAdsPerAdset < 5 ? "warning" : "neutral"} />
+          <DecisionTile label="Spend concentration" value={formatMetric(spendConcentration, "percent", currency)} detail="Top ad set spend share." intent={spendConcentration > 70 ? "warning" : "neutral"} />
+          <DecisionTile label="Frequency cap" value={maxFrequency ? formatMetric(maxFrequency, "ratio", currency) : "3x"} detail="Prospecting fatigue guardrail." />
+        </CardContent>
+      </Card>
+    </section>
+  );
+}
+
+function DecisionTile({
+  label,
+  value,
+  detail,
+  intent = "neutral",
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  intent?: "neutral" | "warning" | "danger" | "good";
+}) {
+  const intentClass =
+    intent === "danger"
+      ? "border-destructive/40 bg-destructive/5"
+      : intent === "warning"
+        ? "border-primary/30 bg-primary/5"
+        : intent === "good"
+          ? "border-emerald-500/30 bg-emerald-500/5"
+          : "";
+  return (
+    <div className={`rounded-lg border p-3 ${intentClass}`}>
+      <div className="text-xs font-medium text-muted-foreground">{label}</div>
+      <div className="mt-1 line-clamp-1 text-base font-semibold">{value}</div>
+      <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{detail}</p>
+    </div>
+  );
+}
+
 const performanceChartConfig = {
   spend: { label: "Spend", color: "var(--chart-1)" },
   messages: { label: "Messages", color: "var(--chart-2)" },
@@ -1082,7 +1248,17 @@ const performanceChartConfig = {
   result: { label: "Result metric", color: "var(--chart-2)" },
 } satisfies ChartConfig;
 
-function PerformanceCharts({ report }: { report: DashboardReport }) {
+function PerformanceCharts({
+  report,
+  targetCost,
+  targetRoas,
+  maxFrequency,
+}: {
+  report: DashboardReport;
+  targetCost: number;
+  targetRoas: number;
+  maxFrequency: number;
+}) {
   const currency = report.account.currency || "VND";
   const spec = getPackChartSpec(report.selectedPack);
   const dailyData = report.dailyRows.map((row) => ({
@@ -1178,6 +1354,12 @@ function PerformanceCharts({ report }: { report: DashboardReport }) {
                     />
                   }
                 />
+                {targetCost && spec.efficiencyKeys.some((key) => key !== "roas") ? (
+                  <ReferenceLine y={targetCost} stroke="var(--destructive)" strokeDasharray="4 4" />
+                ) : null}
+                {targetRoas && spec.efficiencyKeys.includes("roas") ? (
+                  <ReferenceLine y={targetRoas} stroke="var(--destructive)" strokeDasharray="4 4" />
+                ) : null}
                 {spec.efficiencyKeys.map((key) => (
                   <Line key={key} type="monotone" dataKey={key} stroke={`var(--color-${key})`} strokeWidth={2} dot={false} />
                 ))}
@@ -1201,7 +1383,8 @@ function PerformanceCharts({ report }: { report: DashboardReport }) {
                 <CartesianGrid vertical={false} />
                 <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={8} minTickGap={18} />
                 <YAxis hide />
-                {spec.referenceLine ? <ReferenceLine y={spec.referenceLine.value} stroke="var(--destructive)" strokeDasharray="4 4" /> : null}
+                {spec.referenceLine ? <ReferenceLine y={maxFrequency || spec.referenceLine.value} stroke="var(--destructive)" strokeDasharray="4 4" /> : null}
+                {spec.diagnosticKeys.includes("ctr") ? <ReferenceLine y={1} stroke="var(--chart-2)" strokeDasharray="2 4" /> : null}
                 <ChartTooltip
                   content={
                     <ChartTooltipContent
@@ -1282,6 +1465,7 @@ type ChartKey =
 type ChartFormat = "number" | "currency" | "percent" | "ratio";
 
 type PackChartSpec = {
+  operatorQuestion: string;
   trendTitle: string;
   trendDescription: string;
   trendKeys: ChartKey[];
@@ -1311,6 +1495,7 @@ function getPackChartSpec(pack: KpiPack): PackChartSpec {
   if (pack === "messages") {
     return {
       ...shared,
+      operatorQuestion: "Are message conversations scaling without reply quality or fatigue breaking?",
       trendTitle: "Message trend",
       trendDescription: "Spend against messages and replies, the core signal for DM campaigns.",
       trendKeys: ["messages", "replies"],
@@ -1329,6 +1514,7 @@ function getPackChartSpec(pack: KpiPack): PackChartSpec {
   if (pack === "sales_roas") {
     return {
       ...shared,
+      operatorQuestion: "Is spend creating purchases at enough ROAS to scale?",
       trendTitle: "Sales trend",
       trendDescription: "Spend against purchases and ROAS. Platform ROAS should still be treated as directional.",
       trendKeys: ["purchases", "roas"],
@@ -1347,6 +1533,7 @@ function getPackChartSpec(pack: KpiPack): PackChartSpec {
   if (pack === "traffic") {
     return {
       ...shared,
+      operatorQuestion: "Are clicks cheap enough without CTR quality collapsing?",
       trendTitle: "Traffic trend",
       trendDescription: "Spend against link clicks and clicks. Useful for spotting cheap but low-intent delivery.",
       trendKeys: ["linkClicks", "clicks"],
@@ -1364,6 +1551,7 @@ function getPackChartSpec(pack: KpiPack): PackChartSpec {
 
   if (pack === "awareness") {
     return {
+      operatorQuestion: "Is reach expanding before CPM and frequency show saturation?",
       trendTitle: "Reach trend",
       trendDescription: "Spend against reach and impressions. Awareness needs delivery scale plus controlled frequency.",
       trendKeys: ["reach", "impressions"],
@@ -1385,6 +1573,7 @@ function getPackChartSpec(pack: KpiPack): PackChartSpec {
 
   return {
     ...shared,
+    operatorQuestion: "Are leads coming in at a cost worth scaling?",
     trendTitle: "Lead trend",
     trendDescription: "Spend against leads and messages. This keeps both direct lead and DM-led funnels visible.",
     trendKeys: ["leads", "messages"],
@@ -1441,7 +1630,23 @@ function truncateLabel(value: string) {
   return value.length > 22 ? `${value.slice(0, 19)}...` : value;
 }
 
-function PerformanceTable({ rows, currency, daily = false }: { rows: NormalizedRow[]; currency: string; daily?: boolean }) {
+function PerformanceTable({
+  rows,
+  currency,
+  daily = false,
+  pack,
+  targetCost = 0,
+  targetRoas = 0,
+  maxFrequency = 0,
+}: {
+  rows: NormalizedRow[];
+  currency: string;
+  daily?: boolean;
+  pack?: KpiPack;
+  targetCost?: number;
+  targetRoas?: number;
+  maxFrequency?: number;
+}) {
   if (!rows.length) {
     return (
       <Empty className="border">
@@ -1464,24 +1669,98 @@ function PerformanceTable({ rows, currency, daily = false }: { rows: NormalizedR
           <TableHead className="text-right">Leads</TableHead>
           <TableHead className="text-right">Cost/msg</TableHead>
           <TableHead className="text-right">CPL</TableHead>
+          {pack ? <TableHead>Action</TableHead> : null}
         </TableRow>
       </TableHeader>
       <TableBody>
-        {rows.map((row) => (
-          <TableRow key={`${row.level}-${row.id}-${row.date || ""}`}>
-            <TableCell className="max-w-72 truncate font-medium">{daily ? row.date : row.name}</TableCell>
-            <TableCell className="text-right tabular-nums">{formatMetric(row.spend, "currency", currency)}</TableCell>
-            <TableCell className="text-right tabular-nums">{formatMetric(row.impressions, "number")}</TableCell>
-            <TableCell className="text-right tabular-nums">{formatMetric(row.ctr, "percent")}</TableCell>
-            <TableCell className="text-right tabular-nums">{formatMetric(row.messages, "number")}</TableCell>
-            <TableCell className="text-right tabular-nums">{formatMetric(row.leads, "number")}</TableCell>
-            <TableCell className="text-right tabular-nums">{formatMetric(row.costPerMessage, "currency", currency)}</TableCell>
-            <TableCell className="text-right tabular-nums">{formatMetric(row.cpl, "currency", currency)}</TableCell>
-          </TableRow>
-        ))}
+        {rows.map((row) => {
+          const action = pack ? rowDecision(row, pack, targetCost, targetRoas, maxFrequency) : null;
+          return (
+            <TableRow key={`${row.level}-${row.id}-${row.date || ""}`}>
+              <TableCell className="max-w-72 truncate font-medium">{daily ? row.date : row.name}</TableCell>
+              <TableCell className="text-right tabular-nums">{formatMetric(row.spend, "currency", currency)}</TableCell>
+              <TableCell className="text-right tabular-nums">{formatMetric(row.impressions, "number")}</TableCell>
+              <TableCell className="text-right tabular-nums">{formatMetric(row.ctr, "percent")}</TableCell>
+              <TableCell className="text-right tabular-nums">{formatMetric(row.messages, "number")}</TableCell>
+              <TableCell className="text-right tabular-nums">{formatMetric(row.leads, "number")}</TableCell>
+              <TableCell className="text-right tabular-nums">{formatMetric(row.costPerMessage, "currency", currency)}</TableCell>
+              <TableCell className="text-right tabular-nums">{formatMetric(row.cpl, "currency", currency)}</TableCell>
+              {action ? (
+                <TableCell>
+                  <Badge variant={action.intent === "danger" ? "destructive" : action.intent === "good" ? "secondary" : "outline"}>
+                    {action.label}
+                  </Badge>
+                </TableCell>
+              ) : null}
+            </TableRow>
+          );
+        })}
       </TableBody>
     </Table>
   );
+}
+
+function rowDecision(row: NormalizedRow, pack: KpiPack, targetCost: number, targetRoas: number, maxFrequency: number) {
+  const spec = getPackChartSpec(pack);
+  const result = primaryResult(row, pack);
+  const cost = metricValue(row, spec.drilldownKey);
+  const freqLimit = maxFrequency || (pack === "awareness" ? 4 : 3);
+  if (row.spend > 0 && result === 0 && targetCost && row.spend >= targetCost * 3 && pack !== "awareness") {
+    return { label: "Pause candidate", reason: "Spend passed 3x target with zero result.", intent: "danger" as const };
+  }
+  if (row.frequency >= freqLimit && row.ctr < 1) {
+    return { label: "Fix creative", reason: `Frequency >= ${freqLimit} and CTR below 1%.`, intent: "danger" as const };
+  }
+  if (row.ctr < 0.5 && row.impressions > 1000) {
+    return { label: "Fix creative", reason: "CTR below Meta fail threshold.", intent: "warning" as const };
+  }
+  if (pack === "sales_roas" && targetRoas && row.roas >= targetRoas && row.frequency < freqLimit) {
+    return { label: "Scale", reason: "ROAS clears target and frequency is controlled.", intent: "good" as const };
+  }
+  if (pack === "sales_roas" && targetCost && row.purchases > 0 && row.cpaPurchase <= targetCost * 0.9 && row.frequency < freqLimit) {
+    return { label: "Scale", reason: "Purchase CPA beats target by 10%+.", intent: "good" as const };
+  }
+  if (targetCost && result > 0 && cost > 0 && cost <= targetCost * 0.9 && row.frequency < freqLimit) {
+    return { label: "Scale", reason: "Cost/result beats target by 10%+.", intent: "good" as const };
+  }
+  if ((!targetCost && pack !== "sales_roas") || (pack === "sales_roas" && !targetCost && !targetRoas)) {
+    return { label: "Need target", reason: "Set target cost or ROAS to unlock scale/kill rules.", intent: "warning" as const };
+  }
+  return { label: "Watch", reason: "No hard scale or kill signal.", intent: "neutral" as const };
+}
+
+function primaryResult(row: NormalizedRow, pack: KpiPack) {
+  if (pack === "messages") return row.messages;
+  if (pack === "lead_gen") return row.leads;
+  if (pack === "sales_roas") return row.purchases;
+  if (pack === "traffic") return row.linkClicks;
+  return row.reach;
+}
+
+function packEvidence(report: DashboardReport) {
+  const totals = report.totals;
+  const text = report.selectedCampaigns.map((campaign) => `${campaign.objective || ""} ${campaign.name}`).join(" ").toLowerCase();
+  const evidence = [
+    { label: "name/objective", hit: packTextMatch(report.selectedPack, text) },
+    { label: "messages", hit: report.selectedPack === "messages" && totals.messages > 0 },
+    { label: "leads", hit: report.selectedPack === "lead_gen" && totals.leads > 0 },
+    { label: "purchases/ROAS", hit: report.selectedPack === "sales_roas" && (totals.purchases > 0 || totals.roas > 0) },
+    { label: "clicks", hit: report.selectedPack === "traffic" && totals.linkClicks > 0 },
+    { label: "delivery", hit: report.selectedPack === "awareness" && totals.reach > 0 },
+  ].filter((item) => item.hit);
+  const confidence = evidence.length >= 2 ? "high" : evidence.length === 1 ? "medium" : "low";
+  return {
+    confidence,
+    reason: evidence.length ? evidence.map((item) => item.label).join(", ") : "No strong objective/action evidence. Override if needed.",
+  };
+}
+
+function packTextMatch(pack: KpiPack, text: string) {
+  if (pack === "messages") return /message|mess|inbox|chat/.test(text);
+  if (pack === "lead_gen") return /lead|form|demo|booking/.test(text);
+  if (pack === "sales_roas") return /sale|purchase|conversion|shop|catalog|roas/.test(text);
+  if (pack === "traffic") return /traffic|click|landing/.test(text);
+  return /awareness|reach|impression|brand/.test(text);
 }
 
 function BarList({ rows, metric, currency }: { rows: NormalizedRow[]; metric: "spend" | "leads"; currency: string }) {
