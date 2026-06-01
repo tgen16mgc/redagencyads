@@ -1,0 +1,391 @@
+import type { CompareMode, DashboardReport, InsightAction, InsightRow, KpiCard, KpiPack, MetaAccount, MetaCampaign, NormalizedRow } from "@/lib/types";
+
+const ZERO_ROW: Omit<NormalizedRow, "id" | "level" | "name"> = {
+  spend: 0,
+  impressions: 0,
+  reach: 0,
+  frequency: 0,
+  clicks: 0,
+  linkClicks: 0,
+  ctr: 0,
+  cpc: 0,
+  cpm: 0,
+  messages: 0,
+  replies: 0,
+  leads: 0,
+  purchases: 0,
+  addToCart: 0,
+  initiateCheckout: 0,
+  costPerMessage: 0,
+  costPerReply: 0,
+  cpl: 0,
+  cpaPurchase: 0,
+  roas: 0,
+  replyRate: 0,
+  leadRate: 0,
+};
+
+const actionValue = (items: InsightAction[] | undefined, types: string[]) =>
+  Number(items?.find((item) => types.includes(item.action_type))?.value || 0);
+
+const costValue = (items: InsightAction[] | undefined, types: string[]) =>
+  Number(items?.find((item) => types.includes(item.action_type))?.value || 0);
+
+const safeDivide = (top: number, bottom: number) => (bottom ? top / bottom : 0);
+
+function roasValue(row: InsightRow) {
+  const purchase = Number(row.purchase_roas?.[0]?.value || 0);
+  const website = Number(row.website_purchase_roas?.[0]?.value || 0);
+  return purchase || website || 0;
+}
+
+export function normalizeRows(rows: InsightRow[], level: NormalizedRow["level"]): NormalizedRow[] {
+  return rows.map((row, index) => {
+    const spend = Number(row.spend || 0);
+    const messages = actionValue(row.actions, [
+      "onsite_conversion.total_messaging_connection",
+      "onsite_conversion.messaging_conversation_started_7d",
+      "messaging_conversation_started_7d",
+    ]);
+    const replies = actionValue(row.actions, [
+      "onsite_conversion.messaging_conversation_replied_7d",
+      "onsite_conversion.messaging_first_reply",
+    ]);
+    const leads = actionValue(row.actions, ["lead", "onsite_conversion.lead_grouped"]);
+    const purchases = actionValue(row.actions, ["purchase", "omni_purchase"]);
+    const normalized: NormalizedRow = {
+      ...ZERO_ROW,
+      id: row.ad_id || row.adset_id || row.campaign_id || `${level}-${index}`,
+      level,
+      name: row.ad_name || row.adset_name || row.campaign_name || row.publisher_platform || row.date_start || "Account total",
+      campaignId: row.campaign_id,
+      campaignName: row.campaign_name,
+      adsetId: row.adset_id,
+      adsetName: row.adset_name,
+      adId: row.ad_id,
+      adName: row.ad_name,
+      date: row.date_start,
+      platform: row.publisher_platform,
+      placement: row.platform_position,
+      age: row.age,
+      gender: row.gender,
+      region: row.region,
+      spend,
+      impressions: Number(row.impressions || 0),
+      reach: Number(row.reach || 0),
+      frequency: Number(row.frequency || 0),
+      clicks: Number(row.clicks || 0),
+      linkClicks: Number(row.inline_link_clicks || actionValue(row.actions, ["link_click"])),
+      ctr: Number(row.ctr || 0),
+      cpc: Number(row.cpc || 0),
+      cpm: Number(row.cpm || 0),
+      messages,
+      replies,
+      leads,
+      purchases,
+      addToCart: actionValue(row.actions, ["add_to_cart", "omni_add_to_cart"]),
+      initiateCheckout: actionValue(row.actions, ["initiate_checkout", "omni_initiated_checkout"]),
+      costPerMessage:
+        costValue(row.cost_per_action_type, ["onsite_conversion.total_messaging_connection"]) ||
+        safeDivide(spend, messages),
+      costPerReply:
+        costValue(row.cost_per_action_type, ["onsite_conversion.messaging_conversation_replied_7d"]) ||
+        safeDivide(spend, replies),
+      cpl: costValue(row.cost_per_action_type, ["lead", "onsite_conversion.lead_grouped"]) || safeDivide(spend, leads),
+      cpaPurchase: costValue(row.cost_per_action_type, ["purchase", "omni_purchase"]) || safeDivide(spend, purchases),
+      roas: roasValue(row),
+      replyRate: safeDivide(replies, messages) * 100,
+      leadRate: safeDivide(leads, messages) * 100,
+    };
+    return normalized;
+  });
+}
+
+export function sumRows(rows: NormalizedRow[], name: string): NormalizedRow {
+  const total = rows.reduce<NormalizedRow>(
+    (sum, row) => ({
+      ...sum,
+      spend: sum.spend + row.spend,
+      impressions: sum.impressions + row.impressions,
+      reach: sum.reach + row.reach,
+      clicks: sum.clicks + row.clicks,
+      linkClicks: sum.linkClicks + row.linkClicks,
+      messages: sum.messages + row.messages,
+      replies: sum.replies + row.replies,
+      leads: sum.leads + row.leads,
+      purchases: sum.purchases + row.purchases,
+      addToCart: sum.addToCart + row.addToCart,
+      initiateCheckout: sum.initiateCheckout + row.initiateCheckout,
+      roas: sum.roas + row.roas,
+    }),
+    { ...ZERO_ROW, id: "total", level: "account", name },
+  );
+  total.ctr = safeDivide(total.clicks, total.impressions) * 100;
+  total.cpc = safeDivide(total.spend, total.clicks);
+  total.cpm = safeDivide(total.spend, total.impressions) * 1000;
+  total.frequency = safeDivide(rows.reduce((sum, row) => sum + row.frequency, 0), rows.length);
+  total.costPerMessage = safeDivide(total.spend, total.messages);
+  total.costPerReply = safeDivide(total.spend, total.replies);
+  total.cpl = safeDivide(total.spend, total.leads);
+  total.cpaPurchase = safeDivide(total.spend, total.purchases);
+  total.replyRate = safeDivide(total.replies, total.messages) * 100;
+  total.leadRate = safeDivide(total.leads, total.messages) * 100;
+  total.roas = safeDivide(total.roas, rows.filter((row) => row.roas > 0).length);
+  return total;
+}
+
+export function detectKpiPack(campaigns: MetaCampaign[], campaignRows: NormalizedRow[], adsetRows: NormalizedRow[]) {
+  const text = campaigns.map((campaign) => `${campaign.objective || ""} ${campaign.name}`).join(" ").toLowerCase();
+  const totals = sumRows([...campaignRows, ...adsetRows], "detection");
+  if (/message|mess|inbox|chat/.test(text) || totals.messages > totals.leads * 2) {
+    return { pack: "messages" as KpiPack, reason: "Campaign name/objective/actions indicate message or inbox optimization." };
+  }
+  if (/lead|form|demo|booking/.test(text) || totals.leads > 0) {
+    return { pack: "lead_gen" as KpiPack, reason: "Lead actions detected or campaign naming indicates lead generation." };
+  }
+  if (/sale|purchase|conversion|shop|catalog|roas/.test(text) || totals.purchases > 0 || totals.roas > 0) {
+    return { pack: "sales_roas" as KpiPack, reason: "Sales objective, purchase actions, or ROAS data detected." };
+  }
+  if (/traffic|click|landing/.test(text) || totals.linkClicks > 0) {
+    return { pack: "traffic" as KpiPack, reason: "Traffic/click signal is strongest available optimization signal." };
+  }
+  return { pack: "awareness" as KpiPack, reason: "No lower-funnel conversion signal found; defaulting to delivery/awareness metrics." };
+}
+
+export function getKpiCards(pack: KpiPack): KpiCard[] {
+  const common: KpiCard[] = [
+    { key: "spend", label: "Spend", format: "currency" },
+    { key: "impressions", label: "Impressions", format: "number" },
+    { key: "reach", label: "Reach", format: "number" },
+  ];
+  const packs: Record<KpiPack, KpiCard[]> = {
+    messages: [
+      ...common,
+      { key: "messages", label: "Messages", format: "number", intent: "good" },
+      { key: "costPerMessage", label: "Cost/message", format: "currency" },
+      { key: "replyRate", label: "Reply rate", format: "percent" },
+    ],
+    lead_gen: [
+      ...common,
+      { key: "leads", label: "Leads", format: "number", intent: "good" },
+      { key: "cpl", label: "CPL", format: "currency" },
+      { key: "leadRate", label: "Lead/message", format: "percent" },
+    ],
+    sales_roas: [
+      ...common,
+      { key: "purchases", label: "Purchases", format: "number", intent: "good" },
+      { key: "cpaPurchase", label: "CPA", format: "currency" },
+      { key: "roas", label: "ROAS", format: "ratio" },
+    ],
+    traffic: [
+      ...common,
+      { key: "linkClicks", label: "Link clicks", format: "number", intent: "good" },
+      { key: "ctr", label: "CTR", format: "percent" },
+      { key: "cpc", label: "CPC", format: "currency" },
+    ],
+    awareness: [
+      ...common,
+      { key: "frequency", label: "Frequency", format: "number" },
+      { key: "cpm", label: "CPM", format: "currency" },
+      { key: "ctr", label: "CTR", format: "percent" },
+    ],
+  };
+  return packs[pack];
+}
+
+export function scoreHealth(args: {
+  totals: NormalizedRow;
+  campaignRows: NormalizedRow[];
+  adsetRows: NormalizedRow[];
+  adRows: NormalizedRow[];
+}) {
+  type CheckStatus = "pass" | "warning" | "fail";
+  const checks = [
+    {
+      id: "M-CR4",
+      label: "CTR benchmark",
+      status: (args.totals.ctr >= 1 ? "pass" : args.totals.ctr >= 0.5 ? "warning" : "fail") as CheckStatus,
+      detail: `CTR ${args.totals.ctr.toFixed(2)}%. Meta benchmark pass >= 1.0%.`,
+    },
+    {
+      id: "M-CR2",
+      label: "Prospecting frequency",
+      status: (args.totals.frequency < 3 ? "pass" : args.totals.frequency <= 5 ? "warning" : "fail") as CheckStatus,
+      detail: `Average frequency ${args.totals.frequency.toFixed(2)}.`,
+    },
+    {
+      id: "M25",
+      label: "Creative/ad volume proxy",
+      status: (args.adRows.length >= 10 ? "pass" : args.adRows.length >= 3 ? "warning" : "fail") as CheckStatus,
+      detail: `${args.adRows.length} ads found in selected scope. Target: 10+ diverse creatives where budget supports it.`,
+    },
+    {
+      id: "M11",
+      label: "Campaign consolidation",
+      status: (args.campaignRows.length <= 3 ? "pass" : args.campaignRows.length <= 5 ? "warning" : "fail") as CheckStatus,
+      detail: `${args.campaignRows.length} selected campaigns. Meta prefers fewer campaigns per goal.`,
+    },
+  ];
+  const points = checks.reduce((sum, check) => sum + (check.status === "pass" ? 25 : check.status === "warning" ? 14 : 4), 0);
+  const grade = points >= 90 ? "A" : points >= 75 ? "B" : points >= 60 ? "C" : points >= 40 ? "D" : "F";
+  return { score: points, grade, checks };
+}
+
+export function formatMetric(value: number, format: KpiCard["format"], currency = "VND") {
+  if (format === "currency") {
+    return new Intl.NumberFormat("vi-VN", {
+      style: "currency",
+      currency,
+      maximumFractionDigits: 0,
+    }).format(value || 0);
+  }
+  if (format === "percent") return `${(value || 0).toLocaleString("vi-VN", { maximumFractionDigits: 2 })}%`;
+  if (format === "ratio") return `${(value || 0).toLocaleString("vi-VN", { maximumFractionDigits: 2 })}x`;
+  return (value || 0).toLocaleString("vi-VN", { maximumFractionDigits: 0 });
+}
+
+export function buildPrompt(args: {
+  account: MetaAccount;
+  campaigns: MetaCampaign[];
+  selectedPack: KpiPack;
+  totals: NormalizedRow;
+  campaignRows: NormalizedRow[];
+  adsetRows: NormalizedRow[];
+  adRows: NormalizedRow[];
+  dailyRows: NormalizedRow[];
+  platformRows: NormalizedRow[];
+  ageGenderRows: NormalizedRow[];
+  health: DashboardReport["health"];
+  dateRange: { since: string; until: string };
+}) {
+  const payload = {
+    account: args.account.name,
+    date_range: args.dateRange,
+    selected_pack: args.selectedPack,
+    campaigns: args.campaigns.map((campaign) => ({
+      id: campaign.id,
+      name: campaign.name,
+      objective: campaign.objective,
+      status: campaign.effective_status || campaign.status,
+    })),
+    totals: args.totals,
+    campaign_rows: args.campaignRows.slice(0, 20),
+    adset_rows: args.adsetRows.slice(0, 30),
+    ad_rows: args.adRows.slice(0, 30),
+    daily_rows: args.dailyRows.slice(-31),
+    platform_rows: args.platformRows,
+    age_gender_rows: args.ageGenderRows,
+    health: args.health,
+  };
+  return `You are a senior Meta Ads strategist. Analyze this campaign data with a long-term system mindset.
+
+Rules:
+- Return strict JSON only.
+- Do not invent conversions or revenue.
+- Separate data-backed findings from assumptions.
+- For budget moves, respect Meta learning stability: avoid >20% budget changes at once.
+- Flag tracking gaps when Pixel/CAPI/CRM/MER data is absent.
+- For 2026 Meta, consider creative diversity, frequency fatigue, campaign consolidation, and objective/KPI fit.
+
+Output schema:
+{
+  "verdict": "one concise paragraph",
+  "risks": ["..."],
+  "winners": ["..."],
+  "losers": ["..."],
+  "budget_moves": ["..."],
+  "tests": ["..."],
+  "confidence": "low|medium|high",
+  "assumptions": ["..."]
+}
+
+Input JSON:
+${JSON.stringify(payload, null, 2)}`;
+}
+
+export function buildInsightPrompt(args: {
+  report: DashboardReport;
+  previousReport?: DashboardReport | null;
+  compareMode: CompareMode;
+}) {
+  const comparison = args.previousReport
+    ? {
+        mode: args.compareMode,
+        current_range: args.report.dateRange,
+        previous_range: args.previousReport.dateRange,
+        deltas: comparisonDeltas(args.report, args.previousReport),
+      }
+    : null;
+  const payload = {
+    account: args.report.account.name,
+    selected_pack: args.report.selectedPack,
+    date_range: args.report.dateRange,
+    campaigns: args.report.selectedCampaigns.map((campaign) => ({
+      name: campaign.name,
+      objective: campaign.objective,
+      status: campaign.effective_status || campaign.status,
+    })),
+    totals: args.report.totals,
+    top_campaigns: args.report.campaignRows.slice(0, 8),
+    top_adsets: args.report.adsetRows.slice(0, 10),
+    health: args.report.health,
+    comparison,
+  };
+  return `You are a senior Meta Ads analyst. Return an insight table for a Red Agency ads dashboard.
+
+Rules:
+- Return strict JSON only.
+- Use current data only. Do not invent revenue, CRM, CAPI, or MER data.
+- If comparison exists, focus on what changed, why it matters, and next action.
+- If no comparison exists, focus on current health, waste, winners, and tests.
+- Use concise table-ready language.
+
+Output schema:
+{
+  "summary": "one short dashboard summary",
+  "rows": [
+    {
+      "area": "Budget|Creative|Audience|Tracking|Campaign structure|Efficiency",
+      "insight": "short finding",
+      "evidence": "metric-backed evidence",
+      "action": "specific next action",
+      "priority": "low|medium|high",
+      "confidence": "low|medium|high"
+    }
+  ],
+  "confidence": "low|medium|high",
+  "assumptions": ["..."]
+}
+
+Input JSON:
+${JSON.stringify(payload, null, 2)}`;
+}
+
+export function comparisonDeltas(current: DashboardReport, previous: DashboardReport) {
+  const keys: Array<keyof NormalizedRow> = [
+    "spend",
+    "impressions",
+    "reach",
+    "messages",
+    "leads",
+    "purchases",
+    "linkClicks",
+    "ctr",
+    "frequency",
+    "costPerMessage",
+    "cpl",
+    "cpaPurchase",
+    "roas",
+  ];
+  return keys.map((key) => {
+    const currentValue = Number(current.totals[key] || 0);
+    const previousValue = Number(previous.totals[key] || 0);
+    return {
+      key,
+      current: currentValue,
+      previous: previousValue,
+      change: currentValue - previousValue,
+      change_pct: previousValue ? ((currentValue - previousValue) / previousValue) * 100 : null,
+    };
+  });
+}

@@ -1,0 +1,155 @@
+export type KpiPack = "lead_gen" | "messages" | "sales_roas" | "traffic" | "awareness";
+export type CompareMode = "off" | "wow" | "mom" | "yoy";
+
+export type MetaAccount = {
+  id: string;
+  name: string;
+  account_id?: string;
+  currency?: string;
+  timezone_name?: string;
+};
+
+export type MetaCampaign = {
+  id: string;
+  name: string;
+  objective?: string;
+  status?: string;
+  effective_status?: string;
+  daily_budget?: string;
+  lifetime_budget?: string;
+};
+
+export type InsightAction = {
+  action_type: string;
+  value: string;
+};
+
+export type InsightRow = {
+  account_name?: string;
+  campaign_id?: string;
+  campaign_name?: string;
+  adset_id?: string;
+  adset_name?: string;
+  ad_id?: string;
+  ad_name?: string;
+  publisher_platform?: string;
+  platform_position?: string;
+  age?: string;
+  gender?: string;
+  region?: string;
+  date_start?: string;
+  date_stop?: string;
+  impressions?: string;
+  reach?: string;
+  frequency?: string;
+  clicks?: string;
+  inline_link_clicks?: string;
+  ctr?: string;
+  cpc?: string;
+  cpm?: string;
+  spend?: string;
+  actions?: InsightAction[];
+  cost_per_action_type?: InsightAction[];
+  purchase_roas?: InsightAction[];
+  website_purchase_roas?: InsightAction[];
+};
+
+export type NormalizedRow = {
+  id: string;
+  level: "account" | "campaign" | "adset" | "ad" | "breakdown" | "daily";
+  name: string;
+  campaignId?: string;
+  campaignName?: string;
+  adsetId?: string;
+  adsetName?: string;
+  adId?: string;
+  adName?: string;
+  date?: string;
+  platform?: string;
+  placement?: string;
+  age?: string;
+  gender?: string;
+  region?: string;
+  spend: number;
+  impressions: number;
+  reach: number;
+  frequency: number;
+  clicks: number;
+  linkClicks: number;
+  ctr: number;
+  cpc: number;
+  cpm: number;
+  messages: number;
+  replies: number;
+  leads: number;
+  purchases: number;
+  addToCart: number;
+  initiateCheckout: number;
+  costPerMessage: number;
+  costPerReply: number;
+  cpl: number;
+  cpaPurchase: number;
+  roas: number;
+  replyRate: number;
+  leadRate: number;
+};
+
+export type KpiCard = {
+  key: keyof NormalizedRow | "healthScore";
+  label: string;
+  format: "number" | "currency" | "percent" | "ratio";
+  intent?: "neutral" | "good" | "warning" | "danger";
+};
+
+export type DashboardReport = {
+  account: MetaAccount;
+  selectedCampaigns: MetaCampaign[];
+  dateRange: { since: string; until: string };
+  detectedPack: KpiPack;
+  selectedPack: KpiPack;
+  packReason: string;
+  kpis: KpiCard[];
+  totals: NormalizedRow;
+  campaignRows: NormalizedRow[];
+  adsetRows: NormalizedRow[];
+  adRows: NormalizedRow[];
+  dailyRows: NormalizedRow[];
+  platformRows: NormalizedRow[];
+  ageGenderRows: NormalizedRow[];
+  health: {
+    score: number;
+    grade: string;
+    checks: { id: string; label: string; status: "pass" | "warning" | "fail"; detail: string }[];
+  };
+  prompt: string;
+  pulledAt: string;
+};
+
+export type AiVerdict = {
+  verdict: string;
+  risks: string[];
+  winners: string[];
+  losers: string[];
+  budget_moves: string[];
+  tests: string[];
+  confidence: "low" | "medium" | "high";
+  assumptions: string[];
+  provider: "openai" | "openrouter" | "prompt";
+};
+
+export type AiInsight = {
+  area: string;
+  insight: string;
+  evidence: string;
+  action: string;
+  priority: "low" | "medium" | "high";
+  confidence: "low" | "medium" | "high";
+};
+
+export type AiInsightTable = {
+  summary: string;
+  rows: AiInsight[];
+  confidence: "low" | "medium" | "high";
+  assumptions: string[];
+  provider: "openai" | "openrouter" | "prompt";
+};
