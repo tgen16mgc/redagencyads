@@ -101,7 +101,7 @@ const languageItems = [
 ] as const;
 
 type ReportLanguage = (typeof languageItems)[number]["value"];
-const COMPETITOR_SPY_TIMEOUT_MS = 10 * 60 * 1000;
+const COMPETITOR_SPY_TIMEOUT_MS = 5 * 60 * 1000;
 
 const compareItems: { label: string; value: CompareMode }[] = [
   { label: "No compare", value: "off" },
@@ -1323,8 +1323,8 @@ function CompetitorSpyPanel({
             />
             <FieldDescription>
               {isVietnamese
-                ? "Có ghi chú thật thì confidence cao hơn. Phân tích sâu có thể mất tới 10 phút."
-                : "Real ad notes raise confidence. Deep competitor analysis can take up to 10 minutes."}
+                ? "Có ghi chú thật thì confidence cao hơn. Vercel Hobby cho phép tối đa khoảng 5 phút."
+                : "Real ad notes raise confidence. Vercel Hobby allows roughly 5 minutes max."}
             </FieldDescription>
           </Field>
         </div>

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { generateCompetitorSpy } from "@/lib/ai";
 
 export const runtime = "nodejs";
-export const maxDuration = 600;
+export const maxDuration = 300;
 
 const bodySchema = z.object({
   prompt: z.string().min(100),
