@@ -1,4 +1,4 @@
-import type { CompareMode, DashboardReport, InsightAction, InsightRow, KpiCard, KpiPack, MetaAccount, MetaCampaign, NormalizedRow } from "@/lib/types";
+import type { CompareMode, CompetitorPlatform, DashboardReport, InsightAction, InsightRow, KpiCard, KpiPack, MetaAccount, MetaCampaign, NormalizedRow } from "@/lib/types";
 
 const ZERO_ROW: Omit<NormalizedRow, "id" | "level" | "name"> = {
   spend: 0,
@@ -355,6 +355,82 @@ Output schema:
   ],
   "confidence": "low|medium|high",
   "assumptions": ["..."]
+}
+
+Input JSON:
+${JSON.stringify(payload, null, 2)}`;
+}
+
+export function buildCompetitorSpyPrompt(args: {
+  competitors: string[];
+  market: string;
+  platform: CompetitorPlatform;
+  notes: string;
+  report?: DashboardReport | null;
+}) {
+  const payload = {
+    competitors: args.competitors,
+    market_or_offer: args.market || "Not specified",
+    platform_focus: args.platform,
+    pasted_ad_library_notes: args.notes || "No pasted competitor ad notes provided.",
+    current_account_context: args.report
+      ? {
+          account: args.report.account.name,
+          selected_pack: args.report.selectedPack,
+          date_range: args.report.dateRange,
+          campaigns: args.report.selectedCampaigns.map((campaign) => ({
+            name: campaign.name,
+            objective: campaign.objective,
+            status: campaign.effective_status || campaign.status,
+          })),
+          totals: args.report.totals,
+          top_adsets: args.report.adsetRows.slice(0, 8),
+          health: args.report.health,
+        }
+      : null,
+  };
+  return `You are a senior paid-social competitive intelligence strategist for Red Agency.
+
+Use the competitor ads framework:
+- Identify likely positioning, repeated messaging themes, offers, CTA patterns, creative formats, and platform gaps.
+- If pasted ad-library notes are present, treat them as evidence.
+- If only competitor names are provided, clearly mark findings as hypotheses and do not claim live scraping.
+- Use competitor insights for original test ideas only. Do not copy competitor ads, copy, claims, or visual designs.
+- Convert findings into practical Meta Ads experiments that fit the current account context when provided.
+
+Return strict JSON only.
+
+Output schema:
+{
+  "summary": "short competitive readout",
+  "competitors": [
+    {
+      "name": "competitor name",
+      "likely_positioning": "short positioning",
+      "observed_or_expected_patterns": ["pattern"],
+      "gap": "opportunity gap"
+    }
+  ],
+  "themes": [
+    {
+      "theme": "theme name",
+      "evidence": "what was observed or inferred",
+      "opportunity": "how Red Agency should respond",
+      "confidence": "low|medium|high"
+    }
+  ],
+  "creative_gaps": ["missing format, offer, angle, audience, or proof type"],
+  "test_briefs": [
+    {
+      "angle": "original angle",
+      "hook": "new hook, not copied from competitors",
+      "format": "static|UGC|carousel|reels|lead form|DM script|other",
+      "why": "why this test should matter",
+      "guardrail": "metric or ethical guardrail"
+    }
+  ],
+  "next_actions": ["action"],
+  "assumptions": ["assumption"]
 }
 
 Input JSON:

@@ -1,4 +1,4 @@
-import type { AiInsightTable, AiVerdict } from "@/lib/types";
+import type { AiInsightTable, AiVerdict, CompetitorSpyResult } from "@/lib/types";
 
 const OPENROUTER_FREE_MODELS = [
   "moonshotai/kimi-k2.6:free",
@@ -176,4 +176,74 @@ export async function generateInsights(prompt: string, provider: "auto" | "opena
     return parseInsights(await openRouterCompletion(prompt), "openrouter");
   }
   return insightFallback(prompt);
+}
+
+function competitorFallback(prompt: string): CompetitorSpyResult {
+  return {
+    provider: "prompt",
+    summary: "AI provider key not configured. Copy the competitor prompt and run it manually.",
+    competitors: [],
+    themes: [
+      {
+        theme: "Manual competitor brief required",
+        evidence: `Prompt ready with ${prompt.length} chars.`,
+        opportunity: "Add OPENAI_API_KEY or OPENROUTER_API_KEY, then regenerate competitor spy output.",
+        confidence: "high",
+      },
+    ],
+    creative_gaps: ["Live AI competitor interpretation unavailable in prompt-only mode."],
+    test_briefs: [],
+    next_actions: ["Paste competitor ad-library notes into the panel and regenerate after adding an AI provider key."],
+    assumptions: ["OPENAI_API_KEY or OPENROUTER_API_KEY missing in server environment."],
+  };
+}
+
+function parseCompetitorSpy(text: string, provider: CompetitorSpyResult["provider"]): CompetitorSpyResult {
+  try {
+    return { ...JSON.parse(text), provider } as CompetitorSpyResult;
+  } catch {
+    return {
+      provider,
+      summary: "Model returned non-JSON output.",
+      competitors: [],
+      themes: [
+        {
+          theme: "AI output",
+          evidence: text.slice(0, 220),
+          opportunity: "Retry with shorter competitor notes or use prompt fallback.",
+          confidence: "low",
+        },
+      ],
+      creative_gaps: ["JSON parsing failed."],
+      test_briefs: [],
+      next_actions: ["Retry competitor spy generation."],
+      assumptions: ["Raw model output truncated into theme evidence."],
+    };
+  }
+}
+
+export async function generateCompetitorSpy(prompt: string, provider: "auto" | "openai" | "openrouter" | "prompt") {
+  if (provider === "prompt") return competitorFallback(prompt);
+  if ((provider === "openai" || provider === "auto") && process.env.OPENAI_API_KEY) {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.2,
+        response_format: { type: "json_object" },
+      }),
+    });
+    const json = await response.json();
+    if (!response.ok) throw new Error(json?.error?.message || "OpenAI competitor spy request failed.");
+    return parseCompetitorSpy(json.choices?.[0]?.message?.content || "", "openai");
+  }
+  if ((provider === "openrouter" || provider === "auto") && process.env.OPENROUTER_API_KEY) {
+    return parseCompetitorSpy(await openRouterCompletion(prompt), "openrouter");
+  }
+  return competitorFallback(prompt);
 }

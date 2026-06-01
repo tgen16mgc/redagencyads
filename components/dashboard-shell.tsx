@@ -27,11 +27,12 @@ import {
   KeyRoundIcon,
   LogOutIcon,
   RefreshCcwIcon,
+  SearchIcon,
   ShieldCheckIcon,
   SparklesIcon,
 } from "lucide-react";
-import type { AiInsightTable, AiVerdict, CompareMode, DashboardReport, KpiPack, MetaAccount, MetaCampaign, NormalizedRow } from "@/lib/types";
-import { buildInsightPrompt, comparisonDeltas, formatMetric } from "@/lib/metrics";
+import type { AiInsightTable, AiVerdict, CompareMode, CompetitorPlatform, CompetitorSpyResult, DashboardReport, KpiPack, MetaAccount, MetaCampaign, NormalizedRow } from "@/lib/types";
+import { buildCompetitorSpyPrompt, buildInsightPrompt, comparisonDeltas, formatMetric } from "@/lib/metrics";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -68,6 +69,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 
 const workflowItems = [
   { label: "Connect", icon: KeyRoundIcon },
@@ -105,6 +107,14 @@ const compareItems: { label: string; value: CompareMode }[] = [
   { label: "WoW", value: "wow" },
   { label: "MoM", value: "mom" },
   { label: "YoY", value: "yoy" },
+];
+
+const competitorPlatformItems: { label: string; value: CompetitorPlatform }[] = [
+  { label: "Meta / Instagram", value: "meta" },
+  { label: "Google", value: "google" },
+  { label: "LinkedIn", value: "linkedin" },
+  { label: "TikTok", value: "tiktok" },
+  { label: "Mixed", value: "mixed" },
 ];
 
 function defaultDates() {
@@ -153,7 +163,13 @@ export function DashboardShell() {
   const [previousReport, setPreviousReport] = React.useState<DashboardReport | null>(null);
   const [verdict, setVerdict] = React.useState<AiVerdict | null>(null);
   const [insights, setInsights] = React.useState<AiInsightTable | null>(null);
+  const [competitorNames, setCompetitorNames] = React.useState("");
+  const [competitorMarket, setCompetitorMarket] = React.useState("");
+  const [competitorPlatform, setCompetitorPlatform] = React.useState<CompetitorPlatform>("meta");
+  const [competitorNotes, setCompetitorNotes] = React.useState("");
+  const [competitorResult, setCompetitorResult] = React.useState<CompetitorSpyResult | null>(null);
   const [copiedPrompt, setCopiedPrompt] = React.useState(false);
+  const [copiedCompetitorPrompt, setCopiedCompetitorPrompt] = React.useState(false);
   const [token, setToken] = React.useState("");
   const [error, setError] = React.useState("");
   const [loading, setLoading] = React.useState("");
@@ -231,6 +247,7 @@ export function DashboardShell() {
     setPreviousReport(null);
     setVerdict(null);
     setInsights(null);
+    setCompetitorResult(null);
   }
 
   async function fetchReportForRange(range: { since: string; until: string }) {
@@ -304,6 +321,62 @@ export function DashboardShell() {
     }
   }
 
+  function competitorList() {
+    return competitorNames
+      .split(/[\n,]/)
+      .map((name) => name.trim())
+      .filter(Boolean)
+      .slice(0, 8);
+  }
+
+  function competitorPrompt() {
+    return withReportLanguage(
+      buildCompetitorSpyPrompt({
+        competitors: competitorList(),
+        market: competitorMarket,
+        platform: competitorPlatform,
+        notes: competitorNotes,
+        report,
+      }),
+      language,
+      "competitor",
+    );
+  }
+
+  async function runCompetitorSpy() {
+    const competitors = competitorList();
+    if (!competitors.length) {
+      setError("Add at least one competitor name.");
+      return;
+    }
+    setError("");
+    setLoading("competitor");
+    try {
+      const data = await jsonFetch<{ competitor: CompetitorSpyResult }>("/api/ai/competitor", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ prompt: competitorPrompt(), provider }),
+        timeoutMs: 90000,
+      });
+      setCompetitorResult(data.competitor);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not generate competitor spy report.");
+    } finally {
+      setLoading("");
+    }
+  }
+
+  async function copyCompetitorPrompt() {
+    const competitors = competitorList();
+    if (!competitors.length) {
+      setError("Add at least one competitor name before copying the prompt.");
+      return;
+    }
+    await navigator.clipboard.writeText(competitorPrompt());
+    setCopiedCompetitorPrompt(true);
+    window.setTimeout(() => setCopiedCompetitorPrompt(false), 1500);
+  }
+
   async function copyPrompt() {
     if (!report) return;
     await navigator.clipboard.writeText(report.prompt);
@@ -315,12 +388,14 @@ export function DashboardShell() {
     window.print();
   }
 
-  function withReportLanguage(prompt: string, lang: ReportLanguage, type: "verdict" | "insights") {
+  function withReportLanguage(prompt: string, lang: ReportLanguage, type: "verdict" | "insights" | "competitor") {
     if (lang !== "vi") return prompt;
     const sectionHint =
       type === "verdict"
         ? "Use Vietnamese for all user-facing values. Make the verdict useful for these report sections: \"Phân tích và đánh giá hiệu quả tháng - AI powered\" and \"Đề xuất tối ưu kỳ tiếp theo\"."
-        : "Use Vietnamese for all user-facing values. Keep insight/action text concise for dashboard cards.";
+        : type === "insights"
+          ? "Use Vietnamese for all user-facing values. Keep insight/action text concise for dashboard cards."
+          : "Use Vietnamese for all user-facing values. Keep competitor themes, gaps, and test briefs concise.";
     return `${prompt}\n\nLanguage requirement:\n- ${sectionHint}\n- Keep JSON keys exactly as requested; translate only string values.`;
   }
 
@@ -560,6 +635,23 @@ export function DashboardShell() {
                 hasComparison={Boolean(previousReport)}
                 language={language}
                 onGenerate={runInsights}
+              />
+
+              <CompetitorSpyPanel
+                names={competitorNames}
+                market={competitorMarket}
+                platform={competitorPlatform}
+                notes={competitorNotes}
+                result={competitorResult}
+                loading={loading === "competitor"}
+                language={language}
+                copiedPrompt={copiedCompetitorPrompt}
+                onNamesChange={setCompetitorNames}
+                onMarketChange={setCompetitorMarket}
+                onPlatformChange={setCompetitorPlatform}
+                onNotesChange={setCompetitorNotes}
+                onGenerate={runCompetitorSpy}
+                onCopyPrompt={copyCompetitorPrompt}
               />
 
               <section className="grid gap-4 xl:grid-cols-[1.4fr_0.9fr]">
@@ -1114,6 +1206,231 @@ function InsightPanel({
       </CardContent>
     </Card>
   );
+}
+
+function CompetitorSpyPanel({
+  names,
+  market,
+  platform,
+  notes,
+  result,
+  loading,
+  language,
+  copiedPrompt,
+  onNamesChange,
+  onMarketChange,
+  onPlatformChange,
+  onNotesChange,
+  onGenerate,
+  onCopyPrompt,
+}: {
+  names: string;
+  market: string;
+  platform: CompetitorPlatform;
+  notes: string;
+  result: CompetitorSpyResult | null;
+  loading: boolean;
+  language: ReportLanguage;
+  copiedPrompt: boolean;
+  onNamesChange: (value: string) => void;
+  onMarketChange: (value: string) => void;
+  onPlatformChange: (value: CompetitorPlatform) => void;
+  onNotesChange: (value: string) => void;
+  onGenerate: () => void;
+  onCopyPrompt: () => void;
+}) {
+  const isVietnamese = language === "vi";
+  const themeRows = result?.themes.slice(0, 4) || [];
+  const briefs = result?.test_briefs.slice(0, 4) || [];
+  const competitors = result?.competitors.slice(0, 4) || [];
+
+  return (
+    <Card data-print-flow>
+      <CardHeader>
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <CardTitle>{isVietnamese ? "Competitor spy" : "Competitor spy"}</CardTitle>
+            <CardDescription>
+              {isVietnamese
+                ? "Biến tên đối thủ hoặc ghi chú từ thư viện quảng cáo thành theme, gap và brief test mới."
+                : "Turn competitor names or ad-library notes into themes, gaps, and original test briefs."}
+            </CardDescription>
+          </div>
+          <div className="flex flex-wrap gap-2" data-print-hidden>
+            <Button type="button" onClick={onGenerate} disabled={loading}>
+              {loading ? <Spinner data-icon="inline-start" /> : <SearchIcon data-icon="inline-start" />}
+              {isVietnamese ? "Phân tích đối thủ" : "Analyze competitors"}
+            </Button>
+            <Button type="button" variant="outline" onClick={onCopyPrompt}>
+              <ClipboardIcon data-icon="inline-start" />
+              {copiedPrompt ? "Copied" : "Copy spy prompt"}
+            </Button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="grid gap-4 xl:grid-cols-[360px_1fr]">
+        <div className="flex flex-col gap-3 rounded-lg border bg-muted/20 p-3" data-print-hidden>
+          <Field>
+            <FieldLabel>{isVietnamese ? "Đối thủ" : "Competitors"}</FieldLabel>
+            <Textarea
+              value={names}
+              onChange={(event) => onNamesChange(event.target.value)}
+              placeholder={isVietnamese ? "Mỗi dòng một đối thủ" : "One competitor per line"}
+              className="min-h-24 resize-none"
+            />
+          </Field>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-1">
+            <Field>
+              <FieldLabel>{isVietnamese ? "Thị trường / offer" : "Market / offer"}</FieldLabel>
+              <Input
+                value={market}
+                onChange={(event) => onMarketChange(event.target.value)}
+                placeholder={isVietnamese ? "VD: spa, NLM, lead form..." : "E.g. spa, NLM, lead form..."}
+              />
+            </Field>
+            <Field>
+              <FieldLabel>{isVietnamese ? "Nền tảng" : "Platform"}</FieldLabel>
+              <Select
+                items={competitorPlatformItems}
+                value={platform}
+                onValueChange={(value) => {
+                  if (value) onPlatformChange(value as CompetitorPlatform);
+                }}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {competitorPlatformItems.map((item) => (
+                      <SelectItem key={item.value} value={item.value}>
+                        {item.label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </Field>
+          </div>
+          <Field>
+            <FieldLabel>{isVietnamese ? "Ghi chú ads library" : "Ad-library notes"}</FieldLabel>
+            <Textarea
+              value={notes}
+              onChange={(event) => onNotesChange(event.target.value)}
+              placeholder={isVietnamese ? "Paste copy, CTA, offer, format, link..." : "Paste copy, CTA, offer, format, links..."}
+              className="min-h-24 resize-none"
+            />
+            <FieldDescription>
+              {isVietnamese
+                ? "Có ghi chú thật thì confidence cao hơn. Nếu chỉ có tên, AI sẽ đánh dấu là giả định."
+                : "Real ad notes raise confidence. Name-only reads are marked as hypotheses."}
+            </FieldDescription>
+          </Field>
+        </div>
+
+        {result ? (
+          <div className="flex flex-col gap-3" data-print-expand>
+            <div className="rounded-lg border bg-background p-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="secondary">{result.provider}</Badge>
+                <Badge variant="outline">{platformLabel(platform)}</Badge>
+                <span className="text-sm font-medium">{compactText(result.summary, 260)}</span>
+              </div>
+            </div>
+
+            {competitors.length ? (
+              <div className="grid gap-2 md:grid-cols-2">
+                {competitors.map((competitor) => (
+                  <div key={competitor.name} className="rounded-lg border bg-background p-3">
+                    <div className="text-sm font-semibold">{competitor.name}</div>
+                    <p className="mt-1 text-sm text-muted-foreground">{compactText(competitor.likely_positioning, 150)}</p>
+                    <p className="mt-2 text-sm">{compactText(competitor.gap, 150)}</p>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            <div className="grid gap-3 xl:grid-cols-[1fr_0.8fr]">
+              <div className="rounded-lg border bg-background p-3">
+                <div className="text-xs font-medium uppercase text-muted-foreground">
+                  {isVietnamese ? "Theme đối thủ" : "Competitor themes"}
+                </div>
+                <div className="mt-2 grid gap-2 md:grid-cols-2">
+                  {themeRows.map((theme, index) => (
+                    <div key={`${theme.theme}-${index}`} className="rounded-md border p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="truncate text-sm font-medium">{theme.theme}</div>
+                        <Badge variant="outline">{theme.confidence}</Badge>
+                      </div>
+                      <p className="mt-2 line-clamp-2 text-xs text-muted-foreground" data-print-expand>
+                        {theme.evidence}
+                      </p>
+                      <p className="mt-2 line-clamp-2 text-sm" data-print-expand>
+                        {theme.opportunity}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="rounded-lg border bg-background p-3">
+                <div className="text-xs font-medium uppercase text-muted-foreground">
+                  {isVietnamese ? "Gap sáng tạo" : "Creative gaps"}
+                </div>
+                <CompactList
+                  rows={result.creative_gaps.slice(0, 5)}
+                  emptyLabel={isVietnamese ? "Chưa có gap rõ ràng." : "No clear gaps yet."}
+                />
+              </div>
+            </div>
+
+            <div className="rounded-lg border bg-background p-3">
+              <div className="text-xs font-medium uppercase text-muted-foreground">
+                {isVietnamese ? "Brief test mới" : "Original test briefs"}
+              </div>
+              <div className="mt-2 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+                {briefs.map((brief, index) => (
+                  <div key={`${brief.angle}-${index}`} className="rounded-md border p-3">
+                    <div className="text-sm font-semibold">{brief.angle}</div>
+                    <p className="mt-2 line-clamp-2 text-sm" data-print-expand>
+                      {brief.hook}
+                    </p>
+                    <Badge variant="outline" className="mt-2">
+                      {brief.format}
+                    </Badge>
+                    <p className="mt-2 line-clamp-2 text-xs text-muted-foreground" data-print-expand>
+                      {brief.why}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-lg border bg-background p-3">
+              <div className="text-xs font-medium uppercase text-muted-foreground">
+                {isVietnamese ? "Hành động tiếp theo" : "Next actions"}
+              </div>
+              <CompactList rows={result.next_actions.slice(0, 4)} emptyLabel={isVietnamese ? "Chưa có hành động." : "No actions yet."} />
+            </div>
+          </div>
+        ) : (
+          <Empty className="border">
+            <EmptyHeader>
+              <EmptyTitle>{isVietnamese ? "Chưa có competitor spy" : "No competitor spy yet"}</EmptyTitle>
+              <EmptyDescription>
+                {isVietnamese
+                  ? "Nhập đối thủ, paste ghi chú từ Meta Ad Library nếu có, rồi phân tích."
+                  : "Add competitors, paste Meta Ad Library notes when available, then analyze."}
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function platformLabel(platform: CompetitorPlatform) {
+  return competitorPlatformItems.find((item) => item.value === platform)?.label || platform;
 }
 
 function getCompareRange(range: { since: string; until: string }, mode: CompareMode) {

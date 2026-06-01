@@ -153,3 +153,32 @@ export type AiInsightTable = {
   assumptions: string[];
   provider: "openai" | "openrouter" | "prompt";
 };
+
+export type CompetitorPlatform = "meta" | "google" | "linkedin" | "tiktok" | "mixed";
+
+export type CompetitorSpyResult = {
+  summary: string;
+  competitors: {
+    name: string;
+    likely_positioning: string;
+    observed_or_expected_patterns: string[];
+    gap: string;
+  }[];
+  themes: {
+    theme: string;
+    evidence: string;
+    opportunity: string;
+    confidence: "low" | "medium" | "high";
+  }[];
+  creative_gaps: string[];
+  test_briefs: {
+    angle: string;
+    hook: string;
+    format: string;
+    why: string;
+    guardrail: string;
+  }[];
+  next_actions: string[];
+  assumptions: string[];
+  provider: "openai" | "openrouter" | "prompt";
+};
