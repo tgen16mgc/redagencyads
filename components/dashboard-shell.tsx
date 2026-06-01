@@ -329,8 +329,8 @@ export function DashboardShell() {
           <SidebarMenu>
             <SidebarMenuItem>
               <SidebarMenuButton>
-                <img src="/red-agency-logo.png" alt="Red Agency" className="size-5 rounded-sm bg-black object-contain" />
-                <span>Red Agency Ads</span>
+                <img src="/red-agency-logo.png" alt="Red Agency" className="size-5 rounded-sm object-contain" />
+                <span>Meta Ads Console</span>
               </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>
@@ -368,13 +368,13 @@ export function DashboardShell() {
           <header className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div className="flex items-center gap-2">
               <SidebarTrigger data-print-hidden />
-              <img src="/red-agency-logo.png" alt="Red Agency" className="size-11 rounded-lg bg-black object-contain p-1" />
+              <img src="/red-agency-logo.png" alt="Red Agency" className="size-11 rounded-lg object-contain" />
               <div>
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  Red Agency <ChevronRightIcon /> Meta Graph API
+                  Meta Graph API <ChevronRightIcon /> campaign-first analysis
                 </div>
                 <h1 className="font-heading text-2xl font-semibold tracking-tight md:text-3xl">
-                  Ads control room
+                  Ads analysis dashboard
                 </h1>
               </div>
             </div>
@@ -665,7 +665,7 @@ function TokenScreen(props: {
       <Card className="w-full max-w-3xl">
         <CardHeader>
           <div className="flex items-center gap-3">
-            <img src="/red-agency-logo.png" alt="Red Agency" className="size-12 rounded-lg bg-black object-contain p-1" />
+            <img src="/red-agency-logo.png" alt="Red Agency" className="size-12 rounded-lg object-contain" />
             <div>
               <CardTitle>Red Agency Ads Tool</CardTitle>
               <CardDescription>Connect Meta access token.</CardDescription>
