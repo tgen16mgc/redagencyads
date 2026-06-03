@@ -1,15 +1,15 @@
 import type { AiInsightTable, AiVerdict, CompetitorSpyResult } from "@/lib/types";
 
 const OPENROUTER_FREE_MODELS = [
+  "nvidia/nemotron-nano-9b-v2:free",
+  "nvidia/nemotron-3-super-120b-a12b:free",
   "google/gemma-4-26b-a4b-it:free",
   "google/gemma-4-31b-it:free",
   "qwen/qwen3-next-80b-a3b-instruct:free",
-  "nvidia/nemotron-3-super-120b-a12b:free",
-  "nvidia/nemotron-nano-9b-v2:free",
 ] as const;
 
-const OPENROUTER_MODEL_TIMEOUT_MS = Number(process.env.OPENROUTER_MODEL_TIMEOUT_MS || 22000);
-const OPENROUTER_TOTAL_TIMEOUT_MS = Number(process.env.OPENROUTER_TOTAL_TIMEOUT_MS || 76000);
+const OPENROUTER_MODEL_TIMEOUT_MS = Number(process.env.OPENROUTER_MODEL_TIMEOUT_MS || 45000);
+const OPENROUTER_TOTAL_TIMEOUT_MS = Number(process.env.OPENROUTER_TOTAL_TIMEOUT_MS || 130000);
 const OPENROUTER_MAX_TOKENS = Number(process.env.OPENROUTER_MAX_TOKENS || 1400);
 const OPENROUTER_COMPETITOR_MODEL_TIMEOUT_MS = Number(process.env.OPENROUTER_COMPETITOR_MODEL_TIMEOUT_MS || 85000);
 

@@ -135,10 +135,10 @@ function useTimedProgress(active: boolean) {
     const startedAt = Date.now();
     const update = () => {
       const elapsedSeconds = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
-      const stepIndex = elapsedSeconds < 8 ? 0 : elapsedSeconds < 25 ? 1 : elapsedSeconds < 50 ? 2 : 3;
+      const stepIndex = elapsedSeconds < 10 ? 0 : elapsedSeconds < 45 ? 1 : elapsedSeconds < 100 ? 2 : 3;
       setProgress({
         elapsedSeconds,
-        percent: Math.min(96, 12 + elapsedSeconds * 1.1),
+        percent: Math.min(96, 10 + elapsedSeconds * 0.6),
         stepIndex,
       });
     };
@@ -351,7 +351,7 @@ export function DashboardShell() {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ prompt: withReportLanguage(report.prompt, language, "verdict"), provider }),
-        timeoutMs: 90000,
+        timeoutMs: 150000,
       });
       setVerdict(data.verdict);
     } catch (err) {
@@ -371,7 +371,7 @@ export function DashboardShell() {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ prompt, provider }),
-        timeoutMs: 90000,
+        timeoutMs: 150000,
       });
       setInsights(data.insights);
     } catch (err) {
