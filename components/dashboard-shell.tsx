@@ -117,6 +117,40 @@ const compareItems: { label: string; value: CompareMode }[] = [
   { label: "YoY", value: "yoy" },
 ];
 
+type AiProgressState = {
+  elapsedSeconds: number;
+  percent: number;
+  stepIndex: number;
+};
+
+function useTimedProgress(active: boolean) {
+  const [progress, setProgress] = React.useState<AiProgressState | null>(null);
+
+  React.useEffect(() => {
+    if (!active) {
+      setProgress(null);
+      return;
+    }
+
+    const startedAt = Date.now();
+    const update = () => {
+      const elapsedSeconds = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+      const stepIndex = elapsedSeconds < 8 ? 0 : elapsedSeconds < 25 ? 1 : elapsedSeconds < 50 ? 2 : 3;
+      setProgress({
+        elapsedSeconds,
+        percent: Math.min(96, 12 + elapsedSeconds * 1.1),
+        stepIndex,
+      });
+    };
+
+    update();
+    const interval = window.setInterval(update, 1000);
+    return () => window.clearInterval(interval);
+  }, [active]);
+
+  return progress;
+}
+
 const competitorPlatformItems: { label: string; value: CompetitorPlatform }[] = [
   { label: "Meta / Instagram", value: "meta" },
   { label: "Google", value: "google" },
@@ -194,6 +228,8 @@ export function DashboardShell() {
   const [token, setToken] = React.useState("");
   const [error, setError] = React.useState("");
   const [loading, setLoading] = React.useState("");
+  const verdictProgress = useTimedProgress(loading === "ai");
+  const insightProgress = useTimedProgress(loading === "insights");
 
   const loadAccounts = React.useCallback(async () => {
     setLoading("accounts");
@@ -721,6 +757,7 @@ export function DashboardShell() {
               <AiVerdictPanel
                 provider={provider}
                 loading={loading === "ai"}
+                progress={verdictProgress}
                 verdict={verdict}
                 copiedPrompt={copiedPrompt}
                 language={language}
@@ -731,8 +768,10 @@ export function DashboardShell() {
               />
 
               <InsightPanel
+                provider={provider}
                 insights={insights}
                 loading={loading === "insights"}
+                progress={insightProgress}
                 compareMode={compareMode}
                 hasComparison={Boolean(previousReport)}
                 language={language}
@@ -1128,9 +1167,54 @@ function ComparisonPanel({ current, previous, mode }: { current: DashboardReport
   );
 }
 
+function AiProgressStatus({
+  kind,
+  provider,
+  progress,
+  language,
+}: {
+  kind: "verdict" | "insights";
+  provider: Provider;
+  progress: AiProgressState | null;
+  language: ReportLanguage;
+}) {
+  if (!progress) return null;
+
+  const isVietnamese = language === "vi";
+  const providerLabel = providerItems.find((item) => item.value === provider)?.label || "AI provider";
+  const usesOpenRouterFallback = provider === "auto" || provider === "openrouter";
+  const verdictSteps = isVietnamese
+    ? ["Chuẩn bị prompt đánh giá", `Gọi ${providerLabel}`, usesOpenRouterFallback ? "Thử model OpenRouter dự phòng nếu cần" : "Đợi model phản hồi", "Đọc JSON và kiểm tra kết quả"]
+    : ["Preparing verdict prompt", `Calling ${providerLabel}`, usesOpenRouterFallback ? "Trying OpenRouter fallback models if needed" : "Waiting for model response", "Parsing JSON and checking result"];
+  const insightSteps = isVietnamese
+    ? ["Chuẩn bị prompt insight", `Gọi ${providerLabel}`, usesOpenRouterFallback ? "Thử model OpenRouter dự phòng nếu cần" : "Đợi model phản hồi", "Sắp xếp insight ưu tiên"]
+    : ["Preparing insight prompt", `Calling ${providerLabel}`, usesOpenRouterFallback ? "Trying OpenRouter fallback models if needed" : "Waiting for model response", "Organizing priority insights"];
+  const steps = kind === "verdict" ? verdictSteps : insightSteps;
+  const stepText = steps[Math.min(progress.stepIndex, steps.length - 1)];
+  const elapsedText = isVietnamese ? `${progress.elapsedSeconds}s đã trôi qua` : `${progress.elapsedSeconds}s elapsed`;
+
+  return (
+    <div className="mb-4 rounded-md bg-muted/45 px-4 py-3" role="status" aria-live="polite" data-print-hidden>
+      <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+        <div className="flex min-w-0 items-center gap-2">
+          <Spinner className="size-4 shrink-0" />
+          <span className="font-medium">{stepText}</span>
+        </div>
+        <Badge variant="outline" className="shrink-0">
+          {elapsedText}
+        </Badge>
+      </div>
+      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-background">
+        <div className="h-full rounded-full bg-primary transition-all duration-500" style={{ width: `${progress.percent}%` }} />
+      </div>
+    </div>
+  );
+}
+
 function AiVerdictPanel({
   provider,
   loading,
+  progress,
   verdict,
   copiedPrompt,
   language,
@@ -1141,6 +1225,7 @@ function AiVerdictPanel({
 }: {
   provider: Provider;
   loading: boolean;
+  progress: AiProgressState | null;
   verdict: AiVerdict | null;
   copiedPrompt: boolean;
   language: ReportLanguage;
@@ -1221,6 +1306,7 @@ function AiVerdictPanel({
         </div>
       </CardHeader>
       <CardContent>
+        {loading ? <AiProgressStatus kind="verdict" provider={provider} progress={progress} language={language} /> : null}
         {verdict ? (
           <VerdictCard verdict={verdict} language={language} />
         ) : (
@@ -1237,15 +1323,19 @@ function AiVerdictPanel({
 }
 
 function InsightPanel({
+  provider,
   insights,
   loading,
+  progress,
   compareMode,
   hasComparison,
   language,
   onGenerate,
 }: {
+  provider: Provider;
   insights: AiInsightTable | null;
   loading: boolean;
+  progress: AiProgressState | null;
   compareMode: CompareMode;
   hasComparison: boolean;
   language: ReportLanguage;
@@ -1276,6 +1366,7 @@ function InsightPanel({
         </div>
       </CardHeader>
       <CardContent>
+        {loading ? <AiProgressStatus kind="insights" provider={provider} progress={progress} language={language} /> : null}
         {insights ? (
           <div className="flex flex-col gap-3">
             <div className="flex flex-wrap items-center gap-2">
