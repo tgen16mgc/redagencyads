@@ -8,14 +8,19 @@ const OPENROUTER_FREE_MODELS = [
   "qwen/qwen3-next-80b-a3b-instruct:free",
 ] as const;
 
+const OPENROUTER_VERDICT_MODELS = [
+  "moonshotai/kimi-k2.6:free",
+  ...OPENROUTER_FREE_MODELS,
+] as const;
+
 const OPENROUTER_MODEL_TIMEOUT_MS = Number(process.env.OPENROUTER_MODEL_TIMEOUT_MS || 45000);
 const OPENROUTER_TOTAL_TIMEOUT_MS = Number(process.env.OPENROUTER_TOTAL_TIMEOUT_MS || 130000);
 const OPENROUTER_MAX_TOKENS = Number(process.env.OPENROUTER_MAX_TOKENS || 1400);
 const OPENROUTER_COMPETITOR_MODEL_TIMEOUT_MS = Number(process.env.OPENROUTER_COMPETITOR_MODEL_TIMEOUT_MS || 85000);
 
-function openRouterModels() {
+function openRouterModels(defaultModels: readonly string[] = OPENROUTER_FREE_MODELS) {
   const requested = process.env.OPENROUTER_MODEL?.split(",").map((model) => model.trim()).filter(Boolean) || [];
-  return Array.from(new Set([...requested, ...OPENROUTER_FREE_MODELS]));
+  return Array.from(new Set([...requested, ...defaultModels]));
 }
 
 function positiveMs(value: number, fallback: number) {
@@ -67,9 +72,11 @@ async function fetchOpenRouterCompletion(args: {
     const body: Record<string, unknown> = {
       model: args.model,
       messages: [{ role: "user", content: args.prompt }],
-      temperature: 0.2,
-      max_tokens: args.maxTokens,
     };
+    if (args.model !== "moonshotai/kimi-k2.6:free") {
+      body.temperature = 0.2;
+      body.max_tokens = args.maxTokens;
+    }
     if (args.jsonMode) body.response_format = { type: "json_object" };
 
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -97,6 +104,7 @@ async function openRouterCompletion(
     totalTimeoutMs?: number;
     maxTokens?: number;
     jsonMode?: boolean;
+    models?: readonly string[];
   } = {},
 ) {
   const errors: string[] = [];
@@ -106,7 +114,7 @@ async function openRouterCompletion(
   const maxTokens = Math.max(300, Math.min(positiveMs(options.maxTokens ?? OPENROUTER_MAX_TOKENS, OPENROUTER_MAX_TOKENS), 2400));
   const jsonMode = options.jsonMode ?? false;
 
-  for (const model of openRouterModels()) {
+  for (const model of openRouterModels(options.models)) {
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       const remainingMs = totalTimeoutMs - (Date.now() - startedAt);
       if (remainingMs < 4000) {
@@ -275,7 +283,7 @@ export async function generateVerdict(prompt: string, provider: "auto" | "openai
   }
   if ((provider === "openrouter" || provider === "auto") && process.env.OPENROUTER_API_KEY) {
     try {
-      return parseVerdict(await openRouterCompletion(prompt), "openrouter");
+      return parseVerdict(await openRouterCompletion(prompt, { models: OPENROUTER_VERDICT_MODELS }), "openrouter");
     } catch (error) {
       return fallback(prompt, `OpenRouter could not finish a live verdict in time. Use the prompt fallback or retry with OpenAI. ${errorMessage(error)}`);
     }
