@@ -22,7 +22,7 @@ Core domain words:
 - `Health checks`: account scoring rules for CTR, frequency, creative volume, campaign consolidation.
 - `Verdict`: JSON strategy summary from structured report data. It is canonical app language; AI is only one optional enhancement source.
 - `Prompt Verdict Source`: deterministic local Verdict generation. It never calls an AI provider.
-- `Auto Verdict Source`: reliable-first Verdict generation. It creates the local Verdict first, optionally asks OpenAI to enhance wording when `OPENAI_API_KEY` exists, and never calls OpenRouter.
+- `Auto Verdict Source`: reliable-first Verdict generation. It creates the local Verdict first, optionally asks OpenAI to enhance wording when `OPENAI_API_KEY` exists, and never calls Gemini or OpenRouter.
 - `AI insights`: JSON table-ready analysis, optionally with comparison deltas.
 - `CompetitorSpyAd`: normalized ad-library row from Apify or Meta official API.
 - `CompetitorSpyResult`: JSON competitive intelligence output.
@@ -165,11 +165,12 @@ Run insight table
 Provider behavior:
 
 - `prompt`: return a complete local Verdict from structured report data. No model call.
-- `auto`: generate local Verdict first; if `OPENAI_API_KEY` exists, ask OpenAI to rewrite/enhance that Verdict. Never call OpenRouter.
+- `auto`: generate local Verdict first; if `OPENAI_API_KEY` exists, ask OpenAI to rewrite/enhance that Verdict. Never call Gemini or OpenRouter.
 - `openai`: explicit OpenAI enhancement path using `OPENAI_API_KEY`.
+- `gemini`: explicit Gemini enhancement path using `GEMINI_API_KEY`. It is not part of `auto`.
 - `openrouter`: explicit OpenRouter enhancement path using `OPENROUTER_API_KEY`, model fallback list, and timeout guards.
 
-OpenAI/OpenRouter enhancement may improve wording, prioritization language, and Vietnamese phrasing, but local ads rules own the strategic claims. Enhancement cannot raise confidence above the local Verdict and cannot add budget moves over the 20% guardrail. If a provider fails, the app returns the local Verdict with an assumption explaining the failure.
+OpenAI/Gemini/OpenRouter enhancement may improve wording, prioritization language, and Vietnamese phrasing, but local ads rules own the strategic claims. Enhancement cannot raise confidence above the local Verdict and cannot add budget moves over the 20% guardrail. If a provider fails, the app returns the local Verdict with an assumption explaining the failure.
 
 ### 5. Competitor Spy
 
@@ -227,6 +228,10 @@ Useful:
 META_GRAPH_VERSION=v22.0
 OPENAI_API_KEY=
 OPENAI_MODEL=gpt-4o-mini
+GEMINI_API_KEY=
+GEMINI_MODEL=gemini-2.5-flash
+GEMINI_TIMEOUT_MS=45000
+GEMINI_MAX_TOKENS=1400
 OPENROUTER_API_KEY=
 OPENROUTER_MODEL=
 OPENROUTER_MODEL_TIMEOUT_MS=30000
@@ -239,7 +244,7 @@ APIFY_META_ADS_ACTOR_ID=
 APIFY_META_ADS_INPUT_TEMPLATE=
 ```
 
-No AI key means app still returns local prompt Verdicts. OpenRouter is never used in `auto`; select `openrouter` explicitly if you want it. No Apify vars means competitor fetch only works with Meta official source.
+No AI key means app still returns local prompt Verdicts. Gemini and OpenRouter are never used in `auto`; select `gemini` or `openrouter` explicitly if you want them. No Apify vars means competitor fetch only works with Meta official source.
 
 ## Dev Commands
 

@@ -4,7 +4,7 @@ import { generateInsights } from "@/lib/ai";
 
 const bodySchema = z.object({
   prompt: z.string().min(100),
-  provider: z.enum(["auto", "openai", "openrouter", "prompt"]).default("auto"),
+  provider: z.enum(["auto", "openai", "openrouter", "gemini", "prompt"]).default("auto"),
 });
 
 export async function POST(request: Request) {

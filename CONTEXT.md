@@ -16,6 +16,10 @@ _Avoid_: prompt fallback, no-AI placeholder, manual-only mode
 A Verdict source that starts with local ads rules and may use OpenAI to enhance the result when available.
 _Avoid_: provider fallback chain, try-all-providers mode
 
+**Gemini Verdict Source**:
+An explicit Verdict Enhancement source selected by the user; it starts from the local Verdict and is never used by Auto Verdict Source.
+_Avoid_: auto Gemini fallback, free default provider, key rotation source
+
 **Verdict Enhancement**:
 An AI-assisted wording pass over a local Verdict that preserves the local Verdict's strategic claims.
 _Avoid_: regeneration, replacement, model-authored strategy
@@ -53,6 +57,7 @@ _Avoid_: panel language selector, report-only language select, duplicate languag
 - A **Verdict** is produced from one advertising report.
 - A **Prompt Verdict Source** produces a complete **Verdict**.
 - An **Auto Verdict Source** produces a local **Verdict** before any AI enhancement.
+- A **Gemini Verdict Source** is only used when explicitly selected.
 - A **Verdict Enhancement** may improve wording but does not replace the local **Verdict** logic.
 - A **Budget Move** belongs to a **Verdict** and must respect Meta learning stability.
 - A **Budget Move** needs **Meaningful Spend** unless it recommends holding budget.
@@ -70,6 +75,8 @@ _Avoid_: panel language selector, report-only language select, duplicate languag
 > **Domain expert:** "No — it returns a complete **Verdict** using local ads rules, with no model call."
 > **Dev:** "If OpenRouter credentials exist, should the **Auto Verdict Source** call OpenRouter?"
 > **Domain expert:** "No — OpenRouter is only used when explicitly selected; auto optimizes for reliable completion."
+> **Dev:** "If Gemini credentials exist, should the **Auto Verdict Source** call Gemini?"
+> **Domain expert:** "No — Gemini is only used when explicitly selected; auto remains local first, with optional OpenAI enhancement."
 > **Dev:** "When OpenAI is available, should it create a new **Verdict**?"
 > **Domain expert:** "No — it performs **Verdict Enhancement** over the local **Verdict** and preserves the strategic claims."
 > **Dev:** "Can a **Budget Move** recommend scaling 40% when a campaign looks strong?"
@@ -92,6 +99,7 @@ _Avoid_: panel language selector, report-only language select, duplicate languag
 - "AI verdict" was used to mean both the readout itself and the provider-generated text — resolved: **Verdict** is the canonical term; AI is only one possible generation source.
 - "prompt fallback" was used to mean a generic placeholder — resolved: **Prompt Verdict Source** means deterministic local **Verdict** generation.
 - "auto provider" was used as a provider fallback chain — resolved: **Auto Verdict Source** means reliable-first local generation, with optional OpenAI enhancement only.
+- "Gemini free tier" was proposed as the default provider — resolved: **Gemini Verdict Source** is explicit-only and cannot be reached through **Auto Verdict Source**.
 - "OpenAI generation" was ambiguous between strategy generation and wording improvement — resolved: OpenAI in auto performs **Verdict Enhancement**, not regeneration.
 - "budget move" was fuzzy advice — resolved: **Budget Move** is constrained to visible report data, meaningful spend, primary-result evidence, account-average comparison, and learning-stability limits.
 - "meaningful spend" was undefined — resolved: **Meaningful Spend** means at least 10% of account total spend or one of the three highest-spend rows; rows under 1% of account total spend are ignored for winner/loser claims.

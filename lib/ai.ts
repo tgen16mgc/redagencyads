@@ -26,6 +26,23 @@ const OPENROUTER_MODEL_TIMEOUT_MS = Number(process.env.OPENROUTER_MODEL_TIMEOUT_
 const OPENROUTER_TOTAL_TIMEOUT_MS = Number(process.env.OPENROUTER_TOTAL_TIMEOUT_MS || 130000);
 const OPENROUTER_MAX_TOKENS = Number(process.env.OPENROUTER_MAX_TOKENS || 1400);
 const OPENROUTER_COMPETITOR_MODEL_TIMEOUT_MS = Number(process.env.OPENROUTER_COMPETITOR_MODEL_TIMEOUT_MS || 85000);
+const GEMINI_TIMEOUT_MS = Number(process.env.GEMINI_TIMEOUT_MS || 45000);
+const GEMINI_MAX_TOKENS = Number(process.env.GEMINI_MAX_TOKENS || 1400);
+
+const VERDICT_JSON_SCHEMA = {
+  type: "object",
+  properties: {
+    verdict: { type: "string" },
+    risks: { type: "array", items: { type: "string" } },
+    winners: { type: "array", items: { type: "string" } },
+    losers: { type: "array", items: { type: "string" } },
+    budget_moves: { type: "array", items: { type: "string" } },
+    tests: { type: "array", items: { type: "string" } },
+    confidence: { type: "string" },
+    assumptions: { type: "array", items: { type: "string" } },
+  },
+  required: ["verdict", "risks", "winners", "losers", "budget_moves", "tests", "confidence", "assumptions"],
+} as const;
 
 function openRouterModels(defaultModels: readonly string[] = OPENROUTER_FREE_MODELS) {
   const requested = process.env.OPENROUTER_MODEL?.split(",").map((model) => model.trim()).filter(Boolean) || [];
@@ -242,6 +259,69 @@ async function openRouterCompletion(
     }
   }
   throw new Error(`OpenRouter free model request failed. ${errors.join(" | ")}`);
+}
+
+function geminiModelPath() {
+  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+  return model.startsWith("models/") ? model : `models/${model}`;
+}
+
+function geminiBaseUrl() {
+  return (process.env.GEMINI_API_BASE_URL || "https://generativelanguage.googleapis.com/v1beta").replace(/\/$/, "");
+}
+
+function geminiResponseText(json: any) {
+  const parts = json?.candidates?.[0]?.content?.parts;
+  if (!Array.isArray(parts)) return "";
+  return parts.map(contentPartText).join("").trim();
+}
+
+async function geminiCompletion(prompt: string, schema?: Record<string, unknown>) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error("Gemini API key missing.");
+
+  const controller = new AbortController();
+  const timeoutMs = positiveMs(GEMINI_TIMEOUT_MS, 45000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const generationConfig: Record<string, unknown> = {
+      temperature: 0.2,
+      maxOutputTokens: Math.max(300, Math.min(positiveMs(GEMINI_MAX_TOKENS, 1400), 2400)),
+    };
+    if (schema) {
+      generationConfig.responseFormat = {
+        text: {
+          mimeType: "application/json",
+          schema,
+        },
+      };
+    }
+
+    const response = await fetch(`${geminiBaseUrl()}/${geminiModelPath()}:generateContent`, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "content-type": "application/json",
+        "x-goog-api-key": apiKey,
+      },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig,
+      }),
+    });
+    const json = await readJson(response);
+    if (!response.ok) throw new Error(json?.error?.message || "Gemini verdict request failed.");
+    const text = geminiResponseText(json);
+    if (!text) throw new Error("Gemini returned an empty verdict.");
+    return text;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error(`Gemini timed out after ${Math.round(timeoutMs / 1000)}s.`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function extractJsonObject(text: string) {
@@ -688,6 +768,16 @@ async function generateOpenRouterVerdict(args: {
   return capConfidence(parsed, args.localVerdict.confidence);
 }
 
+async function enhanceVerdictWithGemini(args: {
+  report: DashboardReport;
+  localVerdict: Verdict;
+  language: InterfaceLanguage;
+}) {
+  const parsed = parseVerdictStrict(await geminiCompletion(buildVerdictEnhancementPrompt(args), VERDICT_JSON_SCHEMA), "gemini");
+  if (!parsed || hasLargeBudgetMove(parsed)) throw new Error("Gemini verdict failed guardrail validation.");
+  return capConfidence(parsed, args.localVerdict.confidence);
+}
+
 async function generateLegacyVerdict(prompt: string, provider: VerdictRequestProvider): Promise<Verdict> {
   if (provider === "prompt") return fallback(prompt);
   if ((provider === "openai" || provider === "auto") && process.env.OPENAI_API_KEY) {
@@ -757,6 +847,17 @@ export async function generateVerdict(input: GenerateVerdictInput | string, lega
     }
   }
 
+  if (provider === "gemini") {
+    if (!process.env.GEMINI_API_KEY) {
+      return mergeProviderAssumption(localVerdict, "Gemini API key missing; local ads-rule Verdict used instead.");
+    }
+    try {
+      return await enhanceVerdictWithGemini({ report: input.report, localVerdict, language });
+    } catch (error) {
+      return mergeProviderAssumption(localVerdict, `Gemini enhancement failed; local ads-rule Verdict used instead. ${errorMessage(error)}`);
+    }
+  }
+
   return localVerdict;
 }
 
@@ -769,7 +870,7 @@ function insightFallback(prompt: string, reason = "AI provider key not configure
         area: "Setup",
         insight: "Live AI insight table unavailable.",
         evidence: `Prompt ready with ${prompt.length} chars.`,
-        action: reason.includes("OpenRouter") ? "Retry with a shorter report scope or switch provider to OpenAI." : "Add OPENAI_API_KEY or OPENROUTER_API_KEY on server, then regenerate insights.",
+        action: reason.includes("OpenRouter") || reason.includes("Gemini") ? "Retry with a shorter report scope or switch provider to OpenAI." : "Add OPENAI_API_KEY, GEMINI_API_KEY, or OPENROUTER_API_KEY on server, then regenerate insights.",
         priority: "medium",
         confidence: "high",
       },
@@ -942,7 +1043,7 @@ function parseInsights(text: string, provider: AiInsightTable["provider"]): AiIn
   }
 }
 
-export async function generateInsights(prompt: string, provider: "auto" | "openai" | "openrouter" | "prompt") {
+export async function generateInsights(prompt: string, provider: "auto" | AiInsightTable["provider"]) {
   if (provider === "prompt") return insightFallback(prompt);
   if ((provider === "openai" || provider === "auto") && process.env.OPENAI_API_KEY) {
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -963,6 +1064,14 @@ export async function generateInsights(prompt: string, provider: "auto" | "opena
     if (json.choices?.[0]?.finish_reason === "length") return localInsightFallback(prompt, "OpenAI stopped before the insight JSON completed.");
     return parseInsights(json.choices?.[0]?.message?.content || "", "openai");
   }
+  if (provider === "gemini") {
+    if (!process.env.GEMINI_API_KEY) return localInsightFallback(prompt, "Gemini API key missing; local metric insights used instead.");
+    try {
+      return parseInsights(await geminiCompletion(prompt), "gemini");
+    } catch (error) {
+      return localInsightFallback(prompt, `Gemini insights were unavailable or returned unusable output. ${errorMessage(error)}`);
+    }
+  }
   if ((provider === "openrouter" || provider === "auto") && process.env.OPENROUTER_API_KEY) {
     try {
       return parseInsights(await openRouterCompletion(prompt, { maxTokens: 2200 }), "openrouter");
@@ -982,14 +1091,14 @@ function competitorFallback(prompt: string): CompetitorSpyResult {
       {
         theme: "Manual competitor brief required",
         evidence: `Prompt ready with ${prompt.length} chars.`,
-        opportunity: "Add OPENAI_API_KEY or OPENROUTER_API_KEY, then regenerate competitor spy output.",
+        opportunity: "Add OPENAI_API_KEY, GEMINI_API_KEY, or OPENROUTER_API_KEY, then regenerate competitor spy output.",
         confidence: "high",
       },
     ],
     creative_gaps: ["Live AI competitor interpretation unavailable in prompt-only mode."],
     test_briefs: [],
     next_actions: ["Paste competitor ad-library notes into the panel and regenerate after adding an AI provider key."],
-    assumptions: ["OPENAI_API_KEY or OPENROUTER_API_KEY missing in server environment."],
+    assumptions: ["OPENAI_API_KEY, GEMINI_API_KEY, or OPENROUTER_API_KEY missing in server environment."],
   };
 }
 
@@ -1017,7 +1126,7 @@ function parseCompetitorSpy(text: string, provider: CompetitorSpyResult["provide
   }
 }
 
-export async function generateCompetitorSpy(prompt: string, provider: "auto" | "openai" | "openrouter" | "prompt") {
+export async function generateCompetitorSpy(prompt: string, provider: "auto" | CompetitorSpyResult["provider"]) {
   if (provider === "prompt") return competitorFallback(prompt);
   if ((provider === "openai" || provider === "auto") && process.env.OPENAI_API_KEY) {
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -1036,6 +1145,18 @@ export async function generateCompetitorSpy(prompt: string, provider: "auto" | "
     const json = await response.json();
     if (!response.ok) throw new Error(json?.error?.message || "OpenAI competitor spy request failed.");
     return parseCompetitorSpy(json.choices?.[0]?.message?.content || "", "openai");
+  }
+  if (provider === "gemini") {
+    if (!process.env.GEMINI_API_KEY) return competitorFallback(prompt);
+    try {
+      return parseCompetitorSpy(await geminiCompletion(prompt), "gemini");
+    } catch (error) {
+      return {
+        ...competitorFallback(prompt),
+        summary: `Gemini competitor spy failed; prompt-only output returned. ${errorMessage(error)}`,
+        assumptions: [`Gemini failed; prompt-only output returned. ${errorMessage(error)}`],
+      };
+    }
   }
   if ((provider === "openrouter" || provider === "auto") && process.env.OPENROUTER_API_KEY) {
     return parseCompetitorSpy(

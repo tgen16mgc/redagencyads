@@ -99,6 +99,7 @@ const providerItems = [
   { label: "Auto provider", value: "auto" },
   { label: "OpenAI", value: "openai" },
   { label: "OpenRouter", value: "openrouter" },
+  { label: "Gemini", value: "gemini" },
   { label: "Prompt only", value: "prompt" },
 ] as const;
 
@@ -2232,6 +2233,7 @@ function workflowLabel(value: (typeof workflowItems)[number]["value"], language:
 function providerLabel(provider: Provider, language: ReportLanguage) {
   if (provider === "openai") return "OpenAI";
   if (provider === "openrouter") return "OpenRouter";
+  if (provider === "gemini") return "Gemini";
   if (provider === "prompt") return language === "vi" ? "Prompt local" : "Prompt only";
   return language === "vi" ? "Auto tin cậy" : "Auto provider";
 }

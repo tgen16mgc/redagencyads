@@ -1,7 +1,8 @@
 export type KpiPack = "lead_gen" | "messages" | "sales_roas" | "traffic" | "awareness";
 export type CompareMode = "off" | "wow" | "mom" | "yoy";
 export type InterfaceLanguage = "en" | "vi";
-export type VerdictProvider = "openai" | "openrouter" | "prompt";
+export type AiProvider = "openai" | "openrouter" | "gemini" | "prompt";
+export type VerdictProvider = AiProvider;
 
 export type MetaAccount = {
   id: string;
@@ -155,7 +156,7 @@ export type AiInsightTable = {
   rows: AiInsight[];
   confidence: "low" | "medium" | "high";
   assumptions: string[];
-  provider: "openai" | "openrouter" | "prompt";
+  provider: AiProvider;
 };
 
 export type CompetitorPlatform = "meta" | "google" | "linkedin" | "tiktok" | "mixed";
@@ -212,5 +213,5 @@ export type CompetitorSpyResult = {
   }[];
   next_actions: string[];
   assumptions: string[];
-  provider: "openai" | "openrouter" | "prompt";
+  provider: AiProvider;
 };

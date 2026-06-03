@@ -110,6 +110,19 @@ function report(overrides: Partial<DashboardReport> = {}): DashboardReport {
   };
 }
 
+function noSpendReport() {
+  return report({
+    totals: row({ id: "total", level: "account", name: "Account total" }),
+    campaignRows: [row({ id: "new", name: "New Campaign" })],
+    adsetRows: [row({ id: "new-adset", name: "New Ad Set" })],
+    health: {
+      score: 20,
+      grade: "F",
+      checks: [{ id: "M25", label: "Creative/ad volume proxy", status: "fail", detail: "0 ads found." }],
+    },
+  });
+}
+
 describe("generateVerdict", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -133,18 +146,7 @@ describe("generateVerdict", () => {
   });
 
   it("returns a low-confidence setup Verdict when no meaningful spend exists", async () => {
-    const noSpendReport = report({
-      totals: row({ id: "total", level: "account", name: "Account total" }),
-      campaignRows: [row({ id: "new", name: "New Campaign" })],
-      adsetRows: [row({ id: "new-adset", name: "New Ad Set" })],
-      health: {
-        score: 20,
-        grade: "F",
-        checks: [{ id: "M25", label: "Creative/ad volume proxy", status: "fail", detail: "0 ads found." }],
-      },
-    });
-
-    const verdict = await generateVerdict({ report: noSpendReport, language: "en", provider: "prompt" });
+    const verdict = await generateVerdict({ report: noSpendReport(), language: "en", provider: "prompt" });
 
     expect(verdict.confidence).toBe("low");
     expect(verdict.winners).toHaveLength(0);
@@ -184,6 +186,112 @@ describe("generateVerdict", () => {
     expect(verdict.winners.length).toBeGreaterThan(0);
   });
 
+  it("does not call Gemini in auto mode", async () => {
+    vi.stubEnv("GEMINI_API_KEY", "test-key");
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const verdict = await generateVerdict({ report: report(), language: "en", provider: "auto" });
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(verdict.provider).toBe("prompt");
+    expect(verdict.winners.length).toBeGreaterThan(0);
+  });
+
+  it("enhances a structured Verdict with Gemini when explicitly selected", async () => {
+    vi.stubEnv("GEMINI_API_KEY", "test-key");
+    const enhanced = {
+      verdict: "Gemini refined the local Verdict wording.",
+      risks: ["Validate tracking before scaling."],
+      winners: ["Message Winner is the strongest budget candidate."],
+      losers: ["Message Loser should stay capped."],
+      budget_moves: ["Increase Message Winner by up to 20% after quality checks."],
+      tests: ["Run a tracking-quality check before scaling."],
+      confidence: "high",
+      assumptions: ["Gemini only enhanced the local Verdict wording."],
+    };
+    const fetchSpy = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          candidates: [{ content: { parts: [{ text: JSON.stringify(enhanced) }] } }],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const verdict = await generateVerdict({ report: report(), language: "en", provider: "gemini" });
+
+    expect(fetchSpy).toHaveBeenCalledOnce();
+    expect(String(fetchSpy.mock.calls[0][0])).toContain("/models/gemini-2.5-flash:generateContent");
+    expect(fetchSpy.mock.calls[0][1]?.headers).toMatchObject({ "x-goog-api-key": "test-key" });
+    expect(verdict.provider).toBe("gemini");
+    expect(verdict.verdict).toBe(enhanced.verdict);
+    expect(verdict.budget_moves).toEqual(enhanced.budget_moves);
+  });
+
+  it("falls back to local Verdict when explicit Gemini is missing an API key", async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const verdict = await generateVerdict({ report: report(), language: "en", provider: "gemini" });
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(verdict.provider).toBe("prompt");
+    expect(verdict.winners.length).toBeGreaterThan(0);
+    expect(verdict.assumptions.join(" ")).toContain("Gemini API key missing");
+  });
+
+  it("does not let Gemini raise confidence above the local Verdict", async () => {
+    vi.stubEnv("GEMINI_API_KEY", "test-key");
+    const enhanced = {
+      verdict: "Gemini polished a setup-only Verdict.",
+      risks: ["No meaningful spend exists yet."],
+      winners: [],
+      losers: [],
+      budget_moves: ["Hold budget until spend and primary-result signal are strong enough."],
+      tests: ["Run a tracking-quality check before scaling."],
+      confidence: "high",
+      assumptions: ["Gemini only enhanced the local Verdict wording."],
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            candidates: [{ content: { parts: [{ text: JSON.stringify(enhanced) }] } }],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      ),
+    );
+
+    const verdict = await generateVerdict({ report: noSpendReport(), language: "en", provider: "gemini" });
+
+    expect(verdict.provider).toBe("gemini");
+    expect(verdict.confidence).toBe("low");
+  });
+
+  it("falls back to local Verdict when Gemini returns invalid JSON", async () => {
+    vi.stubEnv("GEMINI_API_KEY", "test-key");
+    const fetchSpy = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          candidates: [{ content: { parts: [{ text: "not json" }] } }],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const verdict = await generateVerdict({ report: report(), language: "en", provider: "gemini" });
+
+    expect(fetchSpy).toHaveBeenCalledOnce();
+    expect(verdict.provider).toBe("prompt");
+    expect(verdict.winners.length).toBeGreaterThan(0);
+    expect(verdict.assumptions.join(" ")).toContain("Gemini enhancement failed");
+  });
+
   it("returns Vietnamese local Verdict strings when language is vi", async () => {
     const verdict = await generateVerdict({ report: report(), language: "vi", provider: "prompt" });
 
@@ -209,5 +317,24 @@ describe("generateVerdict", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(json.verdict.provider).toBe("prompt");
     expect(json.verdict.verdict).toContain("Tài khoản Test Account");
+  });
+
+  it("accepts explicit Gemini provider through the Verdict route", async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const response = await verdictPOST(
+      new Request("http://localhost/api/ai/verdict", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ report: report(), language: "en", provider: "gemini" }),
+      }),
+    );
+    const json = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(json.verdict.provider).toBe("prompt");
+    expect(json.verdict.assumptions.join(" ")).toContain("Gemini API key missing");
   });
 });
