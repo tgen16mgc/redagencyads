@@ -25,13 +25,14 @@ import {
   DownloadIcon,
   FileTextIcon,
   KeyRoundIcon,
+  LanguagesIcon,
   LogOutIcon,
   RefreshCcwIcon,
   SearchIcon,
   ShieldCheckIcon,
   SparklesIcon,
 } from "lucide-react";
-import type { AiInsightTable, AiVerdict, CompareMode, CompetitorFetchResult, CompetitorFetchSource, CompetitorPlatform, CompetitorSpyAd, CompetitorSpyResult, DashboardReport, KpiPack, MetaAccount, MetaCampaign, NormalizedRow } from "@/lib/types";
+import type { AiInsightTable, CompareMode, CompetitorFetchResult, CompetitorFetchSource, CompetitorPlatform, CompetitorSpyAd, CompetitorSpyResult, DashboardReport, KpiPack, MetaAccount, MetaCampaign, NormalizedRow, Verdict } from "@/lib/types";
 import { buildCompetitorSpyPrompt, buildInsightPrompt, comparisonDeltas, formatMetric } from "@/lib/metrics";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -70,12 +71,13 @@ import { Spinner } from "@/components/ui/spinner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 const workflowItems = [
-  { label: "Connect", icon: KeyRoundIcon },
-  { label: "Select", icon: DatabaseIcon },
-  { label: "Analyze", icon: BarChart3Icon },
-  { label: "Verdict", icon: BrainIcon },
+  { value: "connect", label: "Connect", icon: KeyRoundIcon },
+  { value: "select", label: "Select", icon: DatabaseIcon },
+  { value: "analyze", label: "Analyze", icon: BarChart3Icon },
+  { value: "verdict", label: "Verdict", icon: BrainIcon },
 ];
 
 const appSections = [
@@ -102,13 +104,11 @@ const providerItems = [
 
 type Provider = (typeof providerItems)[number]["value"];
 
-const languageItems = [
-  { label: "English", value: "en" },
-  { label: "Tiếng Việt", value: "vi" },
-] as const;
+const languageValues = ["en", "vi"] as const;
 
-type ReportLanguage = (typeof languageItems)[number]["value"];
+type ReportLanguage = (typeof languageValues)[number];
 const COMPETITOR_SPY_TIMEOUT_MS = 5 * 60 * 1000;
+const LANGUAGE_STORAGE_KEY = "redagencyads-language";
 
 const compareItems: { label: string; value: CompareMode }[] = [
   { label: "No compare", value: "off" },
@@ -116,6 +116,253 @@ const compareItems: { label: string; value: CompareMode }[] = [
   { label: "MoM", value: "mom" },
   { label: "YoY", value: "yoy" },
 ];
+
+const uiCopy = {
+  en: {
+    token: {
+      title: "Red Agency Ads Tool",
+      description: "Connect Meta access token.",
+      storage: "Token is validated server-side, encrypted, and stored only in an HttpOnly session cookie.",
+      rejected: "Token rejected",
+      field: "Access token",
+      placeholder: "Paste Meta access token",
+      help: "Do not use shared tokens for hosted public deployments. Rotate any token pasted into chat.",
+      submit: "Validate token",
+    },
+    loading: {
+      title: "Loading session",
+      description: "Checking encrypted cookie state.",
+    },
+    nav: {
+      functions: "Functions",
+      workflow: "Workflow",
+      aiSetup: "AI setup",
+      clearSession: "Clear session",
+      ads: "Ads analysis",
+      competitor: "Competitor spy",
+      connect: "Connect",
+      select: "Select",
+      analyze: "Analyze",
+      verdict: "Verdict",
+    },
+    header: {
+      adsCrumb: "Meta Graph API",
+      adsDetail: "campaign-first analysis",
+      competitorCrumb: "Ad library notes",
+      competitorDetail: "competitor intelligence",
+      adsTitle: "Ads analysis dashboard",
+      competitorTitle: "Competitor spy",
+      session: "HttpOnly token session",
+      pulled: "Pulled",
+      exportPdf: "Export PDF",
+      actionFailed: "Action failed",
+    },
+    scope: {
+      title: "Scope",
+      description: "Choose account, campaign scope, date range, and KPI pack.",
+      account: "Ad account",
+      chooseAccount: "Choose account",
+      since: "Since",
+      until: "Until",
+      kpiPack: "KPI pack",
+      autoDetect: "Auto-detect",
+      kpiHelp: "Objective/name/actions decide default; override anytime.",
+      compare: "Compare",
+      pullData: "Pull data",
+      pullReport: "Pull report",
+    },
+    empty: {
+      reportTitle: "No report loaded",
+      reportDescription: "Choose account and campaign scope, then pull report from Meta Graph API.",
+      chart: "No chart data returned.",
+      rowsTitle: "No rows",
+      rowsDescription: "Meta returned no insight rows for this scope.",
+      breakdown: "No breakdown rows returned.",
+    },
+    campaign: {
+      label: "Campaigns",
+      selected: "selected",
+      allActive: "All active",
+      inScope: "in report scope",
+      hide: "Hide",
+      edit: "Edit",
+      search: "Search campaigns",
+      all: "All",
+      loading: "Loading campaigns",
+      noObjective: "No objective",
+      none: "No campaigns found.",
+      help: "Click campaigns to build a custom scope. Leave empty to pull all active campaigns.",
+      day: "day",
+      lifetime: "lifetime",
+    },
+    performance: {
+      title: "Performance view",
+      description: "Detected pack: {detected}. Active pack: {active}. {reason}",
+      campaigns: "Campaigns",
+      adsets: "Ad sets",
+      ads: "Ads",
+      daily: "Daily",
+      health: "Account health",
+      healthDescription: "Ads-skill checks: creative, CTR, frequency, consolidation.",
+      grade: "Grade",
+      breakdowns: "Breakdowns",
+      breakdownsDescription: "Platform and age/gender signal for diagnosis.",
+    },
+    table: {
+      date: "Date",
+      name: "Name",
+      spend: "Spend",
+      impressions: "Impr.",
+      ctr: "CTR",
+      messages: "Messages",
+      leads: "Leads",
+      costMessage: "Cost/msg",
+      cpl: "CPL",
+      action: "Action",
+      fixCreative: "Fix creative",
+      healthy: "Healthy",
+      review: "Review",
+      watch: "Watch",
+    },
+    verdict: {
+      provider: "Provider",
+      generate: "Generate verdict",
+      copied: "Copied",
+      copyPrompt: "Copy prompt",
+      emptyTitle: "No Verdict yet",
+      emptyDescription: "Generate after pulling report. Export will include this section once available.",
+    },
+    spy: {
+      copyPrompt: "Copy spy prompt",
+      view: "View",
+      unknownAdvertiser: "Unknown advertiser",
+      noCopy: "No ad copy returned.",
+      start: "Start",
+    },
+  },
+  vi: {
+    token: {
+      title: "Red Agency Ads Tool",
+      description: "Kết nối Meta access token.",
+      storage: "Token được kiểm tra trên server, mã hóa và chỉ lưu trong HttpOnly session cookie.",
+      rejected: "Token bị từ chối",
+      field: "Access token",
+      placeholder: "Dán Meta access token",
+      help: "Không dùng token dùng chung cho bản public. Hãy rotate mọi token từng dán vào chat.",
+      submit: "Xác thực token",
+    },
+    loading: {
+      title: "Đang tải session",
+      description: "Đang kiểm tra cookie đã mã hóa.",
+    },
+    nav: {
+      functions: "Chức năng",
+      workflow: "Quy trình",
+      aiSetup: "Thiết lập AI",
+      clearSession: "Xóa session",
+      ads: "Phân tích ads",
+      competitor: "Theo dõi đối thủ",
+      connect: "Kết nối",
+      select: "Chọn phạm vi",
+      analyze: "Phân tích",
+      verdict: "Verdict",
+    },
+    header: {
+      adsCrumb: "Meta Graph API",
+      adsDetail: "phân tích theo campaign",
+      competitorCrumb: "Ghi chú ad library",
+      competitorDetail: "tình báo đối thủ",
+      adsTitle: "Dashboard phân tích ads",
+      competitorTitle: "Theo dõi đối thủ",
+      session: "Session token HttpOnly",
+      pulled: "Đã kéo",
+      exportPdf: "Xuất PDF",
+      actionFailed: "Thao tác lỗi",
+    },
+    scope: {
+      title: "Phạm vi",
+      description: "Chọn tài khoản, campaign, ngày và bộ KPI.",
+      account: "Tài khoản ads",
+      chooseAccount: "Chọn tài khoản",
+      since: "Từ ngày",
+      until: "Đến ngày",
+      kpiPack: "Bộ KPI",
+      autoDetect: "Tự nhận diện",
+      kpiHelp: "Objective/tên/action quyết định mặc định; có thể override.",
+      compare: "So sánh",
+      pullData: "Kéo dữ liệu",
+      pullReport: "Kéo báo cáo",
+    },
+    empty: {
+      reportTitle: "Chưa có báo cáo",
+      reportDescription: "Chọn tài khoản và campaign, rồi kéo báo cáo từ Meta Graph API.",
+      chart: "Không có dữ liệu biểu đồ.",
+      rowsTitle: "Không có dòng",
+      rowsDescription: "Meta không trả insight rows cho phạm vi này.",
+      breakdown: "Không có dữ liệu breakdown.",
+    },
+    campaign: {
+      label: "Campaign",
+      selected: "đã chọn",
+      allActive: "Tất cả active",
+      inScope: "trong phạm vi báo cáo",
+      hide: "Ẩn",
+      edit: "Sửa",
+      search: "Tìm campaign",
+      all: "Tất cả",
+      loading: "Đang tải campaign",
+      noObjective: "Không có objective",
+      none: "Không tìm thấy campaign.",
+      help: "Bấm campaign để tạo phạm vi tùy chỉnh. Để trống để kéo tất cả campaign active.",
+      day: "ngày",
+      lifetime: "lifetime",
+    },
+    performance: {
+      title: "Hiệu quả",
+      description: "Bộ nhận diện: {detected}. Bộ đang dùng: {active}. {reason}",
+      campaigns: "Campaign",
+      adsets: "Ad set",
+      ads: "Ads",
+      daily: "Ngày",
+      health: "Sức khỏe tài khoản",
+      healthDescription: "Check ads-skill: creative, CTR, frequency, consolidation.",
+      grade: "Hạng",
+      breakdowns: "Breakdown",
+      breakdownsDescription: "Tín hiệu theo nền tảng và tuổi/giới tính để chẩn đoán.",
+    },
+    table: {
+      date: "Ngày",
+      name: "Tên",
+      spend: "Chi tiêu",
+      impressions: "Impr.",
+      ctr: "CTR",
+      messages: "Tin nhắn",
+      leads: "Lead",
+      costMessage: "Cost/msg",
+      cpl: "CPL",
+      action: "Hành động",
+      fixCreative: "Sửa creative",
+      healthy: "Khỏe",
+      review: "Rà soát",
+      watch: "Theo dõi",
+    },
+    verdict: {
+      provider: "Provider",
+      generate: "Tạo Verdict",
+      copied: "Đã copy",
+      copyPrompt: "Copy prompt",
+      emptyTitle: "Chưa có Verdict",
+      emptyDescription: "Tạo sau khi kéo báo cáo. File export sẽ có phần này khi sẵn sàng.",
+    },
+    spy: {
+      copyPrompt: "Copy prompt spy",
+      view: "Xem",
+      unknownAdvertiser: "Advertiser không rõ",
+      noCopy: "Không có copy quảng cáo.",
+      start: "Bắt đầu",
+    },
+  },
+} as const;
 
 type AiProgressState = {
   elapsedSeconds: number;
@@ -205,11 +452,15 @@ export function DashboardShell() {
   const [pack, setPack] = React.useState<KpiPack | "auto">("auto");
   const [compareMode, setCompareMode] = React.useState<CompareMode>("off");
   const [provider, setProvider] = React.useState<Provider>("auto");
-  const [language, setLanguage] = React.useState<ReportLanguage>("en");
+  const [language, setLanguage] = React.useState<ReportLanguage>(() => {
+    if (typeof window === "undefined") return "en";
+    const stored = window.localStorage.getItem(LANGUAGE_STORAGE_KEY);
+    return stored === "vi" || stored === "en" ? stored : "en";
+  });
   const [activeView, setActiveView] = React.useState<ActiveView>("ads");
   const [report, setReport] = React.useState<DashboardReport | null>(null);
   const [previousReport, setPreviousReport] = React.useState<DashboardReport | null>(null);
-  const [verdict, setVerdict] = React.useState<AiVerdict | null>(null);
+  const [verdict, setVerdict] = React.useState<Verdict | null>(null);
   const [insights, setInsights] = React.useState<AiInsightTable | null>(null);
   const [competitorNames, setCompetitorNames] = React.useState("");
   const [competitorMarket, setCompetitorMarket] = React.useState("");
@@ -231,6 +482,12 @@ export function DashboardShell() {
   const [aiLoading, setAiLoading] = React.useState({ verdict: false, insights: false });
   const verdictProgress = useTimedProgress(aiLoading.verdict);
   const insightProgress = useTimedProgress(aiLoading.insights);
+  const copy = uiCopy[language];
+
+  React.useEffect(() => {
+    window.localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
+    document.documentElement.lang = language;
+  }, [language]);
 
   const loadAccounts = React.useCallback(async () => {
     setLoading("accounts");
@@ -347,15 +604,15 @@ export function DashboardShell() {
     setError("");
     setAiLoading((current) => ({ ...current, verdict: true }));
     try {
-      const data = await jsonFetch<{ verdict: AiVerdict }>("/api/ai/verdict", {
+      const data = await jsonFetch<{ verdict: Verdict }>("/api/ai/verdict", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ prompt: withReportLanguage(report.prompt, language, "verdict"), provider }),
+        body: JSON.stringify({ report, language, provider }),
         timeoutMs: 150000,
       });
       setVerdict(data.verdict);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not generate AI verdict.");
+      setError(err instanceof Error ? err.message : "Could not generate Verdict.");
     } finally {
       setAiLoading((current) => ({ ...current, verdict: false }));
     }
@@ -502,7 +759,7 @@ export function DashboardShell() {
   }
 
   if (authenticated === null) {
-    return <LoadingScreen />;
+    return <LoadingScreen language={language} />;
   }
 
   if (!authenticated) {
@@ -511,6 +768,8 @@ export function DashboardShell() {
         error={error}
         token={token}
         loading={loading === "session"}
+        language={language}
+        onLanguageChange={setLanguage}
         onTokenChange={setToken}
         onSubmit={connectToken}
       />
@@ -532,10 +791,10 @@ export function DashboardShell() {
         </SidebarHeader>
         <SidebarContent>
           <SidebarGroup>
-            <SidebarGroupLabel>Functions</SidebarGroupLabel>
+            <SidebarGroupLabel>{copy.nav.functions}</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {appSections.map(({ label, value, icon: Icon }) => (
+                {appSections.map(({ value, icon: Icon }) => (
                   <SidebarMenuItem key={value}>
                     <SidebarMenuButton
                       isActive={activeView === value}
@@ -543,7 +802,7 @@ export function DashboardShell() {
                       aria-current={activeView === value ? "page" : undefined}
                     >
                       <Icon />
-                      <span>{label}</span>
+                      <span>{appSectionLabel(value, language)}</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 ))}
@@ -552,14 +811,14 @@ export function DashboardShell() {
           </SidebarGroup>
           {activeView === "ads" ? (
             <SidebarGroup>
-              <SidebarGroupLabel>Workflow</SidebarGroupLabel>
+              <SidebarGroupLabel>{copy.nav.workflow}</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
-                  {workflowItems.map(({ label, icon: Icon }) => (
-                    <SidebarMenuItem key={label}>
-                      <SidebarMenuButton isActive={label === "Analyze"}>
+                  {workflowItems.map(({ value, icon: Icon }) => (
+                    <SidebarMenuItem key={value}>
+                      <SidebarMenuButton isActive={value === "analyze"}>
                         <Icon />
-                        <span>{label}</span>
+                        <span>{workflowLabel(value, language)}</span>
                       </SidebarMenuButton>
                     </SidebarMenuItem>
                   ))}
@@ -568,13 +827,13 @@ export function DashboardShell() {
             </SidebarGroup>
           ) : null}
           <SidebarGroup>
-            <SidebarGroupLabel>AI setup</SidebarGroupLabel>
+            <SidebarGroupLabel>{copy.nav.aiSetup}</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
                 <SidebarMenuItem>
                   <SidebarMenuButton>
                     <SparklesIcon />
-                    <span>{provider === "openrouter" ? "OpenRouter" : provider === "openai" ? "OpenAI" : provider === "prompt" ? "Prompt only" : "Auto provider"}</span>
+                    <span>{providerLabel(provider, language)}</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               </SidebarMenu>
@@ -586,7 +845,7 @@ export function DashboardShell() {
             <SidebarMenuItem>
               <SidebarMenuButton onClick={logout}>
                 <LogOutIcon />
-                <span>Clear session</span>
+                <span>{copy.nav.clearSession}</span>
               </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>
@@ -600,24 +859,25 @@ export function DashboardShell() {
               <img src="/red-agency-logo.png" alt="Red Agency" className="size-11 rounded-lg object-contain" />
               <div>
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  {activeView === "ads" ? "Meta Graph API" : "Ad library notes"} <ChevronRightIcon />{" "}
-                  {activeView === "ads" ? "campaign-first analysis" : "competitor intelligence"}
+                  {activeView === "ads" ? copy.header.adsCrumb : copy.header.competitorCrumb} <ChevronRightIcon />{" "}
+                  {activeView === "ads" ? copy.header.adsDetail : copy.header.competitorDetail}
                 </div>
                 <h1 className="font-heading text-2xl font-semibold tracking-tight md:text-3xl">
-                  {activeView === "ads" ? "Ads analysis dashboard" : "Competitor spy"}
+                  {activeView === "ads" ? copy.header.adsTitle : copy.header.competitorTitle}
                 </h1>
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              <LanguageToggle language={language} onChange={setLanguage} />
               <Badge variant="secondary">
                 <ShieldCheckIcon />
-                HttpOnly token session
+                {copy.header.session}
               </Badge>
-              {activeView === "ads" && report ? <Badge variant="outline">Pulled {new Date(report.pulledAt).toLocaleString()}</Badge> : null}
+              {activeView === "ads" && report ? <Badge variant="outline">{copy.header.pulled} {new Date(report.pulledAt).toLocaleString()}</Badge> : null}
               {activeView === "ads" ? (
                 <Button type="button" variant="outline" onClick={exportPdf} disabled={!report} data-print-hidden>
                   <DownloadIcon data-icon="inline-start" />
-                  Export PDF
+                  {copy.header.exportPdf}
                 </Button>
               ) : null}
             </div>
@@ -625,7 +885,7 @@ export function DashboardShell() {
 
           {error ? (
             <Alert variant="destructive">
-              <AlertTitle>Action failed</AlertTitle>
+              <AlertTitle>{copy.header.actionFailed}</AlertTitle>
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           ) : null}
@@ -634,13 +894,13 @@ export function DashboardShell() {
             <>
           <Card>
             <CardHeader>
-              <CardTitle>Scope</CardTitle>
-              <CardDescription>Choose account, campaign scope, date range, and KPI pack.</CardDescription>
+              <CardTitle>{copy.scope.title}</CardTitle>
+              <CardDescription>{copy.scope.description}</CardDescription>
             </CardHeader>
             <CardContent>
               <FieldGroup className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
                 <Field className="xl:col-span-2">
-                  <FieldLabel>Ad account</FieldLabel>
+                  <FieldLabel>{copy.scope.account}</FieldLabel>
                   <Select
                     items={accounts.map((item) => ({ label: item.name, value: item.id }))}
                     value={accountId}
@@ -649,7 +909,7 @@ export function DashboardShell() {
                     }}
                   >
                     <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Choose account" />
+                      <SelectValue placeholder={copy.scope.chooseAccount} />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectGroup>
@@ -665,20 +925,21 @@ export function DashboardShell() {
                 <CampaignPicker
                   campaigns={campaigns}
                   currency={accounts.find((account) => account.id === accountId)?.currency || "VND"}
+                  language={language}
                   loading={loading === "campaigns"}
                   selectedIds={selectedCampaignIds}
                   onChange={setSelectedCampaignIds}
                 />
                 <Field>
-                  <FieldLabel>Since</FieldLabel>
+                  <FieldLabel>{copy.scope.since}</FieldLabel>
                   <Input type="date" value={since} onChange={(event) => setSince(event.target.value)} />
                 </Field>
                 <Field>
-                  <FieldLabel>Until</FieldLabel>
+                  <FieldLabel>{copy.scope.until}</FieldLabel>
                   <Input type="date" value={until} onChange={(event) => setUntil(event.target.value)} />
                 </Field>
                 <Field className="xl:col-span-2">
-                  <FieldLabel>KPI pack</FieldLabel>
+                  <FieldLabel>{copy.scope.kpiPack}</FieldLabel>
                   <Select
                     items={[{ label: "Auto-detect", value: "auto" }, ...packItems]}
                     value={pack}
@@ -687,23 +948,23 @@ export function DashboardShell() {
                     }}
                   >
                     <SelectTrigger className="w-full">
-                      <SelectValue placeholder="KPI pack" />
+                      <SelectValue placeholder={copy.scope.kpiPack} />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectGroup>
-                        <SelectItem value="auto">Auto-detect</SelectItem>
+                        <SelectItem value="auto">{copy.scope.autoDetect}</SelectItem>
                         {packItems.map((item) => (
                           <SelectItem key={item.value} value={item.value}>
-                            {item.label}
+                            {packLabel(item.value, language)}
                           </SelectItem>
                         ))}
                       </SelectGroup>
                     </SelectContent>
                   </Select>
-                  <FieldDescription>Objective/name/actions decide default; override anytime.</FieldDescription>
+                  <FieldDescription>{copy.scope.kpiHelp}</FieldDescription>
                 </Field>
                 <Field>
-                  <FieldLabel>Compare</FieldLabel>
+                  <FieldLabel>{copy.scope.compare}</FieldLabel>
                   <Select
                     items={compareItems}
                     value={compareMode}
@@ -718,7 +979,7 @@ export function DashboardShell() {
                       <SelectGroup>
                         {compareItems.map((item) => (
                           <SelectItem key={item.value} value={item.value}>
-                            {item.label}
+                            {compareLabel(item.value, language)}
                           </SelectItem>
                         ))}
                       </SelectGroup>
@@ -726,10 +987,10 @@ export function DashboardShell() {
                   </Select>
                 </Field>
                 <Field className="justify-end">
-                  <FieldLabel className="sr-only">Pull data</FieldLabel>
+                  <FieldLabel className="sr-only">{copy.scope.pullData}</FieldLabel>
                   <Button onClick={pullReport} disabled={!accountId || loading === "report"} className="w-full">
                     {loading === "report" ? <Spinner data-icon="inline-start" /> : <RefreshCcwIcon data-icon="inline-start" />}
-                    Pull report
+                    {copy.scope.pullReport}
                   </Button>
                 </Field>
               </FieldGroup>
@@ -737,7 +998,7 @@ export function DashboardShell() {
           </Card>
 
           {loading === "report" ? <ReportSkeleton /> : null}
-          {!report && loading !== "report" ? <EmptyState /> : null}
+          {!report && loading !== "report" ? <EmptyState language={language} /> : null}
           {report ? (
             <>
               <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
@@ -753,11 +1014,11 @@ export function DashboardShell() {
                 ))}
               </section>
 
-              <PerformanceCharts report={report} />
+              <PerformanceCharts report={report} language={language} />
 
-              {previousReport ? <ComparisonPanel current={report} previous={previousReport} mode={compareMode} /> : null}
+              {previousReport ? <ComparisonPanel current={report} previous={previousReport} mode={compareMode} language={language} /> : null}
 
-              <AiVerdictPanel
+              <VerdictPanel
                 provider={provider}
                 loading={aiLoading.verdict}
                 progress={verdictProgress}
@@ -765,7 +1026,6 @@ export function DashboardShell() {
                 copiedPrompt={copiedPrompt}
                 language={language}
                 onProviderChange={setProvider}
-                onLanguageChange={setLanguage}
                 onGenerate={runAi}
                 onCopyPrompt={copyPrompt}
               />
@@ -784,23 +1044,27 @@ export function DashboardShell() {
               <section className="grid gap-4 xl:grid-cols-[1.4fr_0.9fr]">
                 <Card>
                   <CardHeader>
-                    <CardTitle>Performance view</CardTitle>
+                    <CardTitle>{copy.performance.title}</CardTitle>
                     <CardDescription>
-                      Detected pack: {report.detectedPack}. Active pack: {report.selectedPack}. {report.packReason}
+                      {copy.performance.description
+                        .replace("{detected}", report.detectedPack)
+                        .replace("{active}", report.selectedPack)
+                        .replace("{reason}", report.packReason)}
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
                     <Tabs defaultValue="campaigns">
                       <TabsList>
-                        <TabsTrigger value="campaigns">Campaigns</TabsTrigger>
-                        <TabsTrigger value="adsets">Ad sets</TabsTrigger>
-                        <TabsTrigger value="ads">Ads</TabsTrigger>
-                        <TabsTrigger value="daily">Daily</TabsTrigger>
+                        <TabsTrigger value="campaigns">{copy.performance.campaigns}</TabsTrigger>
+                        <TabsTrigger value="adsets">{copy.performance.adsets}</TabsTrigger>
+                        <TabsTrigger value="ads">{copy.performance.ads}</TabsTrigger>
+                        <TabsTrigger value="daily">{copy.performance.daily}</TabsTrigger>
                       </TabsList>
                       <TabsContent value="campaigns" className="mt-3">
                         <PerformanceTable
                           rows={report.campaignRows}
                           currency={report.account.currency || "VND"}
+                          language={language}
                           pack={report.selectedPack}
                         />
                       </TabsContent>
@@ -808,6 +1072,7 @@ export function DashboardShell() {
                         <PerformanceTable
                           rows={report.adsetRows}
                           currency={report.account.currency || "VND"}
+                          language={language}
                           pack={report.selectedPack}
                         />
                       </TabsContent>
@@ -815,11 +1080,12 @@ export function DashboardShell() {
                         <PerformanceTable
                           rows={report.adRows}
                           currency={report.account.currency || "VND"}
+                          language={language}
                           pack={report.selectedPack}
                         />
                       </TabsContent>
                       <TabsContent value="daily" className="mt-3">
-                        <PerformanceTable rows={report.dailyRows} currency={report.account.currency || "VND"} daily />
+                        <PerformanceTable rows={report.dailyRows} currency={report.account.currency || "VND"} language={language} daily />
                       </TabsContent>
                     </Tabs>
                   </CardContent>
@@ -827,13 +1093,13 @@ export function DashboardShell() {
 
                 <Card>
                   <CardHeader>
-                    <CardTitle>Account health</CardTitle>
-                    <CardDescription>Ads-skill checks: creative, CTR, frequency, consolidation.</CardDescription>
+                    <CardTitle>{copy.performance.health}</CardTitle>
+                    <CardDescription>{copy.performance.healthDescription}</CardDescription>
                   </CardHeader>
                   <CardContent className="flex flex-col gap-3">
                     <div className="flex items-end justify-between">
                       <div className="text-4xl font-semibold">{report.health.score}/100</div>
-                      <Badge variant={report.health.score >= 75 ? "secondary" : "destructive"}>Grade {report.health.grade}</Badge>
+                      <Badge variant={report.health.score >= 75 ? "secondary" : "destructive"}>{copy.performance.grade} {report.health.grade}</Badge>
                     </div>
                     <Separator />
                     <div className="flex flex-col gap-2">
@@ -854,12 +1120,12 @@ export function DashboardShell() {
               <section>
                 <Card>
                   <CardHeader>
-                    <CardTitle>Breakdowns</CardTitle>
-                    <CardDescription>Platform and age/gender signal for diagnosis.</CardDescription>
+                    <CardTitle>{copy.performance.breakdowns}</CardTitle>
+                    <CardDescription>{copy.performance.breakdownsDescription}</CardDescription>
                   </CardHeader>
                   <CardContent className="grid gap-4 xl:grid-cols-2">
-                    <BarList rows={report.platformRows} metric="spend" currency={report.account.currency || "VND"} />
-                    <BarList rows={report.ageGenderRows} metric="leads" currency={report.account.currency || "VND"} />
+                    <BarList rows={report.platformRows} metric="spend" currency={report.account.currency || "VND"} language={language} />
+                    <BarList rows={report.ageGenderRows} metric="leads" currency={report.account.currency || "VND"} language={language} />
                   </CardContent>
                 </Card>
               </section>
@@ -893,7 +1159,6 @@ export function DashboardShell() {
               onCountryChange={setCompetitorCountry}
               onLimitChange={setCompetitorLimit}
               onLibraryUrlsChange={setCompetitorLibraryUrls}
-              onLanguageChange={setLanguage}
               onProviderChange={setProvider}
               onFetchAds={fetchSpyAds}
               onGenerate={runCompetitorSpy}
@@ -910,49 +1175,53 @@ function TokenScreen(props: {
   token: string;
   error: string;
   loading: boolean;
+  language: ReportLanguage;
+  onLanguageChange: (value: ReportLanguage) => void;
   onTokenChange: (value: string) => void;
   onSubmit: (event: React.FormEvent) => void;
 }) {
+  const copy = uiCopy[props.language].token;
   return (
     <main className="grid min-h-svh place-items-center p-4">
       <Card className="w-full max-w-3xl">
         <CardHeader>
-          <div className="flex items-center gap-3">
-            <img src="/red-agency-logo.png" alt="Red Agency" className="size-12 rounded-lg object-contain" />
-            <div>
-              <CardTitle>Red Agency Ads Tool</CardTitle>
-              <CardDescription>Connect Meta access token.</CardDescription>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex items-center gap-3">
+              <img src="/red-agency-logo.png" alt="Red Agency" className="size-12 rounded-lg object-contain" />
+              <div>
+                <CardTitle>{copy.title}</CardTitle>
+                <CardDescription>{copy.description}</CardDescription>
+              </div>
             </div>
+            <LanguageToggle language={props.language} onChange={props.onLanguageChange} />
           </div>
-          <CardDescription>
-            Token is validated server-side, encrypted, and stored only in an HttpOnly session cookie.
-          </CardDescription>
+          <CardDescription>{copy.storage}</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={props.onSubmit} className="flex flex-col gap-4">
             {props.error ? (
               <Alert variant="destructive">
-                <AlertTitle>Token rejected</AlertTitle>
+                <AlertTitle>{copy.rejected}</AlertTitle>
                 <AlertDescription>{props.error}</AlertDescription>
               </Alert>
             ) : null}
             <FieldGroup>
               <Field>
-                <FieldLabel>Access token</FieldLabel>
+                <FieldLabel>{copy.field}</FieldLabel>
                 <Input
                   value={props.token}
                   onChange={(event) => props.onTokenChange(event.target.value)}
                   type="password"
                   autoComplete="off"
-                  placeholder="Paste Meta access token"
+                  placeholder={copy.placeholder}
                   required
                 />
-                <FieldDescription>Do not use shared tokens for hosted public deployments. Rotate any token pasted into chat.</FieldDescription>
+                <FieldDescription>{copy.help}</FieldDescription>
               </Field>
             </FieldGroup>
             <Button type="submit" disabled={props.loading}>
               {props.loading ? <Spinner data-icon="inline-start" /> : <KeyRoundIcon data-icon="inline-start" />}
-              Validate token
+              {copy.submit}
             </Button>
           </form>
         </CardContent>
@@ -961,19 +1230,47 @@ function TokenScreen(props: {
   );
 }
 
-function LoadingScreen() {
+function LoadingScreen({ language }: { language: ReportLanguage }) {
+  const copy = uiCopy[language].loading;
   return (
     <main className="grid min-h-svh place-items-center">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle>Loading session</CardTitle>
-          <CardDescription>Checking encrypted cookie state.</CardDescription>
+          <CardTitle>{copy.title}</CardTitle>
+          <CardDescription>{copy.description}</CardDescription>
         </CardHeader>
         <CardContent>
           <Skeleton className="h-24" />
         </CardContent>
       </Card>
     </main>
+  );
+}
+
+function LanguageToggle({ language, onChange }: { language: ReportLanguage; onChange: (value: ReportLanguage) => void }) {
+  const label = language === "vi" ? "Ngôn ngữ" : "Language";
+  return (
+    <div className="flex items-center gap-2" data-print-hidden>
+      <LanguagesIcon className="text-muted-foreground" />
+      <ToggleGroup
+        aria-label={label}
+        value={[language]}
+        onValueChange={(values) => {
+          const next = values.find((value): value is ReportLanguage => value === "en" || value === "vi");
+          if (next) onChange(next);
+        }}
+        variant="outline"
+        size="sm"
+        spacing={0}
+      >
+        <ToggleGroupItem value="en" aria-label="English">
+          EN
+        </ToggleGroupItem>
+        <ToggleGroupItem value="vi" aria-label="Tiếng Việt">
+          VI
+        </ToggleGroupItem>
+      </ToggleGroup>
+    </div>
   );
 }
 
@@ -987,15 +1284,16 @@ function ReportSkeleton() {
   );
 }
 
-function EmptyState() {
+function EmptyState({ language }: { language: ReportLanguage }) {
+  const copy = uiCopy[language].empty;
   return (
     <Empty className="min-h-80 border">
       <EmptyHeader>
         <EmptyMedia variant="icon">
           <ActivityIcon />
         </EmptyMedia>
-        <EmptyTitle>No report loaded</EmptyTitle>
-        <EmptyDescription>Choose account and campaign scope, then pull report from Meta Graph API.</EmptyDescription>
+        <EmptyTitle>{copy.reportTitle}</EmptyTitle>
+        <EmptyDescription>{copy.reportDescription}</EmptyDescription>
       </EmptyHeader>
     </Empty>
   );
@@ -1004,12 +1302,14 @@ function EmptyState() {
 function CampaignPicker({
   campaigns,
   currency,
+  language,
   loading,
   selectedIds,
   onChange,
 }: {
   campaigns: MetaCampaign[];
   currency: string;
+  language: ReportLanguage;
   loading: boolean;
   selectedIds: string[];
   onChange: (ids: string[]) => void;
@@ -1023,7 +1323,8 @@ function CampaignPicker({
     .sort((a, b) => Number(isActiveCampaign(b)) - Number(isActiveCampaign(a)) || a.name.localeCompare(b.name))
     .slice(0, 30);
   const effectiveCount = selectedIds.length || activeCampaigns.length;
-  const summary = selectedIds.length ? `${selectedIds.length} selected` : `All active (${activeCampaigns.length})`;
+  const copy = uiCopy[language].campaign;
+  const summary = selectedIds.length ? `${selectedIds.length} ${copy.selected}` : `${copy.allActive} (${activeCampaigns.length})`;
 
   function toggleCampaign(id: string) {
     const current = selectedIds.length ? selectedIds : [];
@@ -1032,16 +1333,16 @@ function CampaignPicker({
 
   return (
     <Field className="xl:col-span-2">
-      <FieldLabel>Campaigns</FieldLabel>
+      <FieldLabel>{copy.label}</FieldLabel>
       <div className="rounded-lg border bg-background p-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2">
             <Badge variant="secondary">{summary}</Badge>
-            <span className="text-xs text-muted-foreground">{effectiveCount} in report scope</span>
+            <span className="text-xs text-muted-foreground">{effectiveCount} {copy.inScope}</span>
           </div>
           <div className="flex items-center gap-1">
             <Button type="button" variant="outline" size="sm" onClick={() => onChange([])} disabled={loading}>
-              All active
+              {copy.allActive}
             </Button>
             <Button
               type="button"
@@ -1051,7 +1352,7 @@ function CampaignPicker({
               disabled={loading || !campaigns.length}
             >
               {expanded ? <ChevronUpIcon data-icon="inline-start" /> : <ChevronDownIcon data-icon="inline-start" />}
-              {expanded ? "Hide" : "Edit"}
+              {expanded ? copy.hide : copy.edit}
             </Button>
           </div>
         </div>
@@ -1074,18 +1375,18 @@ function CampaignPicker({
               <Input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search campaigns"
+                placeholder={copy.search}
                 disabled={loading}
               />
               <Button type="button" variant="outline" size="sm" onClick={() => onChange(campaigns.map((campaign) => campaign.id))} disabled={loading || !campaigns.length}>
-                All
+                {copy.all}
               </Button>
             </div>
             <div className="mt-2 flex max-h-56 flex-col gap-1 overflow-auto pr-1">
               {loading ? (
                 <div className="flex h-24 items-center justify-center text-sm text-muted-foreground">
                   <Spinner data-icon="inline-start" />
-                  Loading campaigns
+                  {copy.loading}
                 </div>
               ) : null}
               {!loading && visibleCampaigns.length
@@ -1106,7 +1407,7 @@ function CampaignPicker({
                         <span className="min-w-0">
                           <span className="block truncate font-medium">{campaign.name}</span>
                           <span className="block truncate text-xs text-muted-foreground">
-                            {campaign.objective || "No objective"} {formatCampaignBudget(campaign, currency)}
+                            {campaign.objective || copy.noObjective} {formatCampaignBudget(campaign, currency, language)}
                           </span>
                         </span>
                         <Badge variant={status === "ACTIVE" ? "secondary" : status === "PAUSED" ? "outline" : "destructive"}>{status}</Badge>
@@ -1114,12 +1415,12 @@ function CampaignPicker({
                     );
                   })
                 : null}
-              {!loading && !visibleCampaigns.length ? <div className="py-6 text-center text-sm text-muted-foreground">No campaigns found.</div> : null}
+              {!loading && !visibleCampaigns.length ? <div className="py-6 text-center text-sm text-muted-foreground">{copy.none}</div> : null}
             </div>
           </>
         ) : null}
       </div>
-      <FieldDescription>Click campaigns to build a custom scope. Leave empty to pull all active campaigns.</FieldDescription>
+      <FieldDescription>{copy.help}</FieldDescription>
     </Field>
   );
 }
@@ -1132,35 +1433,48 @@ function isActiveCampaign(campaign: MetaCampaign) {
   return campaignStatus(campaign) === "ACTIVE";
 }
 
-function formatCampaignBudget(campaign: MetaCampaign, currency: string) {
+function formatCampaignBudget(campaign: MetaCampaign, currency: string, language: ReportLanguage) {
+  const copy = uiCopy[language].campaign;
   const daily = Number(campaign.daily_budget || 0);
   const lifetime = Number(campaign.lifetime_budget || 0);
-  if (daily > 0) return `- ${formatMetric(daily / 100, "currency", currency)}/day`;
-  if (lifetime > 0) return `- ${formatMetric(lifetime / 100, "currency", currency)} lifetime`;
+  if (daily > 0) return `- ${formatMetric(daily / 100, "currency", currency)}/${copy.day}`;
+  if (lifetime > 0) return `- ${formatMetric(lifetime / 100, "currency", currency)} ${copy.lifetime}`;
   return "";
 }
 
-function ComparisonPanel({ current, previous, mode }: { current: DashboardReport; previous: DashboardReport; mode: CompareMode }) {
+function ComparisonPanel({
+  current,
+  previous,
+  mode,
+  language,
+}: {
+  current: DashboardReport;
+  previous: DashboardReport;
+  mode: CompareMode;
+  language: ReportLanguage;
+}) {
   const currency = current.account.currency || "VND";
+  const isVietnamese = language === "vi";
   const deltas = comparisonDeltas(current, previous).filter((item) =>
     ["spend", "messages", "leads", "purchases", "linkClicks", "ctr", "frequency", "costPerMessage", "cpl", "roas"].includes(item.key),
   );
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Compare mode: {modeLabel(mode)}</CardTitle>
+        <CardTitle>{isVietnamese ? "Chế độ so sánh" : "Compare mode"}: {modeLabel(mode, language)}</CardTitle>
         <CardDescription>
-          Current {current.dateRange.since} to {current.dateRange.until}. Previous {previous.dateRange.since} to {previous.dateRange.until}.
+          {isVietnamese ? "Hiện tại" : "Current"} {current.dateRange.since} {isVietnamese ? "đến" : "to"} {current.dateRange.until}.{" "}
+          {isVietnamese ? "Kỳ trước" : "Previous"} {previous.dateRange.since} {isVietnamese ? "đến" : "to"} {previous.dateRange.until}.
         </CardDescription>
       </CardHeader>
       <CardContent>
         <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-5">
           {deltas.slice(0, 10).map((delta) => (
             <div key={delta.key} className="rounded-lg border p-3">
-              <div className="text-xs font-medium text-muted-foreground">{metricLabel(delta.key)}</div>
+              <div className="text-xs font-medium text-muted-foreground">{metricLabel(delta.key, language)}</div>
               <div className="mt-1 text-lg font-semibold tabular-nums">{formatComparisonMetric(delta.key, delta.current, currency)}</div>
               <div className={delta.change >= 0 ? "text-xs tabular-nums text-emerald-700" : "text-xs tabular-nums text-destructive"}>
-                {formatSignedPct(delta.change_pct)}
+                {formatSignedPct(delta.change_pct, language)}
               </div>
             </div>
           ))}
@@ -1184,14 +1498,14 @@ function AiProgressStatus({
   if (!progress) return null;
 
   const isVietnamese = language === "vi";
-  const providerLabel = providerItems.find((item) => item.value === provider)?.label || "AI provider";
-  const usesOpenRouterFallback = provider === "auto" || provider === "openrouter";
+  const currentProviderLabel = providerLabel(provider, language);
+  const usesOpenRouterFallback = provider === "openrouter";
   const verdictSteps = isVietnamese
-    ? ["Chuẩn bị prompt đánh giá", `Gọi ${providerLabel}`, usesOpenRouterFallback ? "Thử model OpenRouter dự phòng nếu cần" : "Đợi model phản hồi", "Đọc JSON và kiểm tra kết quả"]
-    : ["Preparing verdict prompt", `Calling ${providerLabel}`, usesOpenRouterFallback ? "Trying OpenRouter fallback models if needed" : "Waiting for model response", "Parsing JSON and checking result"];
+    ? ["Tạo Verdict local", `Gọi ${currentProviderLabel}`, usesOpenRouterFallback ? "Thử model OpenRouter dự phòng nếu cần" : "Đợi model phản hồi", "Đọc JSON và kiểm tra kết quả"]
+    : ["Generating local Verdict", `Calling ${currentProviderLabel}`, usesOpenRouterFallback ? "Trying OpenRouter fallback models if needed" : "Waiting for model response", "Parsing JSON and checking result"];
   const insightSteps = isVietnamese
-    ? ["Chuẩn bị prompt insight", `Gọi ${providerLabel}`, usesOpenRouterFallback ? "Thử model OpenRouter dự phòng nếu cần" : "Đợi model phản hồi", "Sắp xếp insight ưu tiên"]
-    : ["Preparing insight prompt", `Calling ${providerLabel}`, usesOpenRouterFallback ? "Trying OpenRouter fallback models if needed" : "Waiting for model response", "Organizing priority insights"];
+    ? ["Chuẩn bị prompt insight", `Gọi ${currentProviderLabel}`, usesOpenRouterFallback ? "Thử model OpenRouter dự phòng nếu cần" : "Đợi model phản hồi", "Sắp xếp insight ưu tiên"]
+    : ["Preparing insight prompt", `Calling ${currentProviderLabel}`, usesOpenRouterFallback ? "Trying OpenRouter fallback models if needed" : "Waiting for model response", "Organizing priority insights"];
   const steps = kind === "verdict" ? verdictSteps : insightSteps;
   const stepText = steps[Math.min(progress.stepIndex, steps.length - 1)];
   const elapsedText = isVietnamese ? `${progress.elapsedSeconds}s đã trôi qua` : `${progress.elapsedSeconds}s elapsed`;
@@ -1214,7 +1528,7 @@ function AiProgressStatus({
   );
 }
 
-function AiVerdictPanel({
+function VerdictPanel({
   provider,
   loading,
   progress,
@@ -1222,60 +1536,36 @@ function AiVerdictPanel({
   copiedPrompt,
   language,
   onProviderChange,
-  onLanguageChange,
   onGenerate,
   onCopyPrompt,
 }: {
   provider: Provider;
   loading: boolean;
   progress: AiProgressState | null;
-  verdict: AiVerdict | null;
+  verdict: Verdict | null;
   copiedPrompt: boolean;
   language: ReportLanguage;
   onProviderChange: (value: Provider) => void;
-  onLanguageChange: (value: ReportLanguage) => void;
   onGenerate: () => void;
   onCopyPrompt: () => void;
 }) {
   const isVietnamese = language === "vi";
+  const copy = uiCopy[language].verdict;
   return (
     <Card data-print-break data-print-flow>
       <CardHeader>
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
-            <CardTitle>{isVietnamese ? "Báo cáo AI" : "AI verdict"}</CardTitle>
+            <CardTitle>Verdict</CardTitle>
             <CardDescription>
               {isVietnamese
-                ? "Phân tích hiệu quả và đề xuất tối ưu bằng AI. Prompt fallback luôn khả dụng."
-                : "AI-powered monthly analysis and next-period recommendations. Prompt fallback stays available."}
+                ? "Verdict local có thể chạy không cần model; OpenAI chỉ enhancement khi auto có key."
+                : "Local Verdict works without a model call; auto only asks OpenAI for enhancement when a key exists."}
             </CardDescription>
           </div>
           <div className="flex flex-col gap-2 md:flex-row md:items-end" data-print-hidden>
-            <Field className="md:w-40">
-              <FieldLabel>{isVietnamese ? "Ngôn ngữ" : "Language"}</FieldLabel>
-              <Select
-                items={languageItems}
-                value={language}
-                onValueChange={(value) => {
-                  if (value) onLanguageChange(value as ReportLanguage);
-                }}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {languageItems.map((item) => (
-                      <SelectItem key={item.value} value={item.value}>
-                        {item.label}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </Field>
             <Field className="md:w-56">
-              <FieldLabel>Provider</FieldLabel>
+              <FieldLabel>{copy.provider}</FieldLabel>
               <Select
                 items={providerItems}
                 value={provider}
@@ -1290,7 +1580,7 @@ function AiVerdictPanel({
                   <SelectGroup>
                     {providerItems.map((item) => (
                       <SelectItem key={item.value} value={item.value}>
-                        {item.label}
+                        {providerLabel(item.value, language)}
                       </SelectItem>
                     ))}
                   </SelectGroup>
@@ -1299,11 +1589,11 @@ function AiVerdictPanel({
             </Field>
             <Button onClick={onGenerate} disabled={loading}>
               {loading ? <Spinner data-icon="inline-start" /> : <SparklesIcon data-icon="inline-start" />}
-              Generate verdict
+              {copy.generate}
             </Button>
             <Button type="button" variant="outline" onClick={onCopyPrompt}>
               <ClipboardIcon data-icon="inline-start" />
-              {copiedPrompt ? "Copied" : "Copy prompt"}
+              {copiedPrompt ? copy.copied : copy.copyPrompt}
             </Button>
           </div>
         </div>
@@ -1315,8 +1605,8 @@ function AiVerdictPanel({
         ) : (
           <Empty className="border">
             <EmptyHeader>
-              <EmptyTitle>No AI verdict yet</EmptyTitle>
-              <EmptyDescription>Generate after pulling report. Export will include this section once available.</EmptyDescription>
+              <EmptyTitle>{copy.emptyTitle}</EmptyTitle>
+              <EmptyDescription>{copy.emptyDescription}</EmptyDescription>
             </EmptyHeader>
           </Empty>
         )}
@@ -1448,7 +1738,6 @@ function CompetitorSpyPanel({
   onCountryChange,
   onLimitChange,
   onLibraryUrlsChange,
-  onLanguageChange,
   onProviderChange,
   onFetchAds,
   onGenerate,
@@ -1479,7 +1768,6 @@ function CompetitorSpyPanel({
   onCountryChange: (value: string) => void;
   onLimitChange: (value: number) => void;
   onLibraryUrlsChange: (value: string) => void;
-  onLanguageChange: (value: ReportLanguage) => void;
   onProviderChange: (value: Provider) => void;
   onFetchAds: () => void;
   onGenerate: () => void;
@@ -1500,13 +1788,15 @@ function CompetitorSpyPanel({
   const themeRows = result?.themes.slice(0, 4) || [];
   const briefs = result?.test_briefs.slice(0, 4) || [];
   const competitors = result?.competitors.slice(0, 4) || [];
+  const verdictCopy = uiCopy[language].verdict;
+  const spyCopy = uiCopy[language].spy;
 
   return (
     <Card data-print-flow>
       <CardHeader>
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
-            <CardTitle>{isVietnamese ? "Competitor spy" : "Competitor spy"}</CardTitle>
+            <CardTitle>{isVietnamese ? "Theo dõi đối thủ" : "Competitor spy"}</CardTitle>
             <CardDescription>
               {isVietnamese
                 ? "Biến tên đối thủ hoặc ghi chú từ thư viện quảng cáo thành theme, gap và brief test mới."
@@ -1524,7 +1814,7 @@ function CompetitorSpyPanel({
             </Button>
             <Button type="button" variant="outline" onClick={onCopyPrompt} disabled={!canAnalyze}>
               <ClipboardIcon data-icon="inline-start" />
-              {copiedPrompt ? "Copied" : "Copy spy prompt"}
+              {copiedPrompt ? verdictCopy.copied : spyCopy.copyPrompt}
             </Button>
           </div>
         </div>
@@ -1661,30 +1951,7 @@ function CompetitorSpyPanel({
           </Field>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-1">
             <Field>
-              <FieldLabel id={`${id}-language-label`}>{isVietnamese ? "Ngôn ngữ" : "Language"}</FieldLabel>
-              <Select
-                items={languageItems}
-                value={language}
-                onValueChange={(value) => {
-                  if (value) onLanguageChange(value as ReportLanguage);
-                }}
-              >
-                <SelectTrigger className="w-full" aria-labelledby={`${id}-language-label`}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {languageItems.map((item) => (
-                      <SelectItem key={item.value} value={item.value}>
-                        {item.label}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field>
-              <FieldLabel id={`${id}-provider-label`}>Provider</FieldLabel>
+              <FieldLabel id={`${id}-provider-label`}>{verdictCopy.provider}</FieldLabel>
               <Select
                 items={providerItems}
                 value={provider}
@@ -1699,7 +1966,7 @@ function CompetitorSpyPanel({
                   <SelectGroup>
                     {providerItems.map((item) => (
                       <SelectItem key={item.value} value={item.value}>
-                        {item.label}
+                        {providerLabel(item.value, language)}
                       </SelectItem>
                     ))}
                   </SelectGroup>
@@ -1850,6 +2117,7 @@ function SpyAdsPanel({
   language: ReportLanguage;
 }) {
   const isVietnamese = language === "vi";
+  const copy = uiCopy[language].spy;
   return (
     <div className="rounded-lg border bg-background p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1885,7 +2153,7 @@ function SpyAdsPanel({
             <div key={`${ad.source}-${ad.id}-${index}`} className="rounded-md border p-3">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <div className="truncate text-sm font-semibold">{ad.pageName || ad.competitorName || "Unknown advertiser"}</div>
+                  <div className="truncate text-sm font-semibold">{ad.pageName || ad.competitorName || copy.unknownAdvertiser}</div>
                   <div className="mt-1 flex flex-wrap gap-1">
                     <Badge variant="outline">{ad.source}</Badge>
                     {ad.platform ? <Badge variant="secondary">{compactText(ad.platform, 24)}</Badge> : null}
@@ -1894,7 +2162,7 @@ function SpyAdsPanel({
                 </div>
                 {ad.snapshotUrl ? (
                   <Button type="button" variant="ghost" size="sm" onClick={() => window.open(ad.snapshotUrl, "_blank", "noopener,noreferrer")}>
-                    View
+                    {copy.view}
                   </Button>
                 ) : null}
               </div>
@@ -1902,7 +2170,7 @@ function SpyAdsPanel({
                 <img src={ad.imageUrl} alt="" className="mt-3 aspect-video w-full rounded-md border object-cover" loading="lazy" />
               ) : null}
               <p className="mt-3 line-clamp-2 text-sm font-medium" data-print-expand>
-                {compactText(ad.headline || ad.body || "No ad copy returned.", 160)}
+                {compactText(ad.headline || ad.body || copy.noCopy, 160)}
               </p>
               {ad.description || ad.body ? (
                 <p className="mt-2 line-clamp-3 text-xs leading-5 text-muted-foreground" data-print-expand>
@@ -1911,7 +2179,7 @@ function SpyAdsPanel({
               ) : null}
               <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
                 {ad.cta ? <span>CTA: {compactText(ad.cta, 28)}</span> : null}
-                {ad.startDate ? <span>Start: {ad.startDate.slice(0, 10)}</span> : null}
+                {ad.startDate ? <span>{copy.start}: {ad.startDate.slice(0, 10)}</span> : null}
               </div>
             </div>
           ))}
@@ -1949,15 +2217,52 @@ function toDateInput(value: Date) {
   return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
 }
 
-function modeLabel(mode: CompareMode) {
+function appSectionLabel(value: ActiveView, language: ReportLanguage) {
+  return value === "ads" ? uiCopy[language].nav.ads : uiCopy[language].nav.competitor;
+}
+
+function workflowLabel(value: (typeof workflowItems)[number]["value"], language: ReportLanguage) {
+  const labels = uiCopy[language].nav;
+  if (value === "connect") return labels.connect;
+  if (value === "select") return labels.select;
+  if (value === "analyze") return labels.analyze;
+  return labels.verdict;
+}
+
+function providerLabel(provider: Provider, language: ReportLanguage) {
+  if (provider === "openai") return "OpenAI";
+  if (provider === "openrouter") return "OpenRouter";
+  if (provider === "prompt") return language === "vi" ? "Prompt local" : "Prompt only";
+  return language === "vi" ? "Auto tin cậy" : "Auto provider";
+}
+
+function packLabel(pack: KpiPack, language: ReportLanguage) {
+  if (language === "en") return packItems.find((item) => item.value === pack)?.label || pack;
+  const labels: Record<KpiPack, string> = {
+    lead_gen: "Lead / tin nhắn",
+    messages: "Tin nhắn",
+    sales_roas: "Sales / ROAS",
+    traffic: "Traffic",
+    awareness: "Awareness",
+  };
+  return labels[pack];
+}
+
+function compareLabel(mode: CompareMode, language: ReportLanguage) {
+  if (mode === "off") return language === "vi" ? "Không so sánh" : "No compare";
+  return modeLabel(mode, language);
+}
+
+function modeLabel(mode: CompareMode, language: ReportLanguage = "en") {
   if (mode === "wow") return "WoW";
   if (mode === "mom") return "MoM";
   if (mode === "yoy") return "YoY";
-  return "Off";
+  return language === "vi" ? "Tắt" : "Off";
 }
 
-function metricLabel(key: string) {
-  const labels: Record<string, string> = {
+function metricLabel(key: string, language: ReportLanguage = "en") {
+  const labels: Record<ReportLanguage, Record<string, string>> = {
+    en: {
     spend: "Spend",
     messages: "Messages",
     leads: "Leads",
@@ -1968,8 +2273,21 @@ function metricLabel(key: string) {
     costPerMessage: "Cost/msg",
     cpl: "CPL",
     roas: "ROAS",
+    },
+    vi: {
+      spend: "Chi tiêu",
+      messages: "Tin nhắn",
+      leads: "Lead",
+      purchases: "Purchase",
+      linkClicks: "Link click",
+      ctr: "CTR",
+      frequency: "Frequency",
+      costPerMessage: "Cost/msg",
+      cpl: "CPL",
+      roas: "ROAS",
+    },
   };
-  return labels[key] || key;
+  return labels[language][key] || key;
 }
 
 function formatComparisonMetric(key: string, value: number, currency: string) {
@@ -1979,8 +2297,8 @@ function formatComparisonMetric(key: string, value: number, currency: string) {
   return formatMetric(value, "number", currency);
 }
 
-function formatSignedPct(value: number | null) {
-  if (value === null) return "new";
+function formatSignedPct(value: number | null, language: ReportLanguage = "en") {
+  if (value === null) return language === "vi" ? "mới" : "new";
   const sign = value > 0 ? "+" : "";
   return `${sign}${value.toLocaleString("vi-VN", { maximumFractionDigits: 1 })}%`;
 }
@@ -2007,9 +2325,9 @@ const performanceChartConfig = {
   result: { label: "Result metric", color: "var(--chart-2)" },
 } satisfies ChartConfig;
 
-function PerformanceCharts({ report }: { report: DashboardReport }) {
+function PerformanceCharts({ report, language }: { report: DashboardReport; language: ReportLanguage }) {
   const currency = report.account.currency || "VND";
-  const spec = getPackChartSpec(report.selectedPack);
+  const spec = getPackChartSpec(report.selectedPack, language);
   const dailyData = report.dailyRows.map((row) => ({
     date: compactDate(row.date),
     spend: Math.round(row.spend),
@@ -2075,7 +2393,7 @@ function PerformanceCharts({ report }: { report: DashboardReport }) {
               </ComposedChart>
             </ChartContainer>
           ) : (
-            <ChartEmpty />
+            <ChartEmpty language={language} />
           )}
         </CardContent>
       </Card>
@@ -2109,7 +2427,7 @@ function PerformanceCharts({ report }: { report: DashboardReport }) {
               </LineChart>
             </ChartContainer>
           ) : (
-            <ChartEmpty />
+            <ChartEmpty language={language} />
           )}
         </CardContent>
       </Card>
@@ -2145,7 +2463,7 @@ function PerformanceCharts({ report }: { report: DashboardReport }) {
               </LineChart>
             </ChartContainer>
           ) : (
-            <ChartEmpty />
+            <ChartEmpty language={language} />
           )}
         </CardContent>
       </Card>
@@ -2178,7 +2496,7 @@ function PerformanceCharts({ report }: { report: DashboardReport }) {
               </BarChart>
             </ChartContainer>
           ) : (
-            <ChartEmpty />
+            <ChartEmpty language={language} />
           )}
         </CardContent>
       </Card>
@@ -2227,10 +2545,13 @@ type PackChartSpec = {
   metricFormats: Partial<Record<ChartKey, ChartFormat>>;
 };
 
-function getPackChartSpec(pack: KpiPack): PackChartSpec {
+function getPackChartSpec(pack: KpiPack, language: ReportLanguage = "en"): PackChartSpec {
+  const isVietnamese = language === "vi";
   const shared = {
-    diagnosticTitle: "Fatigue guardrail",
-    diagnosticDescription: "Frequency plus CTR is a common quick fatigue proxy. True creative fatigue needs creative-level CTR drop over time.",
+    diagnosticTitle: isVietnamese ? "Guardrail fatigue" : "Fatigue guardrail",
+    diagnosticDescription: isVietnamese
+      ? "Frequency cộng CTR là proxy nhanh cho fatigue. Fatigue thật cần xem CTR theo từng creative qua thời gian."
+      : "Frequency plus CTR is a common quick fatigue proxy. True creative fatigue needs creative-level CTR drop over time.",
     diagnosticKeys: ["frequency", "ctr"] as ChartKey[],
     referenceLine: { value: 3 },
   };
@@ -2238,15 +2559,15 @@ function getPackChartSpec(pack: KpiPack): PackChartSpec {
   if (pack === "messages") {
     return {
       ...shared,
-      operatorQuestion: "Are message conversations scaling without reply quality or fatigue breaking?",
-      trendTitle: "Message trend",
-      trendDescription: "Spend against messages and replies, the core signal for DM campaigns.",
+      operatorQuestion: isVietnamese ? "Tin nhắn có scale mà không vỡ chất lượng reply hoặc fatigue không?" : "Are message conversations scaling without reply quality or fatigue breaking?",
+      trendTitle: isVietnamese ? "Xu hướng tin nhắn" : "Message trend",
+      trendDescription: isVietnamese ? "Chi tiêu so với messages và replies, tín hiệu chính của campaign DM." : "Spend against messages and replies, the core signal for DM campaigns.",
       trendKeys: ["messages", "replies"],
-      efficiencyTitle: "Message cost",
-      efficiencyDescription: "Cost per message and reply drift. Use this before scaling.",
+      efficiencyTitle: isVietnamese ? "Chi phí tin nhắn" : "Message cost",
+      efficiencyDescription: isVietnamese ? "Cost per message và reply drift. Xem trước khi scale." : "Cost per message and reply drift. Use this before scaling.",
       efficiencyKeys: ["costPerMessage", "costPerReply"],
-      drilldownTitle: "Ad set cost per message",
-      drilldownDescription: "Ad sets ranked by cost per message, with spend beside it.",
+      drilldownTitle: isVietnamese ? "Cost per message theo ad set" : "Ad set cost per message",
+      drilldownDescription: isVietnamese ? "Ad set xếp theo cost per message, kèm chi tiêu." : "Ad sets ranked by cost per message, with spend beside it.",
       drilldownKey: "costPerMessage",
       drilldownFormat: "currency",
       higherIsBetter: false,
@@ -2257,15 +2578,15 @@ function getPackChartSpec(pack: KpiPack): PackChartSpec {
   if (pack === "sales_roas") {
     return {
       ...shared,
-      operatorQuestion: "Is spend creating purchases at enough ROAS to scale?",
-      trendTitle: "Sales trend",
-      trendDescription: "Spend against purchases and ROAS. Platform ROAS should still be treated as directional.",
+      operatorQuestion: isVietnamese ? "Chi tiêu có tạo purchase với ROAS đủ để scale không?" : "Is spend creating purchases at enough ROAS to scale?",
+      trendTitle: isVietnamese ? "Xu hướng sales" : "Sales trend",
+      trendDescription: isVietnamese ? "Chi tiêu so với purchases và ROAS. ROAS platform chỉ nên xem như tín hiệu định hướng." : "Spend against purchases and ROAS. Platform ROAS should still be treated as directional.",
       trendKeys: ["purchases", "roas"],
-      efficiencyTitle: "Sales efficiency",
-      efficiencyDescription: "CPA purchase and ROAS. Watch for rising CPA after budget changes.",
+      efficiencyTitle: isVietnamese ? "Hiệu quả sales" : "Sales efficiency",
+      efficiencyDescription: isVietnamese ? "CPA purchase và ROAS. Theo dõi CPA tăng sau khi đổi ngân sách." : "CPA purchase and ROAS. Watch for rising CPA after budget changes.",
       efficiencyKeys: ["cpaPurchase", "roas"],
-      drilldownTitle: "Ad set ROAS",
-      drilldownDescription: "Ad sets ranked by reported ROAS, with spend beside it.",
+      drilldownTitle: isVietnamese ? "ROAS theo ad set" : "Ad set ROAS",
+      drilldownDescription: isVietnamese ? "Ad set xếp theo ROAS báo cáo, kèm chi tiêu." : "Ad sets ranked by reported ROAS, with spend beside it.",
       drilldownKey: "roas",
       drilldownFormat: "ratio",
       higherIsBetter: true,
@@ -2276,15 +2597,15 @@ function getPackChartSpec(pack: KpiPack): PackChartSpec {
   if (pack === "traffic") {
     return {
       ...shared,
-      operatorQuestion: "Are clicks cheap enough without CTR quality collapsing?",
-      trendTitle: "Traffic trend",
-      trendDescription: "Spend against link clicks and clicks. Useful for spotting cheap but low-intent delivery.",
+      operatorQuestion: isVietnamese ? "Click có đủ rẻ mà CTR quality không sụp không?" : "Are clicks cheap enough without CTR quality collapsing?",
+      trendTitle: isVietnamese ? "Xu hướng traffic" : "Traffic trend",
+      trendDescription: isVietnamese ? "Chi tiêu so với link clicks và clicks. Dùng để thấy delivery rẻ nhưng intent thấp." : "Spend against link clicks and clicks. Useful for spotting cheap but low-intent delivery.",
       trendKeys: ["linkClicks", "clicks"],
-      efficiencyTitle: "Traffic cost",
-      efficiencyDescription: "CPC and CPM drift. CTR is checked separately for quality.",
+      efficiencyTitle: isVietnamese ? "Chi phí traffic" : "Traffic cost",
+      efficiencyDescription: isVietnamese ? "CPC và CPM drift. CTR được xem riêng cho quality." : "CPC and CPM drift. CTR is checked separately for quality.",
       efficiencyKeys: ["cpc", "cpm"],
-      drilldownTitle: "Ad set CPC",
-      drilldownDescription: "Ad sets ranked by CPC, with spend beside it.",
+      drilldownTitle: isVietnamese ? "CPC theo ad set" : "Ad set CPC",
+      drilldownDescription: isVietnamese ? "Ad set xếp theo CPC, kèm chi tiêu." : "Ad sets ranked by CPC, with spend beside it.",
       drilldownKey: "cpc",
       drilldownFormat: "currency",
       higherIsBetter: false,
@@ -2294,19 +2615,19 @@ function getPackChartSpec(pack: KpiPack): PackChartSpec {
 
   if (pack === "awareness") {
     return {
-      operatorQuestion: "Is reach expanding before CPM and frequency show saturation?",
-      trendTitle: "Reach trend",
-      trendDescription: "Spend against reach and impressions. Awareness needs delivery scale plus controlled frequency.",
+      operatorQuestion: isVietnamese ? "Reach có mở rộng trước khi CPM và frequency báo saturation không?" : "Is reach expanding before CPM and frequency show saturation?",
+      trendTitle: isVietnamese ? "Xu hướng reach" : "Reach trend",
+      trendDescription: isVietnamese ? "Chi tiêu so với reach và impressions. Awareness cần delivery scale và frequency được kiểm soát." : "Spend against reach and impressions. Awareness needs delivery scale plus controlled frequency.",
       trendKeys: ["reach", "impressions"],
-      efficiencyTitle: "Awareness cost",
-      efficiencyDescription: "CPM and frequency. Rising CPM with rising frequency usually signals saturation.",
+      efficiencyTitle: isVietnamese ? "Chi phí awareness" : "Awareness cost",
+      efficiencyDescription: isVietnamese ? "CPM và frequency. CPM tăng cùng frequency tăng thường báo saturation." : "CPM and frequency. Rising CPM with rising frequency usually signals saturation.",
       efficiencyKeys: ["cpm", "frequency"],
-      diagnosticTitle: "Delivery saturation",
-      diagnosticDescription: "Frequency plus CTR is a delivery saturation guardrail. Frequency over 4 deserves review for awareness campaigns.",
+      diagnosticTitle: isVietnamese ? "Saturation delivery" : "Delivery saturation",
+      diagnosticDescription: isVietnamese ? "Frequency cộng CTR là guardrail saturation. Awareness có frequency trên 4 nên được rà soát." : "Frequency plus CTR is a delivery saturation guardrail. Frequency over 4 deserves review for awareness campaigns.",
       diagnosticKeys: ["frequency", "ctr"],
       referenceLine: { value: 4 },
-      drilldownTitle: "Ad set CPM",
-      drilldownDescription: "Ad sets ranked by CPM, with spend beside it.",
+      drilldownTitle: isVietnamese ? "CPM theo ad set" : "Ad set CPM",
+      drilldownDescription: isVietnamese ? "Ad set xếp theo CPM, kèm chi tiêu." : "Ad sets ranked by CPM, with spend beside it.",
       drilldownKey: "cpm",
       drilldownFormat: "currency",
       higherIsBetter: false,
@@ -2316,15 +2637,15 @@ function getPackChartSpec(pack: KpiPack): PackChartSpec {
 
   return {
     ...shared,
-    operatorQuestion: "Are leads coming in at a cost worth scaling?",
-    trendTitle: "Lead trend",
-    trendDescription: "Spend against leads and messages. This keeps both direct lead and DM-led funnels visible.",
+    operatorQuestion: isVietnamese ? "Lead có về với chi phí đáng để scale không?" : "Are leads coming in at a cost worth scaling?",
+    trendTitle: isVietnamese ? "Xu hướng lead" : "Lead trend",
+    trendDescription: isVietnamese ? "Chi tiêu so với leads và messages để thấy cả direct lead và funnel DM." : "Spend against leads and messages. This keeps both direct lead and DM-led funnels visible.",
     trendKeys: ["leads", "messages"],
-    efficiencyTitle: "Lead cost",
-    efficiencyDescription: "CPL and cost per message. Use this for the 3x kill-rule check.",
+    efficiencyTitle: isVietnamese ? "Chi phí lead" : "Lead cost",
+    efficiencyDescription: isVietnamese ? "CPL và cost per message. Dùng cho check kill-rule 3x." : "CPL and cost per message. Use this for the 3x kill-rule check.",
     efficiencyKeys: ["cpl", "costPerMessage"],
-    drilldownTitle: "Ad set CPL",
-    drilldownDescription: "Ad sets ranked by CPL, with spend beside it.",
+    drilldownTitle: isVietnamese ? "CPL theo ad set" : "Ad set CPL",
+    drilldownDescription: isVietnamese ? "Ad set xếp theo CPL, kèm chi tiêu." : "Ad sets ranked by CPL, with spend beside it.",
     drilldownKey: "cpl",
     drilldownFormat: "currency",
     higherIsBetter: false,
@@ -2354,8 +2675,8 @@ function formatChartValue(value: number, format: ChartFormat, currency: string) 
   return formatMetric(value, format, currency);
 }
 
-function ChartEmpty() {
-  return <div className="flex h-56 items-center justify-center rounded-lg border text-sm text-muted-foreground">No chart data returned.</div>;
+function ChartEmpty({ language }: { language: ReportLanguage }) {
+  return <div className="flex h-56 items-center justify-center rounded-lg border text-sm text-muted-foreground">{uiCopy[language].empty.chart}</div>;
 }
 
 function compactDate(date?: string) {
@@ -2376,20 +2697,23 @@ function truncateLabel(value: string) {
 function PerformanceTable({
   rows,
   currency,
+  language,
   daily = false,
   pack,
 }: {
   rows: NormalizedRow[];
   currency: string;
+  language: ReportLanguage;
   daily?: boolean;
   pack?: KpiPack;
 }) {
+  const copy = uiCopy[language];
   if (!rows.length) {
     return (
       <Empty className="border">
         <EmptyHeader>
-          <EmptyTitle>No rows</EmptyTitle>
-          <EmptyDescription>Meta returned no insight rows for this scope.</EmptyDescription>
+          <EmptyTitle>{copy.empty.rowsTitle}</EmptyTitle>
+          <EmptyDescription>{copy.empty.rowsDescription}</EmptyDescription>
         </EmptyHeader>
       </Empty>
     );
@@ -2398,20 +2722,20 @@ function PerformanceTable({
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>{daily ? "Date" : "Name"}</TableHead>
-          <TableHead className="text-right">Spend</TableHead>
-          <TableHead className="text-right">Impr.</TableHead>
-          <TableHead className="text-right">CTR</TableHead>
-          <TableHead className="text-right">Messages</TableHead>
-          <TableHead className="text-right">Leads</TableHead>
-          <TableHead className="text-right">Cost/msg</TableHead>
-          <TableHead className="text-right">CPL</TableHead>
-          {pack ? <TableHead>Action</TableHead> : null}
+          <TableHead>{daily ? copy.table.date : copy.table.name}</TableHead>
+          <TableHead className="text-right">{copy.table.spend}</TableHead>
+          <TableHead className="text-right">{copy.table.impressions}</TableHead>
+          <TableHead className="text-right">{copy.table.ctr}</TableHead>
+          <TableHead className="text-right">{copy.table.messages}</TableHead>
+          <TableHead className="text-right">{copy.table.leads}</TableHead>
+          <TableHead className="text-right">{copy.table.costMessage}</TableHead>
+          <TableHead className="text-right">{copy.table.cpl}</TableHead>
+          {pack ? <TableHead>{copy.table.action}</TableHead> : null}
         </TableRow>
       </TableHeader>
       <TableBody>
         {rows.map((row) => {
-          const action = pack ? rowDecision(row, pack) : null;
+          const action = pack ? rowDecision(row, pack, language) : null;
           return (
             <TableRow key={`${row.level}-${row.id}-${row.date || ""}`}>
               <TableCell className="max-w-72 truncate font-medium">{daily ? row.date : row.name}</TableCell>
@@ -2437,22 +2761,23 @@ function PerformanceTable({
   );
 }
 
-function rowDecision(row: NormalizedRow, pack: KpiPack) {
+function rowDecision(row: NormalizedRow, pack: KpiPack, language: ReportLanguage = "en") {
+  const copy = uiCopy[language].table;
   const result = primaryResult(row, pack);
   const freqLimit = pack === "awareness" ? 4 : 3;
   if (row.frequency >= freqLimit && row.ctr < 1) {
-    return { label: "Fix creative", reason: `Frequency >= ${freqLimit} and CTR below 1%.`, intent: "danger" as const };
+    return { label: copy.fixCreative, reason: `Frequency >= ${freqLimit} and CTR below 1%.`, intent: "danger" as const };
   }
   if (row.ctr < 0.5 && row.impressions > 1000) {
-    return { label: "Fix creative", reason: "CTR below Meta fail threshold.", intent: "warning" as const };
+    return { label: copy.fixCreative, reason: "CTR below Meta fail threshold.", intent: "warning" as const };
   }
   if (result > 0 && row.ctr >= 1 && row.frequency < freqLimit) {
-    return { label: "Healthy", reason: "Has result signal with CTR and frequency in guardrail.", intent: "good" as const };
+    return { label: copy.healthy, reason: "Has result signal with CTR and frequency in guardrail.", intent: "good" as const };
   }
   if (row.spend > 0 && result === 0) {
-    return { label: "Review", reason: "Spend exists but primary result is zero.", intent: "warning" as const };
+    return { label: copy.review, reason: "Spend exists but primary result is zero.", intent: "warning" as const };
   }
-  return { label: "Watch", reason: "No hard scale or kill signal.", intent: "neutral" as const };
+  return { label: copy.watch, reason: "No hard scale or kill signal.", intent: "neutral" as const };
 }
 
 function primaryResult(row: NormalizedRow, pack: KpiPack) {
@@ -2463,10 +2788,10 @@ function primaryResult(row: NormalizedRow, pack: KpiPack) {
   return row.reach;
 }
 
-function BarList({ rows, metric, currency }: { rows: NormalizedRow[]; metric: "spend" | "leads"; currency: string }) {
+function BarList({ rows, metric, currency, language }: { rows: NormalizedRow[]; metric: "spend" | "leads"; currency: string; language: ReportLanguage }) {
   const max = Math.max(1, ...rows.map((row) => Number(row[metric] || 0)));
   const sorted = [...rows].sort((a, b) => Number(b[metric] || 0) - Number(a[metric] || 0)).slice(0, 6);
-  if (!sorted.length) return <p className="text-sm text-muted-foreground">No breakdown rows returned.</p>;
+  if (!sorted.length) return <p className="text-sm text-muted-foreground">{uiCopy[language].empty.breakdown}</p>;
   return (
     <div className="flex flex-col gap-2">
       {sorted.map((row) => {
@@ -2488,7 +2813,7 @@ function BarList({ rows, metric, currency }: { rows: NormalizedRow[]; metric: "s
   );
 }
 
-function VerdictCard({ verdict, language }: { verdict: AiVerdict; language: ReportLanguage }) {
+function VerdictCard({ verdict, language }: { verdict: Verdict; language: ReportLanguage }) {
   const isVietnamese = language === "vi";
   const nextActions = [...verdict.budget_moves, ...verdict.tests].filter(Boolean).slice(0, 3);
   const highlights = verdict.winners.filter(Boolean).slice(0, 3);
@@ -2504,7 +2829,7 @@ function VerdictCard({ verdict, language }: { verdict: AiVerdict; language: Repo
       <div className="grid gap-4 xl:grid-cols-[1fr_360px]">
         <div>
           <div className="text-xs font-medium uppercase text-muted-foreground">
-            {isVietnamese ? "Phân tích và đánh giá hiệu quả tháng - AI powered" : "Monthly performance analysis - AI powered"}
+            {isVietnamese ? "Verdict hiệu quả tháng" : "Monthly performance Verdict"}
           </div>
           <p className="mt-2 max-w-5xl text-base font-medium leading-7 md:text-lg">{compactText(verdict.verdict, 420)}</p>
         </div>

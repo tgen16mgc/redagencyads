@@ -1,5 +1,7 @@
 export type KpiPack = "lead_gen" | "messages" | "sales_roas" | "traffic" | "awareness";
 export type CompareMode = "off" | "wow" | "mom" | "yoy";
+export type InterfaceLanguage = "en" | "vi";
+export type VerdictProvider = "openai" | "openrouter" | "prompt";
 
 export type MetaAccount = {
   id: string;
@@ -125,7 +127,7 @@ export type DashboardReport = {
   pulledAt: string;
 };
 
-export type AiVerdict = {
+export type Verdict = {
   verdict: string;
   risks: string[];
   winners: string[];
@@ -134,8 +136,10 @@ export type AiVerdict = {
   tests: string[];
   confidence: "low" | "medium" | "high";
   assumptions: string[];
-  provider: "openai" | "openrouter" | "prompt";
+  provider: VerdictProvider;
 };
+
+export type AiVerdict = Verdict;
 
 export type AiInsight = {
   area: string;
