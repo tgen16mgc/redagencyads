@@ -10,7 +10,7 @@ const OPENROUTER_FREE_MODELS = [
 
 const OPENROUTER_MODEL_TIMEOUT_MS = Number(process.env.OPENROUTER_MODEL_TIMEOUT_MS || 22000);
 const OPENROUTER_TOTAL_TIMEOUT_MS = Number(process.env.OPENROUTER_TOTAL_TIMEOUT_MS || 76000);
-const OPENROUTER_MAX_TOKENS = Number(process.env.OPENROUTER_MAX_TOKENS || 900);
+const OPENROUTER_MAX_TOKENS = Number(process.env.OPENROUTER_MAX_TOKENS || 1400);
 const OPENROUTER_COMPETITOR_MODEL_TIMEOUT_MS = Number(process.env.OPENROUTER_COMPETITOR_MODEL_TIMEOUT_MS || 85000);
 
 function openRouterModels() {
@@ -50,6 +50,7 @@ function shouldRetryOpenRouterResponse(response: Response, json: any) {
   if ([408, 429, 502, 503, 529].includes(response.status)) return true;
   if (!response.ok) return false;
   if (openRouterResponseError(json)) return true;
+  if (json?.choices?.[0]?.finish_reason === "length") return true;
   return !json?.choices?.[0]?.message?.content;
 }
 
@@ -116,11 +117,12 @@ async function openRouterCompletion(
           attemptTimeoutMs,
           maxTokens,
         });
-        const content = json?.choices?.[0]?.message?.content;
+        const choice = json?.choices?.[0];
+        const content = choice?.message?.content;
         const providerError = openRouterResponseError(json);
-        if (response.ok && content && !providerError) return content;
+        if (response.ok && content && !providerError && choice?.finish_reason !== "length") return content;
 
-        const message = providerError || json?.error?.message || response.statusText || response.status || "empty response";
+        const message = choice?.finish_reason === "length" ? "response hit max token limit before JSON completed" : providerError || json?.error?.message || response.statusText || response.status || "empty response";
         errors.push(`${model} attempt ${attempt}: ${message}`);
         if (!shouldRetryOpenRouterResponse(response, json)) break;
         if (attempt === 1) await sleep(750);
@@ -135,6 +137,60 @@ async function openRouterCompletion(
     }
   }
   throw new Error(`OpenRouter free model request failed. ${errors.join(" | ")}`);
+}
+
+function extractJsonObject(text: string) {
+  const trimmed = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
+
+  for (let start = trimmed.indexOf("{"); start >= 0; start = trimmed.indexOf("{", start + 1)) {
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+
+    for (let index = start; index < trimmed.length; index += 1) {
+      const char = trimmed[index];
+
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+        } else if (char === "\\") {
+          escaped = true;
+        } else if (char === "\"") {
+          inString = false;
+        }
+        continue;
+      }
+
+      if (char === "\"") {
+        inString = true;
+      } else if (char === "{") {
+        depth += 1;
+      } else if (char === "}") {
+        depth -= 1;
+        if (depth === 0) return trimmed.slice(start, index + 1);
+      }
+    }
+  }
+
+  return trimmed;
+}
+
+function parseJsonObject(text: string) {
+  return JSON.parse(extractJsonObject(text)) as Record<string, unknown>;
+}
+
+function stringValue(value: unknown, fallback = "") {
+  return typeof value === "string" ? value : fallback;
+}
+
+function stringArray(value: unknown) {
+  if (Array.isArray(value)) return value.map((item) => stringValue(item)).filter(Boolean);
+  if (typeof value === "string" && value.trim()) return [value.trim()];
+  return [];
+}
+
+function confidenceValue(value: unknown): "low" | "medium" | "high" {
+  return value === "high" || value === "medium" || value === "low" ? value : "medium";
 }
 
 function fallback(prompt: string, reason = "AI provider key not configured. Use the generated prompt fallback for manual analysis."): AiVerdict {
@@ -153,18 +209,29 @@ function fallback(prompt: string, reason = "AI provider key not configured. Use 
 
 function parseVerdict(text: string, provider: AiVerdict["provider"]): AiVerdict {
   try {
-    return { ...JSON.parse(text), provider } as AiVerdict;
+    const json = parseJsonObject(text);
+    return {
+      provider,
+      verdict: stringValue(json.verdict, "AI returned a verdict without a readable summary."),
+      risks: stringArray(json.risks),
+      winners: stringArray(json.winners),
+      losers: stringArray(json.losers),
+      budget_moves: stringArray(json.budget_moves),
+      tests: stringArray(json.tests),
+      confidence: confidenceValue(json.confidence),
+      assumptions: stringArray(json.assumptions),
+    };
   } catch {
     return {
       provider,
-      verdict: text.slice(0, 700),
-      risks: ["Model returned non-JSON output."],
+      verdict: "AI returned an unreadable verdict. Retry with a shorter campaign scope or switch provider.",
+      risks: ["Model output could not be parsed into the verdict schema."],
       winners: [],
       losers: [],
       budget_moves: [],
       tests: [],
       confidence: "low",
-      assumptions: ["JSON parsing failed; raw model output was truncated into verdict field."],
+      assumptions: [`Raw output preview: ${text.slice(0, 220)}`],
     };
   }
 }
@@ -187,6 +254,7 @@ export async function generateVerdict(prompt: string, provider: "auto" | "openai
     });
     const json = await response.json();
     if (!response.ok) throw new Error(json?.error?.message || "OpenAI verdict request failed.");
+    if (json.choices?.[0]?.finish_reason === "length") return fallback(prompt, "OpenAI stopped before the verdict JSON completed. Retry with a shorter report scope.");
     return parseVerdict(json.choices?.[0]?.message?.content || "", "openai");
   }
   if ((provider === "openrouter" || provider === "auto") && process.env.OPENROUTER_API_KEY) {
@@ -218,9 +286,33 @@ function insightFallback(prompt: string, reason = "AI provider key not configure
   };
 }
 
+function priorityValue(value: unknown): "low" | "medium" | "high" {
+  return value === "high" || value === "medium" || value === "low" ? value : "medium";
+}
+
 function parseInsights(text: string, provider: AiInsightTable["provider"]): AiInsightTable {
   try {
-    return { ...JSON.parse(text), provider } as AiInsightTable;
+    const json = parseJsonObject(text);
+    const rows = Array.isArray(json.rows)
+      ? json.rows.map((row) => {
+          const record = typeof row === "object" && row !== null ? (row as Record<string, unknown>) : {};
+          return {
+            area: stringValue(record.area, "AI output"),
+            insight: stringValue(record.insight),
+            evidence: stringValue(record.evidence),
+            action: stringValue(record.action),
+            priority: priorityValue(record.priority),
+            confidence: confidenceValue(record.confidence),
+          };
+        }).filter((row) => row.insight || row.evidence || row.action)
+      : [];
+    return {
+      provider,
+      summary: stringValue(json.summary, "AI insight summary generated."),
+      rows,
+      confidence: confidenceValue(json.confidence),
+      assumptions: stringArray(json.assumptions),
+    };
   } catch {
     return {
       provider,
@@ -259,6 +351,7 @@ export async function generateInsights(prompt: string, provider: "auto" | "opena
     });
     const json = await response.json();
     if (!response.ok) throw new Error(json?.error?.message || "OpenAI insights request failed.");
+    if (json.choices?.[0]?.finish_reason === "length") return insightFallback(prompt, "OpenAI stopped before the insight JSON completed. Retry with a shorter report scope.");
     return parseInsights(json.choices?.[0]?.message?.content || "", "openai");
   }
   if ((provider === "openrouter" || provider === "auto") && process.env.OPENROUTER_API_KEY) {
