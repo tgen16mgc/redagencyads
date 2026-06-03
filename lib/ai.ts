@@ -59,10 +59,19 @@ async function fetchOpenRouterCompletion(args: {
   model: string;
   attemptTimeoutMs: number;
   maxTokens: number;
+  jsonMode: boolean;
 }) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), args.attemptTimeoutMs);
   try {
+    const body: Record<string, unknown> = {
+      model: args.model,
+      messages: [{ role: "user", content: args.prompt }],
+      temperature: 0.2,
+      max_tokens: args.maxTokens,
+    };
+    if (args.jsonMode) body.response_format = { type: "json_object" };
+
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       signal: controller.signal,
@@ -72,13 +81,7 @@ async function fetchOpenRouterCompletion(args: {
         "http-referer": process.env.OPENROUTER_SITE_URL || "https://meta-ads-dashboard.vercel.app",
         "x-title": "Red Agency Ads Tool",
       },
-      body: JSON.stringify({
-        model: args.model,
-        messages: [{ role: "user", content: args.prompt }],
-        temperature: 0.2,
-        max_tokens: args.maxTokens,
-        response_format: { type: "json_object" },
-      }),
+      body: JSON.stringify(body),
     });
     const json = await readJson(response);
     return { response, json };
@@ -93,6 +96,7 @@ async function openRouterCompletion(
     modelTimeoutMs?: number;
     totalTimeoutMs?: number;
     maxTokens?: number;
+    jsonMode?: boolean;
   } = {},
 ) {
   const errors: string[] = [];
@@ -100,6 +104,7 @@ async function openRouterCompletion(
   const modelTimeoutMs = positiveMs(options.modelTimeoutMs ?? OPENROUTER_MODEL_TIMEOUT_MS, OPENROUTER_MODEL_TIMEOUT_MS);
   const totalTimeoutMs = positiveMs(options.totalTimeoutMs ?? OPENROUTER_TOTAL_TIMEOUT_MS, OPENROUTER_TOTAL_TIMEOUT_MS);
   const maxTokens = Math.max(300, Math.min(positiveMs(options.maxTokens ?? OPENROUTER_MAX_TOKENS, OPENROUTER_MAX_TOKENS), 2400));
+  const jsonMode = options.jsonMode ?? false;
 
   for (const model of openRouterModels()) {
     for (let attempt = 1; attempt <= 2; attempt += 1) {
@@ -116,13 +121,24 @@ async function openRouterCompletion(
           model,
           attemptTimeoutMs,
           maxTokens,
+          jsonMode,
         });
         const choice = json?.choices?.[0];
         const content = choice?.message?.content;
         const providerError = openRouterResponseError(json);
-        if (response.ok && content && !providerError && choice?.finish_reason !== "length") return content;
+        if (response.ok && content && !providerError) {
+          if (choice?.finish_reason !== "length") return content;
+          try {
+            parseJsonObject(content);
+            return content;
+          } catch {
+            errors.push(`${model} attempt ${attempt}: response hit max token limit before JSON completed`);
+            if (attempt === 1) await sleep(750);
+            continue;
+          }
+        }
 
-        const message = choice?.finish_reason === "length" ? "response hit max token limit before JSON completed" : providerError || json?.error?.message || response.statusText || response.status || "empty response";
+        const message = providerError || json?.error?.message || (response.ok ? `empty response (finish_reason: ${choice?.finish_reason || "unknown"})` : response.statusText || response.status || "request failed");
         errors.push(`${model} attempt ${attempt}: ${message}`);
         if (!shouldRetryOpenRouterResponse(response, json)) break;
         if (attempt === 1) await sleep(750);
@@ -286,6 +302,122 @@ function insightFallback(prompt: string, reason = "AI provider key not configure
   };
 }
 
+function promptInputJson(prompt: string) {
+  const marker = "Input JSON:";
+  const index = prompt.lastIndexOf(marker);
+  if (index < 0) return null;
+  try {
+    return parseJsonObject(prompt.slice(index + marker.length));
+  } catch {
+    return null;
+  }
+}
+
+function numberValue(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : Number(value || 0) || 0;
+}
+
+function compactNumber(value: number, suffix = "") {
+  return `${value.toLocaleString("vi-VN", { maximumFractionDigits: 2 })}${suffix}`;
+}
+
+function localInsightFallback(prompt: string, reason: string): AiInsightTable {
+  const input = promptInputJson(prompt);
+  if (!input) return insightFallback(prompt, reason);
+
+  const totals = typeof input.totals === "object" && input.totals !== null ? (input.totals as Record<string, unknown>) : {};
+  const health = typeof input.health === "object" && input.health !== null ? (input.health as Record<string, unknown>) : {};
+  const checks = Array.isArray(health.checks) ? health.checks : [];
+  const rows: AiInsightTable["rows"] = [];
+  const failingCheck = checks.find((check) => typeof check === "object" && check !== null && (check as Record<string, unknown>).status !== "pass") as Record<string, unknown> | undefined;
+  const topCampaign = Array.isArray(input.top_campaigns) ? input.top_campaigns[0] as Record<string, unknown> | undefined : undefined;
+  const comparison = typeof input.comparison === "object" && input.comparison !== null ? (input.comparison as Record<string, unknown>) : null;
+  const deltas = comparison && Array.isArray(comparison.deltas) ? comparison.deltas as Record<string, unknown>[] : [];
+  const biggestDelta = deltas
+    .filter((delta) => ["spend", "messages", "leads", "purchases", "linkClicks", "ctr", "frequency", "costPerMessage", "cpl", "roas"].includes(stringValue(delta.key)))
+    .sort((a, b) => Math.abs(numberValue(b.change_pct)) - Math.abs(numberValue(a.change_pct)))[0];
+  const ctr = numberValue(totals.ctr);
+  const frequency = numberValue(totals.frequency);
+  const spend = numberValue(totals.spend);
+  const messages = numberValue(totals.messages);
+  const leads = numberValue(totals.leads);
+  const purchases = numberValue(totals.purchases);
+
+  if (failingCheck) {
+    rows.push({
+      area: "Account health",
+      insight: stringValue(failingCheck.label, "Health check needs attention"),
+      evidence: stringValue(failingCheck.detail, `Health score ${compactNumber(numberValue(health.score))}/100.`),
+      action: "Fix this check before scaling budget or broadening campaign scope.",
+      priority: "high",
+      confidence: "high",
+    });
+  }
+
+  if (ctr > 0 && ctr < 1) {
+    rows.push({
+      area: "Creative",
+      insight: "CTR is below the 1% benchmark.",
+      evidence: `CTR is ${compactNumber(ctr, "%")} on ${compactNumber(numberValue(totals.impressions))} impressions.`,
+      action: "Refresh hooks and first-frame creative before increasing spend.",
+      priority: "high",
+      confidence: "high",
+    });
+  }
+
+  if (frequency > 3) {
+    rows.push({
+      area: "Audience",
+      insight: "Frequency suggests possible audience or creative fatigue.",
+      evidence: `Average frequency is ${compactNumber(frequency)}.`,
+      action: "Rotate creative, exclude recent engagers, or widen the audience before scaling.",
+      priority: frequency > 5 ? "high" : "medium",
+      confidence: "medium",
+    });
+  }
+
+  if (topCampaign) {
+    rows.push({
+      area: "Budget",
+      insight: `${stringValue(topCampaign.name, "Top campaign")} is the first budget review target.`,
+      evidence: `Spend ${compactNumber(numberValue(topCampaign.spend))}, messages ${compactNumber(numberValue(topCampaign.messages))}, leads ${compactNumber(numberValue(topCampaign.leads))}, purchases ${compactNumber(numberValue(topCampaign.purchases))}.`,
+      action: "Shift budget only after checking its cost per result against the account average.",
+      priority: "medium",
+      confidence: "medium",
+    });
+  }
+
+  if (biggestDelta) {
+    rows.push({
+      area: "Efficiency",
+      insight: `${stringValue(biggestDelta.key, "Metric")} changed most in the comparison window.`,
+      evidence: `Change ${compactNumber(numberValue(biggestDelta.change_pct), "%")}.`,
+      action: "Check which campaign or ad set caused this movement before changing budget.",
+      priority: Math.abs(numberValue(biggestDelta.change_pct)) >= 20 ? "high" : "medium",
+      confidence: "medium",
+    });
+  }
+
+  if (!rows.length) {
+    rows.push({
+      area: "Efficiency",
+      insight: "No major red flag detected from the available Meta metrics.",
+      evidence: `Spend ${compactNumber(spend)}, messages ${compactNumber(messages)}, leads ${compactNumber(leads)}, purchases ${compactNumber(purchases)}.`,
+      action: "Use campaign and ad set drilldowns to pick one winner to protect and one weak segment to test.",
+      priority: "medium",
+      confidence: "medium",
+    });
+  }
+
+  return {
+    provider: "prompt",
+    summary: "Live OpenRouter output was unavailable, so this brief was generated from the report metrics.",
+    rows: rows.slice(0, 5),
+    confidence: "medium",
+    assumptions: [reason, "Fallback uses only available Meta report metrics; it does not invent CRM, Pixel, CAPI, MER, revenue, or conversion data."],
+  };
+}
+
 function priorityValue(value: unknown): "low" | "medium" | "high" {
   return value === "high" || value === "medium" || value === "low" ? value : "medium";
 }
@@ -351,14 +483,14 @@ export async function generateInsights(prompt: string, provider: "auto" | "opena
     });
     const json = await response.json();
     if (!response.ok) throw new Error(json?.error?.message || "OpenAI insights request failed.");
-    if (json.choices?.[0]?.finish_reason === "length") return insightFallback(prompt, "OpenAI stopped before the insight JSON completed. Retry with a shorter report scope.");
+    if (json.choices?.[0]?.finish_reason === "length") return localInsightFallback(prompt, "OpenAI stopped before the insight JSON completed.");
     return parseInsights(json.choices?.[0]?.message?.content || "", "openai");
   }
   if ((provider === "openrouter" || provider === "auto") && process.env.OPENROUTER_API_KEY) {
     try {
-      return parseInsights(await openRouterCompletion(prompt, { maxTokens: 1100 }), "openrouter");
+      return parseInsights(await openRouterCompletion(prompt, { maxTokens: 2200 }), "openrouter");
     } catch (error) {
-      return insightFallback(prompt, `OpenRouter could not finish live insights in time. Use the prompt fallback or retry with OpenAI. ${errorMessage(error)}`);
+      return localInsightFallback(prompt, `OpenRouter live models were unavailable or returned unusable output. ${errorMessage(error)}`);
     }
   }
   return insightFallback(prompt);
