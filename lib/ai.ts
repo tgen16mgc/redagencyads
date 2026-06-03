@@ -32,10 +32,51 @@ function errorMessage(error: unknown) {
 }
 
 async function readJson(response: Response) {
+  const text = await response.text();
   try {
-    return await response.json();
+    return JSON.parse(text);
   } catch {
-    return null;
+    const chunks = text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice(5).trim())
+      .filter((line) => line && line !== "[DONE]");
+
+    if (!chunks.length) return null;
+
+    let content = "";
+    let reasoning = "";
+    let finishReason = "";
+    let lastChunk: any = null;
+
+    for (const chunk of chunks) {
+      try {
+        const json = JSON.parse(chunk);
+        lastChunk = json;
+        const choice = json.choices?.[0];
+        content += choiceText(choice);
+        reasoning += stringValue(choice?.delta?.reasoning) || stringValue(choice?.delta?.reasoning_content);
+        finishReason = choice?.finish_reason || finishReason;
+      } catch {
+        continue;
+      }
+    }
+
+    return {
+      ...lastChunk,
+      choices: [
+        {
+          ...(lastChunk?.choices?.[0] || {}),
+          finish_reason: finishReason || lastChunk?.choices?.[0]?.finish_reason,
+          message: {
+            ...(lastChunk?.choices?.[0]?.message || {}),
+            content,
+            reasoning,
+          },
+        },
+      ],
+    };
   }
 }
 
@@ -72,6 +113,8 @@ async function fetchOpenRouterCompletion(args: {
     const body: Record<string, unknown> = {
       model: args.model,
       messages: [{ role: "user", content: args.prompt }],
+      reasoning: { exclude: true },
+      include_reasoning: false,
     };
     if (args.model !== "moonshotai/kimi-k2.6:free") {
       body.temperature = 0.2;
@@ -95,6 +138,31 @@ async function fetchOpenRouterCompletion(args: {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function contentPartText(part: unknown): string {
+  if (typeof part === "string") return part;
+  if (typeof part !== "object" || part === null) return "";
+  const record = part as Record<string, unknown>;
+  return stringValue(record.text) || stringValue(record.content);
+}
+
+function messageText(message: unknown): string {
+  if (typeof message === "string") return message;
+  if (typeof message !== "object" || message === null) return "";
+
+  const record = message as Record<string, unknown>;
+  const content = record.content;
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) return content.map(contentPartText).join("");
+
+  return stringValue(record.text) || stringValue(record.reasoning_content) || stringValue(record.reasoning);
+}
+
+function choiceText(choice: unknown): string {
+  if (typeof choice !== "object" || choice === null) return "";
+  const record = choice as Record<string, unknown>;
+  return messageText(record.message) || messageText(record.delta) || stringValue(record.text);
 }
 
 async function openRouterCompletion(
@@ -132,7 +200,7 @@ async function openRouterCompletion(
           jsonMode,
         });
         const choice = json?.choices?.[0];
-        const content = choice?.message?.content;
+        const content = choiceText(choice);
         const providerError = openRouterResponseError(json);
         if (response.ok && content && !providerError) {
           if (choice?.finish_reason !== "length") return content;
