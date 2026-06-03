@@ -228,8 +228,9 @@ export function DashboardShell() {
   const [token, setToken] = React.useState("");
   const [error, setError] = React.useState("");
   const [loading, setLoading] = React.useState("");
-  const verdictProgress = useTimedProgress(loading === "ai");
-  const insightProgress = useTimedProgress(loading === "insights");
+  const [aiLoading, setAiLoading] = React.useState({ verdict: false, insights: false });
+  const verdictProgress = useTimedProgress(aiLoading.verdict);
+  const insightProgress = useTimedProgress(aiLoading.insights);
 
   const loadAccounts = React.useCallback(async () => {
     setLoading("accounts");
@@ -304,6 +305,7 @@ export function DashboardShell() {
     setPreviousReport(null);
     setVerdict(null);
     setInsights(null);
+    setAiLoading({ verdict: false, insights: false });
     setCompetitorResult(null);
   }
 
@@ -322,6 +324,7 @@ export function DashboardShell() {
     setError("");
     setVerdict(null);
     setInsights(null);
+    setAiLoading({ verdict: false, insights: false });
     setPreviousReport(null);
     setLoading("report");
     try {
@@ -340,9 +343,9 @@ export function DashboardShell() {
   }
 
   async function runAi() {
-    if (!report) return;
+    if (!report || aiLoading.verdict) return;
     setError("");
-    setLoading("ai");
+    setAiLoading((current) => ({ ...current, verdict: true }));
     try {
       const data = await jsonFetch<{ verdict: AiVerdict }>("/api/ai/verdict", {
         method: "POST",
@@ -354,14 +357,14 @@ export function DashboardShell() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not generate AI verdict.");
     } finally {
-      setLoading("");
+      setAiLoading((current) => ({ ...current, verdict: false }));
     }
   }
 
   async function runInsights() {
-    if (!report) return;
+    if (!report || aiLoading.insights) return;
     setError("");
-    setLoading("insights");
+    setAiLoading((current) => ({ ...current, insights: true }));
     try {
       const prompt = withReportLanguage(buildInsightPrompt({ report, previousReport, compareMode }), language, "insights");
       const data = await jsonFetch<{ insights: AiInsightTable }>("/api/ai/insights", {
@@ -374,7 +377,7 @@ export function DashboardShell() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not generate insights.");
     } finally {
-      setLoading("");
+      setAiLoading((current) => ({ ...current, insights: false }));
     }
   }
 
@@ -756,7 +759,7 @@ export function DashboardShell() {
 
               <AiVerdictPanel
                 provider={provider}
-                loading={loading === "ai"}
+                loading={aiLoading.verdict}
                 progress={verdictProgress}
                 verdict={verdict}
                 copiedPrompt={copiedPrompt}
@@ -770,7 +773,7 @@ export function DashboardShell() {
               <InsightPanel
                 provider={provider}
                 insights={insights}
-                loading={loading === "insights"}
+                loading={aiLoading.insights}
                 progress={insightProgress}
                 compareMode={compareMode}
                 hasComparison={Boolean(previousReport)}

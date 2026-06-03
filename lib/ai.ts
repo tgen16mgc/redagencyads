@@ -1,9 +1,11 @@
 import type { AiInsightTable, AiVerdict, CompetitorSpyResult } from "@/lib/types";
 
 const OPENROUTER_FREE_MODELS = [
-  "moonshotai/kimi-k2.6:free",
-  "openrouter/owl-alpha",
+  "google/gemma-4-26b-a4b-it:free",
+  "google/gemma-4-31b-it:free",
+  "qwen/qwen3-next-80b-a3b-instruct:free",
   "nvidia/nemotron-3-super-120b-a12b:free",
+  "nvidia/nemotron-nano-9b-v2:free",
 ] as const;
 
 const OPENROUTER_MODEL_TIMEOUT_MS = Number(process.env.OPENROUTER_MODEL_TIMEOUT_MS || 22000);
@@ -12,12 +14,8 @@ const OPENROUTER_MAX_TOKENS = Number(process.env.OPENROUTER_MAX_TOKENS || 900);
 const OPENROUTER_COMPETITOR_MODEL_TIMEOUT_MS = Number(process.env.OPENROUTER_COMPETITOR_MODEL_TIMEOUT_MS || 85000);
 
 function openRouterModels() {
-  const requested = process.env.OPENROUTER_MODEL;
-  const kimi = OPENROUTER_FREE_MODELS[0];
-  if (requested && requested !== kimi && OPENROUTER_FREE_MODELS.includes(requested as (typeof OPENROUTER_FREE_MODELS)[number])) {
-    return [kimi, requested, ...OPENROUTER_FREE_MODELS.filter((model) => model !== kimi && model !== requested)];
-  }
-  return [...OPENROUTER_FREE_MODELS];
+  const requested = process.env.OPENROUTER_MODEL?.split(",").map((model) => model.trim()).filter(Boolean) || [];
+  return Array.from(new Set([...requested, ...OPENROUTER_FREE_MODELS]));
 }
 
 function positiveMs(value: number, fallback: number) {
@@ -36,6 +34,58 @@ async function readJson(response: Response) {
   }
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function openRouterResponseError(json: any) {
+  const topLevel = json?.error?.message;
+  const choice = json?.choices?.[0];
+  const choiceError = choice?.error?.message || choice?.delta?.error?.message;
+  const finishReason = choice?.finish_reason;
+  return topLevel || choiceError || (finishReason === "error" ? "provider returned an error finish reason" : "");
+}
+
+function shouldRetryOpenRouterResponse(response: Response, json: any) {
+  if ([408, 429, 502, 503, 529].includes(response.status)) return true;
+  if (!response.ok) return false;
+  if (openRouterResponseError(json)) return true;
+  return !json?.choices?.[0]?.message?.content;
+}
+
+async function fetchOpenRouterCompletion(args: {
+  prompt: string;
+  model: string;
+  attemptTimeoutMs: number;
+  maxTokens: number;
+}) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), args.attemptTimeoutMs);
+  try {
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        "http-referer": process.env.OPENROUTER_SITE_URL || "https://meta-ads-dashboard.vercel.app",
+        "x-title": "Red Agency Ads Tool",
+      },
+      body: JSON.stringify({
+        model: args.model,
+        messages: [{ role: "user", content: args.prompt }],
+        temperature: 0.2,
+        max_tokens: args.maxTokens,
+        response_format: { type: "json_object" },
+      }),
+    });
+    const json = await readJson(response);
+    return { response, json };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function openRouterCompletion(
   prompt: string,
   options: {
@@ -51,50 +101,37 @@ async function openRouterCompletion(
   const maxTokens = Math.max(300, Math.min(positiveMs(options.maxTokens ?? OPENROUTER_MAX_TOKENS, OPENROUTER_MAX_TOKENS), 2400));
 
   for (const model of openRouterModels()) {
-    const remainingMs = totalTimeoutMs - (Date.now() - startedAt);
-    if (remainingMs < 4000) {
-      errors.push(`deadline: stopped before ${model} because ${Math.max(0, Math.round(remainingMs / 1000))}s remained`);
-      break;
-    }
-
-    const controller = new AbortController();
-    const attemptTimeoutMs = Math.min(modelTimeoutMs, remainingMs - 1000);
-    const timeout = setTimeout(() => controller.abort(), attemptTimeoutMs);
-
-    try {
-      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        signal: controller.signal,
-        headers: {
-          "content-type": "application/json",
-          authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-          "http-referer": process.env.OPENROUTER_SITE_URL || "https://meta-ads-dashboard.vercel.app",
-          "x-title": "Red Agency Ads Tool",
-        },
-        body: JSON.stringify({
-          model,
-          messages: [{ role: "user", content: prompt }],
-          temperature: 0.2,
-          max_tokens: maxTokens,
-          response_format: { type: "json_object" },
-        }),
-      });
-      const json = await readJson(response);
-      const content = json?.choices?.[0]?.message?.content;
-      if (response.ok && content) return content;
-      if (response.ok) {
-        errors.push(`${model}: empty response`);
-        continue;
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      const remainingMs = totalTimeoutMs - (Date.now() - startedAt);
+      if (remainingMs < 4000) {
+        errors.push(`deadline: stopped before ${model} attempt ${attempt} because ${Math.max(0, Math.round(remainingMs / 1000))}s remained`);
+        break;
       }
-      errors.push(`${model}: ${json?.error?.message || response.status}`);
-    } catch (error) {
-      const message =
-        error instanceof DOMException && error.name === "AbortError"
-          ? `timed out after ${Math.round(attemptTimeoutMs / 1000)}s`
-          : errorMessage(error);
-      errors.push(`${model}: ${message}`);
-    } finally {
-      clearTimeout(timeout);
+
+      const attemptTimeoutMs = Math.min(modelTimeoutMs, remainingMs - 1000);
+      try {
+        const { response, json } = await fetchOpenRouterCompletion({
+          prompt,
+          model,
+          attemptTimeoutMs,
+          maxTokens,
+        });
+        const content = json?.choices?.[0]?.message?.content;
+        const providerError = openRouterResponseError(json);
+        if (response.ok && content && !providerError) return content;
+
+        const message = providerError || json?.error?.message || response.statusText || response.status || "empty response";
+        errors.push(`${model} attempt ${attempt}: ${message}`);
+        if (!shouldRetryOpenRouterResponse(response, json)) break;
+        if (attempt === 1) await sleep(750);
+      } catch (error) {
+        const message =
+          error instanceof DOMException && error.name === "AbortError"
+            ? `timed out after ${Math.round(attemptTimeoutMs / 1000)}s`
+            : errorMessage(error);
+        errors.push(`${model} attempt ${attempt}: ${message}`);
+        if (attempt === 1) await sleep(750);
+      }
     }
   }
   throw new Error(`OpenRouter free model request failed. ${errors.join(" | ")}`);
