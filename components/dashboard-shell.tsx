@@ -26,13 +26,21 @@ import {
   FileTextIcon,
   KeyRoundIcon,
   LanguagesIcon,
-  LogOutIcon,
   RefreshCcwIcon,
   SearchIcon,
   ShieldCheckIcon,
   SparklesIcon,
 } from "lucide-react";
+import { AppSidebar, type AppSidebarItem, type WorkflowSidebarItem } from "@/components/dashboard/app-sidebar";
 import type { AiInsightTable, CompareMode, CompetitorFetchResult, CompetitorFetchSource, CompetitorPlatform, CompetitorSpyAd, CompetitorSpyResult, DashboardReport, KpiPack, MetaAccount, MetaCampaign, NormalizedRow, Verdict } from "@/lib/types";
+import { buildWorkflowSteps, type DashboardWorkflowStep } from "@/lib/dashboard-workflow";
+import { getCompareRange } from "@/lib/report-ranges";
+import {
+  normalizeCompetitorCountry,
+  normalizeCompetitorLimit,
+  normalizeCompetitorNames,
+  normalizeCompetitorUrls,
+} from "@/lib/competitor-input";
 import { buildCompetitorSpyPrompt, buildInsightPrompt, comparisonDeltas, formatMetric } from "@/lib/metrics";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -52,17 +60,7 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import {
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarGroupLabel,
-  SidebarHeader,
   SidebarInset,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
   SidebarProvider,
   SidebarTrigger,
 } from "@/components/ui/sidebar";
@@ -73,7 +71,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
-const workflowItems = [
+const workflowItems: { value: DashboardWorkflowStep; label: string; icon: React.ComponentType<React.SVGProps<SVGSVGElement>> }[] = [
   { value: "connect", label: "Connect", icon: KeyRoundIcon },
   { value: "select", label: "Select", icon: DatabaseIcon },
   { value: "analyze", label: "Analyze", icon: BarChart3Icon },
@@ -484,6 +482,33 @@ export function DashboardShell() {
   const verdictProgress = useTimedProgress(aiLoading.verdict);
   const insightProgress = useTimedProgress(aiLoading.insights);
   const copy = uiCopy[language];
+  const workflowSteps = React.useMemo(
+    () => buildWorkflowSteps({ hasAccount: Boolean(accountId), hasReport: Boolean(report), hasVerdict: Boolean(verdict) }),
+    [accountId, report, verdict],
+  );
+  const appNavItems = React.useMemo<AppSidebarItem<ActiveView>[]>(
+    () =>
+      appSections.map(({ value, icon }) => ({
+        value,
+        icon,
+        label: appSectionLabel(value, language),
+      })),
+    [language],
+  );
+  const workflowNavItems = React.useMemo<WorkflowSidebarItem[]>(
+    () =>
+      workflowItems.map(({ value, icon }) => {
+        const state = workflowSteps.find((item) => item.value === value)?.state || "pending";
+        return {
+          value,
+          icon,
+          state,
+          label: workflowLabel(value, language),
+          stateLabel: workflowStateLabel(state, language),
+        };
+      }),
+    [language, workflowSteps],
+  );
 
   React.useEffect(() => {
     window.localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
@@ -640,19 +665,11 @@ export function DashboardShell() {
   }
 
   function competitorList() {
-    return competitorNames
-      .split(/[\n,]/)
-      .map((name) => name.trim())
-      .filter(Boolean)
-      .slice(0, 8);
+    return normalizeCompetitorNames(competitorNames);
   }
 
   function competitorUrlList() {
-    return competitorLibraryUrls
-      .split(/[\n,]/)
-      .map((url) => url.trim())
-      .filter(Boolean)
-      .slice(0, 8);
+    return normalizeCompetitorUrls(competitorLibraryUrls);
   }
 
   function competitorPrompt() {
@@ -686,8 +703,8 @@ export function DashboardShell() {
         body: JSON.stringify({
           source: competitorFetchSource,
           competitors,
-          country: competitorCountry,
-          limit: competitorLimit,
+          country: normalizeCompetitorCountry(competitorCountry),
+          limit: normalizeCompetitorLimit(competitorLimit),
           libraryUrls,
         }),
         timeoutMs: COMPETITOR_SPY_TIMEOUT_MS,
@@ -779,79 +796,19 @@ export function DashboardShell() {
 
   return (
     <SidebarProvider>
-      <Sidebar collapsible="icon" data-print-hidden>
-        <SidebarHeader>
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton>
-                <img src="/red-agency-logo.png" alt="Red Agency" className="size-5 rounded-sm object-contain" />
-                <span>Meta Ads Console</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarHeader>
-        <SidebarContent>
-          <SidebarGroup>
-            <SidebarGroupLabel>{copy.nav.functions}</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {appSections.map(({ value, icon: Icon }) => (
-                  <SidebarMenuItem key={value}>
-                    <SidebarMenuButton
-                      isActive={activeView === value}
-                      onClick={() => setActiveView(value)}
-                      aria-current={activeView === value ? "page" : undefined}
-                    >
-                      <Icon />
-                      <span>{appSectionLabel(value, language)}</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-          {activeView === "ads" ? (
-            <SidebarGroup>
-              <SidebarGroupLabel>{copy.nav.workflow}</SidebarGroupLabel>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  {workflowItems.map(({ value, icon: Icon }) => (
-                    <SidebarMenuItem key={value}>
-                      <SidebarMenuButton isActive={value === "analyze"}>
-                        <Icon />
-                        <span>{workflowLabel(value, language)}</span>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ))}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
-          ) : null}
-          <SidebarGroup>
-            <SidebarGroupLabel>{copy.nav.aiSetup}</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                <SidebarMenuItem>
-                  <SidebarMenuButton>
-                    <SparklesIcon />
-                    <span>{providerLabel(provider, language)}</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        </SidebarContent>
-        <SidebarFooter>
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton onClick={logout}>
-                <LogOutIcon />
-                <span>{copy.nav.clearSession}</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarFooter>
-      </Sidebar>
+      <AppSidebar
+        activeView={activeView}
+        aiProviderLabel={providerLabel(provider, language)}
+        appItems={appNavItems}
+        clearSessionLabel={copy.nav.clearSession}
+        functionsLabel={copy.nav.functions}
+        showWorkflow={activeView === "ads"}
+        workflowLabel={copy.nav.workflow}
+        workflowItems={workflowNavItems}
+        aiSetupLabel={copy.nav.aiSetup}
+        onActiveViewChange={setActiveView}
+        onLogout={logout}
+      />
       <SidebarInset>
         <main className="flex min-h-svh flex-col gap-4 p-4 md:p-6" data-print-page>
           <header className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -1183,23 +1140,23 @@ function TokenScreen(props: {
 }) {
   const copy = uiCopy[props.language].token;
   return (
-    <main className="grid min-h-svh place-items-center p-4">
-      <Card className="w-full max-w-3xl">
+    <main className="grid min-h-svh w-full place-items-center p-4">
+      <Card className="min-w-0 w-full max-w-[22.5rem] justify-self-start sm:max-w-3xl sm:justify-self-center">
         <CardHeader>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div className="flex items-center gap-3">
+            <div className="flex min-w-0 items-center gap-3">
               <img src="/red-agency-logo.png" alt="Red Agency" className="size-12 rounded-lg object-contain" />
-              <div>
+              <div className="min-w-0">
                 <CardTitle>{copy.title}</CardTitle>
                 <CardDescription>{copy.description}</CardDescription>
               </div>
             </div>
             <LanguageToggle language={props.language} onChange={props.onLanguageChange} />
           </div>
-          <CardDescription>{copy.storage}</CardDescription>
+          <CardDescription className="break-words">{copy.storage}</CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={props.onSubmit} className="flex flex-col gap-4">
+          <form onSubmit={props.onSubmit} className="flex min-w-0 flex-col gap-4">
             {props.error ? (
               <Alert variant="destructive">
                 <AlertTitle>{copy.rejected}</AlertTitle>
@@ -1215,12 +1172,13 @@ function TokenScreen(props: {
                   type="password"
                   autoComplete="off"
                   placeholder={copy.placeholder}
+                  className="w-full"
                   required
                 />
-                <FieldDescription>{copy.help}</FieldDescription>
+                <FieldDescription className="break-words">{copy.help}</FieldDescription>
               </Field>
             </FieldGroup>
-            <Button type="submit" disabled={props.loading}>
+            <Button type="submit" disabled={props.loading} className="w-full">
               {props.loading ? <Spinner data-icon="inline-start" /> : <KeyRoundIcon data-icon="inline-start" />}
               {copy.submit}
             </Button>
@@ -1474,9 +1432,9 @@ function ComparisonPanel({
             <div key={delta.key} className="rounded-lg border p-3">
               <div className="text-xs font-medium text-muted-foreground">{metricLabel(delta.key, language)}</div>
               <div className="mt-1 text-lg font-semibold tabular-nums">{formatComparisonMetric(delta.key, delta.current, currency)}</div>
-              <div className={delta.change >= 0 ? "text-xs tabular-nums text-emerald-700" : "text-xs tabular-nums text-destructive"}>
+              <Badge variant={delta.change >= 0 ? "secondary" : "destructive"} className="mt-2 tabular-nums">
                 {formatSignedPct(delta.change_pct, language)}
-              </div>
+              </Badge>
             </div>
           ))}
         </div>
@@ -1912,10 +1870,10 @@ function CompetitorSpyPanel({
               <Input
                 id={`${id}-country`}
                 value={country}
-                onChange={(event) => onCountryChange(event.target.value.toUpperCase().slice(0, 2))}
-                placeholder="VN"
-                aria-describedby={`${id}-country-help`}
-              />
+              onChange={(event) => onCountryChange(event.target.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 2))}
+              placeholder="VN"
+              aria-describedby={`${id}-country-help`}
+            />
               <FieldDescription id={`${id}-country-help`}>
                 {isVietnamese ? "Mã 2 chữ cái. VD: VN, US, SG." : "Two-letter code. Example: VN, US, SG."}
               </FieldDescription>
@@ -1928,7 +1886,7 @@ function CompetitorSpyPanel({
                 min={1}
                 max={80}
                 value={limit}
-                onChange={(event) => onLimitChange(Number(event.target.value || 20))}
+                onChange={(event) => onLimitChange(normalizeCompetitorLimit(Number(event.target.value)))}
                 aria-describedby={`${id}-limit-help`}
               />
               <FieldDescription id={`${id}-limit-help`}>
@@ -2190,34 +2148,6 @@ function SpyAdsPanel({
   );
 }
 
-function getCompareRange(range: { since: string; until: string }, mode: CompareMode) {
-  if (mode === "off") return range;
-  const sinceDate = parseDate(range.since);
-  const untilDate = parseDate(range.until);
-  if (mode === "wow") {
-    sinceDate.setDate(sinceDate.getDate() - 7);
-    untilDate.setDate(untilDate.getDate() - 7);
-  }
-  if (mode === "mom") {
-    sinceDate.setMonth(sinceDate.getMonth() - 1);
-    untilDate.setMonth(untilDate.getMonth() - 1);
-  }
-  if (mode === "yoy") {
-    sinceDate.setFullYear(sinceDate.getFullYear() - 1);
-    untilDate.setFullYear(untilDate.getFullYear() - 1);
-  }
-  return { since: toDateInput(sinceDate), until: toDateInput(untilDate) };
-}
-
-function parseDate(value: string) {
-  const [year, month, day] = value.split("-").map(Number);
-  return new Date(year, month - 1, day);
-}
-
-function toDateInput(value: Date) {
-  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
-}
-
 function appSectionLabel(value: ActiveView, language: ReportLanguage) {
   return value === "ads" ? uiCopy[language].nav.ads : uiCopy[language].nav.competitor;
 }
@@ -2228,6 +2158,12 @@ function workflowLabel(value: (typeof workflowItems)[number]["value"], language:
   if (value === "select") return labels.select;
   if (value === "analyze") return labels.analyze;
   return labels.verdict;
+}
+
+function workflowStateLabel(state: "complete" | "current" | "pending", language: ReportLanguage) {
+  if (state === "complete") return language === "vi" ? "Xong" : "Done";
+  if (state === "current") return language === "vi" ? "Đang làm" : "Now";
+  return language === "vi" ? "Sau" : "Next";
 }
 
 function providerLabel(provider: Provider, language: ReportLanguage) {
