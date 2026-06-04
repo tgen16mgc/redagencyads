@@ -116,21 +116,21 @@ export function sumRows(rows: NormalizedRow[], name: string): NormalizedRow {
       purchases: sum.purchases + row.purchases,
       addToCart: sum.addToCart + row.addToCart,
       initiateCheckout: sum.initiateCheckout + row.initiateCheckout,
-      roas: sum.roas + row.roas,
     }),
     { ...ZERO_ROW, id: "total", level: "account", name },
   );
   total.ctr = safeDivide(total.clicks, total.impressions) * 100;
   total.cpc = safeDivide(total.spend, total.clicks);
   total.cpm = safeDivide(total.spend, total.impressions) * 1000;
-  total.frequency = safeDivide(rows.reduce((sum, row) => sum + row.frequency, 0), rows.length);
+  total.frequency = safeDivide(total.impressions, total.reach);
   total.costPerMessage = safeDivide(total.spend, total.messages);
   total.costPerReply = safeDivide(total.spend, total.replies);
   total.cpl = safeDivide(total.spend, total.leads);
   total.cpaPurchase = safeDivide(total.spend, total.purchases);
   total.replyRate = safeDivide(total.replies, total.messages) * 100;
   total.leadRate = safeDivide(total.leads, total.messages) * 100;
-  total.roas = safeDivide(total.roas, rows.filter((row) => row.roas > 0).length);
+  const roasSpend = rows.reduce((sum, row) => sum + (row.roas > 0 ? row.spend : 0), 0);
+  total.roas = safeDivide(rows.reduce((sum, row) => sum + row.roas * row.spend, 0), roasSpend);
   return total;
 }
 
