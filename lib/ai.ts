@@ -289,12 +289,8 @@ async function geminiCompletion(prompt: string, schema?: Record<string, unknown>
       maxOutputTokens: Math.max(300, Math.min(positiveMs(GEMINI_MAX_TOKENS, 1400), 2400)),
     };
     if (schema) {
-      generationConfig.responseFormat = {
-        text: {
-          mimeType: "application/json",
-          schema,
-        },
-      };
+      generationConfig.responseMimeType = "application/json";
+      generationConfig.responseSchema = schema;
     }
 
     const response = await fetch(`${geminiBaseUrl()}/${geminiModelPath()}:generateContent`, {

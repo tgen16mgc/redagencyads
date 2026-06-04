@@ -41,12 +41,13 @@ import {
   normalizeCompetitorNames,
   normalizeCompetitorUrls,
 } from "@/lib/competitor-input";
+import { performanceChartConfig } from "@/lib/chart-palette";
 import { buildCompetitorSpyPrompt, buildInsightPrompt, comparisonDeltas, formatMetric } from "@/lib/metrics";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
+import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -2241,28 +2242,6 @@ function formatSignedPct(value: number | null, language: ReportLanguage = "en") 
   return `${sign}${value.toLocaleString("vi-VN", { maximumFractionDigits: 1 })}%`;
 }
 
-const performanceChartConfig = {
-  spend: { label: "Spend", color: "var(--chart-1)" },
-  messages: { label: "Messages", color: "var(--chart-2)" },
-  replies: { label: "Replies", color: "var(--chart-3)" },
-  leads: { label: "Leads", color: "var(--chart-2)" },
-  purchases: { label: "Purchases", color: "var(--chart-3)" },
-  linkClicks: { label: "Link clicks", color: "var(--chart-2)" },
-  clicks: { label: "Clicks", color: "var(--chart-3)" },
-  impressions: { label: "Impressions", color: "var(--chart-2)" },
-  reach: { label: "Reach", color: "var(--chart-3)" },
-  costPerMessage: { label: "Cost/msg", color: "var(--chart-1)" },
-  costPerReply: { label: "Cost/reply", color: "var(--chart-2)" },
-  cpl: { label: "CPL", color: "var(--chart-1)" },
-  cpaPurchase: { label: "CPA purchase", color: "var(--chart-1)" },
-  cpc: { label: "CPC", color: "var(--chart-1)" },
-  cpm: { label: "CPM", color: "var(--chart-2)" },
-  roas: { label: "ROAS", color: "var(--chart-2)" },
-  ctr: { label: "CTR", color: "var(--chart-2)" },
-  frequency: { label: "Frequency", color: "var(--chart-1)" },
-  result: { label: "Result metric", color: "var(--chart-2)" },
-} satisfies ChartConfig;
-
 function PerformanceCharts({ report, language }: { report: DashboardReport; language: ReportLanguage }) {
   const currency = report.account.currency || "VND";
   const spec = getPackChartSpec(report.selectedPack, language);
@@ -2383,7 +2362,7 @@ function PerformanceCharts({ report, language }: { report: DashboardReport; lang
                 <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={8} minTickGap={18} />
                 <YAxis hide />
                 {spec.referenceLine ? <ReferenceLine y={spec.referenceLine.value} stroke="var(--destructive)" strokeDasharray="4 4" /> : null}
-                {spec.diagnosticKeys.includes("ctr") ? <ReferenceLine y={1} stroke="var(--chart-2)" strokeDasharray="2 4" /> : null}
+                {spec.diagnosticKeys.includes("ctr") ? <ReferenceLine y={1} stroke="var(--chart-reference)" strokeDasharray="2 4" /> : null}
                 <ChartTooltip
                   content={
                     <ChartTooltipContent

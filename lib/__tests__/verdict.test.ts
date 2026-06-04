@@ -225,6 +225,12 @@ describe("generateVerdict", () => {
     expect(fetchSpy).toHaveBeenCalledOnce();
     expect(String(fetchSpy.mock.calls[0][0])).toContain("/models/gemini-2.5-flash:generateContent");
     expect(fetchSpy.mock.calls[0][1]?.headers).toMatchObject({ "x-goog-api-key": "test-key" });
+    const requestBody = JSON.parse(String(fetchSpy.mock.calls[0][1]?.body));
+    expect(requestBody.generationConfig).toMatchObject({
+      responseMimeType: "application/json",
+      responseSchema: expect.objectContaining({ type: "object" }),
+    });
+    expect(requestBody.generationConfig.responseFormat).toBeUndefined();
     expect(verdict.provider).toBe("gemini");
     expect(verdict.verdict).toBe(enhanced.verdict);
     expect(verdict.budget_moves).toEqual(enhanced.budget_moves);
