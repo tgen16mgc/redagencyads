@@ -25,6 +25,7 @@ const META_FIELDS = [
 ].join(",");
 
 export async function fetchCompetitorAds(args: SpyFetchArgs): Promise<CompetitorFetchResult> {
+  if (args.source === "public") return fetchPublicLibraryCards(args);
   if (args.source === "meta_official") return fetchMetaOfficialAds(args);
   return fetchApifyAds(args);
 }
@@ -68,7 +69,7 @@ async function fetchApifyAds(args: SpyFetchArgs): Promise<CompetitorFetchResult>
   const token = process.env.APIFY_TOKEN;
   const actorId = process.env.APIFY_META_ADS_ACTOR_ID;
   if (!token || !actorId) {
-    throw new Error("APIFY_TOKEN and APIFY_META_ADS_ACTOR_ID are required for Apify competitor spy.");
+    return fetchPublicLibraryCards(args, "No Apify credentials found, so no-key public Meta Ad Library links were generated instead.");
   }
 
   const input = buildApifyInput(args);
@@ -95,6 +96,53 @@ async function fetchApifyAds(args: SpyFetchArgs): Promise<CompetitorFetchResult>
     source: "apify",
     ads: uniqueAds(rows.map((row, index) => normalizeApifyAd(row, index))).slice(0, args.limit),
     warnings: rows.length ? [] : ["Apify returned no ads. Check actor input mapping or competitor/page URL."],
+    fetchedAt: new Date().toISOString(),
+  };
+}
+
+function fetchPublicLibraryCards(args: SpyFetchArgs, warning = "No-key public mode generated Meta Ad Library links. Open links to inspect live ads, then generate the competitor brief."): CompetitorFetchResult {
+  const country = normalizeCountry(args.country);
+  const urlAds = args.libraryUrls.map((url, index): CompetitorSpyAd => {
+    const label = pageLabelFromLibraryUrl(url) || `Meta Ad Library URL ${index + 1}`;
+    return {
+      id: `public-url-${index}`,
+      source: "public",
+      competitorName: label,
+      pageName: label,
+      platform: "Meta / Instagram",
+      headline: "Open supplied Meta Ad Library URL",
+      description: "User supplied URL. Use this as live public evidence for the competitor brief.",
+      cta: "Open Ad Library",
+      format: "public-link",
+      snapshotUrl: url,
+      raw: { mode: "public", country },
+    };
+  });
+  const searchAds = args.competitors.map((competitor): CompetitorSpyAd => {
+    const url = new URL("https://www.facebook.com/ads/library/");
+    url.searchParams.set("active_status", "active");
+    url.searchParams.set("ad_type", "all");
+    url.searchParams.set("country", country);
+    url.searchParams.set("q", competitor);
+    url.searchParams.set("search_type", "keyword_unordered");
+    return {
+      id: `public-search-${slug(competitor)}`,
+      source: "public",
+      competitorName: competitor,
+      pageName: competitor,
+      platform: "Meta / Instagram",
+      headline: "Open Meta Ad Library search",
+      description: `No API key needed. Review active ads for "${competitor}" in ${country}, then use Generate spy brief.`,
+      cta: "Open Ad Library",
+      format: "public-search",
+      snapshotUrl: url.toString(),
+      raw: { mode: "public", country },
+    };
+  });
+  return {
+    source: "public",
+    ads: uniqueAds([...urlAds, ...searchAds]).slice(0, args.limit),
+    warnings: [warning],
     fetchedAt: new Date().toISOString(),
   };
 }
@@ -201,6 +249,19 @@ function readStringArray(value: unknown) {
 function normalizeCountry(value: string) {
   const country = value.trim().toUpperCase();
   return country || "VN";
+}
+
+function pageLabelFromLibraryUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return url.searchParams.get("q") || url.searchParams.get("view_all_page_id") || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function slug(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "competitor";
 }
 
 function uniqueAds(ads: CompetitorSpyAd[]) {

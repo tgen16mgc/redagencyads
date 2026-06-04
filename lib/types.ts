@@ -160,7 +160,7 @@ export type AiInsightTable = {
 };
 
 export type CompetitorPlatform = "meta" | "google" | "linkedin" | "tiktok" | "mixed";
-export type CompetitorFetchSource = "meta_official" | "apify";
+export type CompetitorFetchSource = "public" | "meta_official" | "apify";
 
 export type CompetitorSpyAd = {
   id: string;

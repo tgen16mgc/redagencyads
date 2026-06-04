@@ -40,6 +40,7 @@ type AppSidebarProps<T extends string> = {
   workflowLabel: string;
   workflowItems: WorkflowSidebarItem[];
   aiSetupLabel: string;
+  showClearSession: boolean;
   onActiveViewChange: (value: T) => void;
   onLogout: () => void;
 };
@@ -54,6 +55,7 @@ export function AppSidebar<T extends string>({
   workflowLabel,
   workflowItems,
   aiSetupLabel,
+  showClearSession,
   onActiveViewChange,
   onLogout,
 }: AppSidebarProps<T>) {
@@ -133,16 +135,18 @@ export function AppSidebar<T extends string>({
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-      <SidebarFooter>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton onClick={onLogout} tooltip={clearSessionLabel}>
-              <LogOutIcon />
-              <span>{clearSessionLabel}</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </SidebarFooter>
+      {showClearSession ? (
+        <SidebarFooter>
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton onClick={onLogout} tooltip={clearSessionLabel}>
+                <LogOutIcon />
+                <span>{clearSessionLabel}</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarFooter>
+      ) : null}
     </Sidebar>
   );
 }

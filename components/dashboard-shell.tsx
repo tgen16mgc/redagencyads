@@ -34,6 +34,7 @@ import {
 import { AppSidebar, type AppSidebarItem, type WorkflowSidebarItem } from "@/components/dashboard/app-sidebar";
 import type { AiInsightTable, CompareMode, CompetitorFetchResult, CompetitorFetchSource, CompetitorPlatform, CompetitorSpyAd, CompetitorSpyResult, DashboardReport, KpiPack, MetaAccount, MetaCampaign, NormalizedRow, Verdict } from "@/lib/types";
 import { buildWorkflowSteps, type DashboardWorkflowStep } from "@/lib/dashboard-workflow";
+import { canOpenDashboardView, initialDashboardViewFromSearch } from "@/lib/dashboard-access";
 import { getCompareRange } from "@/lib/report-ranges";
 import {
   normalizeCompetitorCountry,
@@ -41,6 +42,7 @@ import {
   normalizeCompetitorNames,
   normalizeCompetitorUrls,
 } from "@/lib/competitor-input";
+import { shouldFetchBeforeCompetitorAnalysis } from "@/lib/competitor-workflow";
 import { performanceChartConfig } from "@/lib/chart-palette";
 import { buildCompetitorSpyPrompt, buildInsightPrompt, comparisonDeltas, formatMetric } from "@/lib/metrics";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -407,6 +409,7 @@ const competitorPlatformItems: { label: string; value: CompetitorPlatform }[] = 
 ];
 
 const competitorFetchItems: { label: string; value: CompetitorFetchSource }[] = [
+  { label: "Public links (no key)", value: "public" },
   { label: "Apify scraper", value: "apify" },
   { label: "Meta official API", value: "meta_official" },
 ];
@@ -457,7 +460,9 @@ export function DashboardShell() {
     const stored = window.localStorage.getItem(LANGUAGE_STORAGE_KEY);
     return stored === "vi" || stored === "en" ? stored : "en";
   });
-  const [activeView, setActiveView] = React.useState<ActiveView>("ads");
+  const [activeView, setActiveView] = React.useState<ActiveView>(() =>
+    typeof window === "undefined" ? "ads" : initialDashboardViewFromSearch(window.location.search),
+  );
   const [report, setReport] = React.useState<DashboardReport | null>(null);
   const [previousReport, setPreviousReport] = React.useState<DashboardReport | null>(null);
   const [verdict, setVerdict] = React.useState<Verdict | null>(null);
@@ -467,7 +472,7 @@ export function DashboardShell() {
   const [competitorPlatform, setCompetitorPlatform] = React.useState<CompetitorPlatform>("meta");
   const [competitorNotes, setCompetitorNotes] = React.useState("");
   const [competitorResult, setCompetitorResult] = React.useState<CompetitorSpyResult | null>(null);
-  const [competitorFetchSource, setCompetitorFetchSource] = React.useState<CompetitorFetchSource>("apify");
+  const [competitorFetchSource, setCompetitorFetchSource] = React.useState<CompetitorFetchSource>("public");
   const [competitorCountry, setCompetitorCountry] = React.useState("VN");
   const [competitorLimit, setCompetitorLimit] = React.useState(20);
   const [competitorLibraryUrls, setCompetitorLibraryUrls] = React.useState("");
@@ -673,19 +678,38 @@ export function DashboardShell() {
     return normalizeCompetitorUrls(competitorLibraryUrls);
   }
 
-  function competitorPrompt() {
+  function competitorPrompt(adsOverride = competitorAds) {
     return withReportLanguage(
       buildCompetitorSpyPrompt({
         competitors: competitorList(),
         market: competitorMarket,
         platform: competitorPlatform,
         notes: competitorNotes,
-        extractedAds: competitorAds,
+        extractedAds: adsOverride,
         report,
       }),
       language,
       "competitor",
     );
+  }
+
+  async function loadSpyAds(competitors: string[], libraryUrls: string[]) {
+    const data = await jsonFetch<{ result: CompetitorFetchResult }>("/api/spy/meta", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        source: competitorFetchSource,
+        competitors,
+        country: normalizeCompetitorCountry(competitorCountry),
+        limit: normalizeCompetitorLimit(competitorLimit),
+        libraryUrls,
+      }),
+      timeoutMs: COMPETITOR_SPY_TIMEOUT_MS,
+    });
+    setCompetitorAds(data.result.ads);
+    setCompetitorFetchWarnings(data.result.warnings);
+    setCompetitorFetchedAt(data.result.fetchedAt);
+    return data.result;
   }
 
   async function fetchSpyAds() {
@@ -698,22 +722,8 @@ export function DashboardShell() {
     setError("");
     setLoading("spy-fetch");
     try {
-      const data = await jsonFetch<{ result: CompetitorFetchResult }>("/api/spy/meta", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          source: competitorFetchSource,
-          competitors,
-          country: normalizeCompetitorCountry(competitorCountry),
-          limit: normalizeCompetitorLimit(competitorLimit),
-          libraryUrls,
-        }),
-        timeoutMs: COMPETITOR_SPY_TIMEOUT_MS,
-      });
-      setCompetitorAds(data.result.ads);
-      setCompetitorFetchWarnings(data.result.warnings);
-      setCompetitorFetchedAt(data.result.fetchedAt);
-      if (!data.result.ads.length) setError(data.result.warnings[0] || "No competitor ads returned.");
+      const result = await loadSpyAds(competitors, libraryUrls);
+      if (!result.ads.length) setError(result.warnings[0] || "No competitor ads returned.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not fetch competitor ads.");
     } finally {
@@ -723,17 +733,23 @@ export function DashboardShell() {
 
   async function runCompetitorSpy() {
     const competitors = competitorList();
-    if (!competitors.length && !competitorAds.length) {
+    const libraryUrls = competitorUrlList();
+    if (!competitors.length && !libraryUrls.length && !competitorAds.length) {
       setError("Add competitors or fetch ads first.");
       return;
     }
     setError("");
     setLoading("competitor");
     try {
+      let adsForPrompt = competitorAds;
+      if (shouldFetchBeforeCompetitorAnalysis({ competitors, libraryUrls, fetchedAdCount: competitorAds.length })) {
+        const result = await loadSpyAds(competitors, libraryUrls);
+        adsForPrompt = result.ads;
+      }
       const data = await jsonFetch<{ competitor: CompetitorSpyResult }>("/api/ai/competitor", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ prompt: competitorPrompt(), provider }),
+        body: JSON.stringify({ prompt: competitorPrompt(adsForPrompt), provider }),
         timeoutMs: COMPETITOR_SPY_TIMEOUT_MS,
       });
       setCompetitorResult(data.competitor);
@@ -781,7 +797,7 @@ export function DashboardShell() {
     return <LoadingScreen language={language} />;
   }
 
-  if (!authenticated) {
+  if (!canOpenDashboardView({ authenticated, activeView })) {
     return (
       <TokenScreen
         error={error}
@@ -790,6 +806,7 @@ export function DashboardShell() {
         language={language}
         onLanguageChange={setLanguage}
         onTokenChange={setToken}
+        onUseCompetitor={() => setActiveView("competitor")}
         onSubmit={connectToken}
       />
     );
@@ -804,6 +821,7 @@ export function DashboardShell() {
         clearSessionLabel={copy.nav.clearSession}
         functionsLabel={copy.nav.functions}
         showWorkflow={activeView === "ads"}
+        showClearSession={authenticated}
         workflowLabel={copy.nav.workflow}
         workflowItems={workflowNavItems}
         aiSetupLabel={copy.nav.aiSetup}
@@ -830,7 +848,7 @@ export function DashboardShell() {
               <LanguageToggle language={language} onChange={setLanguage} />
               <Badge variant="secondary">
                 <ShieldCheckIcon />
-                {copy.header.session}
+                {authenticated ? copy.header.session : activeView === "competitor" ? "No-token spy mode" : copy.header.session}
               </Badge>
               {activeView === "ads" && report ? <Badge variant="outline">{copy.header.pulled} {new Date(report.pulledAt).toLocaleString()}</Badge> : null}
               {activeView === "ads" ? (
@@ -1137,6 +1155,7 @@ function TokenScreen(props: {
   language: ReportLanguage;
   onLanguageChange: (value: ReportLanguage) => void;
   onTokenChange: (value: string) => void;
+  onUseCompetitor: () => void;
   onSubmit: (event: React.FormEvent) => void;
 }) {
   const copy = uiCopy[props.language].token;
@@ -1182,6 +1201,10 @@ function TokenScreen(props: {
             <Button type="submit" disabled={props.loading} className="w-full">
               {props.loading ? <Spinner data-icon="inline-start" /> : <KeyRoundIcon data-icon="inline-start" />}
               {copy.submit}
+            </Button>
+            <Button type="button" variant="outline" onClick={props.onUseCompetitor} className="w-full">
+              <SearchIcon data-icon="inline-start" />
+              {props.language === "vi" ? "Dùng competitor spy không cần token" : "Use competitor spy without token"}
             </Button>
           </form>
         </CardContent>
@@ -1832,7 +1855,7 @@ function CompetitorSpyPanel({
                 </SelectContent>
               </Select>
               <FieldDescription id={`${id}-platform-help`}>
-                {isVietnamese ? "Chọn nguồn ghi chú quảng cáo." : "Choose source for pasted ad notes."}
+                {isVietnamese ? "Chọn nền tảng muốn phân tích." : "Choose the platform to analyze."}
               </FieldDescription>
             </Field>
           </div>
@@ -1862,8 +1885,8 @@ function CompetitorSpyPanel({
               </Select>
               <FieldDescription id={`${id}-source-help`}>
                 {isVietnamese
-                  ? "Apify cần APIFY_TOKEN + APIFY_META_ADS_ACTOR_ID. Meta official dùng token session nhưng có thể thiếu ads thương mại."
-                  : "Apify needs APIFY_TOKEN + APIFY_META_ADS_ACTOR_ID. Meta official uses session token but may miss commercial ads."}
+                  ? "Public links chạy không cần key. Apify/API chỉ dùng khi đã cấu hình token."
+                  : "Public links work without keys. Use Apify/API only after tokens are configured."}
               </FieldDescription>
             </Field>
             <Field>

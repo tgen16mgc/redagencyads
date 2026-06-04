@@ -13,7 +13,7 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 
 const bodySchema = z.object({
-  source: z.enum(["meta_official", "apify"]).default("apify"),
+  source: z.enum(["public", "meta_official", "apify"]).default("public"),
   competitors: z.array(z.string()).default([]),
   country: z.string().default("VN"),
   limit: z.number().default(20),
