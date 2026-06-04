@@ -1,3 +1,6 @@
+import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
+import { promisify } from "node:util";
 import type { CompetitorFetchResult, CompetitorFetchSource, CompetitorSpyAd } from "@/lib/types";
 
 type SpyFetchArgs = {
@@ -23,6 +26,11 @@ const META_FIELDS = [
   "page_name",
   "publisher_platforms",
 ].join(",");
+
+const execFileAsync = promisify(execFile);
+const PUBLIC_META_SCRAPE_TIMEOUT_MS = Number(process.env.META_PUBLIC_SCRAPE_TIMEOUT_MS || 45000);
+const PUBLIC_META_SCRAPE_WAIT_MS = Number(process.env.META_PUBLIC_SCRAPE_WAIT_MS || 12000);
+const PUBLIC_META_MAX_BUFFER = 24 * 1024 * 1024;
 
 export async function fetchCompetitorAds(args: SpyFetchArgs): Promise<CompetitorFetchResult> {
   if (args.source === "public") return fetchPublicLibraryCards(args);
@@ -69,7 +77,7 @@ async function fetchApifyAds(args: SpyFetchArgs): Promise<CompetitorFetchResult>
   const token = process.env.APIFY_TOKEN;
   const actorId = process.env.APIFY_META_ADS_ACTOR_ID;
   if (!token || !actorId) {
-    return fetchPublicLibraryCards(args, "No Apify credentials found, so no-key public Meta Ad Library links were generated instead.");
+    return fetchPublicLibraryCards(args, "No Apify credentials found, so no-key public Meta Ad Library extraction was used instead.");
   }
 
   const input = buildApifyInput(args);
@@ -100,7 +108,7 @@ async function fetchApifyAds(args: SpyFetchArgs): Promise<CompetitorFetchResult>
   };
 }
 
-function fetchPublicLibraryCards(args: SpyFetchArgs, warning = "No-key public mode generated Meta Ad Library links. Open links to inspect live ads, then generate the competitor brief."): CompetitorFetchResult {
+async function fetchPublicLibraryCards(args: SpyFetchArgs, warning = "No-key public mode used Meta Ad Library public pages. If extraction is thin, open the links to inspect live ads."): Promise<CompetitorFetchResult> {
   const country = normalizeCountry(args.country);
   const urlAds = args.libraryUrls.map((url, index): CompetitorSpyAd => {
     const label = pageLabelFromLibraryUrl(url) || `Meta Ad Library URL ${index + 1}`;
@@ -139,12 +147,117 @@ function fetchPublicLibraryCards(args: SpyFetchArgs, warning = "No-key public mo
       raw: { mode: "public", country },
     };
   });
+  const linkAds = uniqueAds([...urlAds, ...searchAds]).slice(0, args.limit);
+  const extractedAds = await fetchPublicLibraryExtractedAds(linkAds, args.limit);
+  const ads = extractedAds.length ? uniqueAds([...extractedAds, ...linkAds]).slice(0, args.limit) : linkAds;
   return {
     source: "public",
-    ads: uniqueAds([...urlAds, ...searchAds]).slice(0, args.limit),
-    warnings: [warning],
+    ads,
+    warnings: extractedAds.length
+      ? [`Local Chrome public scrape extracted ${extractedAds.length} Meta Ad Library ad(s). ${warning}`]
+      : [warning],
     fetchedAt: new Date().toISOString(),
   };
+}
+
+async function fetchPublicLibraryExtractedAds(linkAds: CompetitorSpyAd[], limit: number) {
+  if (process.env.VITEST || process.env.META_PUBLIC_SCRAPE_DISABLE === "1") return [];
+  const chromePath = chromeExecutablePath();
+  if (!chromePath) return [];
+
+  const ads: CompetitorSpyAd[] = [];
+  for (const linkAd of linkAds.slice(0, Math.min(linkAds.length, 3))) {
+    if (!linkAd.snapshotUrl || ads.length >= limit) break;
+    try {
+      const html = await dumpPublicMetaLibraryHtml(chromePath, linkAd.snapshotUrl);
+      ads.push(...parsePublicMetaLibraryHtml(html, {
+        competitorName: linkAd.competitorName || linkAd.pageName || "Competitor",
+        sourceUrl: linkAd.snapshotUrl,
+        limit: limit - ads.length,
+      }));
+    } catch {
+      continue;
+    }
+  }
+  return uniqueAds(ads).slice(0, limit);
+}
+
+function chromeExecutablePath() {
+  const candidates = [
+    process.env.CHROME_PATH,
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    "/Applications/Chromium.app/Contents/MacOS/Chromium",
+    "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+  ].filter((value): value is string => Boolean(value));
+  return candidates.find((candidate) => existsSync(candidate));
+}
+
+async function dumpPublicMetaLibraryHtml(chromePath: string, url: string) {
+  const { stdout } = await execFileAsync(
+    chromePath,
+    [
+      "--headless=new",
+      "--disable-gpu",
+      "--disable-extensions",
+      "--no-first-run",
+      "--disable-background-networking",
+      `--virtual-time-budget=${Math.max(3000, PUBLIC_META_SCRAPE_WAIT_MS)}`,
+      "--dump-dom",
+      url,
+    ],
+    {
+      timeout: Math.max(5000, PUBLIC_META_SCRAPE_TIMEOUT_MS),
+      maxBuffer: PUBLIC_META_MAX_BUFFER,
+    },
+  );
+  return stdout;
+}
+
+export function parsePublicMetaLibraryHtml(
+  html: string,
+  args: { competitorName: string; sourceUrl: string; limit: number },
+): CompetitorSpyAd[] {
+  const text = decodeHtmlJson(html);
+  const ads: CompetitorSpyAd[] = [];
+  const starts = [...text.matchAll(/"(?:ad_archive_id|page_name)"\s*:/g)]
+    .map((match) => match.index || 0)
+    .filter((index, position, indexes) => position === 0 || index - indexes[position - 1] > 500);
+
+  for (const index of starts) {
+    const block = text.slice(Math.max(0, index - 6000), Math.min(text.length, index + 18000));
+    const pageName = readJsonString(block, "page_name");
+    const id = readJsonString(block, "ad_archive_id") || readJsonString(block, "ad_id") || readJsonString(block, "id");
+    const snapshotUrl = readJsonString(block, "ad_snapshot_url") || readJsonString(block, "snapshot_url") || (id ? `https://www.facebook.com/ads/library/?id=${id}` : args.sourceUrl);
+    const body = readNestedText(block, "body") || readJsonString(block, "ad_creative_body");
+    const headline = readJsonString(block, "title") || readNestedText(block, "title") || readJsonString(block, "ad_creative_link_title");
+    const description = readJsonString(block, "caption") || readNestedText(block, "caption") || readNestedText(block, "link_description") || readJsonString(block, "ad_creative_link_description");
+    const platforms = readJsonArrayStrings(block, "publisher_platform").concat(readJsonArrayStrings(block, "publisher_platforms"));
+
+    if (!pageName && !body && !headline && !id) continue;
+
+    ads.push({
+      id: id || `${args.competitorName}-${ads.length}`,
+      source: "public",
+      competitorName: args.competitorName,
+      pageName: pageName || args.competitorName,
+      platform: Array.from(new Set(platforms)).join(", ") || "Meta / Instagram",
+      body,
+      headline,
+      description,
+      cta: readJsonString(block, "cta_text") || readJsonString(block, "call_to_action"),
+      format: readJsonString(block, "__typename") || "public-html",
+      startDate: unixDateString(readJsonNumber(block, "start_date")) || readJsonString(block, "start_date"),
+      endDate: unixDateString(readJsonNumber(block, "end_date")) || readJsonString(block, "end_date"),
+      snapshotUrl,
+      imageUrl: readJsonString(block, "resized_image_url") || readJsonString(block, "original_image_url"),
+      videoUrl: readJsonString(block, "video_hd_url") || readJsonString(block, "video_sd_url"),
+      landingUrl: readJsonString(block, "link_url") || readJsonString(block, "website_url"),
+      raw: { mode: "public-html", sourceUrl: args.sourceUrl },
+    });
+    if (ads.length >= args.limit) break;
+  }
+
+  return uniqueAds(ads).slice(0, args.limit);
 }
 
 function buildApifyInput(args: SpyFetchArgs) {
@@ -244,6 +357,61 @@ function readString(value: unknown) {
 
 function readStringArray(value: unknown) {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && Boolean(item.trim())) : [];
+}
+
+function decodeHtmlJson(value: string) {
+  return value
+    .replace(/&quot;/g, '"')
+    .replace(/&#34;/g, '"')
+    .replace(/&amp;/g, "&")
+    .replace(/\\"/g, '"')
+    .replace(/\\\//g, "/")
+    .replace(/\\u([0-9a-fA-F]{4})/g, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)));
+}
+
+function readJsonString(block: string, key: string) {
+  const pattern = new RegExp(`"${escapeRegExp(key)}"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)"`, "s");
+  const match = block.match(pattern);
+  return match?.[1] ? decodeJsonString(match[1]) : undefined;
+}
+
+function readNestedText(block: string, key: string) {
+  const index = block.indexOf(`"${key}"`);
+  if (index < 0) return undefined;
+  return readJsonString(block.slice(index, index + 1600), "text");
+}
+
+function readJsonArrayStrings(block: string, key: string) {
+  const pattern = new RegExp(`"${escapeRegExp(key)}"\\s*:\\s*\\[([^\\]]*)\\]`, "s");
+  const match = block.match(pattern);
+  if (!match?.[1]) return [];
+  return [...match[1].matchAll(/"((?:\\.|[^"\\])*)"/g)]
+    .map((item) => decodeJsonString(item[1]))
+    .filter(Boolean);
+}
+
+function readJsonNumber(block: string, key: string) {
+  const pattern = new RegExp(`"${escapeRegExp(key)}"\\s*:\\s*(\\d{6,})`);
+  const match = block.match(pattern);
+  return match?.[1] ? Number(match[1]) : undefined;
+}
+
+function decodeJsonString(value: string) {
+  try {
+    return JSON.parse(`"${value.replace(/"/g, '\\"')}"`);
+  } catch {
+    return value.replace(/\\\//g, "/").trim();
+  }
+}
+
+function unixDateString(value: number | undefined) {
+  if (!value || !Number.isFinite(value)) return undefined;
+  const milliseconds = value > 10_000_000_000 ? value : value * 1000;
+  return new Date(milliseconds).toISOString();
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function normalizeCountry(value: string) {

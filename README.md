@@ -180,6 +180,8 @@ Competitor side has two phases: fetch ads, then interpret ads.
 Fetch ads
   -> POST /api/spy/meta
     -> lib/competitor-spy.fetchCompetitorAds()
+      -> public no-key Meta Ad Library scrape with local Chrome
+      -> fallback public Meta Ad Library links
       -> Apify actor via APIFY_TOKEN + APIFY_META_ADS_ACTOR_ID
       -> or Meta official ads_archive using session token
       -> normalize into CompetitorSpyAd[]
@@ -190,7 +192,7 @@ Generate spy report
     -> lib/ai.generateCompetitorSpy()
 ```
 
-Apify is default because Meta official `ads_archive` can miss normal commercial ads. Meta official source needs session token and may return sparse data.
+Public scrape is default and works without an API key on a machine with Chrome installed. It attempts to extract public Meta Ad Library payloads, then keeps the library links as fallback evidence when Meta blocks or returns sparse data. Apify remains optional for external commercial scraping. Meta official source needs session token and may return sparse data.
 
 ## Module Ownership
 
@@ -239,12 +241,14 @@ OPENROUTER_TOTAL_TIMEOUT_MS=130000
 OPENROUTER_MAX_TOKENS=1400
 OPENROUTER_COMPETITOR_MODEL_TIMEOUT_MS=85000
 OPENROUTER_SITE_URL=
+META_PUBLIC_SCRAPE_TIMEOUT_MS=45000
+META_PUBLIC_SCRAPE_WAIT_MS=12000
 APIFY_TOKEN=
 APIFY_META_ADS_ACTOR_ID=
 APIFY_META_ADS_INPUT_TEMPLATE=
 ```
 
-No AI key means app still returns local prompt Verdicts. Gemini and OpenRouter are never used in `auto`; select `gemini` or `openrouter` explicitly if you want them. No Apify vars means competitor fetch only works with Meta official source.
+No AI key means app still returns local prompt Verdicts. Gemini and OpenRouter are never used in `auto`; select `gemini` or `openrouter` explicitly if you want them. No Apify vars means competitor fetch uses public no-key scraping and keeps Meta Ad Library links as fallback evidence.
 
 ## Dev Commands
 

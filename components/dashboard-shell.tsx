@@ -409,7 +409,7 @@ const competitorPlatformItems: { label: string; value: CompetitorPlatform }[] = 
 ];
 
 const competitorFetchItems: { label: string; value: CompetitorFetchSource }[] = [
-  { label: "Public links (no key)", value: "public" },
+  { label: "Public scrape (no key)", value: "public" },
   { label: "Apify scraper", value: "apify" },
   { label: "Meta official API", value: "meta_official" },
 ];
@@ -1885,8 +1885,8 @@ function CompetitorSpyPanel({
               </Select>
               <FieldDescription id={`${id}-source-help`}>
                 {isVietnamese
-                  ? "Public links chạy không cần key. Apify/API chỉ dùng khi đã cấu hình token."
-                  : "Public links work without keys. Use Apify/API only after tokens are configured."}
+                  ? "Public scrape chạy không cần key, thử Chrome local rồi giữ link dự phòng. Apify/API chỉ dùng khi đã cấu hình token."
+                  : "Public scrape works without keys, tries local Chrome, then keeps links as fallback. Use Apify/API only after tokens are configured."}
               </FieldDescription>
             </Field>
             <Field>
