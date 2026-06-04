@@ -28,6 +28,7 @@ const OPENROUTER_MAX_TOKENS = Number(process.env.OPENROUTER_MAX_TOKENS || 1400);
 const OPENROUTER_COMPETITOR_MODEL_TIMEOUT_MS = Number(process.env.OPENROUTER_COMPETITOR_MODEL_TIMEOUT_MS || 85000);
 const GEMINI_TIMEOUT_MS = Number(process.env.GEMINI_TIMEOUT_MS || 45000);
 const GEMINI_MAX_TOKENS = Number(process.env.GEMINI_MAX_TOKENS || 1400);
+const GEMINI_DEFAULT_MODEL = "gemini-2.5-flash";
 
 const VERDICT_JSON_SCHEMA = {
   type: "object",
@@ -262,7 +263,8 @@ async function openRouterCompletion(
 }
 
 function geminiModelPath() {
-  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+  const requestedModel = process.env.GEMINI_MODEL || GEMINI_DEFAULT_MODEL;
+  const model = requestedModel.replace(/^models\//, "") === "gemini-3.1-flash" ? GEMINI_DEFAULT_MODEL : requestedModel;
   return model.startsWith("models/") ? model : `models/${model}`;
 }
 
