@@ -39,6 +39,7 @@ import { getCompareRange } from "@/lib/report-ranges";
 import { classifyCreativeFatigue } from "@/lib/creative-fatigue";
 import { assessExperimentReadiness } from "@/lib/experiment-readiness";
 import { assessMeasurementQuality } from "@/lib/measurement-quality";
+import { assessResultConcentration } from "@/lib/result-concentration";
 import { rowDecision } from "@/lib/row-decision";
 import {
   normalizeCompetitorCountry,
@@ -231,6 +232,8 @@ const uiCopy = {
       measurementDescription: "Checks whether the current dataset supports confident optimization decisions.",
       readiness: "Experiment readiness",
       readinessDescription: "Combines measurement, account health, and creative signals before launch decisions.",
+      concentration: "Result concentration",
+      concentrationDescription: "Checks whether spend or primary results depend on too few rows.",
       grade: "Grade",
       breakdowns: "Breakdowns",
       breakdownsDescription: "Platform and age/gender signal for diagnosis.",
@@ -366,6 +369,8 @@ const uiCopy = {
       measurementDescription: "Kiểm tra dataset hiện tại có đủ tin cậy để ra quyết định tối ưu hay không.",
       readiness: "Sẵn sàng thử nghiệm",
       readinessDescription: "Kết hợp đo lường, sức khỏe tài khoản và creative trước quyết định launch.",
+      concentration: "Độ tập trung kết quả",
+      concentrationDescription: "Kiểm tra chi tiêu hoặc kết quả chính có phụ thuộc vào quá ít dòng hay không.",
       grade: "Hạng",
       breakdowns: "Breakdown",
       breakdownsDescription: "Tín hiệu theo nền tảng và tuổi/giới tính để chẩn đoán.",
@@ -1117,6 +1122,7 @@ export function DashboardShell() {
 
                 <div className="flex flex-col gap-4">
                   <ExperimentReadinessCard report={report} language={language} />
+                  <ResultConcentrationCard report={report} language={language} />
                   <MeasurementQualityCard report={report} language={language} />
                   <Card>
                     <CardHeader>
@@ -2746,6 +2752,37 @@ function ExperimentReadinessCard({ report, language }: { report: DashboardReport
             <li key={item}>{item}</li>
           ))}
         </ul>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ResultConcentrationCard({ report, language }: { report: DashboardReport; language: ReportLanguage }) {
+  const copy = uiCopy[language].performance;
+  const concentration = assessResultConcentration(report.adRows.length > 0 ? report.adRows : report.adsetRows.length > 0 ? report.adsetRows : report.campaignRows, report.selectedPack);
+  return (
+    <Card data-print-flow>
+      <CardHeader>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <CardTitle>{copy.concentration}</CardTitle>
+            <CardDescription>{copy.concentrationDescription}</CardDescription>
+          </div>
+          <Badge variant={concentration.variant}>{concentration.label[language]}</Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        <p className="text-sm text-muted-foreground">{concentration.summary[language]}</p>
+        {concentration.topRows.length > 0 ? (
+          <div className="flex flex-col gap-2">
+            {concentration.topRows.map((row) => (
+              <div key={row.id} className="grid grid-cols-[1fr_auto] gap-2 rounded-lg border p-2 text-sm">
+                <span className="truncate font-medium">{row.name}</span>
+                <span className="text-muted-foreground tabular-nums">{((row.resultShare || row.spendShare) * 100).toFixed(1)}%</span>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   );
