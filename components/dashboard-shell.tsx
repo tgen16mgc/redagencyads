@@ -1459,7 +1459,23 @@ function RunningAdSetsPanel({
     ? "Xem trước cấu trúc ad set active và bài đăng ad post đang chạy (banner, caption, ảnh, video)."
     : "Preview active ad set structure and currently running ad posts (banner, caption, image, video).";
 
+  const [selectedAdSetId, setSelectedAdSetId] = React.useState<string>(adsets[0]?.id || "");
+  const [selectedAdId, setSelectedAdId] = React.useState<string | null>(null);
+
+  const selectedAdSet = adsets.find((a) => a.id === selectedAdSetId) || adsets[0];
+
+  React.useEffect(() => {
+    if (selectedAdSet?.ads && selectedAdSet.ads.length > 0) {
+      setSelectedAdId(selectedAdSet.ads[0].id);
+    } else {
+      setSelectedAdId(null);
+    }
+  }, [selectedAdSetId, selectedAdSet?.ads]);
+
   if (!adsets || !adsets.length) return null;
+
+  const selectedAd = selectedAdSet?.ads?.find((ad) => ad.id === selectedAdId) || selectedAdSet?.ads?.[0];
+  const hasMultipleAdSets = adsets.length > 1;
 
   return (
     <Card className="w-full" data-print-flow>
@@ -1467,53 +1483,106 @@ function RunningAdSetsPanel({
         <CardTitle>{title}</CardTitle>
         <CardDescription>{description}</CardDescription>
       </CardHeader>
-      <CardContent className="flex flex-col gap-6">
-        {adsets.map((adset) => (
-          <div key={adset.id} className="rounded-lg border p-4 bg-muted/5">
-            <div className="flex flex-wrap items-start justify-between gap-2 border-b pb-3 mb-4">
-              <div>
-                <h3 className="font-heading text-lg font-semibold">{adset.name}</h3>
-                <p className="text-xs text-muted-foreground">
-                  {isVietnamese ? "Campaign: " : "Campaign: "}{adset.campaignName}
-                </p>
+      <CardContent>
+        <div className={`grid gap-6 ${hasMultipleAdSets ? "grid-cols-1 md:grid-cols-12" : "grid-cols-1"}`}>
+          {hasMultipleAdSets && (
+            <div className="md:col-span-4 lg:col-span-3 flex flex-col gap-2">
+              <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
+                {isVietnamese ? "Chọn Ad Set" : "Select Ad Set"}
               </div>
-              <div className="flex items-center gap-2">
-                <Badge variant="outline">{formatAdSetBudget(adset, currency, language)}</Badge>
-                <Badge variant="secondary">{adset.status}</Badge>
-              </div>
-            </div>
-
-            {adset.ads && adset.ads.length ? (
-              <div className="grid gap-4 md:grid-cols-2">
-                {adset.ads.map((ad) => (
-                  <div key={ad.id} className="flex flex-col gap-2 rounded-lg border bg-background p-3">
-                    <div className="flex items-center justify-between border-b pb-2">
-                      <div className="truncate text-sm font-semibold">{ad.name}</div>
-                      <Badge variant="outline" className="text-[10px]">ID: {ad.id}</Badge>
-                    </div>
-                    {ad.previewHtml ? (
-                      <div
-                        className="w-full overflow-hidden rounded-md border p-1 bg-white max-h-[550px] overflow-y-auto"
-                        dangerouslySetInnerHTML={{ __html: ad.previewHtml }}
-                      />
-                    ) : (
-                      <div className="flex h-40 items-center justify-center rounded-md border bg-muted/10 text-xs text-muted-foreground">
-                        {isVietnamese ? "Không tải được bản xem trước" : "Unable to load ad preview"}
-                      </div>
-                    )}
-                  </div>
+              <div className="flex flex-col gap-2 max-h-[600px] overflow-y-auto pr-2">
+                {adsets.map((adset) => (
+                  <Button
+                    key={adset.id}
+                    variant={selectedAdSetId === adset.id ? "secondary" : "ghost"}
+                    size="sm"
+                    onClick={() => setSelectedAdSetId(adset.id)}
+                    className={`justify-start text-left w-full h-auto py-3 px-4 flex flex-col items-start gap-1 font-normal border transition-all ${
+                      selectedAdSetId === adset.id
+                        ? "bg-accent border-accent text-accent-foreground font-medium"
+                        : "bg-background hover:bg-muted/50 border-transparent text-muted-foreground"
+                    }`}
+                  >
+                    <span className="line-clamp-2 text-sm">{adset.name}</span>
+                    <span className="text-xs opacity-70">{formatAdSetBudget(adset, currency, language)}</span>
+                  </Button>
                 ))}
               </div>
-            ) : (
-              <p className="text-sm text-muted-foreground italic">
-                {isVietnamese ? "Không có ad nào hoạt động trong ad set này." : "No active ads found in this ad set."}
-              </p>
-            )}
+            </div>
+          )}
+
+          <div className={hasMultipleAdSets ? "md:col-span-8 lg:col-span-9 flex flex-col gap-4" : "flex flex-col gap-4"}>
+            <div className="rounded-lg border p-4 bg-muted/5">
+              <div className="flex flex-wrap items-start justify-between gap-2 border-b pb-3 mb-4">
+                <div>
+                  <h3 className="font-heading text-lg font-semibold">{selectedAdSet.name}</h3>
+                  <p className="text-xs text-muted-foreground">
+                    {isVietnamese ? "Campaign: " : "Campaign: "}{selectedAdSet.campaignName}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline">{formatAdSetBudget(selectedAdSet, currency, language)}</Badge>
+                  <Badge variant="secondary">{selectedAdSet.status}</Badge>
+                </div>
+              </div>
+
+              {selectedAdSet.ads && selectedAdSet.ads.length > 0 ? (
+                <>
+                  {selectedAdSet.ads.length > 1 && (
+                    <div className="flex flex-wrap gap-2 border-b pb-3 mb-4">
+                      {selectedAdSet.ads.map((ad, idx) => (
+                        <Button
+                          key={ad.id}
+                          variant={selectedAdId === ad.id ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => setSelectedAdId(ad.id)}
+                          className="text-xs"
+                        >
+                          {ad.name || `Creative ${idx + 1}`}
+                        </Button>
+                      ))}
+                    </div>
+                  )}
+
+                  {selectedAd ? (
+                    <div className="flex flex-col gap-4">
+                      <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b">
+                        <div className="font-semibold text-sm truncate">{selectedAd.name}</div>
+                        <Badge variant="outline" className="text-xs">ID: {selectedAd.id}</Badge>
+                      </div>
+                      {selectedAd.previewHtml ? (
+                        <div className="w-full flex justify-center bg-muted/10 p-2 rounded-md">
+                          <div
+                            className="w-full max-w-[500px] overflow-hidden rounded-md border p-1 bg-white max-h-[600px] overflow-y-auto"
+                            dangerouslySetInnerHTML={{ __html: selectedAd.previewHtml }}
+                          />
+                        </div>
+                      ) : (
+                        <div className="flex h-40 items-center justify-center rounded-md border bg-muted/10 text-xs text-muted-foreground">
+                          {isVietnamese ? "Không tải được bản xem trước" : "Unable to load ad preview"}
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground italic">
+                  {isVietnamese ? "Không có ad nào hoạt động trong ad set này." : "No active ads found in this ad set."}
+                </p>
+              )}
+            </div>
           </div>
-        ))}
+        </div>
       </CardContent>
     </Card>
   );
+}
+
+const ZERO_DECIMAL_CURRENCIES = ["VND", "JPY", "KRW"];
+
+function getBudgetDivider(currency?: string): number {
+  if (!currency) return 100;
+  return ZERO_DECIMAL_CURRENCIES.includes(currency.toUpperCase()) ? 1 : 100;
 }
 
 function campaignStatus(campaign: MetaCampaign) {
@@ -1528,15 +1597,17 @@ function formatCampaignBudget(campaign: MetaCampaign, currency: string, language
   const copy = uiCopy[language].campaign;
   const daily = Number(campaign.daily_budget || 0);
   const lifetime = Number(campaign.lifetime_budget || 0);
-  if (daily > 0) return `- ${formatMetric(daily / 100, "currency", currency)}/${copy.day}`;
-  if (lifetime > 0) return `- ${formatMetric(lifetime / 100, "currency", currency)} ${copy.lifetime}`;
+  const divider = getBudgetDivider(currency);
+  if (daily > 0) return `- ${formatMetric(daily / divider, "currency", currency)}/${copy.day}`;
+  if (lifetime > 0) return `- ${formatMetric(lifetime / divider, "currency", currency)} ${copy.lifetime}`;
   return "";
 }
 
 function formatAdSetBudget(adset: AdSetWithPreviews, currency: string, language: ReportLanguage) {
   const copy = uiCopy[language].adsetPreview;
-  if (adset.dailyBudget > 0) return `${formatMetric(adset.dailyBudget / 100, "currency", currency)}/${copy.day}`;
-  if (adset.lifetimeBudget > 0) return `${formatMetric(adset.lifetimeBudget / 100, "currency", currency)} ${copy.lifetime}`;
+  const divider = getBudgetDivider(currency);
+  if (adset.dailyBudget > 0) return `${formatMetric(adset.dailyBudget / divider, "currency", currency)}/${copy.day}`;
+  if (adset.lifetimeBudget > 0) return `${formatMetric(adset.lifetimeBudget / divider, "currency", currency)} ${copy.lifetime}`;
   return language === "vi" ? "Không có ngân sách trực tiếp" : "No direct budget";
 }
 
