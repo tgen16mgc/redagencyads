@@ -40,6 +40,7 @@ import { classifyCreativeFatigue } from "@/lib/creative-fatigue";
 import { assessExperimentReadiness } from "@/lib/experiment-readiness";
 import { assessMeasurementQuality } from "@/lib/measurement-quality";
 import { assessResultConcentration } from "@/lib/result-concentration";
+import { assessBreakdownWaste } from "@/lib/breakdown-waste";
 import { rowDecision } from "@/lib/row-decision";
 import {
   normalizeCompetitorCountry,
@@ -234,6 +235,8 @@ const uiCopy = {
       readinessDescription: "Combines measurement, account health, and creative signals before launch decisions.",
       concentration: "Result concentration",
       concentrationDescription: "Checks whether spend or primary results depend on too few rows.",
+      breakdownWaste: "Breakdown waste",
+      breakdownWasteDescription: "Checks platform and demographic breakdown segments for high-spend waste.",
       grade: "Grade",
       breakdowns: "Breakdowns",
       breakdownsDescription: "Platform and age/gender signal for diagnosis.",
@@ -371,6 +374,8 @@ const uiCopy = {
       readinessDescription: "Kết hợp đo lường, sức khỏe tài khoản và creative trước quyết định launch.",
       concentration: "Độ tập trung kết quả",
       concentrationDescription: "Kiểm tra chi tiêu hoặc kết quả chính có phụ thuộc vào quá ít dòng hay không.",
+      breakdownWaste: "Lãng phí breakdown",
+      breakdownWasteDescription: "Kiểm tra lãng phí chi tiêu trên các phân khúc nền tảng hoặc nhân khẩu học.",
       grade: "Hạng",
       breakdowns: "Breakdown",
       breakdownsDescription: "Tín hiệu theo nền tảng và tuổi/giới tính để chẩn đoán.",
@@ -1123,6 +1128,7 @@ export function DashboardShell() {
                 <div className="flex flex-col gap-4">
                   <ExperimentReadinessCard report={report} language={language} />
                   <ResultConcentrationCard report={report} language={language} />
+                  <BreakdownWasteCard report={report} language={language} />
                   <MeasurementQualityCard report={report} language={language} />
                   <Card>
                     <CardHeader>
@@ -2752,6 +2758,38 @@ function ExperimentReadinessCard({ report, language }: { report: DashboardReport
             <li key={item}>{item}</li>
           ))}
         </ul>
+      </CardContent>
+    </Card>
+  );
+}
+
+function BreakdownWasteCard({ report, language }: { report: DashboardReport; language: ReportLanguage }) {
+  const copy = uiCopy[language].performance;
+  const combinedRows = [...report.platformRows, ...report.ageGenderRows];
+  const waste = assessBreakdownWaste(combinedRows, report.selectedPack);
+  return (
+    <Card data-print-flow>
+      <CardHeader>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <CardTitle>{copy.breakdownWaste}</CardTitle>
+            <CardDescription>{copy.breakdownWasteDescription}</CardDescription>
+          </div>
+          <Badge variant={waste.variant}>{waste.label[language]}</Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        <p className="text-sm text-muted-foreground">{waste.summary[language]}</p>
+        {waste.rows.length > 0 ? (
+          <div className="flex flex-col gap-2">
+            {waste.rows.map((row) => (
+              <div key={row.id} className="grid grid-cols-[1fr_auto] gap-2 rounded-lg border p-2 text-sm">
+                <span className="truncate font-medium">{row.name}</span>
+                <span className="text-muted-foreground tabular-nums">{((row.spendShare) * 100).toFixed(0)}% spend</span>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   );
