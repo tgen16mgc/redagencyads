@@ -41,6 +41,7 @@ import { assessExperimentReadiness } from "@/lib/experiment-readiness";
 import { assessMeasurementQuality } from "@/lib/measurement-quality";
 import { assessResultConcentration } from "@/lib/result-concentration";
 import { assessBreakdownWaste } from "@/lib/breakdown-waste";
+import { assessFunnelLeakage } from "@/lib/funnel-leakage";
 import { rowDecision } from "@/lib/row-decision";
 import {
   normalizeCompetitorCountry,
@@ -237,6 +238,8 @@ const uiCopy = {
       concentrationDescription: "Checks whether spend or primary results depend on too few rows.",
       breakdownWaste: "Breakdown waste",
       breakdownWasteDescription: "Checks platform and demographic breakdown segments for high-spend waste.",
+      funnelLeakage: "Funnel leakage",
+      funnelLeakageDescription: "Evaluates clicks, carts, checkouts, and purchases against standard benchmarks.",
       grade: "Grade",
       breakdowns: "Breakdowns",
       breakdownsDescription: "Platform and age/gender signal for diagnosis.",
@@ -376,6 +379,8 @@ const uiCopy = {
       concentrationDescription: "Kiểm tra chi tiêu hoặc kết quả chính có phụ thuộc vào quá ít dòng hay không.",
       breakdownWaste: "Lãng phí breakdown",
       breakdownWasteDescription: "Kiểm tra lãng phí chi tiêu trên các phân khúc nền tảng hoặc nhân khẩu học.",
+      funnelLeakage: "Rò rỉ phễu chuyển đổi",
+      funnelLeakageDescription: "Đánh giá tỷ lệ click, thêm giỏ hàng, checkout và mua hàng so với mốc tiêu chuẩn.",
       grade: "Hạng",
       breakdowns: "Breakdown",
       breakdownsDescription: "Tín hiệu theo nền tảng và tuổi/giới tính để chẩn đoán.",
@@ -1129,6 +1134,7 @@ export function DashboardShell() {
                   <ExperimentReadinessCard report={report} language={language} />
                   <ResultConcentrationCard report={report} language={language} />
                   <BreakdownWasteCard report={report} language={language} />
+                  <FunnelLeakageCard report={report} language={language} />
                   <MeasurementQualityCard report={report} language={language} />
                   <Card>
                     <CardHeader>
@@ -2753,6 +2759,50 @@ function ExperimentReadinessCard({ report, language }: { report: DashboardReport
         </div>
       </CardHeader>
       <CardContent>
+        <ul className="flex flex-col gap-2 text-sm text-muted-foreground">
+          {items.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+      </CardContent>
+    </Card>
+  );
+}
+
+function FunnelLeakageCard({ report, language }: { report: DashboardReport; language: ReportLanguage }) {
+  const copy = uiCopy[language].performance;
+  const leakage = assessFunnelLeakage(report.totals);
+  const items = leakage.blockers[language].length > 0 ? leakage.blockers[language] : [leakage.summary[language]];
+  return (
+    <Card data-print-flow>
+      <CardHeader>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <CardTitle>{copy.funnelLeakage}</CardTitle>
+            <CardDescription>{copy.funnelLeakageDescription}</CardDescription>
+          </div>
+          <Badge variant={leakage.variant}>
+            {leakage.status === "clean" ? leakage.label[language] : `${leakage.score}/100`}
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        {leakage.status !== "insufficient_data" ? (
+          <div className="grid grid-cols-3 gap-2 border-b pb-3 text-center text-xs">
+            <div>
+              <div className="text-muted-foreground">Click → Cart</div>
+              <div className="font-semibold tabular-nums">{(leakage.rates.clickToCart * 100).toFixed(1)}%</div>
+            </div>
+            <div>
+              <div className="text-muted-foreground">Cart → Ckout</div>
+              <div className="font-semibold tabular-nums">{(leakage.rates.cartToCheckout * 100).toFixed(1)}%</div>
+            </div>
+            <div>
+              <div className="text-muted-foreground">Ckout → Purch</div>
+              <div className="font-semibold tabular-nums">{(leakage.rates.checkoutToPurchase * 100).toFixed(1)}%</div>
+            </div>
+          </div>
+        ) : null}
         <ul className="flex flex-col gap-2 text-sm text-muted-foreground">
           {items.map((item) => (
             <li key={item}>{item}</li>
