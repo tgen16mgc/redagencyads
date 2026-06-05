@@ -43,6 +43,24 @@ export type AdSetPreview = {
   lifetimeBudget: number;
 };
 
+export type AdPreview = {
+  id: string;
+  name: string;
+  adsetId: string;
+  previewHtml: string;
+};
+
+export type AdSetWithPreviews = {
+  id: string;
+  name: string;
+  campaignId: string;
+  campaignName: string;
+  status: string;
+  dailyBudget: number;
+  lifetimeBudget: number;
+  ads: AdPreview[];
+};
+
 export type InsightAction = {
   action_type: string;
   value: string;
@@ -147,6 +165,7 @@ export type DashboardReport = {
   };
   prompt: string;
   pulledAt: string;
+  adsetPreviews?: AdSetWithPreviews[];
 };
 
 export type Verdict = {

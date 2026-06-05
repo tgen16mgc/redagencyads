@@ -32,7 +32,7 @@ import {
   SparklesIcon,
 } from "lucide-react";
 import { AppSidebar, type AppSidebarItem, type WorkflowSidebarItem } from "@/components/dashboard/app-sidebar";
-import type { AdSetPreview, AiInsightTable, CompareMode, CompetitorFetchResult, CompetitorFetchSource, CompetitorPlatform, CompetitorSpyAd, CompetitorSpyResult, DashboardReport, KpiPack, MetaAccount, MetaCampaign, NormalizedRow, Verdict } from "@/lib/types";
+import type { AdSetWithPreviews, AiInsightTable, CompareMode, CompetitorFetchResult, CompetitorFetchSource, CompetitorPlatform, CompetitorSpyAd, CompetitorSpyResult, DashboardReport, KpiPack, MetaAccount, MetaCampaign, NormalizedRow, Verdict } from "@/lib/types";
 import { buildWorkflowSteps, type DashboardWorkflowStep } from "@/lib/dashboard-workflow";
 import { canOpenDashboardView, initialDashboardViewFromSearch } from "@/lib/dashboard-access";
 import { getCompareRange } from "@/lib/report-ranges";
@@ -476,7 +476,6 @@ export function DashboardShell() {
   const [authenticated, setAuthenticated] = React.useState<boolean | null>(null);
   const [accounts, setAccounts] = React.useState<MetaAccount[]>([]);
   const [campaigns, setCampaigns] = React.useState<MetaCampaign[]>([]);
-  const [adSetPreviews, setAdSetPreviews] = React.useState<AdSetPreview[]>([]);
   const [accountId, setAccountId] = React.useState("");
   const [selectedCampaignIds, setSelectedCampaignIds] = React.useState<string[]>([]);
   const [since, setSince] = React.useState(dates.since);
@@ -585,7 +584,6 @@ export function DashboardShell() {
   React.useEffect(() => {
     if (!accountId) return;
     setLoading("campaigns");
-    setAdSetPreviews([]);
     jsonFetch<{ campaigns: MetaCampaign[] }>(`/api/meta/campaigns?accountId=${encodeURIComponent(accountId)}`)
       .then((data) => {
         setCampaigns(data.campaigns);
@@ -594,28 +592,6 @@ export function DashboardShell() {
       .catch((err) => setError(err.message))
       .finally(() => setLoading(""));
   }, [accountId]);
-
-  React.useEffect(() => {
-    if (!accountId) return;
-    let cancelled = false;
-    const url = new URL("/api/meta/adsets", window.location.origin);
-    url.searchParams.set("accountId", accountId);
-    selectedCampaignIds.forEach((id) => url.searchParams.append("campaignId", id));
-    setLoading("adsets");
-    jsonFetch<{ adsets: AdSetPreview[] }>(url.toString())
-      .then((data) => {
-        if (!cancelled) setAdSetPreviews(data.adsets);
-      })
-      .catch((err) => {
-        if (!cancelled) setError(err.message);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading("");
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [accountId, selectedCampaignIds]);
 
   async function connectToken(event: React.FormEvent) {
     event.preventDefault();
@@ -1023,12 +999,6 @@ export function DashboardShell() {
                   </Button>
                 </Field>
               </FieldGroup>
-              <AdSetPreviewPanel
-                adsets={adSetPreviews}
-                currency={accounts.find((account) => account.id === accountId)?.currency || "VND"}
-                language={language}
-                loading={loading === "adsets"}
-              />
             </CardContent>
           </Card>
 
@@ -1075,6 +1045,14 @@ export function DashboardShell() {
                 language={language}
                 onGenerate={runInsights}
               />
+
+              {report.adsetPreviews ? (
+                <RunningAdSetsPanel
+                  adsets={report.adsetPreviews}
+                  currency={report.account.currency || "VND"}
+                  language={language}
+                />
+              ) : null}
 
               <section className="grid gap-4 xl:grid-cols-[1.4fr_0.9fr]">
                 <Card>
@@ -1466,53 +1444,75 @@ function CampaignPicker({
   );
 }
 
-function AdSetPreviewPanel({
+function RunningAdSetsPanel({
   adsets,
   currency,
   language,
-  loading,
 }: {
-  adsets: AdSetPreview[];
+  adsets: AdSetWithPreviews[];
   currency: string;
   language: ReportLanguage;
-  loading: boolean;
 }) {
-  const copy = uiCopy[language].adsetPreview;
+  const isVietnamese = language === "vi";
+  const title = isVietnamese ? "Ad set & Creative đang chạy" : "Running Ad Sets & Creatives";
+  const description = isVietnamese
+    ? "Xem trước cấu trúc ad set active và bài đăng ad post đang chạy (banner, caption, ảnh, video)."
+    : "Preview active ad set structure and currently running ad posts (banner, caption, image, video).";
+
+  if (!adsets || !adsets.length) return null;
+
   return (
-    <div className="mt-4 rounded-lg border bg-muted/20 p-3">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <div className="font-medium">{copy.title}</div>
-          <p className="text-sm text-muted-foreground">{copy.description}</p>
-        </div>
-        <Badge variant="secondary">{adsets.length}</Badge>
-      </div>
-      {loading ? (
-        <div className="mt-3 flex h-20 items-center justify-center text-sm text-muted-foreground">
-          <Spinner data-icon="inline-start" />
-          {copy.loading}
-        </div>
-      ) : adsets.length ? (
-        <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-          {adsets.map((adset) => (
-            <div key={adset.id} className="rounded-md border bg-background p-3">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-medium">{adset.name}</div>
-                  <div className="truncate text-xs text-muted-foreground">{adset.campaignName}</div>
-                </div>
+    <Card className="w-full" data-print-flow>
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+        <CardDescription>{description}</CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-6">
+        {adsets.map((adset) => (
+          <div key={adset.id} className="rounded-lg border p-4 bg-muted/5">
+            <div className="flex flex-wrap items-start justify-between gap-2 border-b pb-3 mb-4">
+              <div>
+                <h3 className="font-heading text-lg font-semibold">{adset.name}</h3>
+                <p className="text-xs text-muted-foreground">
+                  {isVietnamese ? "Campaign: " : "Campaign: "}{adset.campaignName}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Badge variant="outline">{formatAdSetBudget(adset, currency, language)}</Badge>
                 <Badge variant="secondary">{adset.status}</Badge>
               </div>
-              <div className="mt-2 text-xs text-muted-foreground">
-                {formatAdSetBudget(adset, currency, language)}
-              </div>
             </div>
-          ))}
-        </div>
-      ) : (
-        <div className="mt-3 rounded-md border bg-background p-4 text-sm text-muted-foreground">{copy.empty}</div>
-      )}
-    </div>
+
+            {adset.ads && adset.ads.length ? (
+              <div className="grid gap-4 md:grid-cols-2">
+                {adset.ads.map((ad) => (
+                  <div key={ad.id} className="flex flex-col gap-2 rounded-lg border bg-background p-3">
+                    <div className="flex items-center justify-between border-b pb-2">
+                      <div className="truncate text-sm font-semibold">{ad.name}</div>
+                      <Badge variant="outline" className="text-[10px]">ID: {ad.id}</Badge>
+                    </div>
+                    {ad.previewHtml ? (
+                      <div
+                        className="w-full overflow-hidden rounded-md border p-1 bg-white max-h-[550px] overflow-y-auto"
+                        dangerouslySetInnerHTML={{ __html: ad.previewHtml }}
+                      />
+                    ) : (
+                      <div className="flex h-40 items-center justify-center rounded-md border bg-muted/10 text-xs text-muted-foreground">
+                        {isVietnamese ? "Không tải được bản xem trước" : "Unable to load ad preview"}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground italic">
+                {isVietnamese ? "Không có ad nào hoạt động trong ad set này." : "No active ads found in this ad set."}
+              </p>
+            )}
+          </div>
+        ))}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -1533,7 +1533,7 @@ function formatCampaignBudget(campaign: MetaCampaign, currency: string, language
   return "";
 }
 
-function formatAdSetBudget(adset: AdSetPreview, currency: string, language: ReportLanguage) {
+function formatAdSetBudget(adset: AdSetWithPreviews, currency: string, language: ReportLanguage) {
   const copy = uiCopy[language].adsetPreview;
   if (adset.dailyBudget > 0) return `${formatMetric(adset.dailyBudget / 100, "currency", currency)}/${copy.day}`;
   if (adset.lifetimeBudget > 0) return `${formatMetric(adset.lifetimeBudget / 100, "currency", currency)} ${copy.lifetime}`;

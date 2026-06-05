@@ -1,5 +1,6 @@
 import type { DashboardReport, InsightRow, KpiPack, MetaAccount, MetaAdSet, MetaCampaign, NormalizedRow } from "@/lib/types";
 import { buildPrompt, detectKpiPack, getKpiCards, normalizeRows, scoreHealth, sumRows } from "@/lib/metrics";
+import { buildAdSetPreviewsWithCreatives } from "@/lib/adset-preview";
 
 const META_FIELDS = [
   "account_name",
@@ -104,6 +105,45 @@ export async function getAdSets(token: string, accountId: string, campaignIds: s
   );
 }
 
+export async function getActiveAdsForCampaigns(token: string, accountId: string, campaignIds: string[]) {
+  const id = normalizeAccountId(accountId);
+  const filtering = campaignIds.length
+    ? JSON.stringify([{ field: "campaign.id", operator: "IN", value: campaignIds }])
+    : undefined;
+  const ads = await graphList<{ id: string; name: string; adset_id: string; status: string; effective_status: string }>(
+    `/${id}/ads`,
+    {
+      fields: "id,name,adset_id,status,effective_status",
+      filtering,
+      limit: 100,
+    },
+    token,
+  );
+  return ads.filter((ad) => (ad.effective_status || ad.status) === "ACTIVE");
+}
+
+export async function getAdPreviews(token: string, adIds: string[]): Promise<Record<string, string>> {
+  if (!adIds.length) return {};
+  const previews: Record<string, string> = {};
+  await Promise.all(
+    adIds.map(async (id) => {
+      try {
+        const res = await graphGet<{ data: { body: string }[] }>(
+          `/${id}/previews`,
+          { ad_format: "DESKTOP_FEED_STANDARD" },
+          token,
+        );
+        if (res.data?.[0]?.body) {
+          previews[id] = res.data[0].body;
+        }
+      } catch (e) {
+        console.error(`Failed to fetch preview for ad ${id}:`, e);
+      }
+    }),
+  );
+  return previews;
+}
+
 export function normalizeAccountId(accountId: string) {
   return accountId.startsWith("act_") ? accountId : `act_${accountId}`;
 }
@@ -159,24 +199,42 @@ export async function buildReport(params: {
     },
   ]);
 
-  const [campaignInsights, adsetInsights, adInsights, dailyInsights, platformInsights, ageGenderInsights] =
-    await Promise.all([
-      getInsights(params.token, accountId, "campaign", params.since, params.until, { filtering: filter }),
-      getInsights(params.token, accountId, "adset", params.since, params.until, { filtering: filter }),
-      getInsights(params.token, accountId, "ad", params.since, params.until, { filtering: filter }),
-      getInsights(params.token, accountId, "campaign", params.since, params.until, {
-        filtering: filter,
-        time_increment: 1,
-      }),
-      getInsights(params.token, accountId, "campaign", params.since, params.until, {
-        filtering: filter,
-        breakdowns: "publisher_platform",
-      }),
-      getInsights(params.token, accountId, "campaign", params.since, params.until, {
-        filtering: filter,
-        breakdowns: "age,gender",
-      }),
-    ]);
+  const campaignIds = selectedCampaigns.map((campaign) => campaign.id);
+
+  const [
+    campaignInsights,
+    adsetInsights,
+    adInsights,
+    dailyInsights,
+    platformInsights,
+    ageGenderInsights,
+    activeAdSetsData,
+    activeAdsData,
+  ] = await Promise.all([
+    getInsights(params.token, accountId, "campaign", params.since, params.until, { filtering: filter }),
+    getInsights(params.token, accountId, "adset", params.since, params.until, { filtering: filter }),
+    getInsights(params.token, accountId, "ad", params.since, params.until, { filtering: filter }),
+    getInsights(params.token, accountId, "campaign", params.since, params.until, {
+      filtering: filter,
+      time_increment: 1,
+    }),
+    getInsights(params.token, accountId, "campaign", params.since, params.until, {
+      filtering: filter,
+      breakdowns: "publisher_platform",
+    }),
+    getInsights(params.token, accountId, "campaign", params.since, params.until, {
+      filtering: filter,
+      breakdowns: "age,gender",
+    }),
+    getAdSets(params.token, accountId, campaignIds),
+    getActiveAdsForCampaigns(params.token, accountId, campaignIds),
+  ]);
+
+  const activeAdSets = activeAdSetsData.filter((adset) => (adset.effective_status || adset.status) === "ACTIVE");
+  const activeAdSetIds = new Set(activeAdSets.map((adset) => adset.id));
+  const activeAds = activeAdsData.filter((ad) => activeAdSetIds.has(ad.adset_id));
+  const previewHtmls = await getAdPreviews(params.token, activeAds.map((ad) => ad.id));
+  const adsetPreviews = buildAdSetPreviewsWithCreatives(activeAdSets, activeAds, previewHtmls);
 
   const campaignRows = normalizeRows(campaignInsights, "campaign");
   const adsetRows = normalizeRows(adsetInsights, "adset");
@@ -221,5 +279,6 @@ export async function buildReport(params: {
     health,
     prompt,
     pulledAt: new Date().toISOString(),
+    adsetPreviews,
   };
 }
