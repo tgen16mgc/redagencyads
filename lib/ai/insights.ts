@@ -138,9 +138,10 @@ function priorityValue(value: unknown): "low" | "medium" | "high" {
   return value === "high" || value === "medium" || value === "low" ? value : "medium";
 }
 
-function parseInsights(text: string, provider: AiInsightTable["provider"]): AiInsightTable {
+function parseInsightsStrict(text: string, provider: AiInsightTable["provider"]): AiInsightTable | null {
   try {
     const json = parseJsonObject(text);
+    if (!json.summary) return null;
     const rows = Array.isArray(json.rows)
       ? json.rows.map((row) => {
           const record = typeof row === "object" && row !== null ? (row as Record<string, unknown>) : {};
@@ -162,22 +163,7 @@ function parseInsights(text: string, provider: AiInsightTable["provider"]): AiIn
       assumptions: stringArray(json.assumptions),
     };
   } catch {
-    return {
-      provider,
-      summary: "Model returned non-JSON output.",
-      rows: [
-        {
-          area: "AI output",
-          insight: text.slice(0, 180),
-          evidence: "JSON parsing failed.",
-          action: "Retry or use prompt fallback.",
-          priority: "medium",
-          confidence: "low",
-        },
-      ],
-      confidence: "low",
-      assumptions: ["Raw model output truncated into insight row."],
-    };
+    return null;
   }
 }
 
@@ -185,7 +171,10 @@ export async function generateInsights(prompt: string, provider: "auto" | AiInsi
   if (provider === "prompt") return insightFallback(prompt);
   if ((provider === "9router" || provider === "auto") && hasNineRouterCredentials()) {
     try {
-      return parseInsights(await nineRouterCompletion(prompt, { jsonMode: true, maxTokens: 2200 }), "9router");
+      const text = await nineRouterCompletion(prompt, { jsonMode: true, maxTokens: 2200 });
+      const parsed = parseInsightsStrict(text, "9router");
+      if (!parsed) throw new Error("9router insights response failed JSON validation.");
+      return parsed;
     } catch (error) {
       return localInsightFallback(prompt, `9router insights were unavailable or returned unusable output. ${errorMessage(error)}`);
     }
