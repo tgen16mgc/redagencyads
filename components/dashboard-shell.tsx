@@ -37,6 +37,7 @@ import { buildWorkflowSteps, type DashboardWorkflowStep } from "@/lib/dashboard-
 import { canOpenDashboardView, initialDashboardViewFromSearch } from "@/lib/dashboard-access";
 import { getCompareRange } from "@/lib/report-ranges";
 import { classifyCreativeFatigue } from "@/lib/creative-fatigue";
+import { assessExperimentReadiness } from "@/lib/experiment-readiness";
 import { assessMeasurementQuality } from "@/lib/measurement-quality";
 import { rowDecision } from "@/lib/row-decision";
 import {
@@ -228,6 +229,8 @@ const uiCopy = {
       healthDescription: "Ads-skill checks: creative, CTR, frequency, consolidation.",
       measurement: "Measurement quality",
       measurementDescription: "Checks whether the current dataset supports confident optimization decisions.",
+      readiness: "Experiment readiness",
+      readinessDescription: "Combines measurement, account health, and creative signals before launch decisions.",
       grade: "Grade",
       breakdowns: "Breakdowns",
       breakdownsDescription: "Platform and age/gender signal for diagnosis.",
@@ -361,6 +364,8 @@ const uiCopy = {
       healthDescription: "Check ads-skill: creative, CTR, frequency, consolidation.",
       measurement: "Chất lượng đo lường",
       measurementDescription: "Kiểm tra dataset hiện tại có đủ tin cậy để ra quyết định tối ưu hay không.",
+      readiness: "Sẵn sàng thử nghiệm",
+      readinessDescription: "Kết hợp đo lường, sức khỏe tài khoản và creative trước quyết định launch.",
       grade: "Hạng",
       breakdowns: "Breakdown",
       breakdownsDescription: "Tín hiệu theo nền tảng và tuổi/giới tính để chẩn đoán.",
@@ -1111,6 +1116,7 @@ export function DashboardShell() {
                 </Card>
 
                 <div className="flex flex-col gap-4">
+                  <ExperimentReadinessCard report={report} language={language} />
                   <MeasurementQualityCard report={report} language={language} />
                   <Card>
                     <CardHeader>
@@ -2716,6 +2722,32 @@ function PerformanceTable({
         })}
       </TableBody>
     </Table>
+  );
+}
+
+function ExperimentReadinessCard({ report, language }: { report: DashboardReport; language: ReportLanguage }) {
+  const copy = uiCopy[language].performance;
+  const readiness = assessExperimentReadiness(report);
+  const items = readiness.blockers[language].length > 0 ? readiness.blockers[language] : [readiness.nextAction[language]];
+  return (
+    <Card data-print-flow>
+      <CardHeader>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <CardTitle>{copy.readiness}</CardTitle>
+            <CardDescription>{copy.readinessDescription}</CardDescription>
+          </div>
+          <Badge variant={readiness.variant}>{readiness.label[language]}</Badge>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <ul className="flex flex-col gap-2 text-sm text-muted-foreground">
+          {items.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+      </CardContent>
+    </Card>
   );
 }
 
