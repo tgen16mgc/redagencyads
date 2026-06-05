@@ -156,146 +156,155 @@ describe("generateVerdict", () => {
     expect(verdict.tests.length).toBeGreaterThan(0);
   });
 
-  it("falls back to local Verdict when explicit OpenRouter fails", async () => {
-    vi.stubEnv("OPENROUTER_API_KEY", "test-key");
+  it("falls back to local Verdict when explicit Kiro fails", async () => {
+    vi.stubEnv("NINEROUTER_KEY", "test-key");
     const fetchSpy = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ error: { message: "provider overloaded" } }), {
-        status: 401,
+        status: 503,
         headers: { "content-type": "application/json" },
       }),
     );
     vi.stubGlobal("fetch", fetchSpy);
 
-    const verdict = await generateVerdict({ report: report(), language: "en", provider: "openrouter" });
+    const verdict = await generateVerdict({ report: report(), language: "en", provider: "kiro" });
 
     expect(fetchSpy).toHaveBeenCalled();
     expect(verdict.provider).toBe("prompt");
     expect(verdict.winners.length).toBeGreaterThan(0);
-    expect(verdict.assumptions.join(" ")).toContain("OpenRouter failed");
+    expect(verdict.assumptions.join(" ")).toContain("Kiro 9router enhancement failed");
   });
 
-  it("does not call OpenRouter in auto mode", async () => {
-    vi.stubEnv("OPENROUTER_API_KEY", "test-key");
-    const fetchSpy = vi.fn();
-    vi.stubGlobal("fetch", fetchSpy);
-
-    const verdict = await generateVerdict({ report: report(), language: "en", provider: "auto" });
-
-    expect(fetchSpy).not.toHaveBeenCalled();
-    expect(verdict.provider).toBe("prompt");
-    expect(verdict.winners.length).toBeGreaterThan(0);
-  });
-
-  it("does not call Gemini in auto mode", async () => {
-    vi.stubEnv("GEMINI_API_KEY", "test-key");
-    const fetchSpy = vi.fn();
-    vi.stubGlobal("fetch", fetchSpy);
-
-    const verdict = await generateVerdict({ report: report(), language: "en", provider: "auto" });
-
-    expect(fetchSpy).not.toHaveBeenCalled();
-    expect(verdict.provider).toBe("prompt");
-    expect(verdict.winners.length).toBeGreaterThan(0);
-  });
-
-  it("enhances a structured Verdict with Gemini when explicitly selected", async () => {
-    vi.stubEnv("GEMINI_API_KEY", "test-key");
+  it("enhances a structured Verdict with Kiro in auto mode when 9router credentials exist", async () => {
+    vi.stubEnv("NINEROUTER_KEY", "test-key");
+    vi.stubEnv("NINEROUTER_URL", "http://localhost:20128");
     const enhanced = {
-      verdict: "Gemini refined the local Verdict wording.",
+      verdict: "Kiro refined the local Verdict wording.",
       risks: ["Validate tracking before scaling."],
       winners: ["Message Winner is the strongest budget candidate."],
       losers: ["Message Loser should stay capped."],
       budget_moves: ["Increase Message Winner by up to 20% after quality checks."],
       tests: ["Run a tracking-quality check before scaling."],
       confidence: "high",
-      assumptions: ["Gemini only enhanced the local Verdict wording."],
+      assumptions: ["Kiro only enhanced the local Verdict wording."],
     };
     const fetchSpy = vi.fn().mockResolvedValue(
       new Response(
-        JSON.stringify({
-          candidates: [{ content: { parts: [{ text: JSON.stringify(enhanced) }] } }],
-        }),
+        JSON.stringify({ choices: [{ message: { content: JSON.stringify(enhanced) } }] }),
         { status: 200, headers: { "content-type": "application/json" } },
       ),
     );
     vi.stubGlobal("fetch", fetchSpy);
 
-    const verdict = await generateVerdict({ report: report(), language: "en", provider: "gemini" });
+    const verdict = await generateVerdict({ report: report(), language: "en", provider: "auto" });
 
     expect(fetchSpy).toHaveBeenCalledOnce();
-    expect(String(fetchSpy.mock.calls[0][0])).toContain("/models/gemini-2.5-flash:generateContent");
-    expect(fetchSpy.mock.calls[0][1]?.headers).toMatchObject({ "x-goog-api-key": "test-key" });
+    expect(String(fetchSpy.mock.calls[0][0])).toBe("http://localhost:20128/v1/chat/completions");
+    expect(verdict.provider).toBe("kiro");
+    expect(verdict.verdict).toBe(enhanced.verdict);
+  });
+
+  it("does not call legacy providers in auto mode", async () => {
+    vi.stubEnv("OPENROUTER_API_KEY", "test-key");
+    vi.stubEnv("GEMINI_API_KEY", "test-key");
+    vi.stubEnv("OPENAI_API_KEY", "test-key");
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const verdict = await generateVerdict({ report: report(), language: "en", provider: "auto" });
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(verdict.provider).toBe("prompt");
+    expect(verdict.assumptions.join(" ")).toContain("Kiro 9router credentials missing");
+  });
+
+  it("enhances a structured Verdict with Kiro when explicitly selected", async () => {
+    vi.stubEnv("NINEROUTER_KEY", "test-key");
+    const enhanced = {
+      verdict: "Kiro refined the local Verdict wording.",
+      risks: ["Validate tracking before scaling."],
+      winners: ["Message Winner is the strongest budget candidate."],
+      losers: ["Message Loser should stay capped."],
+      budget_moves: ["Increase Message Winner by up to 20% after quality checks."],
+      tests: ["Run a tracking-quality check before scaling."],
+      confidence: "high",
+      assumptions: ["Kiro only enhanced the local Verdict wording."],
+    };
+    const fetchSpy = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ choices: [{ message: { content: JSON.stringify(enhanced) } }] }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const verdict = await generateVerdict({ report: report(), language: "en", provider: "kiro" });
+
+    expect(fetchSpy).toHaveBeenCalledOnce();
+    expect(String(fetchSpy.mock.calls[0][0])).toBe("http://localhost:20128/v1/chat/completions");
+    expect(fetchSpy.mock.calls[0][1]?.headers).toMatchObject({ authorization: "Bearer test-key" });
     const requestBody = JSON.parse(String(fetchSpy.mock.calls[0][1]?.body));
-    expect(requestBody.generationConfig).toMatchObject({
-      responseMimeType: "application/json",
-      responseSchema: expect.objectContaining({ type: "object" }),
-    });
-    expect(requestBody.generationConfig.responseFormat).toBeUndefined();
-    expect(verdict.provider).toBe("gemini");
+    expect(requestBody.response_format).toMatchObject({ type: "json_object" });
+    expect(verdict.provider).toBe("kiro");
     expect(verdict.verdict).toBe(enhanced.verdict);
     expect(verdict.budget_moves).toEqual(enhanced.budget_moves);
   });
 
-  it("falls back to local Verdict when explicit Gemini is missing an API key", async () => {
+  it("falls back to local Verdict when explicit Kiro is missing an API key", async () => {
     const fetchSpy = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);
 
-    const verdict = await generateVerdict({ report: report(), language: "en", provider: "gemini" });
+    const verdict = await generateVerdict({ report: report(), language: "en", provider: "kiro" });
 
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(verdict.provider).toBe("prompt");
     expect(verdict.winners.length).toBeGreaterThan(0);
-    expect(verdict.assumptions.join(" ")).toContain("Gemini API key missing");
+    expect(verdict.assumptions.join(" ")).toContain("Kiro 9router credentials missing");
   });
 
-  it("does not let Gemini raise confidence above the local Verdict", async () => {
-    vi.stubEnv("GEMINI_API_KEY", "test-key");
+  it("does not let Kiro raise confidence above the local Verdict", async () => {
+    vi.stubEnv("NINEROUTER_KEY", "test-key");
     const enhanced = {
-      verdict: "Gemini polished a setup-only Verdict.",
+      verdict: "Kiro polished a setup-only Verdict.",
       risks: ["No meaningful spend exists yet."],
       winners: [],
       losers: [],
       budget_moves: ["Hold budget until spend and primary-result signal are strong enough."],
       tests: ["Run a tracking-quality check before scaling."],
       confidence: "high",
-      assumptions: ["Gemini only enhanced the local Verdict wording."],
+      assumptions: ["Kiro only enhanced the local Verdict wording."],
     };
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
         new Response(
-          JSON.stringify({
-            candidates: [{ content: { parts: [{ text: JSON.stringify(enhanced) }] } }],
-          }),
+          JSON.stringify({ choices: [{ message: { content: JSON.stringify(enhanced) } }] }),
           { status: 200, headers: { "content-type": "application/json" } },
         ),
       ),
     );
 
-    const verdict = await generateVerdict({ report: noSpendReport(), language: "en", provider: "gemini" });
+    const verdict = await generateVerdict({ report: noSpendReport(), language: "en", provider: "kiro" });
 
-    expect(verdict.provider).toBe("gemini");
+    expect(verdict.provider).toBe("kiro");
     expect(verdict.confidence).toBe("low");
   });
 
-  it("falls back to local Verdict when Gemini returns invalid JSON", async () => {
-    vi.stubEnv("GEMINI_API_KEY", "test-key");
+  it("falls back to local Verdict when Kiro returns invalid JSON", async () => {
+    vi.stubEnv("NINEROUTER_KEY", "test-key");
     const fetchSpy = vi.fn().mockResolvedValue(
       new Response(
-        JSON.stringify({
-          candidates: [{ content: { parts: [{ text: "not json" }] } }],
-        }),
+        JSON.stringify({ choices: [{ message: { content: "not json" } }] }),
         { status: 200, headers: { "content-type": "application/json" } },
       ),
     );
     vi.stubGlobal("fetch", fetchSpy);
 
-    const verdict = await generateVerdict({ report: report(), language: "en", provider: "gemini" });
+    const verdict = await generateVerdict({ report: report(), language: "en", provider: "kiro" });
 
     expect(fetchSpy).toHaveBeenCalledOnce();
     expect(verdict.provider).toBe("prompt");
     expect(verdict.winners.length).toBeGreaterThan(0);
-    expect(verdict.assumptions.join(" ")).toContain("Gemini enhancement failed");
+    expect(verdict.assumptions.join(" ")).toContain("Kiro 9router enhancement failed");
   });
 
   it("returns Vietnamese local Verdict strings when language is vi", async () => {
@@ -325,7 +334,7 @@ describe("generateVerdict", () => {
     expect(json.verdict.verdict).toContain("Tài khoản Test Account");
   });
 
-  it("accepts explicit Gemini provider through the Verdict route", async () => {
+  it("rejects legacy Gemini provider through the Verdict route", async () => {
     const fetchSpy = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);
 
@@ -336,11 +345,8 @@ describe("generateVerdict", () => {
         body: JSON.stringify({ report: report(), language: "en", provider: "gemini" }),
       }),
     );
-    const json = await response.json();
 
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(400);
     expect(fetchSpy).not.toHaveBeenCalled();
-    expect(json.verdict.provider).toBe("prompt");
-    expect(json.verdict.assumptions.join(" ")).toContain("Gemini API key missing");
   });
 });

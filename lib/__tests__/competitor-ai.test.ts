@@ -8,9 +8,8 @@ describe("generateCompetitorSpy", () => {
   });
 
   it("returns a usable local competitor brief when no AI provider key is configured", async () => {
-    vi.stubEnv("OPENAI_API_KEY", "");
-    vi.stubEnv("GEMINI_API_KEY", "");
-    vi.stubEnv("OPENROUTER_API_KEY", "");
+    vi.stubEnv("NINEROUTER_KEY", "");
+    vi.stubEnv("KIRO_API_KEY", "");
 
     const prompt = buildCompetitorSpyPrompt({
       competitors: ["Seoul Spa"],

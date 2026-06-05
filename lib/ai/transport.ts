@@ -17,6 +17,9 @@ const OPENROUTER_MAX_TOKENS = Number(process.env.OPENROUTER_MAX_TOKENS || 1400);
 export const OPENROUTER_COMPETITOR_MODEL_TIMEOUT_MS = Number(
   process.env.OPENROUTER_COMPETITOR_MODEL_TIMEOUT_MS || 85000,
 );
+const KIRO_TIMEOUT_MS = Number(process.env.KIRO_TIMEOUT_MS || process.env.NINEROUTER_TIMEOUT_MS || 45000);
+const KIRO_MAX_TOKENS = Number(process.env.KIRO_MAX_TOKENS || process.env.NINEROUTER_MAX_TOKENS || 1800);
+const KIRO_DEFAULT_MODEL = "kr/claude-sonnet-4.5-thinking-agentic";
 const GEMINI_TIMEOUT_MS = Number(process.env.GEMINI_TIMEOUT_MS || 45000);
 const GEMINI_MAX_TOKENS = Number(process.env.GEMINI_MAX_TOKENS || 1400);
 const GEMINI_DEFAULT_MODEL = "gemini-2.5-flash";
@@ -316,6 +319,56 @@ export async function openRouterCompletion(
     }
   }
   throw new Error(`OpenRouter free model request failed. ${errors.join(" | ")}`);
+}
+
+function kiroBaseUrl() {
+  return (process.env.KIRO_BASE_URL || process.env.NINEROUTER_URL || "http://localhost:20128").replace(/\/$/, "");
+}
+
+function kiroApiKey() {
+  return process.env.KIRO_API_KEY || process.env.NINEROUTER_KEY || "";
+}
+
+export function hasKiroCredentials() {
+  return Boolean(kiroApiKey());
+}
+
+export async function kiroCompletion(prompt: string, options: { jsonMode?: boolean; maxTokens?: number } = {}) {
+  const controller = new AbortController();
+  const timeoutMs = positiveMs(KIRO_TIMEOUT_MS, 45000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  const apiKey = kiroApiKey();
+  if (apiKey) headers.authorization = `Bearer ${apiKey}`;
+
+  try {
+    const body: Record<string, unknown> = {
+      model: process.env.KIRO_MODEL || process.env.NINEROUTER_MODEL || KIRO_DEFAULT_MODEL,
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.2,
+      max_tokens: Math.max(300, Math.min(positiveMs(options.maxTokens ?? KIRO_MAX_TOKENS, KIRO_MAX_TOKENS), 2400)),
+    };
+    if (options.jsonMode) body.response_format = { type: "json_object" };
+
+    const response = await fetch(`${kiroBaseUrl()}/v1/chat/completions`, {
+      method: "POST",
+      signal: controller.signal,
+      headers,
+      body: JSON.stringify(body),
+    });
+    const json = await readJson(response);
+    if (!response.ok) throw new Error(json?.error?.message || "Kiro 9router request failed.");
+    const text = choiceText(json?.choices?.[0]);
+    if (!text) throw new Error("Kiro 9router returned an empty response.");
+    return text;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error(`Kiro 9router timed out after ${Math.round(timeoutMs / 1000)}s.`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function geminiModelPath() {

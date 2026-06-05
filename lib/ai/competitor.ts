@@ -1,9 +1,8 @@
 import type { CompetitorSpyResult } from "@/lib/types";
 import {
-  OPENROUTER_COMPETITOR_MODEL_TIMEOUT_MS,
   errorMessage,
-  geminiCompletion,
-  openRouterCompletion,
+  hasKiroCredentials,
+  kiroCompletion,
   promptInputJson,
 } from "@/lib/ai/transport";
 
@@ -46,8 +45,8 @@ function competitorFallback(prompt: string): CompetitorSpyResult {
           guardrail: "Do not scale until cost per primary result and lead quality beat current account baseline.",
         },
       ],
-      next_actions: ["Open Meta Ad Library links from fetched cards.", "Paste notable hooks/offers into notes if live scraping is thin.", "Generate again with Gemini/OpenAI when provider key is available for deeper synthesis."],
-      assumptions: ["Local deterministic brief used because no live AI provider key was available.", evidenceCount ? "Evidence links or notes need human review before final claims." : "No live competitor ad evidence was available."],
+      next_actions: ["Open Meta Ad Library links from fetched cards.", "Paste notable hooks/offers into notes if live scraping is thin.", "Generate again with Kiro 9router when provider key is available for deeper synthesis."],
+      assumptions: ["Local deterministic brief used because no live Kiro 9router key was available.", evidenceCount ? "Evidence links or notes need human review before final claims." : "No live competitor ad evidence was available."],
     };
   }
   return {
@@ -58,14 +57,14 @@ function competitorFallback(prompt: string): CompetitorSpyResult {
       {
         theme: "Manual competitor brief required",
         evidence: `Prompt ready with ${prompt.length} chars.`,
-        opportunity: "Add OPENAI_API_KEY, GEMINI_API_KEY, or OPENROUTER_API_KEY, then regenerate competitor spy output.",
+        opportunity: "Add NINEROUTER_KEY/KIRO_API_KEY, then regenerate competitor spy output.",
         confidence: "high",
       },
     ],
     creative_gaps: ["Live AI competitor interpretation unavailable in prompt-only mode."],
     test_briefs: [],
     next_actions: ["Paste competitor ad-library notes into the panel and regenerate after adding an AI provider key."],
-    assumptions: ["OPENAI_API_KEY, GEMINI_API_KEY, or OPENROUTER_API_KEY missing in server environment."],
+    assumptions: ["NINEROUTER_KEY/KIRO_API_KEY missing in server environment."],
   };
 }
 
@@ -95,45 +94,16 @@ function parseCompetitorSpy(text: string, provider: CompetitorSpyResult["provide
 
 export async function generateCompetitorSpy(prompt: string, provider: "auto" | CompetitorSpyResult["provider"]) {
   if (provider === "prompt") return competitorFallback(prompt);
-  if ((provider === "openai" || provider === "auto") && process.env.OPENAI_API_KEY) {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: process.env.OPENAI_MODEL || "gpt-4o-mini",
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0.2,
-        response_format: { type: "json_object" },
-      }),
-    });
-    const json = await response.json();
-    if (!response.ok) throw new Error(json?.error?.message || "OpenAI competitor spy request failed.");
-    return parseCompetitorSpy(json.choices?.[0]?.message?.content || "", "openai");
-  }
-  if (provider === "gemini") {
-    if (!process.env.GEMINI_API_KEY) return competitorFallback(prompt);
+  if ((provider === "kiro" || provider === "auto") && hasKiroCredentials()) {
     try {
-      return parseCompetitorSpy(await geminiCompletion(prompt), "gemini");
+      return parseCompetitorSpy(await kiroCompletion(prompt, { jsonMode: true, maxTokens: 1800 }), "kiro");
     } catch (error) {
       return {
         ...competitorFallback(prompt),
-        summary: `Gemini competitor spy failed; prompt-only output returned. ${errorMessage(error)}`,
-        assumptions: [`Gemini failed; prompt-only output returned. ${errorMessage(error)}`],
+        summary: `Kiro 9router competitor spy failed; prompt-only output returned. ${errorMessage(error)}`,
+        assumptions: [`Kiro 9router failed; prompt-only output returned. ${errorMessage(error)}`],
       };
     }
-  }
-  if ((provider === "openrouter" || provider === "auto") && process.env.OPENROUTER_API_KEY) {
-    return parseCompetitorSpy(
-      await openRouterCompletion(prompt, {
-        modelTimeoutMs: OPENROUTER_COMPETITOR_MODEL_TIMEOUT_MS,
-        totalTimeoutMs: OPENROUTER_COMPETITOR_MODEL_TIMEOUT_MS + 15000,
-        maxTokens: 1800,
-      }),
-      "openrouter",
-    );
   }
   return competitorFallback(prompt);
 }

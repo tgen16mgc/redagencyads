@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { generateInsights } from "../ai";
 
 const insightResponse = {
-  summary: "Gemini generated the insight brief.",
+  summary: "Kiro generated the insight brief.",
   rows: [
     {
       area: "Messages",
@@ -23,24 +23,25 @@ describe("generateInsights", () => {
     vi.unstubAllEnvs();
   });
 
-  it("routes AI insight brief to Gemini and falls back from unsupported Gemini 3.1 Flash env model", async () => {
-    vi.stubEnv("GEMINI_API_KEY", "test-key");
-    vi.stubEnv("GEMINI_MODEL", "gemini-3.1-flash");
+  it("routes AI insight brief to Kiro through local 9router", async () => {
+    vi.stubEnv("NINEROUTER_KEY", "test-key");
+    vi.stubEnv("NINEROUTER_URL", "http://localhost:20128");
     const fetchSpy = vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({
-          candidates: [{ content: { parts: [{ text: JSON.stringify(insightResponse) }] } }],
+          choices: [{ message: { content: JSON.stringify(insightResponse) } }],
         }),
         { status: 200, headers: { "content-type": "application/json" } },
       ),
     );
     vi.stubGlobal("fetch", fetchSpy);
 
-    const insights = await generateInsights("x".repeat(120), "gemini");
+    const insights = await generateInsights("x".repeat(120), "kiro");
 
     expect(fetchSpy).toHaveBeenCalledOnce();
-    expect(String(fetchSpy.mock.calls[0][0])).toContain("/models/gemini-2.5-flash:generateContent");
-    expect(insights.provider).toBe("gemini");
+    expect(String(fetchSpy.mock.calls[0][0])).toBe("http://localhost:20128/v1/chat/completions");
+    expect(fetchSpy.mock.calls[0][1]?.headers).toMatchObject({ authorization: "Bearer test-key" });
+    expect(insights.provider).toBe("kiro");
     expect(insights.summary).toBe(insightResponse.summary);
   });
 });

@@ -7,12 +7,10 @@ import type {
   VerdictProvider,
 } from "@/lib/types";
 import {
-  OPENROUTER_VERDICT_MODELS,
-  VERDICT_JSON_SCHEMA,
   confidenceValue,
   errorMessage,
-  geminiCompletion,
-  openRouterCompletion,
+  hasKiroCredentials,
+  kiroCompletion,
   parseJsonObject,
   stringArray,
   stringValue,
@@ -366,88 +364,29 @@ Input JSON:
 ${JSON.stringify(payload, null, 2)}`;
 }
 
-async function enhanceVerdictWithOpenAI(args: {
-  report: DashboardReport;
-  localVerdict: Verdict;
-  language: InterfaceLanguage;
-}) {
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: process.env.OPENAI_MODEL || "gpt-4o-mini",
-      messages: [{ role: "user", content: buildVerdictEnhancementPrompt(args) }],
-      temperature: 0.2,
-      response_format: { type: "json_object" },
-    }),
-  });
-  const json = await response.json();
-  if (!response.ok) throw new Error(json?.error?.message || "OpenAI verdict request failed.");
-  if (json.choices?.[0]?.finish_reason === "length") throw new Error("OpenAI stopped before the verdict JSON completed.");
-  const parsed = parseVerdictStrict(json.choices?.[0]?.message?.content || "", "openai");
-  if (!parsed || hasLargeBudgetMove(parsed)) throw new Error("OpenAI verdict failed guardrail validation.");
-  return capConfidence(parsed, args.localVerdict.confidence);
-}
-
-async function generateOpenRouterVerdict(args: {
+async function enhanceVerdictWithKiro(args: {
   report: DashboardReport;
   localVerdict: Verdict;
   language: InterfaceLanguage;
 }) {
   const parsed = parseVerdictStrict(
-    await openRouterCompletion(buildVerdictEnhancementPrompt(args), {
-      models: OPENROUTER_VERDICT_MODELS,
-      jsonMode: true,
-      maxTokens: 1800,
-    }),
-    "openrouter",
+    await kiroCompletion(buildVerdictEnhancementPrompt(args), { jsonMode: true, maxTokens: 1800 }),
+    "kiro",
   );
-  if (!parsed || hasLargeBudgetMove(parsed)) throw new Error("OpenRouter verdict failed guardrail validation.");
-  return capConfidence(parsed, args.localVerdict.confidence);
-}
-
-async function enhanceVerdictWithGemini(args: {
-  report: DashboardReport;
-  localVerdict: Verdict;
-  language: InterfaceLanguage;
-}) {
-  const parsed = parseVerdictStrict(await geminiCompletion(buildVerdictEnhancementPrompt(args), VERDICT_JSON_SCHEMA), "gemini");
-  if (!parsed || hasLargeBudgetMove(parsed)) throw new Error("Gemini verdict failed guardrail validation.");
+  if (!parsed || hasLargeBudgetMove(parsed)) throw new Error("Kiro 9router verdict failed guardrail validation.");
   return capConfidence(parsed, args.localVerdict.confidence);
 }
 
 async function generateLegacyVerdict(prompt: string, provider: VerdictRequestProvider): Promise<Verdict> {
   if (provider === "prompt") return fallback(prompt);
-  if ((provider === "openai" || provider === "auto") && process.env.OPENAI_API_KEY) {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: process.env.OPENAI_MODEL || "gpt-4o-mini",
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0.2,
-        response_format: { type: "json_object" },
-      }),
-    });
-    const json = await response.json();
-    if (!response.ok) throw new Error(json?.error?.message || "OpenAI verdict request failed.");
-    if (json.choices?.[0]?.finish_reason === "length") return fallback(prompt, "OpenAI stopped before the verdict JSON completed. Retry with a shorter report scope.");
-    return parseVerdict(json.choices?.[0]?.message?.content || "", "openai");
-  }
-  if (provider === "openrouter" && process.env.OPENROUTER_API_KEY) {
+  if ((provider === "kiro" || provider === "auto") && hasKiroCredentials()) {
     try {
-      return parseVerdict(await openRouterCompletion(prompt, { models: OPENROUTER_VERDICT_MODELS, jsonMode: true }), "openrouter");
+      return parseVerdict(await kiroCompletion(prompt, { jsonMode: true }), "kiro");
     } catch (error) {
-      return fallback(prompt, `OpenRouter could not finish a live verdict in time. Use local prompt mode or retry with OpenAI. ${errorMessage(error)}`);
+      return fallback(prompt, `Kiro 9router could not finish a live verdict in time. Local prompt mode used instead. ${errorMessage(error)}`);
     }
   }
-  return fallback(prompt);
+  return fallback(prompt, "Kiro 9router credentials missing. Use local prompt mode for deterministic Verdict generation.");
 }
 
 export async function generateVerdict(input: GenerateVerdictInput | string, legacyProvider: VerdictRequestProvider = "auto"): Promise<Verdict> {
@@ -463,39 +402,14 @@ export async function generateVerdict(input: GenerateVerdictInput | string, lega
   const localVerdict = buildLocalVerdict(input.report, language);
   if (provider === "prompt") return localVerdict;
 
-  if ((provider === "openai" || provider === "auto") && process.env.OPENAI_API_KEY) {
-    try {
-      return await enhanceVerdictWithOpenAI({ report: input.report, localVerdict, language });
-    } catch (error) {
-      return mergeProviderAssumption(localVerdict, `OpenAI enhancement failed; local ads-rule Verdict used instead. ${errorMessage(error)}`);
-    }
-  }
-
-  if (provider === "openrouter") {
-    if (!process.env.OPENROUTER_API_KEY) {
-      return mergeProviderAssumption(localVerdict, "OpenRouter API key missing; local ads-rule Verdict used instead.");
+  if (provider === "kiro" || provider === "auto") {
+    if (!hasKiroCredentials()) {
+      return mergeProviderAssumption(localVerdict, "Kiro 9router credentials missing; local ads-rule Verdict used instead.");
     }
     try {
-      return await generateOpenRouterVerdict({ report: input.report, localVerdict, language });
+      return await enhanceVerdictWithKiro({ report: input.report, localVerdict, language });
     } catch (error) {
-      return {
-        ...localVerdict,
-        assumptions: [
-          ...localVerdict.assumptions,
-          `OpenRouter failed; local ads-rule Verdict used instead. ${errorMessage(error)}`,
-        ],
-      };
-    }
-  }
-
-  if (provider === "gemini") {
-    if (!process.env.GEMINI_API_KEY) {
-      return mergeProviderAssumption(localVerdict, "Gemini API key missing; local ads-rule Verdict used instead.");
-    }
-    try {
-      return await enhanceVerdictWithGemini({ report: input.report, localVerdict, language });
-    } catch (error) {
-      return mergeProviderAssumption(localVerdict, `Gemini enhancement failed; local ads-rule Verdict used instead. ${errorMessage(error)}`);
+      return mergeProviderAssumption(localVerdict, `Kiro 9router enhancement failed; local ads-rule Verdict used instead. ${errorMessage(error)}`);
     }
   }
 

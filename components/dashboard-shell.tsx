@@ -109,11 +109,9 @@ const packItems: { label: string; value: KpiPack }[] = [
 ];
 
 const providerItems = [
-  { label: "Auto provider", value: "auto" },
-  { label: "OpenAI", value: "openai" },
-  { label: "OpenRouter", value: "openrouter" },
-  { label: "Gemini", value: "gemini" },
-  { label: "Prompt only", value: "prompt" },
+  { label: "Auto: Kiro 9router", value: "auto" },
+  { label: "Kiro 9router", value: "kiro" },
+  { label: "Local rules only", value: "prompt" },
 ] as const;
 
 type Provider = (typeof providerItems)[number]["value"];
@@ -1668,13 +1666,12 @@ function AiProgressStatus({
 
   const isVietnamese = language === "vi";
   const currentProviderLabel = providerLabel(provider, language);
-  const usesOpenRouterFallback = provider === "openrouter";
   const verdictSteps = isVietnamese
-    ? ["Tạo Verdict local", `Gọi ${currentProviderLabel}`, usesOpenRouterFallback ? "Thử model OpenRouter dự phòng nếu cần" : "Đợi model phản hồi", "Đọc JSON và kiểm tra kết quả"]
-    : ["Generating local Verdict", `Calling ${currentProviderLabel}`, usesOpenRouterFallback ? "Trying OpenRouter fallback models if needed" : "Waiting for model response", "Parsing JSON and checking result"];
+    ? ["Tạo Verdict local", `Gọi ${currentProviderLabel}`, "Đợi model phản hồi", "Đọc JSON và kiểm tra kết quả"]
+    : ["Generating local Verdict", `Calling ${currentProviderLabel}`, "Waiting for model response", "Parsing JSON and checking result"];
   const insightSteps = isVietnamese
-    ? ["Chuẩn bị prompt insight", `Gọi ${currentProviderLabel}`, usesOpenRouterFallback ? "Thử model OpenRouter dự phòng nếu cần" : "Đợi model phản hồi", "Sắp xếp insight ưu tiên"]
-    : ["Preparing insight prompt", `Calling ${currentProviderLabel}`, usesOpenRouterFallback ? "Trying OpenRouter fallback models if needed" : "Waiting for model response", "Organizing priority insights"];
+    ? ["Chuẩn bị prompt insight", `Gọi ${currentProviderLabel}`, "Đợi model phản hồi", "Sắp xếp insight ưu tiên"]
+    : ["Preparing insight prompt", `Calling ${currentProviderLabel}`, "Waiting for model response", "Organizing priority insights"];
   const steps = kind === "verdict" ? verdictSteps : insightSteps;
   const stepText = steps[Math.min(progress.stepIndex, steps.length - 1)];
   const elapsedText = isVietnamese ? `${progress.elapsedSeconds}s đã trôi qua` : `${progress.elapsedSeconds}s elapsed`;
@@ -2377,11 +2374,9 @@ function workflowStateLabel(state: "complete" | "current" | "pending", language:
 }
 
 function providerLabel(provider: Provider, language: ReportLanguage) {
-  if (provider === "openai") return "OpenAI";
-  if (provider === "openrouter") return "OpenRouter";
-  if (provider === "gemini") return "Gemini";
-  if (provider === "prompt") return language === "vi" ? "Prompt local" : "Prompt only";
-  return language === "vi" ? "Auto tin cậy" : "Auto provider";
+  if (provider === "kiro") return "Kiro 9router";
+  if (provider === "prompt") return language === "vi" ? "Luật local" : "Local rules only";
+  return language === "vi" ? "Auto Kiro 9router" : "Auto Kiro 9router";
 }
 
 function packLabel(pack: KpiPack, language: ReportLanguage) {

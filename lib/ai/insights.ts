@@ -2,8 +2,8 @@ import type { AiInsightTable } from "@/lib/types";
 import {
   confidenceValue,
   errorMessage,
-  geminiCompletion,
-  openRouterCompletion,
+  hasKiroCredentials,
+  kiroCompletion,
   parseJsonObject,
   promptInputJson,
   stringArray,
@@ -19,7 +19,7 @@ function insightFallback(prompt: string, reason = "AI provider key not configure
         area: "Setup",
         insight: "Live AI insight table unavailable.",
         evidence: `Prompt ready with ${prompt.length} chars.`,
-        action: reason.includes("OpenRouter") || reason.includes("Gemini") ? "Retry with a shorter report scope or switch provider to OpenAI." : "Add OPENAI_API_KEY, GEMINI_API_KEY, or OPENROUTER_API_KEY on server, then regenerate insights.",
+        action: reason.includes("Kiro") ? "Retry with a shorter report scope or confirm 9router is running." : "Add NINEROUTER_KEY/KIRO_API_KEY on server or keep using local rules, then regenerate insights.",
         priority: "medium",
         confidence: "high",
       },
@@ -183,39 +183,12 @@ function parseInsights(text: string, provider: AiInsightTable["provider"]): AiIn
 
 export async function generateInsights(prompt: string, provider: "auto" | AiInsightTable["provider"]) {
   if (provider === "prompt") return insightFallback(prompt);
-  if ((provider === "openai" || provider === "auto") && process.env.OPENAI_API_KEY) {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: process.env.OPENAI_MODEL || "gpt-4o-mini",
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0.2,
-        response_format: { type: "json_object" },
-      }),
-    });
-    const json = await response.json();
-    if (!response.ok) throw new Error(json?.error?.message || "OpenAI insights request failed.");
-    if (json.choices?.[0]?.finish_reason === "length") return localInsightFallback(prompt, "OpenAI stopped before the insight JSON completed.");
-    return parseInsights(json.choices?.[0]?.message?.content || "", "openai");
-  }
-  if (provider === "gemini") {
-    if (!process.env.GEMINI_API_KEY) return localInsightFallback(prompt, "Gemini API key missing; local metric insights used instead.");
+  if ((provider === "kiro" || provider === "auto") && hasKiroCredentials()) {
     try {
-      return parseInsights(await geminiCompletion(prompt), "gemini");
+      return parseInsights(await kiroCompletion(prompt, { jsonMode: true, maxTokens: 2200 }), "kiro");
     } catch (error) {
-      return localInsightFallback(prompt, `Gemini insights were unavailable or returned unusable output. ${errorMessage(error)}`);
+      return localInsightFallback(prompt, `Kiro 9router insights were unavailable or returned unusable output. ${errorMessage(error)}`);
     }
   }
-  if ((provider === "openrouter" || provider === "auto") && process.env.OPENROUTER_API_KEY) {
-    try {
-      return parseInsights(await openRouterCompletion(prompt, { maxTokens: 2200 }), "openrouter");
-    } catch (error) {
-      return localInsightFallback(prompt, `OpenRouter live models were unavailable or returned unusable output. ${errorMessage(error)}`);
-    }
-  }
-  return insightFallback(prompt);
+  return localInsightFallback(prompt, "Kiro 9router credentials missing; local metric insights used instead.");
 }
