@@ -348,6 +348,27 @@ describe("generateVerdict", () => {
     expect(verdict.confidence).toBe("low");
   });
 
+  it("keeps deterministic local Verdict fields when 9router only returns improved summary wording", async () => {
+    vi.stubEnv("NINEROUTER_KEY", "test-key");
+    const fetchSpy = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ choices: [{ message: { content: JSON.stringify({ verdict: "9router made the Verdict easier to present to the client." }) } }] }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const verdict = await generateVerdict({ report: report(), language: "en", provider: "9router" });
+
+    expect(fetchSpy).toHaveBeenCalledOnce();
+    expect(verdict.provider).toBe("9router");
+    expect(verdict.verdict).toBe("9router made the Verdict easier to present to the client.");
+    expect(verdict.winners.length).toBeGreaterThan(0);
+    expect(verdict.losers.length).toBeGreaterThan(0);
+    expect(verdict.budget_moves.join(" ")).toContain("20%");
+    expect(verdict.assumptions.join(" ")).toContain("9router enhanced wording");
+  });
+
   it("falls back to local Verdict when 9router returns invalid JSON", async () => {
     vi.stubEnv("NINEROUTER_KEY", "test-key");
     const fetchSpy = vi.fn().mockResolvedValue(

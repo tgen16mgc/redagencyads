@@ -57,6 +57,21 @@ function parseVerdictStrict(text: string, provider: VerdictProvider): Verdict | 
   }
 }
 
+function mergeEnhancedVerdict(localVerdict: Verdict, enhanced: Verdict): Verdict {
+  return {
+    ...localVerdict,
+    provider: enhanced.provider,
+    verdict: enhanced.verdict || localVerdict.verdict,
+    risks: enhanced.risks.length > 0 ? enhanced.risks : localVerdict.risks,
+    winners: enhanced.winners.length > 0 ? enhanced.winners : localVerdict.winners,
+    losers: enhanced.losers.length > 0 ? enhanced.losers : localVerdict.losers,
+    budget_moves: enhanced.budget_moves.length > 0 ? enhanced.budget_moves : localVerdict.budget_moves,
+    tests: enhanced.tests.length > 0 ? enhanced.tests : localVerdict.tests,
+    confidence: enhanced.confidence,
+    assumptions: Array.from(new Set([...localVerdict.assumptions, ...enhanced.assumptions, "9router enhanced wording; deterministic local Verdict fields preserved where missing."])),
+  };
+}
+
 function parseVerdict(text: string, provider: VerdictProvider): Verdict {
   const parsed = parseVerdictStrict(text, provider);
   if (parsed) return parsed;
@@ -146,7 +161,7 @@ async function enhanceVerdictWithNineRouter(args: {
     "9router",
   );
   if (!parsed || hasLargeBudgetMove(parsed)) throw new Error("9router Verdict failed guardrail validation.");
-  return capConfidence(parsed, args.localVerdict.confidence);
+  return capConfidence(mergeEnhancedVerdict(args.localVerdict, parsed), args.localVerdict.confidence);
 }
 
 async function generateLegacyVerdict(prompt: string, provider: VerdictRequestProvider): Promise<Verdict> {
