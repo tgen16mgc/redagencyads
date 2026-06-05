@@ -36,6 +36,7 @@ import type { AdSetWithPreviews, AiInsightTable, CompareMode, CompetitorFetchRes
 import { buildWorkflowSteps, type DashboardWorkflowStep } from "@/lib/dashboard-workflow";
 import { canOpenDashboardView, initialDashboardViewFromSearch } from "@/lib/dashboard-access";
 import { getCompareRange } from "@/lib/report-ranges";
+import { classifyCreativeFatigue } from "@/lib/creative-fatigue";
 import { rowDecision } from "@/lib/row-decision";
 import {
   normalizeCompetitorCountry,
@@ -239,6 +240,7 @@ const uiCopy = {
       costMessage: "Cost/msg",
       cpl: "CPL",
       action: "Action",
+      creativeFatigue: "Creative",
       fixCreative: "Fix creative",
       healthy: "Healthy",
       review: "Review",
@@ -369,6 +371,7 @@ const uiCopy = {
       costMessage: "Cost/msg",
       cpl: "CPL",
       action: "Hành động",
+      creativeFatigue: "Creative",
       fixCreative: "Sửa creative",
       healthy: "Khỏe",
       review: "Rà soát",
@@ -2665,12 +2668,14 @@ function PerformanceTable({
           <TableHead className="text-right">{copy.table.leads}</TableHead>
           <TableHead className="text-right">{copy.table.costMessage}</TableHead>
           <TableHead className="text-right">{copy.table.cpl}</TableHead>
+          {!daily ? <TableHead>{copy.table.creativeFatigue}</TableHead> : null}
           {pack ? <TableHead>{copy.table.action}</TableHead> : null}
         </TableRow>
       </TableHeader>
       <TableBody>
         {rows.map((row) => {
           const action = pack ? rowDecision(row, pack, language) : null;
+          const creativeSignal = daily ? null : classifyCreativeFatigue(row);
           return (
             <TableRow key={`${row.level}-${row.id}-${row.date || ""}`}>
               <TableCell className="max-w-72 truncate font-medium">{daily ? row.date : row.name}</TableCell>
@@ -2681,6 +2686,16 @@ function PerformanceTable({
               <TableCell className="text-right tabular-nums">{formatMetric(row.leads, "number")}</TableCell>
               <TableCell className="text-right tabular-nums">{formatMetric(row.costPerMessage, "currency", currency)}</TableCell>
               <TableCell className="text-right tabular-nums">{formatMetric(row.cpl, "currency", currency)}</TableCell>
+              {creativeSignal ? (
+                <TableCell className="min-w-44">
+                  <div className="flex flex-col gap-1">
+                    <Badge variant={creativeSignal.severity === "danger" ? "destructive" : creativeSignal.severity === "warning" ? "outline" : "secondary"}>
+                      {creativeSignal.label[language]}
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">{creativeSignal.reason[language]}</span>
+                  </div>
+                </TableCell>
+              ) : null}
               {action ? (
                 <TableCell>
                   <Badge variant={action.intent === "danger" ? "destructive" : action.intent === "good" ? "secondary" : "outline"}>
