@@ -1,4 +1,4 @@
-import type { DashboardReport, InsightRow, KpiPack, MetaAccount, MetaCampaign, NormalizedRow } from "@/lib/types";
+import type { DashboardReport, InsightRow, KpiPack, MetaAccount, MetaAdSet, MetaCampaign, NormalizedRow } from "@/lib/types";
 import { buildPrompt, detectKpiPack, getKpiCards, normalizeRows, scoreHealth, sumRows } from "@/lib/metrics";
 
 const META_FIELDS = [
@@ -84,6 +84,22 @@ export async function getCampaigns(token: string, accountId: string) {
   return graphList<MetaCampaign>(
     `/${id}/campaigns`,
     { fields: "id,name,objective,status,effective_status,daily_budget,lifetime_budget", limit: 100 },
+    token,
+  );
+}
+
+export async function getAdSets(token: string, accountId: string, campaignIds: string[] = []) {
+  const id = normalizeAccountId(accountId);
+  const filtering = campaignIds.length
+    ? JSON.stringify([{ field: "campaign.id", operator: "IN", value: campaignIds }])
+    : undefined;
+  return graphList<MetaAdSet>(
+    `/${id}/adsets`,
+    {
+      fields: "id,name,campaign_id,campaign_name,status,effective_status,daily_budget,lifetime_budget",
+      filtering,
+      limit: 100,
+    },
     token,
   );
 }

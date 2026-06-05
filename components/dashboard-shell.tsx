@@ -32,7 +32,7 @@ import {
   SparklesIcon,
 } from "lucide-react";
 import { AppSidebar, type AppSidebarItem, type WorkflowSidebarItem } from "@/components/dashboard/app-sidebar";
-import type { AiInsightTable, CompareMode, CompetitorFetchResult, CompetitorFetchSource, CompetitorPlatform, CompetitorSpyAd, CompetitorSpyResult, DashboardReport, KpiPack, MetaAccount, MetaCampaign, NormalizedRow, Verdict } from "@/lib/types";
+import type { AdSetPreview, AiInsightTable, CompareMode, CompetitorFetchResult, CompetitorFetchSource, CompetitorPlatform, CompetitorSpyAd, CompetitorSpyResult, DashboardReport, KpiPack, MetaAccount, MetaCampaign, NormalizedRow, Verdict } from "@/lib/types";
 import { buildWorkflowSteps, type DashboardWorkflowStep } from "@/lib/dashboard-workflow";
 import { canOpenDashboardView, initialDashboardViewFromSearch } from "@/lib/dashboard-access";
 import { getCompareRange } from "@/lib/report-ranges";
@@ -209,6 +209,14 @@ const uiCopy = {
       day: "day",
       lifetime: "lifetime",
     },
+    adsetPreview: {
+      title: "Running ad sets",
+      description: "Preview active ad sets in the selected scope before pulling the report.",
+      loading: "Loading running ad sets",
+      empty: "No active ad sets found for this scope.",
+      day: "day",
+      lifetime: "lifetime",
+    },
     performance: {
       title: "Performance view",
       description: "Detected pack: {detected}. Active pack: {active}. {reason}",
@@ -328,6 +336,14 @@ const uiCopy = {
       noObjective: "Không có objective",
       none: "Không tìm thấy campaign.",
       help: "Bấm campaign để tạo phạm vi tùy chỉnh. Để trống để kéo tất cả campaign active.",
+      day: "ngày",
+      lifetime: "lifetime",
+    },
+    adsetPreview: {
+      title: "Ad set đang chạy",
+      description: "Xem trước ad set active trong phạm vi đã chọn trước khi kéo báo cáo.",
+      loading: "Đang tải ad set active",
+      empty: "Không có ad set active trong phạm vi này.",
       day: "ngày",
       lifetime: "lifetime",
     },
@@ -460,6 +476,7 @@ export function DashboardShell() {
   const [authenticated, setAuthenticated] = React.useState<boolean | null>(null);
   const [accounts, setAccounts] = React.useState<MetaAccount[]>([]);
   const [campaigns, setCampaigns] = React.useState<MetaCampaign[]>([]);
+  const [adSetPreviews, setAdSetPreviews] = React.useState<AdSetPreview[]>([]);
   const [accountId, setAccountId] = React.useState("");
   const [selectedCampaignIds, setSelectedCampaignIds] = React.useState<string[]>([]);
   const [since, setSince] = React.useState(dates.since);
@@ -568,6 +585,7 @@ export function DashboardShell() {
   React.useEffect(() => {
     if (!accountId) return;
     setLoading("campaigns");
+    setAdSetPreviews([]);
     jsonFetch<{ campaigns: MetaCampaign[] }>(`/api/meta/campaigns?accountId=${encodeURIComponent(accountId)}`)
       .then((data) => {
         setCampaigns(data.campaigns);
@@ -576,6 +594,28 @@ export function DashboardShell() {
       .catch((err) => setError(err.message))
       .finally(() => setLoading(""));
   }, [accountId]);
+
+  React.useEffect(() => {
+    if (!accountId) return;
+    let cancelled = false;
+    const url = new URL("/api/meta/adsets", window.location.origin);
+    url.searchParams.set("accountId", accountId);
+    selectedCampaignIds.forEach((id) => url.searchParams.append("campaignId", id));
+    setLoading("adsets");
+    jsonFetch<{ adsets: AdSetPreview[] }>(url.toString())
+      .then((data) => {
+        if (!cancelled) setAdSetPreviews(data.adsets);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err.message);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading("");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [accountId, selectedCampaignIds]);
 
   async function connectToken(event: React.FormEvent) {
     event.preventDefault();
@@ -983,6 +1023,12 @@ export function DashboardShell() {
                   </Button>
                 </Field>
               </FieldGroup>
+              <AdSetPreviewPanel
+                adsets={adSetPreviews}
+                currency={accounts.find((account) => account.id === accountId)?.currency || "VND"}
+                language={language}
+                loading={loading === "adsets"}
+              />
             </CardContent>
           </Card>
 
@@ -1420,6 +1466,56 @@ function CampaignPicker({
   );
 }
 
+function AdSetPreviewPanel({
+  adsets,
+  currency,
+  language,
+  loading,
+}: {
+  adsets: AdSetPreview[];
+  currency: string;
+  language: ReportLanguage;
+  loading: boolean;
+}) {
+  const copy = uiCopy[language].adsetPreview;
+  return (
+    <div className="mt-4 rounded-lg border bg-muted/20 p-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <div className="font-medium">{copy.title}</div>
+          <p className="text-sm text-muted-foreground">{copy.description}</p>
+        </div>
+        <Badge variant="secondary">{adsets.length}</Badge>
+      </div>
+      {loading ? (
+        <div className="mt-3 flex h-20 items-center justify-center text-sm text-muted-foreground">
+          <Spinner data-icon="inline-start" />
+          {copy.loading}
+        </div>
+      ) : adsets.length ? (
+        <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+          {adsets.map((adset) => (
+            <div key={adset.id} className="rounded-md border bg-background p-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-medium">{adset.name}</div>
+                  <div className="truncate text-xs text-muted-foreground">{adset.campaignName}</div>
+                </div>
+                <Badge variant="secondary">{adset.status}</Badge>
+              </div>
+              <div className="mt-2 text-xs text-muted-foreground">
+                {formatAdSetBudget(adset, currency, language)}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="mt-3 rounded-md border bg-background p-4 text-sm text-muted-foreground">{copy.empty}</div>
+      )}
+    </div>
+  );
+}
+
 function campaignStatus(campaign: MetaCampaign) {
   return campaign.effective_status || campaign.status || "UNKNOWN";
 }
@@ -1435,6 +1531,13 @@ function formatCampaignBudget(campaign: MetaCampaign, currency: string, language
   if (daily > 0) return `- ${formatMetric(daily / 100, "currency", currency)}/${copy.day}`;
   if (lifetime > 0) return `- ${formatMetric(lifetime / 100, "currency", currency)} ${copy.lifetime}`;
   return "";
+}
+
+function formatAdSetBudget(adset: AdSetPreview, currency: string, language: ReportLanguage) {
+  const copy = uiCopy[language].adsetPreview;
+  if (adset.dailyBudget > 0) return `${formatMetric(adset.dailyBudget / 100, "currency", currency)}/${copy.day}`;
+  if (adset.lifetimeBudget > 0) return `${formatMetric(adset.lifetimeBudget / 100, "currency", currency)} ${copy.lifetime}`;
+  return language === "vi" ? "Không có ngân sách trực tiếp" : "No direct budget";
 }
 
 function ComparisonPanel({

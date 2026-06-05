@@ -22,6 +22,27 @@ export type MetaCampaign = {
   lifetime_budget?: string;
 };
 
+export type MetaAdSet = {
+  id: string;
+  name: string;
+  campaign_id?: string;
+  campaign_name?: string;
+  status?: string;
+  effective_status?: string;
+  daily_budget?: string;
+  lifetime_budget?: string;
+};
+
+export type AdSetPreview = {
+  id: string;
+  name: string;
+  campaignId: string;
+  campaignName: string;
+  status: string;
+  dailyBudget: number;
+  lifetimeBudget: number;
+};
+
 export type InsightAction = {
   action_type: string;
   value: string;
