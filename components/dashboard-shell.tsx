@@ -37,6 +37,7 @@ import { buildWorkflowSteps, type DashboardWorkflowStep } from "@/lib/dashboard-
 import { canOpenDashboardView, initialDashboardViewFromSearch } from "@/lib/dashboard-access";
 import { getCompareRange } from "@/lib/report-ranges";
 import { classifyCreativeFatigue } from "@/lib/creative-fatigue";
+import { assessMeasurementQuality } from "@/lib/measurement-quality";
 import { rowDecision } from "@/lib/row-decision";
 import {
   normalizeCompetitorCountry,
@@ -225,6 +226,8 @@ const uiCopy = {
       daily: "Daily",
       health: "Account health",
       healthDescription: "Ads-skill checks: creative, CTR, frequency, consolidation.",
+      measurement: "Measurement quality",
+      measurementDescription: "Checks whether the current dataset supports confident optimization decisions.",
       grade: "Grade",
       breakdowns: "Breakdowns",
       breakdownsDescription: "Platform and age/gender signal for diagnosis.",
@@ -356,6 +359,8 @@ const uiCopy = {
       daily: "Ngày",
       health: "Sức khỏe tài khoản",
       healthDescription: "Check ads-skill: creative, CTR, frequency, consolidation.",
+      measurement: "Chất lượng đo lường",
+      measurementDescription: "Kiểm tra dataset hiện tại có đủ tin cậy để ra quyết định tối ưu hay không.",
       grade: "Hạng",
       breakdowns: "Breakdown",
       breakdownsDescription: "Tín hiệu theo nền tảng và tuổi/giới tính để chẩn đoán.",
@@ -1105,30 +1110,33 @@ export function DashboardShell() {
                   </CardContent>
                 </Card>
 
-                <Card>
-                  <CardHeader>
-                    <CardTitle>{copy.performance.health}</CardTitle>
-                    <CardDescription>{copy.performance.healthDescription}</CardDescription>
-                  </CardHeader>
-                  <CardContent className="flex flex-col gap-3">
-                    <div className="flex items-end justify-between">
-                      <div className="text-4xl font-semibold">{report.health.score}/100</div>
-                      <Badge variant={report.health.score >= 75 ? "secondary" : "destructive"}>{copy.performance.grade} {report.health.grade}</Badge>
-                    </div>
-                    <Separator />
-                    <div className="flex flex-col gap-2">
-                      {report.health.checks.map((check) => (
-                        <div key={check.id} className="rounded-lg border p-3">
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="font-medium">{check.label}</div>
-                            <Badge variant={check.status === "fail" ? "destructive" : "outline"}>{check.status}</Badge>
+                <div className="flex flex-col gap-4">
+                  <MeasurementQualityCard report={report} language={language} />
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>{copy.performance.health}</CardTitle>
+                      <CardDescription>{copy.performance.healthDescription}</CardDescription>
+                    </CardHeader>
+                    <CardContent className="flex flex-col gap-3">
+                      <div className="flex items-end justify-between">
+                        <div className="text-4xl font-semibold">{report.health.score}/100</div>
+                        <Badge variant={report.health.score >= 75 ? "secondary" : "destructive"}>{copy.performance.grade} {report.health.grade}</Badge>
+                      </div>
+                      <Separator />
+                      <div className="flex flex-col gap-2">
+                        {report.health.checks.map((check) => (
+                          <div key={check.id} className="rounded-lg border p-3">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="font-medium">{check.label}</div>
+                              <Badge variant={check.status === "fail" ? "destructive" : "outline"}>{check.status}</Badge>
+                            </div>
+                            <p className="mt-1 text-sm text-muted-foreground">{check.detail}</p>
                           </div>
-                          <p className="mt-1 text-sm text-muted-foreground">{check.detail}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
               </section>
 
               <section>
@@ -2708,6 +2716,31 @@ function PerformanceTable({
         })}
       </TableBody>
     </Table>
+  );
+}
+
+function MeasurementQualityCard({ report, language }: { report: DashboardReport; language: ReportLanguage }) {
+  const copy = uiCopy[language].performance;
+  const quality = assessMeasurementQuality(report);
+  return (
+    <Card data-print-flow>
+      <CardHeader>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <CardTitle>{copy.measurement}</CardTitle>
+            <CardDescription>{copy.measurementDescription}</CardDescription>
+          </div>
+          <Badge variant={quality.variant}>{quality.label[language]}</Badge>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <ul className="flex flex-col gap-2 text-sm text-muted-foreground">
+          {quality.reasons[language].map((reason) => (
+            <li key={reason}>{reason}</li>
+          ))}
+        </ul>
+      </CardContent>
+    </Card>
   );
 }
 
