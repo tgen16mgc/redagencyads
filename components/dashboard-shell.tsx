@@ -109,8 +109,8 @@ const packItems: { label: string; value: KpiPack }[] = [
 ];
 
 const providerItems = [
-  { label: "Auto: Kiro 9router", value: "auto" },
-  { label: "Kiro 9router", value: "kiro" },
+  { label: "Auto: 9router", value: "auto" },
+  { label: "9router", value: "9router" },
   { label: "Local rules only", value: "prompt" },
 ] as const;
 
@@ -1725,8 +1725,8 @@ function VerdictPanel({
             <CardTitle>Verdict</CardTitle>
             <CardDescription>
               {isVietnamese
-                ? "Verdict local có thể chạy không cần model; OpenAI chỉ enhancement khi auto có key."
-                : "Local Verdict works without a model call; auto only asks OpenAI for enhancement when a key exists."}
+                ? "Verdict local có thể chạy không cần model; auto dùng 9router để enhancement khi có key."
+                : "Local Verdict works without a model call; auto uses 9router for enhancement when a key exists."}
             </CardDescription>
           </div>
           <div className="flex flex-col gap-2 md:flex-row md:items-end" data-print-hidden>
@@ -2374,9 +2374,9 @@ function workflowStateLabel(state: "complete" | "current" | "pending", language:
 }
 
 function providerLabel(provider: Provider, language: ReportLanguage) {
-  if (provider === "kiro") return "Kiro 9router";
+  if (provider === "9router") return "9router";
   if (provider === "prompt") return language === "vi" ? "Luật local" : "Local rules only";
-  return language === "vi" ? "Auto Kiro 9router" : "Auto Kiro 9router";
+  return language === "vi" ? "Auto 9router" : "Auto 9router";
 }
 
 function packLabel(pack: KpiPack, language: ReportLanguage) {

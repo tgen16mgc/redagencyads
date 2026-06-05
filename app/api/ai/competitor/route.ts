@@ -7,7 +7,7 @@ export const maxDuration = 300;
 
 const bodySchema = z.object({
   prompt: z.string().min(100),
-  provider: z.enum(["auto", "kiro", "prompt"]).default("auto"),
+  provider: z.enum(["auto", "9router", "prompt"]).default("auto"),
 });
 
 export async function POST(request: Request) {

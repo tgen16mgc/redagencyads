@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { POST as verdictPOST } from "../../app/api/ai/verdict/route";
 import { generateVerdict } from "../ai";
+import { buildLocalVerdict } from "../verdict-rules";
 import type { DashboardReport, NormalizedRow } from "../types";
 
 function row(overrides: Partial<NormalizedRow>): NormalizedRow {
@@ -123,6 +124,64 @@ function noSpendReport() {
   });
 }
 
+describe("buildLocalVerdict", () => {
+  it("ignores rows below 1% of account spend for winner and loser claims", () => {
+    const tinyWinner = row({
+      id: "tiny-winner",
+      name: "Tiny Winner",
+      spend: 0.5,
+      messages: 10,
+      costPerMessage: 0.05,
+    });
+    const steadyRow = row({
+      id: "steady-row",
+      name: "Steady Row",
+      spend: 99.5,
+      messages: 10,
+      costPerMessage: 9.95,
+    });
+    const verdict = buildLocalVerdict(
+      report({
+        totals: row({ id: "total", level: "account", name: "Account total", spend: 100, messages: 20, costPerMessage: 5 }),
+        campaignRows: [tinyWinner, steadyRow],
+        adsetRows: [tinyWinner, steadyRow],
+      }),
+      "en",
+    );
+
+    expect(verdict.winners.join(" ")).not.toContain("Tiny Winner");
+    expect(verdict.losers.join(" ")).not.toContain("Tiny Winner");
+  });
+
+  it("keeps Budget Moves within the Meta learning-stability cap", () => {
+    const verdict = buildLocalVerdict(report(), "en");
+
+    expect(verdict.budget_moves.join(" ")).toContain("20%");
+    expect(verdict.budget_moves.join(" ")).not.toMatch(/(?:[2-9][1-9]|[1-9]\d{2,})%/);
+  });
+
+  it("uses the Selected KPI Pack as the Primary Result lens", () => {
+    const verdict = buildLocalVerdict(
+      report({
+        selectedPack: "sales_roas",
+        totals: row({ id: "total", level: "account", name: "Account total", spend: 100, messages: 13, purchases: 0 }),
+      }),
+      "en",
+    );
+
+    expect(verdict.risks.join(" ")).toContain("sales_roas: 0 purchases");
+    expect(verdict.assumptions.join(" ")).toContain("Budget Moves use the selected KPI pack");
+  });
+
+  it("returns Vietnamese local Verdict strings without provider calls", () => {
+    const verdict = buildLocalVerdict(report(), "vi");
+
+    expect(verdict.provider).toBe("prompt");
+    expect(verdict.verdict).toContain("Tài khoản Test Account");
+    expect(verdict.assumptions.join(" ")).toContain("không gọi nhà cung cấp AI");
+  });
+});
+
 describe("generateVerdict", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -156,7 +215,7 @@ describe("generateVerdict", () => {
     expect(verdict.tests.length).toBeGreaterThan(0);
   });
 
-  it("falls back to local Verdict when explicit Kiro fails", async () => {
+  it("falls back to local Verdict when explicit 9router fails", async () => {
     vi.stubEnv("NINEROUTER_KEY", "test-key");
     const fetchSpy = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ error: { message: "provider overloaded" } }), {
@@ -166,26 +225,26 @@ describe("generateVerdict", () => {
     );
     vi.stubGlobal("fetch", fetchSpy);
 
-    const verdict = await generateVerdict({ report: report(), language: "en", provider: "kiro" });
+    const verdict = await generateVerdict({ report: report(), language: "en", provider: "9router" });
 
     expect(fetchSpy).toHaveBeenCalled();
     expect(verdict.provider).toBe("prompt");
     expect(verdict.winners.length).toBeGreaterThan(0);
-    expect(verdict.assumptions.join(" ")).toContain("Kiro 9router enhancement failed");
+    expect(verdict.assumptions.join(" ")).toContain("9router enhancement failed");
   });
 
-  it("enhances a structured Verdict with Kiro in auto mode when 9router credentials exist", async () => {
+  it("enhances a structured Verdict with 9router in auto mode when 9router credentials exist", async () => {
     vi.stubEnv("NINEROUTER_KEY", "test-key");
     vi.stubEnv("NINEROUTER_URL", "http://localhost:20128");
     const enhanced = {
-      verdict: "Kiro refined the local Verdict wording.",
+      verdict: "9router refined the local Verdict wording.",
       risks: ["Validate tracking before scaling."],
       winners: ["Message Winner is the strongest budget candidate."],
       losers: ["Message Loser should stay capped."],
       budget_moves: ["Increase Message Winner by up to 20% after quality checks."],
       tests: ["Run a tracking-quality check before scaling."],
       confidence: "high",
-      assumptions: ["Kiro only enhanced the local Verdict wording."],
+      assumptions: ["9router only enhanced the local Verdict wording."],
     };
     const fetchSpy = vi.fn().mockResolvedValue(
       new Response(
@@ -199,7 +258,7 @@ describe("generateVerdict", () => {
 
     expect(fetchSpy).toHaveBeenCalledOnce();
     expect(String(fetchSpy.mock.calls[0][0])).toBe("http://localhost:20128/v1/chat/completions");
-    expect(verdict.provider).toBe("kiro");
+    expect(verdict.provider).toBe("9router");
     expect(verdict.verdict).toBe(enhanced.verdict);
   });
 
@@ -214,20 +273,20 @@ describe("generateVerdict", () => {
 
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(verdict.provider).toBe("prompt");
-    expect(verdict.assumptions.join(" ")).toContain("Kiro 9router credentials missing");
+    expect(verdict.assumptions.join(" ")).toContain("9router credentials missing");
   });
 
-  it("enhances a structured Verdict with Kiro when explicitly selected", async () => {
+  it("enhances a structured Verdict with 9router when explicitly selected", async () => {
     vi.stubEnv("NINEROUTER_KEY", "test-key");
     const enhanced = {
-      verdict: "Kiro refined the local Verdict wording.",
+      verdict: "9router refined the local Verdict wording.",
       risks: ["Validate tracking before scaling."],
       winners: ["Message Winner is the strongest budget candidate."],
       losers: ["Message Loser should stay capped."],
       budget_moves: ["Increase Message Winner by up to 20% after quality checks."],
       tests: ["Run a tracking-quality check before scaling."],
       confidence: "high",
-      assumptions: ["Kiro only enhanced the local Verdict wording."],
+      assumptions: ["9router only enhanced the local Verdict wording."],
     };
     const fetchSpy = vi.fn().mockResolvedValue(
       new Response(
@@ -237,41 +296,41 @@ describe("generateVerdict", () => {
     );
     vi.stubGlobal("fetch", fetchSpy);
 
-    const verdict = await generateVerdict({ report: report(), language: "en", provider: "kiro" });
+    const verdict = await generateVerdict({ report: report(), language: "en", provider: "9router" });
 
     expect(fetchSpy).toHaveBeenCalledOnce();
     expect(String(fetchSpy.mock.calls[0][0])).toBe("http://localhost:20128/v1/chat/completions");
     expect(fetchSpy.mock.calls[0][1]?.headers).toMatchObject({ authorization: "Bearer test-key" });
     const requestBody = JSON.parse(String(fetchSpy.mock.calls[0][1]?.body));
     expect(requestBody.response_format).toMatchObject({ type: "json_object" });
-    expect(verdict.provider).toBe("kiro");
+    expect(verdict.provider).toBe("9router");
     expect(verdict.verdict).toBe(enhanced.verdict);
     expect(verdict.budget_moves).toEqual(enhanced.budget_moves);
   });
 
-  it("falls back to local Verdict when explicit Kiro is missing an API key", async () => {
+  it("falls back to local Verdict when explicit 9router is missing an API key", async () => {
     const fetchSpy = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);
 
-    const verdict = await generateVerdict({ report: report(), language: "en", provider: "kiro" });
+    const verdict = await generateVerdict({ report: report(), language: "en", provider: "9router" });
 
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(verdict.provider).toBe("prompt");
     expect(verdict.winners.length).toBeGreaterThan(0);
-    expect(verdict.assumptions.join(" ")).toContain("Kiro 9router credentials missing");
+    expect(verdict.assumptions.join(" ")).toContain("9router credentials missing");
   });
 
-  it("does not let Kiro raise confidence above the local Verdict", async () => {
+  it("does not let 9router raise confidence above the local Verdict", async () => {
     vi.stubEnv("NINEROUTER_KEY", "test-key");
     const enhanced = {
-      verdict: "Kiro polished a setup-only Verdict.",
+      verdict: "9router polished a setup-only Verdict.",
       risks: ["No meaningful spend exists yet."],
       winners: [],
       losers: [],
       budget_moves: ["Hold budget until spend and primary-result signal are strong enough."],
       tests: ["Run a tracking-quality check before scaling."],
       confidence: "high",
-      assumptions: ["Kiro only enhanced the local Verdict wording."],
+      assumptions: ["9router only enhanced the local Verdict wording."],
     };
     vi.stubGlobal(
       "fetch",
@@ -283,13 +342,13 @@ describe("generateVerdict", () => {
       ),
     );
 
-    const verdict = await generateVerdict({ report: noSpendReport(), language: "en", provider: "kiro" });
+    const verdict = await generateVerdict({ report: noSpendReport(), language: "en", provider: "9router" });
 
-    expect(verdict.provider).toBe("kiro");
+    expect(verdict.provider).toBe("9router");
     expect(verdict.confidence).toBe("low");
   });
 
-  it("falls back to local Verdict when Kiro returns invalid JSON", async () => {
+  it("falls back to local Verdict when 9router returns invalid JSON", async () => {
     vi.stubEnv("NINEROUTER_KEY", "test-key");
     const fetchSpy = vi.fn().mockResolvedValue(
       new Response(
@@ -299,12 +358,12 @@ describe("generateVerdict", () => {
     );
     vi.stubGlobal("fetch", fetchSpy);
 
-    const verdict = await generateVerdict({ report: report(), language: "en", provider: "kiro" });
+    const verdict = await generateVerdict({ report: report(), language: "en", provider: "9router" });
 
     expect(fetchSpy).toHaveBeenCalledOnce();
     expect(verdict.provider).toBe("prompt");
     expect(verdict.winners.length).toBeGreaterThan(0);
-    expect(verdict.assumptions.join(" ")).toContain("Kiro 9router enhancement failed");
+    expect(verdict.assumptions.join(" ")).toContain("9router enhancement failed");
   });
 
   it("returns Vietnamese local Verdict strings when language is vi", async () => {

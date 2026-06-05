@@ -1,7 +1,7 @@
 export type KpiPack = "lead_gen" | "messages" | "sales_roas" | "traffic" | "awareness";
 export type CompareMode = "off" | "wow" | "mom" | "yoy";
 export type InterfaceLanguage = "en" | "vi";
-export type AiProvider = "kiro" | "prompt";
+export type AiProvider = "9router" | "prompt";
 export type VerdictProvider = AiProvider;
 
 export type MetaAccount = {

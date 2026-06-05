@@ -2,8 +2,8 @@ import type { AiInsightTable } from "@/lib/types";
 import {
   confidenceValue,
   errorMessage,
-  hasKiroCredentials,
-  kiroCompletion,
+  hasNineRouterCredentials,
+  nineRouterCompletion,
   parseJsonObject,
   promptInputJson,
   stringArray,
@@ -19,7 +19,7 @@ function insightFallback(prompt: string, reason = "AI provider key not configure
         area: "Setup",
         insight: "Live AI insight table unavailable.",
         evidence: `Prompt ready with ${prompt.length} chars.`,
-        action: reason.includes("Kiro") ? "Retry with a shorter report scope or confirm 9router is running." : "Add NINEROUTER_KEY/KIRO_API_KEY on server or keep using local rules, then regenerate insights.",
+        action: reason.includes("9router") ? "Retry with a shorter report scope or confirm 9router is running." : "Add NINEROUTER_KEY on server or keep using local rules, then regenerate insights.",
         priority: "medium",
         confidence: "high",
       },
@@ -183,12 +183,12 @@ function parseInsights(text: string, provider: AiInsightTable["provider"]): AiIn
 
 export async function generateInsights(prompt: string, provider: "auto" | AiInsightTable["provider"]) {
   if (provider === "prompt") return insightFallback(prompt);
-  if ((provider === "kiro" || provider === "auto") && hasKiroCredentials()) {
+  if ((provider === "9router" || provider === "auto") && hasNineRouterCredentials()) {
     try {
-      return parseInsights(await kiroCompletion(prompt, { jsonMode: true, maxTokens: 2200 }), "kiro");
+      return parseInsights(await nineRouterCompletion(prompt, { jsonMode: true, maxTokens: 2200 }), "9router");
     } catch (error) {
-      return localInsightFallback(prompt, `Kiro 9router insights were unavailable or returned unusable output. ${errorMessage(error)}`);
+      return localInsightFallback(prompt, `9router insights were unavailable or returned unusable output. ${errorMessage(error)}`);
     }
   }
-  return localInsightFallback(prompt, "Kiro 9router credentials missing; local metric insights used instead.");
+  return localInsightFallback(prompt, "9router credentials missing; local metric insights used instead.");
 }

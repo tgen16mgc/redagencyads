@@ -22,7 +22,7 @@ Core domain words:
 - `Health checks`: account scoring rules for CTR, frequency, creative volume, campaign consolidation.
 - `Verdict`: JSON strategy summary from structured report data. It is canonical app language; AI is only one optional enhancement source.
 - `Prompt Verdict Source`: deterministic local Verdict generation. It never calls an AI provider.
-- `Auto Verdict Source`: reliable-first Verdict generation. It creates the local Verdict first, optionally asks Kiro through local 9router to enhance wording when `NINEROUTER_KEY` or `KIRO_API_KEY` exists.
+- `Auto Verdict Source`: reliable-first Verdict generation. It creates the local Verdict first, optionally asks 9router to enhance wording when `NINEROUTER_KEY` exists.
 - `AI insights`: JSON table-ready analysis, optionally with comparison deltas.
 - `CompetitorSpyAd`: normalized ad-library row from Apify or Meta official API.
 - `CompetitorSpyResult`: JSON competitive intelligence output.
@@ -165,10 +165,10 @@ Run insight table
 Provider behavior:
 
 - `prompt`: return a complete local Verdict from structured report data. No model call.
-- `auto`: generate local Verdict first; if `NINEROUTER_KEY`/`KIRO_API_KEY` exists, ask Kiro through local 9router to rewrite/enhance that Verdict.
-- `kiro`: explicit Kiro 9router enhancement path using `NINEROUTER_URL` and `NINEROUTER_KEY`.
+- `auto`: generate local Verdict first; if `NINEROUTER_KEY` exists, ask 9router to rewrite/enhance that Verdict.
+- `9router`: explicit 9router enhancement path using `NINEROUTER_URL` and `NINEROUTER_KEY`.
 
-Kiro enhancement may improve wording, prioritization language, and Vietnamese phrasing, but local ads rules own the strategic claims. Enhancement cannot raise confidence above the local Verdict and cannot add budget moves over the 20% guardrail. If Kiro/9router fails, the app returns the local Verdict with an assumption explaining the failure.
+9router enhancement may improve wording, prioritization language, and Vietnamese phrasing, but local ads rules own the strategic claims. Enhancement cannot raise confidence above the local Verdict and cannot add budget moves over the 20% guardrail. If 9router fails, the app returns the local Verdict with an assumption explaining the failure.
 
 ### 5. Competitor Spy
 
@@ -206,7 +206,7 @@ Public scrape is default and works without an API key on a machine with Chrome i
 - `lib/session.ts`: encrypted HttpOnly Meta token session.
 - `lib/meta.ts`: Graph API client, pagination, account/campaign/insight fetch, `DashboardReport` assembly.
 - `lib/metrics.ts`: row normalization, KPI pack detection, health scoring, formatting, AI prompt builders, comparison deltas.
-- `lib/ai.ts`: Kiro 9router calls, retry/fallback logic, strict JSON parsing.
+- `lib/ai.ts`: 9router gateway calls, retry/fallback logic, strict JSON parsing.
 - `lib/competitor-spy.ts`: Apify/Meta official ad fetch + ad normalization.
 - `lib/utils.ts`: `cn()` helper for class merge.
 - `app/globals.css`: Tailwind v4 tokens, theme vars, print rules.
@@ -228,7 +228,7 @@ Useful:
 META_GRAPH_VERSION=v22.0
 NINEROUTER_URL=http://localhost:20128
 NINEROUTER_KEY=
-NINEROUTER_MODEL=kr/claude-sonnet-4.5-thinking-agentic
+NINEROUTER_MODEL=mhyc
 NINEROUTER_TIMEOUT_MS=45000
 NINEROUTER_MAX_TOKENS=1800
 META_PUBLIC_SCRAPE_TIMEOUT_MS=45000

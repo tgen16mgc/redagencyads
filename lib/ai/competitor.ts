@@ -1,8 +1,8 @@
 import type { CompetitorSpyResult } from "@/lib/types";
 import {
   errorMessage,
-  hasKiroCredentials,
-  kiroCompletion,
+  hasNineRouterCredentials,
+  nineRouterCompletion,
   promptInputJson,
 } from "@/lib/ai/transport";
 
@@ -45,8 +45,8 @@ function competitorFallback(prompt: string): CompetitorSpyResult {
           guardrail: "Do not scale until cost per primary result and lead quality beat current account baseline.",
         },
       ],
-      next_actions: ["Open Meta Ad Library links from fetched cards.", "Paste notable hooks/offers into notes if live scraping is thin.", "Generate again with Kiro 9router when provider key is available for deeper synthesis."],
-      assumptions: ["Local deterministic brief used because no live Kiro 9router key was available.", evidenceCount ? "Evidence links or notes need human review before final claims." : "No live competitor ad evidence was available."],
+      next_actions: ["Open Meta Ad Library links from fetched cards.", "Paste notable hooks/offers into notes if live scraping is thin.", "Generate again with 9router when provider key is available for deeper synthesis."],
+      assumptions: ["Local deterministic brief used because no live 9router key was available.", evidenceCount ? "Evidence links or notes need human review before final claims." : "No live competitor ad evidence was available."],
     };
   }
   return {
@@ -57,14 +57,14 @@ function competitorFallback(prompt: string): CompetitorSpyResult {
       {
         theme: "Manual competitor brief required",
         evidence: `Prompt ready with ${prompt.length} chars.`,
-        opportunity: "Add NINEROUTER_KEY/KIRO_API_KEY, then regenerate competitor spy output.",
+        opportunity: "Add NINEROUTER_KEY, then regenerate competitor spy output.",
         confidence: "high",
       },
     ],
     creative_gaps: ["Live AI competitor interpretation unavailable in prompt-only mode."],
     test_briefs: [],
     next_actions: ["Paste competitor ad-library notes into the panel and regenerate after adding an AI provider key."],
-    assumptions: ["NINEROUTER_KEY/KIRO_API_KEY missing in server environment."],
+    assumptions: ["NINEROUTER_KEY missing in server environment."],
   };
 }
 
@@ -94,14 +94,14 @@ function parseCompetitorSpy(text: string, provider: CompetitorSpyResult["provide
 
 export async function generateCompetitorSpy(prompt: string, provider: "auto" | CompetitorSpyResult["provider"]) {
   if (provider === "prompt") return competitorFallback(prompt);
-  if ((provider === "kiro" || provider === "auto") && hasKiroCredentials()) {
+  if ((provider === "9router" || provider === "auto") && hasNineRouterCredentials()) {
     try {
-      return parseCompetitorSpy(await kiroCompletion(prompt, { jsonMode: true, maxTokens: 1800 }), "kiro");
+      return parseCompetitorSpy(await nineRouterCompletion(prompt, { jsonMode: true, maxTokens: 1800 }), "9router");
     } catch (error) {
       return {
         ...competitorFallback(prompt),
-        summary: `Kiro 9router competitor spy failed; prompt-only output returned. ${errorMessage(error)}`,
-        assumptions: [`Kiro 9router failed; prompt-only output returned. ${errorMessage(error)}`],
+        summary: `9router competitor spy failed; prompt-only output returned. ${errorMessage(error)}`,
+        assumptions: [`9router failed; prompt-only output returned. ${errorMessage(error)}`],
       };
     }
   }

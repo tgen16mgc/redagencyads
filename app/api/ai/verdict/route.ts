@@ -3,7 +3,7 @@ import { z } from "zod";
 import { generateVerdict } from "@/lib/ai";
 import type { DashboardReport } from "@/lib/types";
 
-const providerSchema = z.enum(["auto", "kiro", "prompt"]).default("auto");
+const providerSchema = z.enum(["auto", "9router", "prompt"]).default("auto");
 const languageSchema = z.enum(["en", "vi"]).default("en");
 
 function isDashboardReport(value: unknown): value is DashboardReport {
