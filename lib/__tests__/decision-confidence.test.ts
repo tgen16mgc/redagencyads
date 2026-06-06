@@ -101,4 +101,30 @@ describe("assessDecisionConfidence", () => {
     expect(confidence.actionable).toBe(false);
     expect(confidence.reasons.en.join(" ")).toContain("ROAS is below target");
   });
+
+  it("marks rows above 3x target CPA as kill candidates after enough result evidence", () => {
+    const confidence = assessDecisionConfidence(
+      row({ spend: 650, impressions: 15000, leads: 10, ctr: 1.2, frequency: 2.1 }),
+      "lead_gen",
+      "en",
+      { targetCpa: 20 },
+    );
+
+    expect(confidence.status).toBe("kill_candidate");
+    expect(confidence.actionable).toBe(true);
+    expect(confidence.reasons.en.join(" ")).toContain("3.25x above target CPA");
+  });
+
+  it("does not apply the 3x target CPA kill rule before minimum result evidence", () => {
+    const confidence = assessDecisionConfidence(
+      row({ spend: 260, impressions: 8000, leads: 4, ctr: 1.2, frequency: 2.1 }),
+      "lead_gen",
+      "en",
+      { targetCpa: 20 },
+    );
+
+    expect(confidence.status).toBe("monitor");
+    expect(confidence.actionable).toBe(false);
+    expect(confidence.reasons.en.join(" ")).not.toContain("3x target CPA");
+  });
 });

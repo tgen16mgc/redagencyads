@@ -88,8 +88,23 @@ export function assessDecisionConfidence(row: NormalizedRow, pack: KpiPack, lang
     };
   }
 
+  const cost = primaryCost(row, pack);
+
+  if (pack !== "sales_roas" && targets.targetCpa && result >= minResults && cost > targets.targetCpa * 3) {
+    const multiple = cost / targets.targetCpa;
+    return {
+      status: "kill_candidate",
+      actionable: true,
+      variant: "destructive",
+      label: labels.kill_candidate,
+      reasons: {
+        en: [`CPA is ${multiple.toFixed(2)}x above target CPA after ${result.toLocaleString("en-US")} primary results.`],
+        vi: [`CPA cao hơn target ${multiple.toFixed(2)}x sau ${result.toLocaleString("vi-VN")} kết quả chính.`],
+      },
+    };
+  }
+
   if (result >= minResults && row.ctr >= 1 && (row.frequency === 0 || row.frequency < (pack === "awareness" ? 4 : 3))) {
-    const cost = primaryCost(row, pack);
     if (pack === "sales_roas" && targets.targetRoas && row.roas < targets.targetRoas) {
       return {
         status: "monitor",
