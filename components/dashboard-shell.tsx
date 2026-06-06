@@ -38,6 +38,7 @@ import { canOpenDashboardView, initialDashboardViewFromSearch } from "@/lib/dash
 import { getCompareRange } from "@/lib/report-ranges";
 import { classifyCreativeFatigue } from "@/lib/creative-fatigue";
 import { assessCreativeVolume } from "@/lib/creative-volume";
+import { assessCreativeStarvation } from "@/lib/creative-starvation";
 import { assessTargetingExclusions } from "@/lib/targeting-exclusions";
 import { assessExperimentReadiness } from "@/lib/experiment-readiness";
 import { assessMeasurementQuality } from "@/lib/measurement-quality";
@@ -253,6 +254,8 @@ const uiCopy = {
       audienceOverlapDescription: "Checks for similar ad set naming that suggests target audience overlap.",
       targetingExclusions: "Targeting exclusions",
       targetingExclusionsDescription: "Verify setup of custom audience exclusions against deprecated detailed exclusions.",
+      creativeStarvation: "Creative starvation",
+      creativeStarvationDescription: "Checks if a fatigued creative dominates spend and blocks fresh creative testing.",
       grade: "Grade",
       breakdowns: "Breakdowns",
       breakdownsDescription: "Platform and age/gender signal for diagnosis.",
@@ -400,6 +403,8 @@ const uiCopy = {
       audienceOverlapDescription: "Kiểm tra sự trùng lặp đối tượng nhắm mục tiêu dựa trên tên ad set tương đồng.",
       targetingExclusions: "Loại trừ nhắm mục tiêu",
       targetingExclusionsDescription: "Xác minh cấu hình loại trừ bằng Custom Audience thay vì loại trừ chi tiết đã bị bãi bỏ.",
+      creativeStarvation: "Đói ngân sách creative",
+      creativeStarvationDescription: "Kiểm tra nếu creative mỏi chiếm đa số ngân sách và chặn thử nghiệm creative mới.",
       grade: "Hạng",
       breakdowns: "Breakdown",
       breakdownsDescription: "Tín hiệu theo nền tảng và tuổi/giới tính để chẩn đoán.",
@@ -1173,6 +1178,7 @@ export function DashboardShell() {
                   <ExperimentReadinessCard report={report} language={language} />
                   <DecisionConfidenceCard report={report} language={language} targets={decisionTargets} />
                   <CreativeVolumeCard report={report} language={language} />
+                  <CreativeStarvationCard report={report} language={language} />
                   <BudgetMoveEngineCard report={report} language={language} />
                   <ResultConcentrationCard report={report} language={language} />
                   <BreakdownWasteCard report={report} language={language} />
@@ -3098,6 +3104,46 @@ function TargetingExclusionsCard({ report, language }: { report: DashboardReport
                   Matched Keyword: &quot;{adset.keyword}&quot;
                 </div>
                 <div className="text-xs text-muted-foreground mt-1">{adset.reason[language]}</div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function CreativeStarvationCard({ report, language }: { report: DashboardReport; language: ReportLanguage }) {
+  const copy = uiCopy[language].performance;
+  const assessment = assessCreativeStarvation(report.adRows);
+  return (
+    <Card data-print-flow>
+      <CardHeader>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <CardTitle>{copy.creativeStarvation}</CardTitle>
+            <CardDescription>{copy.creativeStarvationDescription}</CardDescription>
+          </div>
+          <Badge variant={assessment.variant}>{assessment.label[language]}</Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        <p className="text-sm text-muted-foreground">{assessment.summary[language]}</p>
+        {assessment.adsets.length > 0 ? (
+          <div className="flex flex-col gap-2">
+            {assessment.adsets.map((adset) => (
+              <div key={adset.adsetId} className="flex flex-col gap-2 rounded-lg border p-2 text-sm">
+                <div className="font-semibold truncate text-xs text-muted-foreground">Ad Set: {adset.adsetName}</div>
+                <div className="text-xs text-muted-foreground">{adset.reason[language]}</div>
+                <div className="flex flex-col gap-1 mt-1 border-t pt-1.5">
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Starved Fresh Creatives:</span>
+                  {adset.starvedAds.map((ad) => (
+                    <div key={ad.adId} className="flex items-center justify-between text-xs text-muted-foreground pl-1.5 border-l-2 border-primary/30">
+                      <span className="truncate max-w-[180px]">{ad.adName}</span>
+                      <span className="tabular-nums">{(ad.spendShare * 100).toFixed(0)}% spend</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             ))}
           </div>
