@@ -38,6 +38,7 @@ import { canOpenDashboardView, initialDashboardViewFromSearch } from "@/lib/dash
 import { getCompareRange } from "@/lib/report-ranges";
 import { classifyCreativeFatigue } from "@/lib/creative-fatigue";
 import { assessCreativeVolume } from "@/lib/creative-volume";
+import { assessTargetingExclusions } from "@/lib/targeting-exclusions";
 import { assessExperimentReadiness } from "@/lib/experiment-readiness";
 import { assessMeasurementQuality } from "@/lib/measurement-quality";
 import { assessResultConcentration } from "@/lib/result-concentration";
@@ -250,6 +251,8 @@ const uiCopy = {
       funnelLeakageDescription: "Evaluates clicks, carts, checkouts, and purchases against standard benchmarks.",
       audienceOverlap: "Audience overlap",
       audienceOverlapDescription: "Checks for similar ad set naming that suggests target audience overlap.",
+      targetingExclusions: "Targeting exclusions",
+      targetingExclusionsDescription: "Verify setup of custom audience exclusions against deprecated detailed exclusions.",
       grade: "Grade",
       breakdowns: "Breakdowns",
       breakdownsDescription: "Platform and age/gender signal for diagnosis.",
@@ -395,6 +398,8 @@ const uiCopy = {
       funnelLeakageDescription: "Đánh giá tỷ lệ click, thêm giỏ hàng, checkout và mua hàng so với mốc tiêu chuẩn.",
       audienceOverlap: "Trùng lặp đối tượng",
       audienceOverlapDescription: "Kiểm tra sự trùng lặp đối tượng nhắm mục tiêu dựa trên tên ad set tương đồng.",
+      targetingExclusions: "Loại trừ nhắm mục tiêu",
+      targetingExclusionsDescription: "Xác minh cấu hình loại trừ bằng Custom Audience thay vì loại trừ chi tiết đã bị bãi bỏ.",
       grade: "Hạng",
       breakdowns: "Breakdown",
       breakdownsDescription: "Tín hiệu theo nền tảng và tuổi/giới tính để chẩn đoán.",
@@ -1173,6 +1178,7 @@ export function DashboardShell() {
                   <BreakdownWasteCard report={report} language={language} />
                   <FunnelLeakageCard report={report} language={language} />
                   <AudienceOverlapCard report={report} language={language} />
+                  <TargetingExclusionsCard report={report} language={language} />
                   <MeasurementQualityCard report={report} language={language} />
                   <Card>
                     <CardHeader>
@@ -3058,6 +3064,40 @@ function AudienceOverlapCard({ report, language }: { report: DashboardReport; la
                 <div className="font-medium tabular-nums">{(pair.similarity * 100).toFixed(0)}% similarity</div>
                 <div className="truncate text-xs text-muted-foreground">{pair.name1}</div>
                 <div className="truncate text-xs text-muted-foreground">{pair.name2}</div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function TargetingExclusionsCard({ report, language }: { report: DashboardReport; language: ReportLanguage }) {
+  const copy = uiCopy[language].performance;
+  const assessment = assessTargetingExclusions(report.adsetRows);
+  return (
+    <Card data-print-flow>
+      <CardHeader>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <CardTitle>{copy.targetingExclusions}</CardTitle>
+            <CardDescription>{copy.targetingExclusionsDescription}</CardDescription>
+          </div>
+          <Badge variant={assessment.variant}>{assessment.label[language]}</Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        <p className="text-sm text-muted-foreground">{assessment.summary[language]}</p>
+        {assessment.flaggedAdsets.length > 0 ? (
+          <div className="flex flex-col gap-2">
+            {assessment.flaggedAdsets.map((adset) => (
+              <div key={adset.adsetId} className="flex flex-col gap-1 rounded-lg border p-2 text-sm">
+                <div className="font-medium truncate text-xs text-muted-foreground">Ad Set: {adset.adsetName}</div>
+                <div className="text-xs text-destructive flex items-center gap-1 font-semibold">
+                  Matched Keyword: &quot;{adset.keyword}&quot;
+                </div>
+                <div className="text-xs text-muted-foreground mt-1">{adset.reason[language]}</div>
               </div>
             ))}
           </div>
