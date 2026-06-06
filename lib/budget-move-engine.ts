@@ -1,4 +1,5 @@
 import type { DashboardReport, KpiPack, NormalizedRow } from "@/lib/types";
+import { assessDecisionConfidence } from "@/lib/decision-confidence";
 
 export type BudgetMoveEngineStatus = "moves_recommended" | "hold" | "insufficient_data";
 
@@ -144,9 +145,10 @@ export function recommendBudgetMoves(report: DashboardReport): BudgetMoveEngineR
       const fatigueRisk = row.frequency >= 3 && row.ctr < 1;
       const enoughVolume = metrics.result >= Math.max(3, resultRowAverage * 0.2);
       const roasOk = pack !== "sales_roas" || (row.roas > 0 && row.roas >= report.totals.roas);
-      return { row, metrics, costDelta, fatigueRisk, enoughVolume, roasOk };
+      const confidence = assessDecisionConfidence(row, pack);
+      return { row, metrics, costDelta, fatigueRisk, enoughVolume, roasOk, confidence };
     })
-    .filter((item) => item.costDelta >= 0.15 && item.enoughVolume && item.roasOk && !item.fatigueRisk)
+    .filter((item) => item.costDelta >= 0.15 && item.enoughVolume && item.roasOk && !item.fatigueRisk && item.confidence.actionable)
     .sort((a, b) => b.costDelta - a.costDelta || b.metrics.result - a.metrics.result || a.row.name.localeCompare(b.row.name) || a.row.id.localeCompare(b.row.id));
 
   const sources = rows
@@ -169,9 +171,26 @@ export function recommendBudgetMoves(report: DashboardReport): BudgetMoveEngineR
       const cost = primaryResult(row, pack) > 0 ? row.spend / primaryResult(row, pack) : 0;
       return cost > 0 && cost <= accountCost * 0.85 && row.frequency >= 3 && row.ctr < 1;
     });
+    const confidenceBlockedWinner = resultRows.find((row) => {
+      const cost = primaryResult(row, pack) > 0 ? row.spend / primaryResult(row, pack) : 0;
+      const costDelta = accountCost > 0 && cost > 0 ? (accountCost - cost) / accountCost : 0;
+      return costDelta >= 0.15 && !assessDecisionConfidence(row, pack).actionable;
+    });
     return hold(
-      [fatiguedWinner ? "Potential winner has fatigue risk, so scaling is blocked by guardrail." : "No row is meaningfully better than account average."],
-      [fatiguedWinner ? "Dòng có vẻ thắng đang có rủi ro fatigue nên không scale." : "Không có dòng nào tốt hơn trung bình tài khoản đủ rõ."],
+      [
+        fatiguedWinner
+          ? "Potential winner has fatigue risk, so scaling is blocked by guardrail."
+          : confidenceBlockedWinner
+            ? "Potential winner is blocked by the decision confidence guardrail."
+            : "No row is meaningfully better than account average.",
+      ],
+      [
+        fatiguedWinner
+          ? "Dòng có vẻ thắng đang có rủi ro fatigue nên không scale."
+          : confidenceBlockedWinner
+            ? "Dòng có vẻ thắng bị chặn bởi guardrail độ tin cậy quyết định."
+            : "Không có dòng nào tốt hơn trung bình tài khoản đủ rõ.",
+      ],
     );
   }
 

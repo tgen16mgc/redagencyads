@@ -1,4 +1,5 @@
 import type { InterfaceLanguage, KpiPack, NormalizedRow } from "@/lib/types";
+import { assessDecisionConfidence } from "@/lib/decision-confidence";
 
 const decisionLabels = {
   en: {
@@ -24,6 +25,11 @@ export function primaryResult(row: NormalizedRow, pack: KpiPack) {
 }
 
 export function rowDecision(row: NormalizedRow, pack: KpiPack, language: InterfaceLanguage = "en") {
+  const confidence = assessDecisionConfidence(row, pack, language);
+  if (confidence.status === "insufficient_data") {
+    return { label: confidence.label[language], reason: confidence.reasons[language][0], intent: "neutral" as const };
+  }
+
   const copy = decisionLabels[language];
   const result = primaryResult(row, pack);
   const freqLimit = pack === "awareness" ? 4 : 3;

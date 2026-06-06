@@ -140,4 +140,18 @@ describe("recommendBudgetMoves", () => {
     expect(result.status).toBe("insufficient_data");
     expect(result.recommendations).toHaveLength(0);
   });
+
+  it("holds budget moves when the apparent winner has thin delivery", () => {
+    const result = recommendBudgetMoves(report({
+      adsetRows: [
+        row({ id: "thin-winner", name: "Thin winner", spend: 300, leads: 30, ctr: 1.8, frequency: 1.7, impressions: 500 }),
+        row({ id: "loser", name: "Loser", spend: 500, leads: 2, ctr: 0.4, frequency: 3.5, impressions: 12000 }),
+        row({ id: "steady", name: "Steady", spend: 300, leads: 10, ctr: 1.1, frequency: 2.1, impressions: 9000 }),
+      ],
+    }));
+
+    expect(result.status).toBe("hold");
+    expect(result.recommendations).toHaveLength(0);
+    expect(result.holdReasons.en.join(" ")).toContain("confidence guardrail");
+  });
 });

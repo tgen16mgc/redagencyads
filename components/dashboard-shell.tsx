@@ -45,6 +45,7 @@ import { assessFunnelLeakage } from "@/lib/funnel-leakage";
 import { assessAudienceOverlap } from "@/lib/audience-overlap";
 import { recommendBudgetMoves } from "@/lib/budget-move-engine";
 import { analyzeComparisonRootCauses } from "@/lib/comparison-root-cause";
+import { assessDecisionConfidence } from "@/lib/decision-confidence";
 import { rowDecision } from "@/lib/row-decision";
 import {
   normalizeCompetitorCountry,
@@ -1144,6 +1145,7 @@ export function DashboardShell() {
 
                 <div className="flex flex-col gap-4">
                   <ExperimentReadinessCard report={report} language={language} />
+                  <DecisionConfidenceCard report={report} language={language} />
                   <BudgetMoveEngineCard report={report} language={language} />
                   <ResultConcentrationCard report={report} language={language} />
                   <BreakdownWasteCard report={report} language={language} />
@@ -2820,6 +2822,54 @@ function ExperimentReadinessCard({ report, language }: { report: DashboardReport
             <li key={item}>{item}</li>
           ))}
         </ul>
+      </CardContent>
+    </Card>
+  );
+}
+
+function DecisionConfidenceCard({ report, language }: { report: DashboardReport; language: ReportLanguage }) {
+  const rows = (report.adsetRows.length > 0 ? report.adsetRows : report.campaignRows).filter((row) => row.spend > 0);
+  const assessments = rows.map((row) => ({ row, confidence: assessDecisionConfidence(row, report.selectedPack, language) }));
+  const blocked = assessments.filter((item) => !item.confidence.actionable);
+  const actionable = assessments.filter((item) => item.confidence.actionable);
+  const topBlocked = blocked.slice(0, 3);
+  const isVietnamese = language === "vi";
+  const variant = rows.length === 0 ? "outline" : blocked.length > actionable.length ? "destructive" : blocked.length > 0 ? "outline" : "secondary";
+
+  return (
+    <Card data-print-flow>
+      <CardHeader>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <CardTitle>{isVietnamese ? "Độ tin cậy quyết định" : "Decision confidence"}</CardTitle>
+            <CardDescription>
+              {isVietnamese ? "Chặn kill/scale khi dữ liệu còn mỏng hoặc delivery chưa đủ ổn định." : "Downgrades kill/scale advice when evidence is thin or delivery is unstable."}
+            </CardDescription>
+          </div>
+          <Badge variant={variant}>{actionable.length}/{rows.length || 0} {isVietnamese ? "actionable" : "actionable"}</Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        <p className="text-sm text-muted-foreground">
+          {rows.length === 0
+            ? isVietnamese ? "Chưa có dòng có chi tiêu để đánh giá." : "No spent rows are available for confidence checks."
+            : isVietnamese
+              ? `${blocked.length} dòng đang bị hạ cấp vì chưa đủ bằng chứng quyết định.`
+              : `${blocked.length} rows are downgraded because decision evidence is not strong enough.`}
+        </p>
+        {topBlocked.length > 0 ? (
+          <div className="flex flex-col gap-2">
+            {topBlocked.map(({ row, confidence }) => (
+              <div key={row.id} className="rounded-lg border p-2 text-sm">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 truncate font-medium">{row.name}</div>
+                  <Badge variant={confidence.variant} className="shrink-0">{confidence.label[language]}</Badge>
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">{confidence.reasons[language][0]}</p>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   );

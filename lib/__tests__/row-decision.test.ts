@@ -56,6 +56,13 @@ describe("rowDecision", () => {
   });
 
   it("uses Vietnamese labels", () => {
-    expect(rowDecision(row({ spend: 10, messages: 0 }), "messages", "vi")).toMatchObject({ label: "Rà soát" });
+    expect(rowDecision(row({ spend: 10, messages: 0 }), "messages", "vi")).toMatchObject({ label: "Chưa đủ dữ liệu" });
+  });
+
+  it("downgrades low-delivery fatigue signals to insufficient data", () => {
+    expect(rowDecision(row({ spend: 20, impressions: 300, frequency: 3.5, ctr: 0.3 }), "messages")).toMatchObject({
+      intent: "neutral",
+      label: "Insufficient data",
+    });
   });
 });
