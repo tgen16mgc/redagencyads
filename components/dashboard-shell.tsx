@@ -44,6 +44,7 @@ import { assessBreakdownWaste } from "@/lib/breakdown-waste";
 import { assessFunnelLeakage } from "@/lib/funnel-leakage";
 import { assessAudienceOverlap } from "@/lib/audience-overlap";
 import { recommendBudgetMoves } from "@/lib/budget-move-engine";
+import { analyzeComparisonRootCauses } from "@/lib/comparison-root-cause";
 import { rowDecision } from "@/lib/row-decision";
 import {
   normalizeCompetitorCountry,
@@ -1673,6 +1674,7 @@ function ComparisonPanel({
   const deltas = comparisonDeltas(current, previous).filter((item) =>
     ["spend", "messages", "leads", "purchases", "linkClicks", "ctr", "frequency", "costPerMessage", "cpl", "roas"].includes(item.key),
   );
+  const rootCauses = analyzeComparisonRootCauses(current, previous);
   return (
     <Card>
       <CardHeader>
@@ -1682,7 +1684,7 @@ function ComparisonPanel({
           {isVietnamese ? "Kỳ trước" : "Previous"} {previous.dateRange.since} {isVietnamese ? "đến" : "to"} {previous.dateRange.until}.
         </CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="flex flex-col gap-4">
         <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-5">
           {deltas.slice(0, 10).map((delta) => (
             <div key={delta.key} className="rounded-lg border p-3">
@@ -1693,6 +1695,41 @@ function ComparisonPanel({
               </Badge>
             </div>
           ))}
+        </div>
+        <div className="rounded-lg border bg-muted/20 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <div className="text-xs font-medium uppercase text-muted-foreground">
+                {isVietnamese ? "Nguyên nhân chính" : "Root-cause drivers"}
+              </div>
+              <p className="mt-1 text-sm text-muted-foreground">{rootCauses.summary[language]}</p>
+            </div>
+            <Badge variant={rootCauses.status === "drivers_found" ? "secondary" : "outline"}>
+              {rootCauses.status === "drivers_found" ? (isVietnamese ? "Có driver" : "Drivers found") : isVietnamese ? "Chưa rõ" : "No clear driver"}
+            </Badge>
+          </div>
+          {rootCauses.drivers.length > 0 ? (
+            <div className="mt-3 grid gap-2 md:grid-cols-3">
+              {rootCauses.drivers.map((driver) => (
+                <div key={driver.rowId} className="rounded-md border bg-background p-3 text-sm">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="truncate font-medium">{driver.rowName}</div>
+                      <div className="text-xs text-muted-foreground">{driver.rowLevel}</div>
+                    </div>
+                    <Badge variant={driver.direction === "negative" ? "destructive" : "secondary"} className="shrink-0">
+                      {driver.direction === "negative" ? (isVietnamese ? "Xấu" : "Negative") : isVietnamese ? "Tốt" : "Positive"}
+                    </Badge>
+                  </div>
+                  <ul className="mt-3 flex flex-col gap-1 text-xs text-muted-foreground">
+                    {driver.evidence.slice(0, 4).map((item) => <li key={item}>{item}</li>)}
+                  </ul>
+                  <Separator className="my-2" />
+                  <p className="text-xs">{driver.action[language]}</p>
+                </div>
+              ))}
+            </div>
+          ) : null}
         </div>
       </CardContent>
     </Card>
