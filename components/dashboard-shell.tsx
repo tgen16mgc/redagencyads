@@ -42,6 +42,7 @@ import { assessMeasurementQuality } from "@/lib/measurement-quality";
 import { assessResultConcentration } from "@/lib/result-concentration";
 import { assessBreakdownWaste } from "@/lib/breakdown-waste";
 import { assessFunnelLeakage } from "@/lib/funnel-leakage";
+import { assessAudienceOverlap } from "@/lib/audience-overlap";
 import { rowDecision } from "@/lib/row-decision";
 import {
   normalizeCompetitorCountry,
@@ -240,6 +241,8 @@ const uiCopy = {
       breakdownWasteDescription: "Checks platform and demographic breakdown segments for high-spend waste.",
       funnelLeakage: "Funnel leakage",
       funnelLeakageDescription: "Evaluates clicks, carts, checkouts, and purchases against standard benchmarks.",
+      audienceOverlap: "Audience overlap",
+      audienceOverlapDescription: "Checks for similar ad set naming that suggests target audience overlap.",
       grade: "Grade",
       breakdowns: "Breakdowns",
       breakdownsDescription: "Platform and age/gender signal for diagnosis.",
@@ -381,6 +384,8 @@ const uiCopy = {
       breakdownWasteDescription: "Kiểm tra lãng phí chi tiêu trên các phân khúc nền tảng hoặc nhân khẩu học.",
       funnelLeakage: "Rò rỉ phễu chuyển đổi",
       funnelLeakageDescription: "Đánh giá tỷ lệ click, thêm giỏ hàng, checkout và mua hàng so với mốc tiêu chuẩn.",
+      audienceOverlap: "Trùng lặp đối tượng",
+      audienceOverlapDescription: "Kiểm tra sự trùng lặp đối tượng nhắm mục tiêu dựa trên tên ad set tương đồng.",
       grade: "Hạng",
       breakdowns: "Breakdown",
       breakdownsDescription: "Tín hiệu theo nền tảng và tuổi/giới tính để chẩn đoán.",
@@ -1135,6 +1140,7 @@ export function DashboardShell() {
                   <ResultConcentrationCard report={report} language={language} />
                   <BreakdownWasteCard report={report} language={language} />
                   <FunnelLeakageCard report={report} language={language} />
+                  <AudienceOverlapCard report={report} language={language} />
                   <MeasurementQualityCard report={report} language={language} />
                   <Card>
                     <CardHeader>
@@ -2808,6 +2814,38 @@ function FunnelLeakageCard({ report, language }: { report: DashboardReport; lang
             <li key={item}>{item}</li>
           ))}
         </ul>
+      </CardContent>
+    </Card>
+  );
+}
+
+function AudienceOverlapCard({ report, language }: { report: DashboardReport; language: ReportLanguage }) {
+  const copy = uiCopy[language].performance;
+  const overlap = assessAudienceOverlap(report.adsetRows);
+  return (
+    <Card data-print-flow>
+      <CardHeader>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <CardTitle>{copy.audienceOverlap}</CardTitle>
+            <CardDescription>{copy.audienceOverlapDescription}</CardDescription>
+          </div>
+          <Badge variant={overlap.variant}>{overlap.label[language]}</Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        <p className="text-sm text-muted-foreground">{overlap.summary[language]}</p>
+        {overlap.pairs.length > 0 ? (
+          <div className="flex flex-col gap-2">
+            {overlap.pairs.map((pair) => (
+              <div key={`${pair.name1}-${pair.name2}`} className="flex flex-col gap-1 rounded-lg border p-2 text-sm">
+                <div className="font-medium tabular-nums">{(pair.similarity * 100).toFixed(0)}% similarity</div>
+                <div className="truncate text-xs text-muted-foreground">{pair.name1}</div>
+                <div className="truncate text-xs text-muted-foreground">{pair.name2}</div>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   );
