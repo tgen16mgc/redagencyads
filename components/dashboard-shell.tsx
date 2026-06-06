@@ -43,6 +43,7 @@ import { assessResultConcentration } from "@/lib/result-concentration";
 import { assessBreakdownWaste } from "@/lib/breakdown-waste";
 import { assessFunnelLeakage } from "@/lib/funnel-leakage";
 import { assessAudienceOverlap } from "@/lib/audience-overlap";
+import { recommendBudgetMoves } from "@/lib/budget-move-engine";
 import { rowDecision } from "@/lib/row-decision";
 import {
   normalizeCompetitorCountry,
@@ -235,6 +236,8 @@ const uiCopy = {
       measurementDescription: "Checks whether the current dataset supports confident optimization decisions.",
       readiness: "Experiment readiness",
       readinessDescription: "Combines measurement, account health, and creative signals before launch decisions.",
+      budgetMoveEngine: "Budget Move Engine",
+      budgetMoveEngineDescription: "Recommends guarded budget transfers only when current row performance supports it.",
       concentration: "Result concentration",
       concentrationDescription: "Checks whether spend or primary results depend on too few rows.",
       breakdownWaste: "Breakdown waste",
@@ -378,6 +381,8 @@ const uiCopy = {
       measurementDescription: "Kiểm tra dataset hiện tại có đủ tin cậy để ra quyết định tối ưu hay không.",
       readiness: "Sẵn sàng thử nghiệm",
       readinessDescription: "Kết hợp đo lường, sức khỏe tài khoản và creative trước quyết định launch.",
+      budgetMoveEngine: "Điều chuyển ngân sách",
+      budgetMoveEngineDescription: "Chỉ đề xuất chuyển ngân sách có kiểm soát khi hiệu quả hiện tại đủ hỗ trợ.",
       concentration: "Độ tập trung kết quả",
       concentrationDescription: "Kiểm tra chi tiêu hoặc kết quả chính có phụ thuộc vào quá ít dòng hay không.",
       breakdownWaste: "Lãng phí breakdown",
@@ -1137,6 +1142,7 @@ export function DashboardShell() {
 
                 <div className="flex flex-col gap-4">
                   <ExperimentReadinessCard report={report} language={language} />
+                  <BudgetMoveEngineCard report={report} language={language} />
                   <ResultConcentrationCard report={report} language={language} />
                   <BreakdownWasteCard report={report} language={language} />
                   <FunnelLeakageCard report={report} language={language} />
@@ -2770,6 +2776,61 @@ function ExperimentReadinessCard({ report, language }: { report: DashboardReport
             <li key={item}>{item}</li>
           ))}
         </ul>
+      </CardContent>
+    </Card>
+  );
+}
+
+function BudgetMoveEngineCard({ report, language }: { report: DashboardReport; language: ReportLanguage }) {
+  const copy = uiCopy[language].performance;
+  const engine = recommendBudgetMoves(report);
+  const reasons = engine.holdReasons[language];
+  return (
+    <Card data-print-flow>
+      <CardHeader>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <CardTitle>{copy.budgetMoveEngine}</CardTitle>
+            <CardDescription>{copy.budgetMoveEngineDescription}</CardDescription>
+          </div>
+          <Badge variant={engine.variant}>{engine.label[language]}</Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        <p className="text-sm text-muted-foreground">{engine.summary[language]}</p>
+        {engine.recommendations.length > 0 ? (
+          <div className="flex flex-col gap-2">
+            {engine.recommendations.map((recommendation) => (
+              <div key={recommendation.id} className="flex flex-col gap-2 rounded-lg border p-3 text-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="font-medium">{recommendation.summary[language]}</div>
+                  <Badge variant="outline" className="shrink-0 tabular-nums">{recommendation.suggestedMovePercent}%</Badge>
+                </div>
+                <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
+                  <div>
+                    <div className="font-medium text-foreground">Target: {recommendation.targetRowName}</div>
+                    <ul className="mt-1 flex flex-col gap-1">
+                      {recommendation.targetReasons.flatMap((reason) => reason.reasons).map((reason) => <li key={reason}>{reason}</li>)}
+                    </ul>
+                  </div>
+                  <div>
+                    <div className="font-medium text-foreground">Source: {recommendation.sourceRowName}</div>
+                    <ul className="mt-1 flex flex-col gap-1">
+                      {recommendation.sourceReasons.flatMap((reason) => reason.reasons).map((reason) => <li key={reason}>{reason}</li>)}
+                    </ul>
+                  </div>
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  Max target increase +{recommendation.maxIncreasePercent}%; max source reduction {recommendation.maxReductionPercent}%.
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <ul className="flex flex-col gap-2 text-sm text-muted-foreground">
+            {reasons.map((reason) => <li key={reason}>{reason}</li>)}
+          </ul>
+        )}
       </CardContent>
     </Card>
   );
