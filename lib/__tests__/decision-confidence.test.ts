@@ -50,6 +50,31 @@ describe("assessDecisionConfidence", () => {
     expect(confidence.reasons.en.join(" ")).toContain("enough spend and delivery");
   });
 
+  it("requires 5x target CPA spend before zero-result kill decisions", () => {
+    const confidence = assessDecisionConfidence(
+      row({ spend: 240, impressions: 5000, leads: 0, ctr: 0.4 }),
+      "lead_gen",
+      "en",
+      { targetCpa: 50 },
+    );
+
+    expect(confidence.status).toBe("insufficient_data");
+    expect(confidence.actionable).toBe(false);
+    expect(confidence.reasons.en.join(" ")).toContain("5x target CPA spend");
+  });
+
+  it("allows zero-result kill decisions after 5x target CPA spend", () => {
+    const confidence = assessDecisionConfidence(
+      row({ spend: 260, impressions: 5000, leads: 0, ctr: 0.4 }),
+      "lead_gen",
+      "en",
+      { targetCpa: 50 },
+    );
+
+    expect(confidence.status).toBe("kill_candidate");
+    expect(confidence.actionable).toBe(true);
+  });
+
   it("marks strong result rows as scale candidates when volume is sufficient", () => {
     const confidence = assessDecisionConfidence(row({ spend: 500, impressions: 12000, leads: 12, ctr: 1.7, frequency: 1.8 }), "lead_gen");
 

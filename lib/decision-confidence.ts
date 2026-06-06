@@ -62,20 +62,22 @@ export function assessDecisionConfidence(row: NormalizedRow, pack: KpiPack, lang
     };
   }
 
-  if (row.spend > 0 && result === 0 && row.spend < 100) {
+  const zeroResultSpendThreshold = pack !== "sales_roas" && targets.targetCpa ? targets.targetCpa * 5 : 100;
+
+  if (row.spend > 0 && result === 0 && row.spend < zeroResultSpendThreshold) {
     return {
       status: "insufficient_data",
       actionable: false,
       variant: "outline",
       label: labels.insufficient_data,
       reasons: {
-        en: ["Spend is still below the minimum evidence threshold for a zero-result decision."],
-        vi: ["Chi tiêu vẫn dưới ngưỡng bằng chứng tối thiểu cho quyết định chưa có kết quả."],
+        en: [targets.targetCpa && pack !== "sales_roas" ? "Need at least 5x target CPA spend before zero-result kill decisions." : "Spend is still below the minimum evidence threshold for a zero-result decision."],
+        vi: [targets.targetCpa && pack !== "sales_roas" ? "Cần tối thiểu 5x target CPA chi tiêu trước khi quyết định tắt vì chưa có kết quả." : "Chi tiêu vẫn dưới ngưỡng bằng chứng tối thiểu cho quyết định chưa có kết quả."],
       },
     };
   }
 
-  if (result === 0 && row.spend >= 100 && row.impressions >= 1000) {
+  if (result === 0 && row.spend >= zeroResultSpendThreshold && row.impressions >= 1000) {
     return {
       status: "kill_candidate",
       actionable: true,
