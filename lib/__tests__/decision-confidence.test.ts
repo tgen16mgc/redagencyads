@@ -63,4 +63,42 @@ describe("assessDecisionConfidence", () => {
     expect(confidence.label.vi).toBe("Chưa đủ dữ liệu");
     expect(confidence.reasons.vi.join(" ")).toContain("1.000 impressions");
   });
+
+  it("blocks scale when CPA is above the business target", () => {
+    const confidence = assessDecisionConfidence(
+      row({ spend: 600, impressions: 12000, leads: 12, ctr: 1.7, frequency: 1.8 }),
+      "lead_gen",
+      "en",
+      { targetCpa: 40 },
+    );
+
+    expect(confidence.status).toBe("monitor");
+    expect(confidence.actionable).toBe(false);
+    expect(confidence.reasons.en.join(" ")).toContain("CPA is above target");
+  });
+
+  it("allows scale when CPA is within the business target", () => {
+    const confidence = assessDecisionConfidence(
+      row({ spend: 360, impressions: 12000, leads: 12, ctr: 1.7, frequency: 1.8 }),
+      "lead_gen",
+      "en",
+      { targetCpa: 40 },
+    );
+
+    expect(confidence.status).toBe("scale_candidate");
+    expect(confidence.reasons.en.join(" ")).toContain("CPA target met");
+  });
+
+  it("blocks sales scale when ROAS is below target", () => {
+    const confidence = assessDecisionConfidence(
+      row({ spend: 600, impressions: 12000, purchases: 12, roas: 1.8, ctr: 1.7, frequency: 1.8 }),
+      "sales_roas",
+      "en",
+      { targetRoas: 2.5 },
+    );
+
+    expect(confidence.status).toBe("monitor");
+    expect(confidence.actionable).toBe(false);
+    expect(confidence.reasons.en.join(" ")).toContain("ROAS is below target");
+  });
 });

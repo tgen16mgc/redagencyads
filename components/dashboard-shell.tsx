@@ -45,7 +45,7 @@ import { assessFunnelLeakage } from "@/lib/funnel-leakage";
 import { assessAudienceOverlap } from "@/lib/audience-overlap";
 import { recommendBudgetMoves } from "@/lib/budget-move-engine";
 import { analyzeComparisonRootCauses } from "@/lib/comparison-root-cause";
-import { assessDecisionConfidence } from "@/lib/decision-confidence";
+import { assessDecisionConfidence, type DecisionTargets } from "@/lib/decision-confidence";
 import { rowDecision } from "@/lib/row-decision";
 import {
   normalizeCompetitorCountry,
@@ -521,6 +521,8 @@ export function DashboardShell() {
   const [until, setUntil] = React.useState(dates.until);
   const [pack, setPack] = React.useState<KpiPack | "auto">("auto");
   const [compareMode, setCompareMode] = React.useState<CompareMode>("off");
+  const [targetCpa, setTargetCpa] = React.useState("");
+  const [targetRoas, setTargetRoas] = React.useState("");
   const [provider, setProvider] = React.useState<Provider>("auto");
   const [language, setLanguage] = React.useState<ReportLanguage>(() => {
     if (typeof window === "undefined") return "en";
@@ -554,6 +556,14 @@ export function DashboardShell() {
   const [aiLoading, setAiLoading] = React.useState({ verdict: false, insights: false });
   const verdictProgress = useTimedProgress(aiLoading.verdict);
   const insightProgress = useTimedProgress(aiLoading.insights);
+  const decisionTargets = React.useMemo<DecisionTargets>(() => {
+    const cpa = Number(targetCpa);
+    const roas = Number(targetRoas);
+    return {
+      targetCpa: Number.isFinite(cpa) && cpa > 0 ? cpa : undefined,
+      targetRoas: Number.isFinite(roas) && roas > 0 ? roas : undefined,
+    };
+  }, [targetCpa, targetRoas]);
   const copy = uiCopy[language];
   const workflowSteps = React.useMemo(
     () => buildWorkflowSteps({ hasAccount: Boolean(accountId), hasReport: Boolean(report), hasVerdict: Boolean(verdict) }),
@@ -1008,6 +1018,16 @@ export function DashboardShell() {
                   <FieldDescription>{copy.scope.kpiHelp}</FieldDescription>
                 </Field>
                 <Field>
+                  <FieldLabel>{language === "vi" ? "Target CPA" : "Target CPA"}</FieldLabel>
+                  <Input type="number" min="0" step="0.01" inputMode="decimal" value={targetCpa} onChange={(event) => setTargetCpa(event.target.value)} placeholder="40" />
+                  <FieldDescription>{language === "vi" ? "Chặn scale nếu CPA vượt mục tiêu." : "Blocks scale when CPA is above target."}</FieldDescription>
+                </Field>
+                <Field>
+                  <FieldLabel>{language === "vi" ? "Target ROAS" : "Target ROAS"}</FieldLabel>
+                  <Input type="number" min="0" step="0.01" inputMode="decimal" value={targetRoas} onChange={(event) => setTargetRoas(event.target.value)} placeholder="2.5" />
+                  <FieldDescription>{language === "vi" ? "Chặn scale sales nếu ROAS dưới mục tiêu." : "Blocks sales scale when ROAS is below target."}</FieldDescription>
+                </Field>
+                <Field>
                   <FieldLabel>{copy.scope.compare}</FieldLabel>
                   <Select
                     items={compareItems}
@@ -1145,7 +1165,7 @@ export function DashboardShell() {
 
                 <div className="flex flex-col gap-4">
                   <ExperimentReadinessCard report={report} language={language} />
-                  <DecisionConfidenceCard report={report} language={language} />
+                  <DecisionConfidenceCard report={report} language={language} targets={decisionTargets} />
                   <BudgetMoveEngineCard report={report} language={language} />
                   <ResultConcentrationCard report={report} language={language} />
                   <BreakdownWasteCard report={report} language={language} />
@@ -2827,9 +2847,9 @@ function ExperimentReadinessCard({ report, language }: { report: DashboardReport
   );
 }
 
-function DecisionConfidenceCard({ report, language }: { report: DashboardReport; language: ReportLanguage }) {
+function DecisionConfidenceCard({ report, language, targets }: { report: DashboardReport; language: ReportLanguage; targets: DecisionTargets }) {
   const rows = (report.adsetRows.length > 0 ? report.adsetRows : report.campaignRows).filter((row) => row.spend > 0);
-  const assessments = rows.map((row) => ({ row, confidence: assessDecisionConfidence(row, report.selectedPack, language) }));
+  const assessments = rows.map((row) => ({ row, confidence: assessDecisionConfidence(row, report.selectedPack, language, targets) }));
   const blocked = assessments.filter((item) => !item.confidence.actionable);
   const actionable = assessments.filter((item) => item.confidence.actionable);
   const topBlocked = blocked.slice(0, 3);
