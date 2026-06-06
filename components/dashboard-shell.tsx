@@ -37,6 +37,7 @@ import { buildWorkflowSteps, type DashboardWorkflowStep } from "@/lib/dashboard-
 import { canOpenDashboardView, initialDashboardViewFromSearch } from "@/lib/dashboard-access";
 import { getCompareRange } from "@/lib/report-ranges";
 import { classifyCreativeFatigue } from "@/lib/creative-fatigue";
+import { assessCreativeVolume } from "@/lib/creative-volume";
 import { assessExperimentReadiness } from "@/lib/experiment-readiness";
 import { assessMeasurementQuality } from "@/lib/measurement-quality";
 import { assessResultConcentration } from "@/lib/result-concentration";
@@ -1166,6 +1167,7 @@ export function DashboardShell() {
                 <div className="flex flex-col gap-4">
                   <ExperimentReadinessCard report={report} language={language} />
                   <DecisionConfidenceCard report={report} language={language} targets={decisionTargets} />
+                  <CreativeVolumeCard report={report} language={language} />
                   <BudgetMoveEngineCard report={report} language={language} />
                   <ResultConcentrationCard report={report} language={language} />
                   <BreakdownWasteCard report={report} language={language} />
@@ -2886,6 +2888,45 @@ function DecisionConfidenceCard({ report, language, targets }: { report: Dashboa
                   <Badge variant={confidence.variant} className="shrink-0">{confidence.label[language]}</Badge>
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">{confidence.reasons[language][0]}</p>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function CreativeVolumeCard({ report, language }: { report: DashboardReport; language: ReportLanguage }) {
+  const assessment = assessCreativeVolume(report.adRows);
+  const isVietnamese = language === "vi";
+  const visibleAdsets = assessment.adsets.filter((adset) => adset.status !== "healthy").slice(0, 3);
+  const displayAdsets = visibleAdsets.length > 0 ? visibleAdsets : assessment.adsets.slice(0, 2);
+
+  return (
+    <Card data-print-flow>
+      <CardHeader>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <CardTitle>{isVietnamese ? "Volume creative" : "Creative volume"}</CardTitle>
+            <CardDescription>
+              {isVietnamese ? "Proxy số creative có chạy/chi tiêu trong mỗi ad set; chưa đo similarity hoặc Advantage+." : "Proxy for active/spent creative count per ad set; does not measure similarity or Advantage+ type yet."}
+            </CardDescription>
+          </div>
+          <Badge variant={assessment.variant}>{assessment.label[language]}</Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        <p className="text-sm text-muted-foreground">{assessment.summary[language]}</p>
+        {displayAdsets.length > 0 ? (
+          <div className="flex flex-col gap-2">
+            {displayAdsets.map((adset) => (
+              <div key={adset.adsetId} className="rounded-lg border p-2 text-sm">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 truncate font-medium">{adset.adsetName}</div>
+                  <Badge variant={adset.variant} className="shrink-0 tabular-nums">{adset.creativeCount}</Badge>
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">{adset.reason[language]}</p>
               </div>
             ))}
           </div>
