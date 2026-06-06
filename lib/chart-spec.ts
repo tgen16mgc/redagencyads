@@ -22,6 +22,15 @@ export type ChartKey =
 
 export type ChartFormat = "number" | "currency" | "percent" | "ratio";
 
+export type TrendAnnotation = {
+  key: ChartKey;
+  direction: "up" | "down";
+  startValue: number;
+  endValue: number;
+  changePct: number;
+  label: string;
+};
+
 export type PackChartSpec = {
   operatorQuestion: string;
   trendTitle: string;
@@ -161,6 +170,46 @@ export function sortByDrilldown(a: NormalizedRow, b: NormalizedRow, key: ChartKe
   if (left === 0) return 1;
   if (right === 0) return -1;
   return higherIsBetter ? right - left : left - right;
+}
+
+function average(values: number[]) {
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function chartKeyLabel(key: ChartKey) {
+  return key.replace(/([A-Z])/g, " $1").replace(/^./, (letter) => letter.toUpperCase());
+}
+
+export function detectTrendAnnotation(
+  rows: NormalizedRow[],
+  key: ChartKey,
+  options: { minPoints?: number; minAbsChangePct?: number; minNonZeroPoints?: number } = {},
+): TrendAnnotation | null {
+  const minPoints = options.minPoints ?? 7;
+  const minAbsChangePct = options.minAbsChangePct ?? 25;
+  const minNonZeroPoints = options.minNonZeroPoints ?? 4;
+  const values = rows.map((row) => metricValue(row, key)).filter((value) => Number.isFinite(value));
+
+  if (values.length < minPoints || values.filter((value) => value > 0).length < minNonZeroPoints) return null;
+
+  const windowSize = Math.min(3, Math.floor(values.length / 2));
+  const startValue = average(values.slice(0, windowSize));
+  const endValue = average(values.slice(-windowSize));
+
+  if (startValue <= 0) return null;
+
+  const changePct = ((endValue - startValue) / startValue) * 100;
+  if (Math.abs(changePct) < minAbsChangePct) return null;
+
+  const direction = changePct > 0 ? "up" : "down";
+  return {
+    key,
+    direction,
+    startValue,
+    endValue,
+    changePct,
+    label: `${chartKeyLabel(key)} ${direction} ${Math.abs(changePct).toFixed(0)}%`,
+  };
 }
 
 export function roundMetric(value: number) {

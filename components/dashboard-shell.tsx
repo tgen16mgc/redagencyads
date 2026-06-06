@@ -55,6 +55,7 @@ import { shouldFetchBeforeCompetitorAnalysis } from "@/lib/competitor-workflow";
 import { performanceChartConfig } from "@/lib/chart-palette";
 import {
   compactDate,
+  detectTrendAnnotation,
   formatChartValue,
   getPackChartSpec,
   metricValue,
@@ -2496,6 +2497,7 @@ function formatSignedPct(value: number | null, language: ReportLanguage = "en") 
 function PerformanceCharts({ report, language }: { report: DashboardReport; language: ReportLanguage }) {
   const currency = report.account.currency || "VND";
   const spec = getPackChartSpec(report.selectedPack, language);
+  const trendAnnotation = spec.trendKeys.map((key) => detectTrendAnnotation(report.dailyRows, key)).find((annotation) => annotation !== null);
   const dailyData = report.dailyRows.map((row) => ({
     date: compactDate(row.date),
     spend: Math.round(row.spend),
@@ -2532,8 +2534,13 @@ function PerformanceCharts({ report, language }: { report: DashboardReport; lang
     <section className="grid gap-4 xl:grid-cols-3">
       <Card className="xl:col-span-2">
         <CardHeader>
-          <CardTitle>{spec.trendTitle}</CardTitle>
-          <CardDescription>{spec.trendDescription}</CardDescription>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <CardTitle>{spec.trendTitle}</CardTitle>
+              <CardDescription>{spec.trendDescription}</CardDescription>
+            </div>
+            {trendAnnotation ? <Badge variant="outline" className="shrink-0">{trendAnnotation.label}</Badge> : null}
+          </div>
         </CardHeader>
         <CardContent>
           {dailyData.length ? (
@@ -2556,7 +2563,7 @@ function PerformanceCharts({ report, language }: { report: DashboardReport; lang
                 />
                 <Bar yAxisId="spend" dataKey="spend" fill="var(--color-spend)" radius={[3, 3, 0, 0]} />
                 {spec.trendKeys.map((key) => (
-                  <Line key={key} yAxisId="outcomes" type="monotone" dataKey={key} stroke={`var(--color-${key})`} strokeWidth={2} dot={false} />
+                  <Line key={key} yAxisId="outcomes" type="monotone" dataKey={key} stroke={`var(--color-${key})`} strokeWidth={trendAnnotation?.key === key ? 3 : 2} dot={false} />
                 ))}
               </ComposedChart>
             </ChartContainer>
