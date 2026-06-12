@@ -153,6 +153,67 @@ describe("scoreHealth", () => {
   });
 });
 
+describe("scoreHealth CTR pack-aware benchmarks", () => {
+  it("passes CTR check for traffic pack at 1.6% (above 1.5% threshold)", () => {
+    const health = scoreHealth({
+      totals: normalized({ ctr: 1.6, frequency: 2 }),
+      campaignRows: [normalized({ id: "c1" })],
+      adsetRows: [],
+      adRows: Array.from({ length: 10 }, (_, i) => normalized({ id: `ad-${i}` })),
+      pack: "traffic",
+    });
+    const ctrCheck = health.checks.find((c) => c.id === "M-CR4");
+    expect(ctrCheck?.status).toBe("pass");
+  });
+
+  it("fails CTR check for traffic pack at 0.8% (below 0.9% warning floor)", () => {
+    const health = scoreHealth({
+      totals: normalized({ ctr: 0.8, frequency: 2 }),
+      campaignRows: [normalized({ id: "c1" })],
+      adsetRows: [],
+      adRows: Array.from({ length: 10 }, (_, i) => normalized({ id: `ad-${i}` })),
+      pack: "traffic",
+    });
+    const ctrCheck = health.checks.find((c) => c.id === "M-CR4");
+    expect(ctrCheck?.status).toBe("fail");
+  });
+
+  it("passes CTR check for awareness pack at 0.6% (above 0.4% threshold)", () => {
+    const health = scoreHealth({
+      totals: normalized({ ctr: 0.6, frequency: 2 }),
+      campaignRows: [normalized({ id: "c1" })],
+      adsetRows: [],
+      adRows: Array.from({ length: 10 }, (_, i) => normalized({ id: `ad-${i}` })),
+      pack: "awareness",
+    });
+    const ctrCheck = health.checks.find((c) => c.id === "M-CR4");
+    expect(ctrCheck?.status).toBe("pass");
+  });
+
+  it("fails CTR check for awareness pack at 0.2% (below 0.3% warning threshold)", () => {
+    const health = scoreHealth({
+      totals: normalized({ ctr: 0.2, frequency: 2 }),
+      campaignRows: [normalized({ id: "c1" })],
+      adsetRows: [],
+      adRows: Array.from({ length: 10 }, (_, i) => normalized({ id: `ad-${i}` })),
+      pack: "awareness",
+    });
+    const ctrCheck = health.checks.find((c) => c.id === "M-CR4");
+    expect(ctrCheck?.status).toBe("fail");
+  });
+
+  it("falls back to lead_gen threshold when no pack provided", () => {
+    const health = scoreHealth({
+      totals: normalized({ ctr: 1.2, frequency: 2 }),
+      campaignRows: [normalized({ id: "c1" })],
+      adsetRows: [],
+      adRows: Array.from({ length: 10 }, (_, i) => normalized({ id: `ad-${i}` })),
+    });
+    const ctrCheck = health.checks.find((c) => c.id === "M-CR4");
+    expect(ctrCheck?.status).toBe("pass");
+  });
+});
+
 describe("formatMetric", () => {
   it("formats currency in en-US style for USD", () => {
     const result = formatMetric(1234, "currency", "USD");

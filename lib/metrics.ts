@@ -198,14 +198,27 @@ export function scoreHealth(args: {
   campaignRows: NormalizedRow[];
   adsetRows: NormalizedRow[];
   adRows: NormalizedRow[];
+  pack?: KpiPack;
 }) {
   type CheckStatus = "pass" | "warning" | "fail";
+
+  // Pack-aware CTR thresholds (pass / warning floor)
+  const ctrThresholds: Record<KpiPack, { pass: number; warn: number }> = {
+    traffic:    { pass: 1.5, warn: 0.9 },
+    lead_gen:   { pass: 1.0, warn: 0.5 },
+    sales_roas: { pass: 0.9, warn: 0.5 },
+    messages:   { pass: 0.8, warn: 0.4 },
+    awareness:  { pass: 0.4, warn: 0.3 },
+  };
+  const ctrT = ctrThresholds[args.pack ?? "lead_gen"];
+  const ctrStatus = (args.totals.ctr >= ctrT.pass ? "pass" : args.totals.ctr >= ctrT.warn ? "warning" : "fail") as CheckStatus;
+
   const checks = [
     {
       id: "M-CR4",
       label: "CTR benchmark",
-      status: (args.totals.ctr >= 1 ? "pass" : args.totals.ctr >= 0.5 ? "warning" : "fail") as CheckStatus,
-      detail: `CTR ${args.totals.ctr.toFixed(2)}%. Meta benchmark pass >= 1.0%.`,
+      status: ctrStatus,
+      detail: `CTR ${args.totals.ctr.toFixed(2)}%. Pack benchmark pass >= ${ctrT.pass}%.`,
     },
     {
       id: "M-CR2",

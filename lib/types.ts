@@ -136,6 +136,8 @@ export type NormalizedRow = {
   leadRate: number;
   adFormat?: string;
   dailyBudget?: number;
+  learningStageStatus?: "LEARNING" | "LEARNING_LIMITED" | "NOT_LEARNING" | "NO_SIGNAL";
+  learningStageReasons?: Array<"LOW_VOLUME" | "NOT_ENOUGH_BUDGET" | "CREATIVE_FATIGUE" | "HIGH_OVERLAP" | "LOW_QUALITY">;
 };
 
 export type KpiCard = {

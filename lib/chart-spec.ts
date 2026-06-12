@@ -212,6 +212,50 @@ export function detectTrendAnnotation(
   };
 }
 
+export type CpmSaturationAnnotation = {
+  type: "cpm_saturation";
+  startCpm: number;
+  endCpm: number;
+  cpmChangePct: number;
+  reachChangePct: number;
+  label: string;
+};
+
+export function detectCpmSaturation(
+  rows: NormalizedRow[],
+  options: { minPoints?: number; cpmRiseThreshold?: number; reachFallThreshold?: number } = {},
+): CpmSaturationAnnotation | null {
+  const minPoints = options.minPoints ?? 5;
+  const cpmRiseThreshold = options.cpmRiseThreshold ?? 30;
+  const reachFallThreshold = options.reachFallThreshold ?? 5;
+
+  const valid = rows.filter((r) => r.cpm > 0 && r.reach > 0);
+  if (valid.length < minPoints) return null;
+
+  const windowSize = Math.min(3, Math.floor(valid.length / 2));
+  const startCpm = average(valid.slice(0, windowSize).map((r) => r.cpm));
+  const endCpm = average(valid.slice(-windowSize).map((r) => r.cpm));
+  const startReach = average(valid.slice(0, windowSize).map((r) => r.reach));
+  const endReach = average(valid.slice(-windowSize).map((r) => r.reach));
+
+  if (startCpm <= 0 || startReach <= 0) return null;
+
+  const cpmChangePct = ((endCpm - startCpm) / startCpm) * 100;
+  const reachChangePct = ((endReach - startReach) / startReach) * 100;
+
+  if (cpmChangePct < cpmRiseThreshold) return null;
+  if (reachChangePct > -reachFallThreshold) return null;
+
+  return {
+    type: "cpm_saturation",
+    startCpm,
+    endCpm,
+    cpmChangePct,
+    reachChangePct,
+    label: `CPM up ${cpmChangePct.toFixed(0)}% while reach falling — saturation signal`,
+  };
+}
+
 export function roundMetric(value: number) {
   return Math.round(value * 100) / 100;
 }

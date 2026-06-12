@@ -49,6 +49,9 @@ import { assessFunnelLeakage } from "@/lib/funnel-leakage";
 import { assessAudienceOverlap } from "@/lib/audience-overlap";
 import { recommendBudgetMoves } from "@/lib/budget-move-engine";
 import { analyzeComparisonRootCauses } from "@/lib/comparison-root-cause";
+import { assessConsolidationPressure } from "@/lib/consolidation-pressure";
+import { assessCostCapDelivery } from "@/lib/cost-cap-delivery";
+import { assessSpendPacing } from "@/lib/spend-pacing";
 import { assessDecisionConfidence, type DecisionTargets } from "@/lib/decision-confidence";
 import { rowDecision } from "@/lib/row-decision";
 import {
@@ -1185,6 +1188,9 @@ export function DashboardShell() {
                 <div className="flex flex-col gap-4">
                   <ExperimentReadinessCard report={report} language={language} />
                   <DecisionConfidenceCard report={report} language={language} targets={decisionTargets} />
+                  <SpendPacingCard report={report} language={language} />
+                  <ConsolidationPressureCard report={report} language={language} />
+                  <CostCapDeliveryCard report={report} language={language} />
                   <CreativeVolumeCard report={report} language={language} />
                   <CreativeStarvationCard report={report} language={language} />
                   <BudgetMoveEngineCard report={report} language={language} />
@@ -3219,6 +3225,144 @@ function ResultConcentrationCard({ report, language }: { report: DashboardReport
             ))}
           </div>
         ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function SpendPacingCard({ report, language }: { report: DashboardReport; language: ReportLanguage }) {
+  const isVietnamese = language === "vi";
+  const dateRange = report.dateRange;
+  const days = Math.max(1, (new Date(dateRange.until).getTime() - new Date(dateRange.since).getTime()) / (86400 * 1000) + 1);
+  const pacing = assessSpendPacing(report.campaignRows, days);
+  return (
+    <Card data-print-flow>
+      <CardHeader>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <CardTitle>{isVietnamese ? "Tốc độ chi tiêu" : "Spend pacing"}</CardTitle>
+            <CardDescription>
+              {isVietnamese
+                ? "So sánh chi tiêu thực tế với ngân sách kỳ vọng theo kỳ báo cáo."
+                : "Compares actual spend against expected budget over the report period."}
+            </CardDescription>
+          </div>
+          <Badge variant={pacing.variant}>{pacing.label[language]}</Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        <p className="text-sm text-muted-foreground">{pacing.summary[language]}</p>
+        {pacing.campaigns.length > 0 && pacing.status !== "on_pace" && (
+          <div className="flex flex-col gap-2">
+            {pacing.campaigns
+              .filter((c) => c.status !== "on_pace")
+              .slice(0, 5)
+              .map((c) => (
+                <div key={c.id} className="rounded-lg border p-2 text-sm">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium truncate">{c.name}</span>
+                    <Badge variant={c.status === "severely_underpacing" ? "destructive" : "outline"}>
+                      {c.pacePercent.toFixed(0)}%
+                    </Badge>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {isVietnamese
+                      ? `Chi tiêu ${c.spend.toLocaleString()} / kỳ vọng ${c.expectedSpend.toLocaleString()}`
+                      : `Spent ${c.spend.toLocaleString()} / expected ${c.expectedSpend.toLocaleString()}`}
+                  </p>
+                </div>
+              ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ConsolidationPressureCard({ report, language }: { report: DashboardReport; language: ReportLanguage }) {
+  const isVietnamese = language === "vi";
+  const dateRange = report.dateRange;
+  const days = Math.max(1, (new Date(dateRange.until).getTime() - new Date(dateRange.since).getTime()) / (86400 * 1000) + 1);
+  const assessment = assessConsolidationPressure(report.adsetRows, report.selectedPack, days);
+  return (
+    <Card data-print-flow>
+      <CardHeader>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <CardTitle>{isVietnamese ? "Áp lực hợp nhất" : "Consolidation pressure"}</CardTitle>
+            <CardDescription>
+              {isVietnamese
+                ? "Kiểm tra xem số chuyển đổi/ad set/tuần có đủ để thoát learning phase không."
+                : "Checks if conversions per ad set per week are sufficient to exit the learning phase."}
+            </CardDescription>
+          </div>
+          <Badge variant={assessment.variant}>{assessment.label[language]}</Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        <p className="text-sm text-muted-foreground">{assessment.summary[language]}</p>
+        {assessment.status !== "insufficient_data" && (
+          <div className="flex gap-4 text-sm">
+            <div>
+              <span className="text-muted-foreground">{isVietnamese ? "Ad set active:" : "Active ad sets:"} </span>
+              <span className="font-medium">{assessment.activeAdsets}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">{isVietnamese ? "CV/ad set/tuần:" : "Conv/adset/week:"} </span>
+              <span className="font-medium">{assessment.conversionsPerAdset.toFixed(1)}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">{isVietnamese ? "Ngưỡng:" : "Threshold:"} </span>
+              <span className="font-medium">{assessment.weeklyThreshold}</span>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function CostCapDeliveryCard({ report, language }: { report: DashboardReport; language: ReportLanguage }) {
+  const isVietnamese = language === "vi";
+  const dateRange = report.dateRange;
+  const days = Math.max(1, (new Date(dateRange.until).getTime() - new Date(dateRange.since).getTime()) / (86400 * 1000) + 1);
+  const assessment = assessCostCapDelivery(report.campaignRows, days);
+  return (
+    <Card data-print-flow>
+      <CardHeader>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <CardTitle>{isVietnamese ? "Phân phối cost cap" : "Cost cap delivery"}</CardTitle>
+            <CardDescription>
+              {isVietnamese
+                ? "Phát hiện campaign bị hạn chế phân phối bởi cost cap hoặc bid cap quá thấp."
+                : "Detects campaigns constrained by an overly restrictive cost cap or bid cap."}
+            </CardDescription>
+          </div>
+          <Badge variant={assessment.variant}>{assessment.label[language]}</Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        <p className="text-sm text-muted-foreground">{assessment.summary[language]}</p>
+        {assessment.underdelivering.length > 0 && (
+          <div className="flex flex-col gap-2">
+            {assessment.underdelivering.slice(0, 5).map((item) => (
+              <div key={item.id} className="rounded-lg border p-2 text-sm">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium truncate">{item.name}</span>
+                  <Badge variant={item.spendRate < 0.6 ? "destructive" : "outline"}>
+                    {(item.spendRate * 100).toFixed(0)}%
+                  </Badge>
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {isVietnamese
+                    ? `Chi tiêu ${item.spend.toLocaleString()} / ngân sách ngày ${item.dailyBudget.toLocaleString()}`
+                    : `Spent ${item.spend.toLocaleString()} / daily budget ${item.dailyBudget.toLocaleString()}`}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
       </CardContent>
     </Card>
   );

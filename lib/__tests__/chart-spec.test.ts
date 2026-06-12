@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compactDate, detectTrendAnnotation, getPackChartSpec, roundForFormat, sortByDrilldown, truncateLabel } from "../chart-spec";
+import { compactDate, detectCpmSaturation, detectTrendAnnotation, getPackChartSpec, roundForFormat, sortByDrilldown, truncateLabel } from "../chart-spec";
 import type { NormalizedRow } from "../types";
 
 function row(overrides: Partial<NormalizedRow>): NormalizedRow {
@@ -95,5 +95,48 @@ describe("chart helpers", () => {
     expect(annotation?.direction).toBe("down");
     expect(annotation?.changePct).toBeLessThanOrEqual(-25);
     expect(annotation?.label).toContain("Leads down");
+  });
+});
+
+describe("detectCpmSaturation", () => {
+  it("returns null when there are too few data points", () => {
+    const rows = [row({ cpm: 10, reach: 1000 }), row({ cpm: 12, reach: 900 })];
+    expect(detectCpmSaturation(rows)).toBeNull();
+  });
+
+  it("returns null when CPM rises but reach also rises (normal scale)", () => {
+    const rows = [10, 11, 12, 13, 14, 15, 16].map((cpm, i) =>
+      row({ cpm, reach: 1000 + i * 200 })
+    );
+    expect(detectCpmSaturation(rows)).toBeNull();
+  });
+
+  it("detects saturation when CPM rises >30% while reach is flat or falling", () => {
+    const rows = [
+      row({ cpm: 10, reach: 5000 }),
+      row({ cpm: 11, reach: 4900 }),
+      row({ cpm: 12, reach: 4800 }),
+      row({ cpm: 14, reach: 4600 }),
+      row({ cpm: 16, reach: 4400 }),
+      row({ cpm: 18, reach: 4200 }),
+      row({ cpm: 20, reach: 4000 }),
+    ];
+    const result = detectCpmSaturation(rows);
+    expect(result).not.toBeNull();
+    expect(result?.type).toBe("cpm_saturation");
+    expect(result?.cpmChangePct).toBeGreaterThan(30);
+  });
+
+  it("returns null when CPM rises but reach decline is less than 5%", () => {
+    const rows = [
+      row({ cpm: 10, reach: 5000 }),
+      row({ cpm: 11, reach: 5000 }),
+      row({ cpm: 12, reach: 4980 }),
+      row({ cpm: 13, reach: 4970 }),
+      row({ cpm: 14, reach: 4960 }),
+      row({ cpm: 15, reach: 4950 }),
+      row({ cpm: 16, reach: 4940 }),
+    ];
+    expect(detectCpmSaturation(rows)).toBeNull();
   });
 });
