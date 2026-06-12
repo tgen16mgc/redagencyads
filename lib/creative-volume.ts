@@ -6,6 +6,7 @@ export type CreativeVolumeAdset = {
   adsetId: string;
   adsetName: string;
   creativeCount: number;
+  formatDiverse: boolean;
   status: Exclude<CreativeVolumeStatus, "insufficient_data">;
   variant: "secondary" | "outline" | "destructive";
   reason: { en: string; vi: string };
@@ -42,7 +43,7 @@ function variant(status: CreativeVolumeAdset["status"]): CreativeVolumeAdset["va
   return "secondary";
 }
 
-function reason(status: CreativeVolumeAdset["status"], creativeCount: number) {
+function reason(status: CreativeVolumeAdset["status"], creativeCount: number, formatDiverse: boolean) {
   if (status === "constrained") {
     return {
       en: `Only ${creativeCount} active/spent creatives; fewer than 3 is a creative-volume constraint.`,
@@ -55,6 +56,12 @@ function reason(status: CreativeVolumeAdset["status"], creativeCount: number) {
       vi: `${creativeCount} creative có chạy/chi tiêu; guardrail Meta tiêu chuẩn là tối thiểu 5 mỗi ad set.`,
     };
   }
+  if (!formatDiverse) {
+    return {
+      en: `${creativeCount} active/spent creatives but all are the same format — mix static, video, and carousel for better delivery exploration.`,
+      vi: `${creativeCount} creative có chạy/chi tiêu nhưng tất cả cùng format — kết hợp static, video và carousel để Meta khám phá delivery tốt hơn.`,
+    };
+  }
   return {
     en: `${creativeCount} active/spent creatives meets the standard minimum proxy.`,
     vi: `${creativeCount} creative có chạy/chi tiêu đạt proxy tối thiểu tiêu chuẩn.`,
@@ -62,13 +69,14 @@ function reason(status: CreativeVolumeAdset["status"], creativeCount: number) {
 }
 
 export function assessCreativeVolume(rows: NormalizedRow[]): CreativeVolumeAssessment {
-  const groups = new Map<string, { name: string; ads: Set<string> }>();
+  const groups = new Map<string, { name: string; ads: Set<string>; formats: Set<string> }>();
 
   for (const row of rows) {
     if (!served(row)) continue;
     const adsetId = row.adsetId || "unknown";
-    const group = groups.get(adsetId) || { name: row.adsetName || "Unknown ad set", ads: new Set<string>() };
+    const group = groups.get(adsetId) || { name: row.adsetName || "Unknown ad set", ads: new Set<string>(), formats: new Set<string>() };
     group.ads.add(row.adId || row.id);
+    if (row.adFormat) group.formats.add(row.adFormat);
     groups.set(adsetId, group);
   }
 
@@ -88,13 +96,16 @@ export function assessCreativeVolume(rows: NormalizedRow[]): CreativeVolumeAsses
   const adsets = Array.from(groups.entries()).map(([adsetId, group]) => {
     const creativeCount = group.ads.size;
     const status = classify(creativeCount);
+    // No format data means we can't assert non-diversity — avoid false positives
+    const formatDiverse = group.formats.size === 0 || group.formats.size > 1;
     return {
       adsetId,
       adsetName: group.name,
       creativeCount,
+      formatDiverse,
       status,
       variant: variant(status),
-      reason: reason(status, creativeCount),
+      reason: reason(status, creativeCount, formatDiverse),
     };
   }).sort((a, b) => a.creativeCount - b.creativeCount || a.adsetName.localeCompare(b.adsetName) || a.adsetId.localeCompare(b.adsetId));
 

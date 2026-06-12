@@ -226,22 +226,32 @@ export function scoreHealth(args: {
       detail: `${args.campaignRows.length} selected campaigns. Meta prefers fewer campaigns per goal.`,
     },
   ];
-  const points = checks.reduce((sum, check) => sum + (check.status === "pass" ? 25 : check.status === "warning" ? 14 : 4), 0);
+  const weights: Record<string, { pass: number; warning: number; fail: number }> = {
+    "M-CR4": { pass: 30, warning: 17, fail: 5 },
+    "M-CR2": { pass: 30, warning: 17, fail: 5 },
+    "M25":   { pass: 20, warning: 11, fail: 3 },
+    "M11":   { pass: 20, warning: 11, fail: 3 },
+  };
+  const points = checks.reduce((sum, check) => {
+    const w = weights[check.id] ?? { pass: 25, warning: 14, fail: 4 };
+    return sum + (check.status === "pass" ? w.pass : check.status === "warning" ? w.warning : w.fail);
+  }, 0);
   const grade = points >= 90 ? "A" : points >= 75 ? "B" : points >= 60 ? "C" : points >= 40 ? "D" : "F";
   return { score: points, grade, checks };
 }
 
 export function formatMetric(value: number, format: KpiCard["format"], currency = "VND") {
+  const locale = currency === "VND" ? "vi-VN" : "en-US";
   if (format === "currency") {
-    return new Intl.NumberFormat("vi-VN", {
+    return new Intl.NumberFormat(locale, {
       style: "currency",
       currency,
       maximumFractionDigits: 0,
     }).format(value || 0);
   }
-  if (format === "percent") return `${(value || 0).toLocaleString("vi-VN", { maximumFractionDigits: 2 })}%`;
-  if (format === "ratio") return `${(value || 0).toLocaleString("vi-VN", { maximumFractionDigits: 2 })}x`;
-  return (value || 0).toLocaleString("vi-VN", { maximumFractionDigits: 0 });
+  if (format === "percent") return `${(value || 0).toLocaleString(locale, { maximumFractionDigits: 2 })}%`;
+  if (format === "ratio") return `${(value || 0).toLocaleString(locale, { maximumFractionDigits: 2 })}x`;
+  return (value || 0).toLocaleString(locale, { maximumFractionDigits: 0 });
 }
 
 export function buildPrompt(args: {

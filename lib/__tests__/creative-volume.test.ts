@@ -83,4 +83,46 @@ describe("assessCreativeVolume", () => {
     expect(result.status).toBe("healthy");
     expect(result.adsets[0]).toMatchObject({ creativeCount: 5, status: "healthy" });
   });
+
+  it("flags adsets where all creatives are the same format as format-constrained", () => {
+    const rows = Array.from({ length: 5 }, (_, index) => row({
+      id: `a${index}`,
+      adId: `a${index}`,
+      adsetId: "set-1",
+      adsetName: "Prospecting",
+      spend: 10,
+      adFormat: "static",
+    }));
+
+    const result = assessCreativeVolume(rows);
+
+    expect(result.adsets[0].formatDiverse).toBe(false);
+    expect(result.adsets[0].reason.en).toMatch(/format/i);
+  });
+
+  it("marks adsets with mixed formats as format-diverse", () => {
+    const result = assessCreativeVolume([
+      row({ id: "a1", adId: "a1", adsetId: "set-1", adsetName: "Prospecting", spend: 10, adFormat: "static" }),
+      row({ id: "a2", adId: "a2", adsetId: "set-1", adsetName: "Prospecting", spend: 10, adFormat: "video" }),
+      row({ id: "a3", adId: "a3", adsetId: "set-1", adsetName: "Prospecting", spend: 10, adFormat: "carousel" }),
+      row({ id: "a4", adId: "a4", adsetId: "set-1", adsetName: "Prospecting", spend: 10, adFormat: "static" }),
+      row({ id: "a5", adId: "a5", adsetId: "set-1", adsetName: "Prospecting", spend: 10, adFormat: "video" }),
+    ]);
+
+    expect(result.adsets[0].formatDiverse).toBe(true);
+  });
+
+  it("treats adsets with no format data as format-diverse to avoid false positives", () => {
+    const rows = Array.from({ length: 5 }, (_, index) => row({
+      id: `a${index}`,
+      adId: `a${index}`,
+      adsetId: "set-1",
+      adsetName: "Prospecting",
+      spend: 10,
+    }));
+
+    const result = assessCreativeVolume(rows);
+
+    expect(result.adsets[0].formatDiverse).toBe(true);
+  });
 });

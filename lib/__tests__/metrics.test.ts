@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { detectKpiPack, normalizeRows, scoreHealth, sumRows } from "../metrics";
+import { detectKpiPack, formatMetric, normalizeRows, scoreHealth, sumRows } from "../metrics";
 import type { InsightRow, NormalizedRow } from "../types";
 
 function normalized(overrides: Partial<NormalizedRow>): NormalizedRow {
@@ -126,5 +126,52 @@ describe("scoreHealth", () => {
 
     expect(health.grade).toBe("A");
     expect(health.checks.every((check) => check.status === "pass")).toBe(true);
+  });
+
+  it("weights signal-quality checks (CTR, frequency) at 30pts and structural checks at 20pts", () => {
+    // Only CTR passes (30pts) + frequency passes (30pts) = 60pts — structural both fail
+    const health = scoreHealth({
+      totals: normalized({ ctr: 1.2, frequency: 2 }),
+      campaignRows: Array.from({ length: 8 }, (_, i) => normalized({ id: `c${i}` })),
+      adsetRows: [],
+      adRows: [normalized({ id: "ad-1" })],
+    });
+
+    expect(health.score).toBe(66);
+    expect(health.grade).toBe("C");
+  });
+
+  it("gives max score of 100 with all checks passing under new weights", () => {
+    const health = scoreHealth({
+      totals: normalized({ ctr: 1.2, frequency: 2 }),
+      campaignRows: [normalized({ id: "c1" })],
+      adsetRows: [],
+      adRows: Array.from({ length: 10 }, (_, i) => normalized({ id: `ad-${i}` })),
+    });
+
+    expect(health.score).toBe(100);
+  });
+});
+
+describe("formatMetric", () => {
+  it("formats currency in en-US style for USD", () => {
+    const result = formatMetric(1234, "currency", "USD");
+    expect(result).toContain("1,234");
+    expect(result).toContain("$");
+  });
+
+  it("formats currency in vi-VN style for VND", () => {
+    const result = formatMetric(1000000, "currency", "VND");
+    expect(result).toMatch(/1\.000\.000|1,000,000/);
+  });
+
+  it("formats percent with percent sign", () => {
+    const result = formatMetric(2.5, "percent", "USD");
+    expect(result).toContain("%");
+  });
+
+  it("formats ratio with x suffix", () => {
+    const result = formatMetric(3.2, "ratio", "USD");
+    expect(result).toContain("x");
   });
 });

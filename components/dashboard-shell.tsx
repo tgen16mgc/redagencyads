@@ -39,6 +39,7 @@ import { getCompareRange } from "@/lib/report-ranges";
 import { classifyCreativeFatigue } from "@/lib/creative-fatigue";
 import { assessCreativeVolume } from "@/lib/creative-volume";
 import { assessCreativeStarvation } from "@/lib/creative-starvation";
+import { assessLearningLimited } from "@/lib/learning-limited";
 import { assessTargetingExclusions } from "@/lib/targeting-exclusions";
 import { assessExperimentReadiness } from "@/lib/experiment-readiness";
 import { assessMeasurementQuality } from "@/lib/measurement-quality";
@@ -503,6 +504,14 @@ function defaultDates() {
   };
 }
 
+function sanitizeAdPreviewHtml(html: string): string {
+  // Strip script tags, on* event handlers, and javascript: hrefs from Meta ad preview HTML
+  return html
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
+    .replace(/\son\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*)/gi, "")
+    .replace(/href\s*=\s*["']?\s*javascript:[^"'\s>]*/gi, 'href="#"');
+}
+
 async function jsonFetch<T>(url: string, init?: RequestInit & { timeoutMs?: number }): Promise<T> {
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), init?.timeoutMs ?? 15000);
@@ -614,8 +623,7 @@ export function DashboardShell() {
     try {
       const data = await jsonFetch<{ accounts: MetaAccount[] }>("/api/meta/accounts");
       setAccounts(data.accounts);
-      const eric = data.accounts.find((account) => /eric/i.test(account.name));
-      setAccountId((eric || data.accounts[0])?.id || "");
+      setAccountId(data.accounts[0]?.id || "");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load ad accounts.");
     } finally {
@@ -1637,7 +1645,7 @@ function RunningAdSetsPanel({
                         <div className="w-full flex justify-center bg-muted/10 p-2 rounded-md">
                           <div
                             className="w-full max-w-[500px] overflow-hidden rounded-md border p-1 bg-white max-h-[600px] overflow-y-auto"
-                            dangerouslySetInnerHTML={{ __html: selectedAd.previewHtml }}
+                            dangerouslySetInnerHTML={{ __html: sanitizeAdPreviewHtml(selectedAd.previewHtml) }}
                           />
                         </div>
                       ) : (

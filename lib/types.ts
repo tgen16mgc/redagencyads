@@ -134,6 +134,8 @@ export type NormalizedRow = {
   roas: number;
   replyRate: number;
   leadRate: number;
+  adFormat?: string;
+  dailyBudget?: number;
 };
 
 export type KpiCard = {
