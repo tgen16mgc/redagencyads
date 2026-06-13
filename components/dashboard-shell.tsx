@@ -1091,8 +1091,8 @@ export function DashboardShell() {
                 {report.kpis.map((kpi) => (
                   <Card key={kpi.label} size="sm">
                     <CardHeader>
-                      <CardDescription>{kpi.label}</CardDescription>
-                      <CardTitle className="text-2xl font-semibold tabular-nums">
+                      <CardDescription className="text-xs font-medium uppercase tracking-wide">{kpi.label}</CardDescription>
+                      <CardTitle className="text-3xl font-semibold tabular-nums leading-none">
                         {formatMetric(Number(report.totals[kpi.key as keyof NormalizedRow] || 0), kpi.format, report.account.currency || "VND")}
                       </CardTitle>
                     </CardHeader>
@@ -1213,12 +1213,12 @@ export function DashboardShell() {
                       <Separator />
                       <div className="flex flex-col gap-2">
                         {report.health.checks.map((check) => (
-                          <div key={check.id} className="rounded-lg border p-3">
+                          <div key={check.id} className={`rounded-lg border p-3 ${check.status === "fail" ? "border-destructive/30 bg-destructive/5" : "bg-muted/20"}`}>
                             <div className="flex items-center justify-between gap-2">
-                              <div className="font-medium">{check.label}</div>
-                              <Badge variant={check.status === "fail" ? "destructive" : "outline"}>{check.status}</Badge>
+                              <div className={`text-sm font-medium ${check.status === "fail" ? "text-destructive" : ""}`}>{check.label}</div>
+                              <Badge variant={check.status === "fail" ? "destructive" : "secondary"}>{check.status}</Badge>
                             </div>
-                            <p className="mt-1 text-sm text-muted-foreground">{check.detail}</p>
+                            <p className="mt-1 text-xs text-muted-foreground">{check.detail}</p>
                           </div>
                         ))}
                       </div>
@@ -1294,7 +1294,7 @@ function TokenScreen(props: {
   const copy = uiCopy[props.language].token;
   return (
     <main className="grid min-h-svh w-full place-items-center p-4">
-      <Card className="min-w-0 w-full max-w-[22.5rem] justify-self-start sm:max-w-3xl sm:justify-self-center">
+      <Card className="min-w-0 w-full max-w-sm sm:max-w-3xl">
         <CardHeader>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="flex min-w-0 items-center gap-3">
@@ -2815,8 +2815,8 @@ function PerformanceTable({
           const action = pack ? rowDecision(row, pack, language) : null;
           const creativeSignal = daily ? null : classifyCreativeFatigue(row);
           return (
-            <TableRow key={`${row.level}-${row.id}-${row.date || ""}`}>
-              <TableCell className="max-w-72 truncate font-medium">{daily ? row.date : row.name}</TableCell>
+            <TableRow key={`${row.level}-${row.id}-${row.date || ""}`} className="hover:bg-muted/40 transition-colors">
+              <TableCell className="max-w-48 truncate font-medium">{daily ? row.date : row.name}</TableCell>
               <TableCell className="text-right tabular-nums">{formatMetric(row.spend, "currency", currency)}</TableCell>
               <TableCell className="text-right tabular-nums">{formatMetric(row.impressions, "number")}</TableCell>
               <TableCell className="text-right tabular-nums">{formatMetric(row.ctr, "percent")}</TableCell>
@@ -3150,11 +3150,11 @@ function CreativeStarvationCard({ report, language }: { report: DashboardReport;
                 <div className="font-semibold truncate text-xs text-muted-foreground">Ad Set: {adset.adsetName}</div>
                 <div className="text-xs text-muted-foreground">{adset.reason[language]}</div>
                 <div className="flex flex-col gap-1 mt-1 border-t pt-1.5">
-                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Starved Fresh Creatives:</span>
+                  <span className="text-xs font-medium text-muted-foreground">Starved creatives:</span>
                   {adset.starvedAds.map((ad) => (
-                    <div key={ad.adId} className="flex items-center justify-between text-xs text-muted-foreground pl-1.5 border-l-2 border-primary/30">
+                    <div key={ad.adId} className="flex items-center justify-between text-xs text-muted-foreground pl-2 border-l-2 border-primary/30">
                       <span className="truncate max-w-[180px]">{ad.adName}</span>
-                      <span className="tabular-nums">{(ad.spendShare * 100).toFixed(0)}% spend</span>
+                      <span className="tabular-nums shrink-0 ml-2">{(ad.spendShare * 100).toFixed(0)}% spend</span>
                     </div>
                   ))}
                 </div>
@@ -3398,17 +3398,18 @@ function BarList({ rows, metric, currency, language }: { rows: NormalizedRow[]; 
   const sorted = [...rows].sort((a, b) => Number(b[metric] || 0) - Number(a[metric] || 0)).slice(0, 6);
   if (!sorted.length) return <p className="text-sm text-muted-foreground">{uiCopy[language].empty.breakdown}</p>;
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-2.5">
       {sorted.map((row) => {
         const label = row.platform || [row.age, row.gender].filter(Boolean).join(" / ") || row.name;
         const value = Number(row[metric] || 0);
+        const pct = Math.max(4, (value / max) * 100);
         return (
-          <div key={`${label}-${value}`} className="grid grid-cols-[minmax(80px,160px)_1fr_auto] items-center gap-2 text-sm">
+          <div key={`${label}-${value}`} className="grid grid-cols-[minmax(80px,150px)_1fr_auto] items-center gap-3 text-sm">
             <div className="truncate font-medium">{label}</div>
-            <div className="h-2 rounded-full bg-muted">
-              <div className="h-2 rounded-full bg-primary" style={{ width: `${Math.max(4, (value / max) * 100)}%` }} />
+            <div className="h-2.5 overflow-hidden rounded-full bg-muted/60">
+              <div className="h-full rounded-full bg-primary/70 transition-all" style={{ width: `${pct}%` }} />
             </div>
-            <div className="tabular-nums text-muted-foreground">
+            <div className="min-w-[4.5rem] text-right tabular-nums text-muted-foreground">
               {metric === "spend" ? formatMetric(value, "currency", currency) : formatMetric(value, "number")}
             </div>
           </div>
@@ -3482,12 +3483,12 @@ function InsightSummary({ title, rows, emptyLabel }: { title: string; rows: stri
   const visibleRows = rows.filter(Boolean);
   return (
     <div className="rounded-lg border bg-background p-3">
-      <div className="text-xs font-medium uppercase text-muted-foreground">{title}</div>
+      <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{title}</div>
       {visibleRows.length ? (
         <ul className="mt-2 flex flex-col gap-2">
           {visibleRows.map((row, index) => (
-            <li key={`${row}-${index}`} className="grid grid-cols-[18px_1fr] gap-2 text-sm leading-5">
-              <span className="mt-1 size-1.5 rounded-full bg-primary" />
+            <li key={`${row}-${index}`} className="flex gap-2.5 text-sm leading-5">
+              <span className="mt-[6px] size-2 shrink-0 rounded-full bg-primary/60" />
               <span>{compactText(row, 180)}</span>
             </li>
           ))}
@@ -3504,8 +3505,8 @@ function CompactList({ rows, emptyLabel }: { rows: string[]; emptyLabel: string 
   return (
     <ol className="mt-2 flex flex-col gap-2">
       {rows.map((row, index) => (
-        <li key={`${row}-${index}`} className="grid grid-cols-[20px_1fr] gap-2 text-sm leading-5">
-          <span className="flex size-5 items-center justify-center rounded-full bg-muted text-[11px] font-medium text-muted-foreground">
+        <li key={`${row}-${index}`} className="flex gap-2.5 text-sm leading-5">
+          <span className="mt-px flex size-5 shrink-0 items-center justify-center rounded-md bg-primary/10 text-xs font-semibold text-primary">
             {index + 1}
           </span>
           <span>{compactText(row, 170)}</span>
