@@ -1112,11 +1112,43 @@ export function DashboardShell() {
             </Card>
           )}
 
-          {loading === "report" ? <ReportSkeleton /> : null}
+          {!report && loading !== "report" ? (
+            <Card className="border-primary/20 bg-primary/5">
+              <CardContent className="flex flex-col gap-3 py-4 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <div className="text-sm font-medium">{language === "vi" ? "Sẵn sàng kéo dashboard" : "Ready to pull your dashboard"}</div>
+                  <div className="text-sm text-muted-foreground">
+                    {language === "vi" ? "Mặc định sẽ phân tích toàn bộ campaign active trong 30 ngày gần nhất." : "By default, this analyzes all active campaigns from the last 30 days."}
+                  </div>
+                </div>
+                <Button onClick={pullReport} disabled={!accountId || loading === "accounts" || loading === "report"} className="md:shrink-0">
+                  {loading === "report" ? <Spinner data-icon="inline-start" /> : <RefreshCcwIcon data-icon="inline-start" />}
+                  {copy.scope.pullReport}
+                </Button>
+              </CardContent>
+            </Card>
+          ) : null}
+          {loading === "report" ? <ReportSkeleton language={language} /> : null}
           {!report && loading !== "report" ? <EmptyState language={language} /> : null}
           {report ? (
             <>
               <div ref={reportStartRef} className="scroll-mt-4" />
+              <Card className="border-primary/20">
+                <CardContent className="flex flex-col gap-3 py-4 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <div className="text-sm font-medium">{language === "vi" ? "Dashboard đã sẵn sàng" : "Dashboard is ready"}</div>
+                    <div className="text-sm text-muted-foreground">
+                      {verdict
+                        ? language === "vi" ? "Verdict đã tạo. Kiểm tra khuyến nghị và các bảng drilldown bên dưới." : "Verdict generated. Review recommendations and drilldown tables below."
+                        : language === "vi" ? "Tạo Verdict để nhận khuyến nghị tối ưu ngân sách, creative và test tiếp theo." : "Generate a Verdict for budget, creative, and next-test recommendations."}
+                    </div>
+                  </div>
+                  <Button type="button" onClick={runAi} disabled={aiLoading.verdict || Boolean(verdict)} className="md:shrink-0">
+                    {aiLoading.verdict ? <Spinner data-icon="inline-start" /> : <SparklesIcon data-icon="inline-start" />}
+                    {verdict ? (language === "vi" ? "Đã có Verdict" : "Verdict ready") : language === "vi" ? "Tạo Verdict" : "Generate Verdict"}
+                  </Button>
+                </CardContent>
+              </Card>
               <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
                 {report.kpis.map((kpi) => (
                   <Card key={kpi.label} size="sm">
@@ -1434,13 +1466,22 @@ function LanguageToggle({ language, onChange }: { language: ReportLanguage; onCh
   );
 }
 
-function ReportSkeleton() {
+function ReportSkeleton({ language }: { language: ReportLanguage }) {
+  const isVietnamese = language === "vi";
   return (
-    <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-      {Array.from({ length: 6 }).map((_, index) => (
-        <Skeleton key={index} className="h-28" />
-      ))}
-    </section>
+    <Card className="border-primary/20">
+      <CardContent className="py-4">
+        <div className="mb-4 flex items-center gap-2 text-sm font-medium">
+          <Spinner className="size-4" />
+          {isVietnamese ? "Đang kéo dữ liệu từ Meta và chuẩn bị dashboard..." : "Pulling Meta data and preparing your dashboard..."}
+        </div>
+        <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+          {Array.from({ length: 6 }).map((_, index) => (
+            <Skeleton key={index} className="h-28" />
+          ))}
+        </section>
+      </CardContent>
+    </Card>
   );
 }
 
