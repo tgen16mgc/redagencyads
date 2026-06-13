@@ -576,7 +576,9 @@ export function DashboardShell() {
   const [token, setToken] = React.useState("");
   const [error, setError] = React.useState("");
   const [loading, setLoading] = React.useState("");
+  const [scopeExpanded, setScopeExpanded] = React.useState(false);
   const [aiLoading, setAiLoading] = React.useState({ verdict: false, insights: false });
+  const reportStartRef = React.useRef<HTMLDivElement>(null);
   const verdictProgress = useTimedProgress(aiLoading.verdict);
   const insightProgress = useTimedProgress(aiLoading.insights);
   const decisionTargets = React.useMemo<DecisionTargets>(() => {
@@ -718,6 +720,8 @@ export function DashboardShell() {
     try {
       const current = await fetchReportForRange({ since, until });
       setReport(current.report);
+      setScopeExpanded(false);
+      window.setTimeout(() => reportStartRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
       if (compareMode !== "off") {
         const previousRange = getCompareRange({ since, until }, compareMode);
         const previous = await fetchReportForRange(previousRange);
@@ -968,125 +972,151 @@ export function DashboardShell() {
 
           {activeView === "ads" ? (
             <>
-          <Card>
-            <CardHeader>
-              <CardTitle>{copy.scope.title}</CardTitle>
-              <CardDescription>{copy.scope.description}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <FieldGroup className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
-                <Field className="xl:col-span-2">
-                  <FieldLabel>{copy.scope.account}</FieldLabel>
-                  <Select
-                    items={accounts.map((item) => ({ label: item.name, value: item.id }))}
-                    value={accountId}
-                    onValueChange={(value) => {
-                      if (value) setAccountId(value);
-                    }}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder={copy.scope.chooseAccount} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        {accounts.map((account) => (
-                          <SelectItem key={account.id} value={account.id}>
-                            {account.name}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                </Field>
-                <CampaignPicker
-                  campaigns={campaigns}
-                  currency={accounts.find((account) => account.id === accountId)?.currency || "VND"}
-                  language={language}
-                  loading={loading === "campaigns"}
-                  selectedIds={selectedCampaignIds}
-                  onChange={setSelectedCampaignIds}
-                />
-                <Field>
-                  <FieldLabel>{copy.scope.since}</FieldLabel>
-                  <Input type="date" value={since} onChange={(event) => setSince(event.target.value)} />
-                </Field>
-                <Field>
-                  <FieldLabel>{copy.scope.until}</FieldLabel>
-                  <Input type="date" value={until} onChange={(event) => setUntil(event.target.value)} />
-                </Field>
-                <Field className="xl:col-span-2">
-                  <FieldLabel>{copy.scope.kpiPack}</FieldLabel>
-                  <Select
-                    items={[{ label: "Auto-detect", value: "auto" }, ...packItems]}
-                    value={pack}
-                    onValueChange={(value) => {
-                      if (value) setPack(value as KpiPack | "auto");
-                    }}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder={copy.scope.kpiPack} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        <SelectItem value="auto">{copy.scope.autoDetect}</SelectItem>
-                        {packItems.map((item) => (
-                          <SelectItem key={item.value} value={item.value}>
-                            {packLabel(item.value, language)}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                  <FieldDescription>{copy.scope.kpiHelp}</FieldDescription>
-                </Field>
-                <Field>
-                  <FieldLabel>{language === "vi" ? "Target CPA" : "Target CPA"}</FieldLabel>
-                  <Input type="number" min="0" step="0.01" inputMode="decimal" value={targetCpa} onChange={(event) => setTargetCpa(event.target.value)} placeholder="40" />
-                  <FieldDescription>{language === "vi" ? "Chặn scale nếu CPA vượt mục tiêu." : "Blocks scale when CPA is above target."}</FieldDescription>
-                </Field>
-                <Field>
-                  <FieldLabel>{language === "vi" ? "Target ROAS" : "Target ROAS"}</FieldLabel>
-                  <Input type="number" min="0" step="0.01" inputMode="decimal" value={targetRoas} onChange={(event) => setTargetRoas(event.target.value)} placeholder="2.5" />
-                  <FieldDescription>{language === "vi" ? "Chặn scale sales nếu ROAS dưới mục tiêu." : "Blocks sales scale when ROAS is below target."}</FieldDescription>
-                </Field>
-                <Field>
-                  <FieldLabel>{copy.scope.compare}</FieldLabel>
-                  <Select
-                    items={compareItems}
-                    value={compareMode}
-                    onValueChange={(value) => {
-                      if (value) setCompareMode(value as CompareMode);
-                    }}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        {compareItems.map((item) => (
-                          <SelectItem key={item.value} value={item.value}>
-                            {compareLabel(item.value, language)}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                </Field>
-                <Field className="justify-end">
-                  <FieldLabel className="sr-only">{copy.scope.pullData}</FieldLabel>
-                  <Button onClick={pullReport} disabled={!accountId || loading === "report"} className="w-full">
-                    {loading === "report" ? <Spinner data-icon="inline-start" /> : <RefreshCcwIcon data-icon="inline-start" />}
-                    {copy.scope.pullReport}
+          {report && !scopeExpanded ? (
+            <Card>
+              <CardContent className="flex flex-col gap-3 py-4 md:flex-row md:items-center md:justify-between">
+                <div className="min-w-0">
+                  <div className="text-sm font-medium">{accounts.find((account) => account.id === accountId)?.name || copy.scope.account}</div>
+                  <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                    <span>{since} to {until}</span>
+                    <span>{selectedCampaignIds.length ? `${selectedCampaignIds.length} ${copy.campaign.selected}` : copy.campaign.allActive}</span>
+                    <span>{pack === "auto" ? copy.scope.autoDetect : packLabel(pack, language)}</span>
+                    <span>{compareLabel(compareMode, language)}</span>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Button type="button" variant="outline" onClick={() => setScopeExpanded(true)}>
+                    {language === "vi" ? "Sửa phạm vi" : "Edit scope"}
                   </Button>
-                </Field>
-              </FieldGroup>
-            </CardContent>
-          </Card>
+                  <Button onClick={pullReport} disabled={!accountId || loading === "report"}>
+                    {loading === "report" ? <Spinner data-icon="inline-start" /> : <RefreshCcwIcon data-icon="inline-start" />}
+                    {language === "vi" ? "Kéo lại" : "Refresh report"}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <CardHeader>
+                <CardTitle>{copy.scope.title}</CardTitle>
+                <CardDescription>{copy.scope.description}</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <FieldGroup className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+                  <Field className="xl:col-span-2">
+                    <FieldLabel>{copy.scope.account}</FieldLabel>
+                    <Select
+                      items={accounts.map((item) => ({ label: item.name, value: item.id }))}
+                      value={accountId}
+                      onValueChange={(value) => {
+                        if (value) setAccountId(value);
+                      }}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder={loading === "accounts" ? (language === "vi" ? "Đang tải tài khoản..." : "Loading accounts...") : copy.scope.chooseAccount} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          {accounts.map((account) => (
+                            <SelectItem key={account.id} value={account.id}>
+                              {account.name}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                  <CampaignPicker
+                    campaigns={campaigns}
+                    currency={accounts.find((account) => account.id === accountId)?.currency || "VND"}
+                    language={language}
+                    loading={loading === "campaigns"}
+                    selectedIds={selectedCampaignIds}
+                    onChange={setSelectedCampaignIds}
+                  />
+                  <Field>
+                    <FieldLabel>{copy.scope.since}</FieldLabel>
+                    <Input type="date" value={since} onChange={(event) => setSince(event.target.value)} />
+                  </Field>
+                  <Field>
+                    <FieldLabel>{copy.scope.until}</FieldLabel>
+                    <Input type="date" value={until} onChange={(event) => setUntil(event.target.value)} />
+                  </Field>
+                  <Field className="xl:col-span-2">
+                    <FieldLabel>{copy.scope.kpiPack}</FieldLabel>
+                    <Select
+                      items={[{ label: "Auto-detect", value: "auto" }, ...packItems]}
+                      value={pack}
+                      onValueChange={(value) => {
+                        if (value) setPack(value as KpiPack | "auto");
+                      }}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder={copy.scope.kpiPack} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          <SelectItem value="auto">{copy.scope.autoDetect}</SelectItem>
+                          {packItems.map((item) => (
+                            <SelectItem key={item.value} value={item.value}>
+                              {packLabel(item.value, language)}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                    <FieldDescription>{copy.scope.kpiHelp}</FieldDescription>
+                  </Field>
+                  <Field>
+                    <FieldLabel>{language === "vi" ? "Target CPA" : "Target CPA"}</FieldLabel>
+                    <Input type="number" min="0" step="0.01" inputMode="decimal" value={targetCpa} onChange={(event) => setTargetCpa(event.target.value)} placeholder="40" />
+                    <FieldDescription>{language === "vi" ? "Chặn scale nếu CPA vượt mục tiêu." : "Blocks scale when CPA is above target."}</FieldDescription>
+                  </Field>
+                  <Field>
+                    <FieldLabel>{language === "vi" ? "Target ROAS" : "Target ROAS"}</FieldLabel>
+                    <Input type="number" min="0" step="0.01" inputMode="decimal" value={targetRoas} onChange={(event) => setTargetRoas(event.target.value)} placeholder="2.5" />
+                    <FieldDescription>{language === "vi" ? "Chặn scale sales nếu ROAS dưới mục tiêu." : "Blocks sales scale when ROAS is below target."}</FieldDescription>
+                  </Field>
+                  <Field>
+                    <FieldLabel>{copy.scope.compare}</FieldLabel>
+                    <Select
+                      items={compareItems}
+                      value={compareMode}
+                      onValueChange={(value) => {
+                        if (value) setCompareMode(value as CompareMode);
+                      }}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          {compareItems.map((item) => (
+                            <SelectItem key={item.value} value={item.value}>
+                              {compareLabel(item.value, language)}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                  <Field className="justify-end">
+                    <FieldLabel className="sr-only">{copy.scope.pullData}</FieldLabel>
+                    <Button onClick={pullReport} disabled={!accountId || loading === "report" || loading === "accounts"} className="w-full">
+                      {loading === "report" ? <Spinner data-icon="inline-start" /> : <RefreshCcwIcon data-icon="inline-start" />}
+                      {copy.scope.pullReport}
+                    </Button>
+                  </Field>
+                </FieldGroup>
+              </CardContent>
+            </Card>
+          )}
 
           {loading === "report" ? <ReportSkeleton /> : null}
           {!report && loading !== "report" ? <EmptyState language={language} /> : null}
           {report ? (
             <>
+              <div ref={reportStartRef} className="scroll-mt-4" />
               <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
                 {report.kpis.map((kpi) => (
                   <Card key={kpi.label} size="sm">
@@ -1241,6 +1271,20 @@ export function DashboardShell() {
               </section>
             </>
           ) : null}
+          {activeView === "ads" && report && !verdict ? (
+            <div className="sticky bottom-4 z-10 flex justify-center" data-print-hidden>
+              <div className="flex w-full max-w-xl flex-col gap-3 rounded-xl border bg-background/95 p-3 shadow-lg backdrop-blur sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <div className="text-sm font-medium">{language === "vi" ? "Báo cáo đã sẵn sàng" : "Report is ready"}</div>
+                  <div className="text-xs text-muted-foreground">{language === "vi" ? "Bước tiếp theo: tạo Verdict để có khuyến nghị tối ưu." : "Next step: generate the Verdict for optimization recommendations."}</div>
+                </div>
+                <Button type="button" onClick={runAi} disabled={aiLoading.verdict} className="sm:shrink-0">
+                  {aiLoading.verdict ? <Spinner data-icon="inline-start" /> : <SparklesIcon data-icon="inline-start" />}
+                  {language === "vi" ? "Tạo Verdict" : "Generate Verdict"}
+                </Button>
+              </div>
+            </div>
+          ) : null}
             </>
           ) : (
             <CompetitorSpyPanel
@@ -1294,7 +1338,7 @@ function TokenScreen(props: {
   const copy = uiCopy[props.language].token;
   return (
     <main className="grid min-h-svh w-full place-items-center p-4">
-      <Card className="min-w-0 w-full max-w-sm sm:max-w-3xl">
+      <Card className="min-w-0 w-full max-w-md">
         <CardHeader>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="flex min-w-0 items-center gap-3">
