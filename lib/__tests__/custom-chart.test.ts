@@ -14,6 +14,7 @@ import {
   canAddSeries,
   defaultAxisFor,
   deserializeCharts,
+  formatAxisTick,
   getMetricCatalog,
   getPresets,
   metricFormat,
@@ -259,6 +260,30 @@ describe("buildChartConfig", () => {
     const s = normalizeSpec(spec({ series: [{ key: "leads", axis: "left" }, { key: "ctr", axis: "right" }] }));
     expect(axisFormatFor(s, "left")).toBe("number");
     expect(axisFormatFor(s, "right")).toBe("percent");
+  });
+});
+
+describe("formatAxisTick", () => {
+  it("renders large numbers compactly", () => {
+    expect(formatAxisTick(1_200_000, "number", "USD")).toBe("1.2M");
+    expect(formatAxisTick(12_500, "number", "USD")).toBe("12.5K");
+  });
+
+  it("suffixes percent and ratio", () => {
+    expect(formatAxisTick(12.5, "percent", "USD")).toBe("12.5%");
+    expect(formatAxisTick(3, "ratio", "USD")).toBe("3x");
+  });
+
+  it("formats currency compactly per locale", () => {
+    expect(formatAxisTick(1_200_000, "currency", "USD")).toContain("$");
+    expect(formatAxisTick(1_200_000, "currency", "USD")).toContain("1.2M");
+    expect(formatAxisTick(1_200_000, "currency", "VND")).toContain("Tr");
+  });
+
+  it("coerces zero and negative safely", () => {
+    expect(formatAxisTick(0, "number", "USD")).toBe("0");
+    expect(formatAxisTick(Number.NaN, "number", "USD")).toBe("0");
+    expect(formatAxisTick(-12_500, "number", "USD")).toBe("-12.5K");
   });
 });
 

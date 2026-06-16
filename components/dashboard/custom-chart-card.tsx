@@ -18,8 +18,10 @@ import { type ChartKey, formatChartValue } from "@/lib/chart-spec";
 import {
   type CustomAxis,
   type CustomChartSpec,
+  axisFormatFor,
   buildChartConfig,
   buildCustomChartData,
+  formatAxisTick,
   metricFormat,
   validateSpec,
 } from "@/lib/custom-chart";
@@ -74,9 +76,21 @@ export function CustomChartCard({
     if (!validation.ok) return <CustomChartEmpty message={copy.invalid} />;
     if (!data.length) return <CustomChartEmpty message={copy.noData} />;
 
-    const axes = usedAxes.map((axis) => (
-      <YAxis key={axis} yAxisId={axis} orientation={axis === "right" ? "right" : "left"} hide />
-    ));
+    const axes = usedAxes.map((axis) => {
+      const fmt = axisFormatFor(spec, axis);
+      return (
+        <YAxis
+          key={axis}
+          yAxisId={axis}
+          orientation={axis === "right" ? "right" : "left"}
+          tickLine={false}
+          axisLine={false}
+          width={48}
+          tickMargin={4}
+          tickFormatter={fmt ? (v) => formatAxisTick(Number(v), fmt, currency) : undefined}
+        />
+      );
+    });
     const grid = <CartesianGrid vertical={false} />;
     const xAxis = <XAxis dataKey="x" tickLine={false} axisLine={false} tickMargin={8} minTickGap={16} />;
     const tooltip = <ChartTooltip content={<ChartTooltipContent formatter={tooltipFormatter(currency)} />} />;
