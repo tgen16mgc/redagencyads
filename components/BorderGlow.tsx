@@ -18,6 +18,7 @@ interface BorderGlowProps {
   spin?: boolean;
   spinDuration?: number;
   showShadow?: boolean;
+  borderWidth?: number;
 }
 
 function parseHSL(hslStr: string): { h: number; s: number; l: number } {
@@ -91,6 +92,7 @@ const BorderGlow: React.FC<BorderGlowProps> = ({
   spin = false,
   spinDuration = 3000,
   showShadow = true,
+  borderWidth = 1,
 }) => {
   const cardRef = useRef<HTMLDivElement>(null);
   const [isHovered, setIsHovered] = useState(false);
@@ -211,7 +213,7 @@ const BorderGlow: React.FC<BorderGlowProps> = ({
       <div
         className="absolute inset-0 rounded-[inherit] -z-[1]"
         style={{
-          border: '1px solid transparent',
+          border: `${borderWidth}px solid transparent`,
           background: [
             `linear-gradient(${backgroundColor} 0 100%) padding-box`,
             'linear-gradient(rgb(255 255 255 / 0%) 0% 100%) border-box',
@@ -228,7 +230,7 @@ const BorderGlow: React.FC<BorderGlowProps> = ({
       <div
         className="absolute inset-0 rounded-[inherit] -z-[1]"
         style={{
-          border: '1px solid transparent',
+          border: `${borderWidth}px solid transparent`,
           background: fillBg.join(', '),
           maskImage: [
             'linear-gradient(to bottom, black, black)',

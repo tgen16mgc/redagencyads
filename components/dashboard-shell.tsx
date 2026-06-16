@@ -1341,9 +1341,12 @@ export function DashboardShell() {
                     spin
                     showShadow={false}
                     borderRadius={8}
-                    glowRadius={16}
-                    glowColor="0 0 100"
-                    colors={["#ffffff", "#e5e5e5", "#a3a3a3"]}
+                    borderWidth={2.5}
+                    coneSpread={18}
+                    glowRadius={22}
+                    glowIntensity={1.5}
+                    glowColor="245 90 65"
+                    colors={["#6366f1", "#a855f7", "#22d3ee"]}
                     backgroundColor="transparent"
                     className="sm:shrink-0"
                   >
@@ -2086,9 +2089,12 @@ function VerdictPanel({
                 spin
                 showShadow={false}
                 borderRadius={8}
-                glowRadius={16}
-                glowColor="0 0 100"
-                colors={["#ffffff", "#e5e5e5", "#a3a3a3"]}
+                borderWidth={2.5}
+                coneSpread={18}
+                glowRadius={22}
+                glowIntensity={1.5}
+                glowColor="245 90 65"
+                colors={["#6366f1", "#a855f7", "#22d3ee"]}
                 backgroundColor="transparent"
               >
                 <Button onClick={onGenerate} className="w-full">
