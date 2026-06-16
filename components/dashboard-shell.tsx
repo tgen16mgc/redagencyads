@@ -78,6 +78,7 @@ import { buildCompetitorSpyPrompt, buildInsightPrompt, comparisonDeltas, formatM
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import BorderGlow from "@/components/BorderGlow";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
@@ -1330,10 +1331,28 @@ export function DashboardShell() {
                   <div className="text-sm font-medium">{language === "vi" ? "Báo cáo đã sẵn sàng" : "Report is ready"}</div>
                   <div className="text-xs text-muted-foreground">{language === "vi" ? "Bước tiếp theo: tạo Verdict để có khuyến nghị tối ưu." : "Next step: generate the Verdict for optimization recommendations."}</div>
                 </div>
-                <Button type="button" onClick={runAi} disabled={aiLoading.verdict} className={`sm:shrink-0 ${aiLoading.verdict ? "" : "ra-verdict-glow"}`}>
-                  {aiLoading.verdict ? <Spinner data-icon="inline-start" /> : <SparklesIcon data-icon="inline-start" />}
-                  {language === "vi" ? "Tạo Verdict" : "Generate Verdict"}
-                </Button>
+                {aiLoading.verdict ? (
+                  <Button type="button" onClick={runAi} disabled className="sm:shrink-0">
+                    <Spinner data-icon="inline-start" />
+                    {language === "vi" ? "Tạo Verdict" : "Generate Verdict"}
+                  </Button>
+                ) : (
+                  <BorderGlow
+                    spin
+                    showShadow={false}
+                    borderRadius={8}
+                    glowRadius={16}
+                    glowColor="0 0 100"
+                    colors={["#ffffff", "#e5e5e5", "#a3a3a3"]}
+                    backgroundColor="transparent"
+                    className="sm:shrink-0"
+                  >
+                    <Button type="button" onClick={runAi} className="w-full">
+                      <SparklesIcon data-icon="inline-start" />
+                      {language === "vi" ? "Tạo Verdict" : "Generate Verdict"}
+                    </Button>
+                  </BorderGlow>
+                )}
               </div>
             </div>
           ) : null}
@@ -2062,10 +2081,27 @@ function VerdictPanel({
                 </SelectContent>
               </Select>
             </Field>
-            <Button onClick={onGenerate} disabled={loading} className={!verdict && !loading ? "ra-verdict-glow" : undefined}>
-              {loading ? <Spinner data-icon="inline-start" /> : <SparklesIcon data-icon="inline-start" />}
-              {copy.generate}
-            </Button>
+            {!verdict && !loading ? (
+              <BorderGlow
+                spin
+                showShadow={false}
+                borderRadius={8}
+                glowRadius={16}
+                glowColor="0 0 100"
+                colors={["#ffffff", "#e5e5e5", "#a3a3a3"]}
+                backgroundColor="transparent"
+              >
+                <Button onClick={onGenerate} className="w-full">
+                  <SparklesIcon data-icon="inline-start" />
+                  {copy.generate}
+                </Button>
+              </BorderGlow>
+            ) : (
+              <Button onClick={onGenerate} disabled={loading}>
+                {loading ? <Spinner data-icon="inline-start" /> : <SparklesIcon data-icon="inline-start" />}
+                {copy.generate}
+              </Button>
+            )}
             <Button type="button" variant="outline" onClick={onCopyPrompt}>
               <ClipboardIcon data-icon="inline-start" />
               {copiedPrompt ? copy.copied : copy.copyPrompt}

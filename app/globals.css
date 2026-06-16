@@ -132,18 +132,6 @@
   }
 }
 
-@property --ra-border-angle {
-  syntax: "<angle>";
-  inherits: false;
-  initial-value: 0deg;
-}
-
-@keyframes ra-border-spin {
-  to {
-    --ra-border-angle: 360deg;
-  }
-}
-
 @keyframes ra-step-pulse {
   0%, 100% {
     opacity: 1;
@@ -166,33 +154,6 @@
   }
 }
 
-/* Signature: orbiting light border for the primary Verdict action */
-.ra-verdict-glow {
-  position: relative;
-  isolation: isolate;
-}
-
-.ra-verdict-glow::before {
-  content: "";
-  position: absolute;
-  inset: -1.5px;
-  z-index: -1;
-  border-radius: inherit;
-  padding: 1.5px;
-  background: conic-gradient(
-    from var(--ra-border-angle),
-    transparent 0%,
-    transparent 60%,
-    color-mix(in oklch, var(--primary) 70%, white) 80%,
-    transparent 100%
-  );
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  animation: ra-border-spin 3s linear infinite;
-}
-
 .ra-step-active {
   animation: ra-step-pulse 1.4s ease-in-out infinite;
 }
@@ -202,14 +163,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ra-verdict-glow::before {
-    animation: none;
-    background: none;
-  }
-  .ra-verdict-glow {
-    outline: 1px solid color-mix(in oklch, var(--primary) 40%, transparent);
-    outline-offset: 1px;
-  }
   .ra-step-active {
     animation: none;
   }
