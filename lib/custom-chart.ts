@@ -373,6 +373,23 @@ export function axisFormatFor(spec: CustomChartSpec, axis: CustomAxis): ChartFor
   return match ? metricFormat(match.key) : undefined;
 }
 
+export function formatAxisTick(value: number, format: ChartFormat, currency: string): string {
+  const locale = currency === "VND" ? "vi-VN" : "en-US";
+  const safe = value || 0;
+  if (format === "currency") {
+    return new Intl.NumberFormat(locale, {
+      style: "currency",
+      currency,
+      notation: "compact",
+      maximumFractionDigits: 1,
+    }).format(safe);
+  }
+  const compact = new Intl.NumberFormat(locale, { notation: "compact", maximumFractionDigits: 1 }).format(safe);
+  if (format === "percent") return `${compact}%`;
+  if (format === "ratio") return `${compact}x`;
+  return compact;
+}
+
 export function serializeCharts(specs: CustomChartSpec[]): string {
   return JSON.stringify(specs);
 }
