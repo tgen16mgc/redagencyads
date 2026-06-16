@@ -178,8 +178,8 @@ const uiCopy = {
     header: {
       adsCrumb: "Meta Graph API",
       adsDetail: "campaign-first analysis",
-      competitorCrumb: "Ad library notes",
-      competitorDetail: "competitor intelligence",
+      competitorCrumb: "Public research",
+      competitorDetail: "no token required",
       adsTitle: "Ads analysis dashboard",
       competitorTitle: "Competitor spy",
       session: "HttpOnly token session",
@@ -327,8 +327,8 @@ const uiCopy = {
     header: {
       adsCrumb: "Meta Graph API",
       adsDetail: "phân tích theo campaign",
-      competitorCrumb: "Ghi chú ad library",
-      competitorDetail: "tình báo đối thủ",
+      competitorCrumb: "Nghiên cứu công khai",
+      competitorDetail: "không cần token",
       adsTitle: "Dashboard phân tích ads",
       competitorTitle: "Theo dõi đối thủ",
       session: "Session token HttpOnly",
@@ -951,7 +951,7 @@ export function DashboardShell() {
               <LanguageToggle language={language} onChange={setLanguage} />
               <Badge variant="secondary">
                 <ShieldCheckIcon />
-                {authenticated ? copy.header.session : activeView === "competitor" ? "No-token spy mode" : copy.header.session}
+                {authenticated ? copy.header.session : activeView === "competitor" ? (language === "vi" ? "Không cần token" : "No token needed") : copy.header.session}
               </Badge>
               {activeView === "ads" && report ? <Badge variant="outline">{copy.header.pulled} {new Date(report.pulledAt).toLocaleString()}</Badge> : null}
               {activeView === "ads" ? (
@@ -1197,7 +1197,7 @@ export function DashboardShell() {
                 />
               ) : null}
 
-              <section className="grid gap-4 xl:grid-cols-[1.4fr_0.9fr]">
+              <section className="grid gap-4 xl:grid-cols-[1.5fr_1fr]">
                 <Card>
                   <CardHeader>
                     <CardTitle>{copy.performance.title}</CardTitle>
@@ -1247,7 +1247,44 @@ export function DashboardShell() {
                   </CardContent>
                 </Card>
 
-                <div className="flex flex-col gap-4">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>{copy.performance.health}</CardTitle>
+                    <CardDescription>{copy.performance.healthDescription}</CardDescription>
+                  </CardHeader>
+                  <CardContent className="flex flex-col gap-3">
+                    <div className="flex items-end justify-between">
+                      <div className="text-4xl font-semibold tabular-nums">{report.health.score}/100</div>
+                      <Badge variant={report.health.score >= 75 ? "secondary" : "destructive"}>{copy.performance.grade} {report.health.grade}</Badge>
+                    </div>
+                    <Separator />
+                    <div className="flex flex-col gap-2">
+                      {report.health.checks.map((check) => (
+                        <div key={check.id} className={`rounded-lg border p-3 ${check.status === "fail" ? "border-destructive/30 bg-destructive/5" : "bg-muted/20"}`}>
+                          <div className="flex items-center justify-between gap-2">
+                            <div className={`text-sm font-medium ${check.status === "fail" ? "text-destructive" : ""}`}>{check.label}</div>
+                            <Badge variant={check.status === "fail" ? "destructive" : "secondary"}>{check.status}</Badge>
+                          </div>
+                          <p className="mt-1 text-xs text-muted-foreground">{check.detail}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              </section>
+
+              <section className="flex flex-col gap-3">
+                <div className="flex flex-col gap-1">
+                  <h2 className="font-heading text-lg font-semibold tracking-tight">
+                    {language === "vi" ? "Chẩn đoán tài khoản" : "Account diagnostics"}
+                  </h2>
+                  <p className="text-sm text-muted-foreground">
+                    {language === "vi"
+                      ? "Các kiểm tra ads-skill chuyên sâu. Mỗi thẻ là một góc nhìn độc lập về sức khỏe tài khoản."
+                      : "In-depth ads-skill checks. Each card is an independent lens on account health."}
+                  </p>
+                </div>
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                   <ExperimentReadinessCard report={report} language={language} />
                   <DecisionConfidenceCard report={report} language={language} targets={decisionTargets} />
                   <SpendPacingCard report={report} language={language} />
@@ -1262,30 +1299,6 @@ export function DashboardShell() {
                   <AudienceOverlapCard report={report} language={language} />
                   <TargetingExclusionsCard report={report} language={language} />
                   <MeasurementQualityCard report={report} language={language} />
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>{copy.performance.health}</CardTitle>
-                      <CardDescription>{copy.performance.healthDescription}</CardDescription>
-                    </CardHeader>
-                    <CardContent className="flex flex-col gap-3">
-                      <div className="flex items-end justify-between">
-                        <div className="text-4xl font-semibold">{report.health.score}/100</div>
-                        <Badge variant={report.health.score >= 75 ? "secondary" : "destructive"}>{copy.performance.grade} {report.health.grade}</Badge>
-                      </div>
-                      <Separator />
-                      <div className="flex flex-col gap-2">
-                        {report.health.checks.map((check) => (
-                          <div key={check.id} className={`rounded-lg border p-3 ${check.status === "fail" ? "border-destructive/30 bg-destructive/5" : "bg-muted/20"}`}>
-                            <div className="flex items-center justify-between gap-2">
-                              <div className={`text-sm font-medium ${check.status === "fail" ? "text-destructive" : ""}`}>{check.label}</div>
-                              <Badge variant={check.status === "fail" ? "destructive" : "secondary"}>{check.status}</Badge>
-                            </div>
-                            <p className="mt-1 text-xs text-muted-foreground">{check.detail}</p>
-                          </div>
-                        ))}
-                      </div>
-                    </CardContent>
-                  </Card>
                 </div>
               </section>
 
@@ -1385,37 +1398,68 @@ function TokenScreen(props: {
           <CardDescription className="break-words">{copy.storage}</CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={props.onSubmit} className="flex min-w-0 flex-col gap-4">
+          <div className="flex min-w-0 flex-col gap-4">
             {props.error ? (
               <Alert variant="destructive">
                 <AlertTitle>{copy.rejected}</AlertTitle>
                 <AlertDescription>{props.error}</AlertDescription>
               </Alert>
             ) : null}
-            <FieldGroup>
-              <Field>
-                <FieldLabel>{copy.field}</FieldLabel>
-                <Input
-                  value={props.token}
-                  onChange={(event) => props.onTokenChange(event.target.value)}
-                  type="password"
-                  autoComplete="off"
-                  placeholder={copy.placeholder}
-                  className="w-full"
-                  required
-                />
-                <FieldDescription className="break-words">{copy.help}</FieldDescription>
-              </Field>
-            </FieldGroup>
-            <Button type="submit" disabled={props.loading} className="w-full">
-              {props.loading ? <Spinner data-icon="inline-start" /> : <KeyRoundIcon data-icon="inline-start" />}
-              {copy.submit}
-            </Button>
-            <Button type="button" variant="outline" onClick={props.onUseCompetitor} className="w-full">
-              <SearchIcon data-icon="inline-start" />
-              {props.language === "vi" ? "Dùng competitor spy không cần token" : "Use competitor spy without token"}
-            </Button>
-          </form>
+
+            <button
+              type="button"
+              onClick={props.onUseCompetitor}
+              className="flex items-start gap-3 rounded-lg border border-primary/30 bg-primary/5 p-4 text-left transition-colors hover:bg-primary/10"
+            >
+              <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                <SearchIcon className="size-4.5" />
+              </span>
+              <span className="min-w-0">
+                <span className="block text-sm font-medium">
+                  {props.language === "vi" ? "Theo dõi đối thủ — không cần token" : "Competitor spy — no token needed"}
+                </span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">
+                  {props.language === "vi"
+                    ? "Phân tích quảng cáo public của đối thủ. Bắt đầu ngay, không cần kết nối tài khoản."
+                    : "Research competitors' public ads. Start now, no account connection required."}
+                </span>
+              </span>
+              <ChevronRightIcon className="mt-1 size-4 shrink-0 text-muted-foreground" />
+            </button>
+
+            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+              <Separator className="flex-1" />
+              {props.language === "vi" ? "hoặc kết nối tài khoản" : "or connect your account"}
+              <Separator className="flex-1" />
+            </div>
+
+            <form onSubmit={props.onSubmit} className="flex min-w-0 flex-col gap-4">
+              <FieldGroup>
+                <Field>
+                  <FieldLabel>{copy.field}</FieldLabel>
+                  <Input
+                    value={props.token}
+                    onChange={(event) => props.onTokenChange(event.target.value)}
+                    type="password"
+                    autoComplete="off"
+                    placeholder={copy.placeholder}
+                    className="w-full"
+                    required
+                  />
+                  <FieldDescription className="break-words">
+                    {props.language === "vi"
+                      ? "Token chỉ cần cho phân tích tài khoản ads của bạn (KPI, verdict, drilldown)."
+                      : "A token is only needed to analyze your own ad account (KPIs, verdict, drilldown)."}
+                  </FieldDescription>
+                </Field>
+              </FieldGroup>
+              <Button type="submit" variant="outline" disabled={props.loading} className="w-full">
+                {props.loading ? <Spinner data-icon="inline-start" /> : <KeyRoundIcon data-icon="inline-start" />}
+                {copy.submit}
+              </Button>
+              <FieldDescription className="break-words">{copy.help}</FieldDescription>
+            </form>
+          </div>
         </CardContent>
       </Card>
     </main>
@@ -2190,18 +2234,18 @@ function CompetitorSpyPanel({
             </CardDescription>
           </div>
           <div className="flex flex-wrap gap-2" data-print-hidden>
-            <Button type="button" variant="outline" onClick={onFetchAds} disabled={fetchLoading || !canFetch} aria-busy={fetchLoading}>
-              {fetchLoading ? <Spinner data-icon="inline-start" /> : <RefreshCcwIcon data-icon="inline-start" />}
-              {fetchLoading ? (isVietnamese ? "Đang lấy ads..." : "Fetching ads...") : isVietnamese ? "Lấy ads" : "Fetch ads"}
-            </Button>
             <Button type="button" onClick={onGenerate} disabled={loading || !canAnalyze} aria-busy={loading}>
               {loading ? <Spinner data-icon="inline-start" /> : <SearchIcon data-icon="inline-start" />}
-              {loading ? (isVietnamese ? "Đang phân tích sâu..." : "Deep scan running...") : isVietnamese ? "Phân tích đối thủ" : "Analyze competitors"}
+              {loading
+                ? isVietnamese ? "Đang phân tích sâu..." : "Deep scan running..."
+                : isVietnamese ? "Tìm & phân tích ads" : "Find and analyze ads"}
             </Button>
-            <Button type="button" variant="outline" onClick={onCopyPrompt} disabled={!canAnalyze}>
-              <ClipboardIcon data-icon="inline-start" />
-              {copiedPrompt ? verdictCopy.copied : spyCopy.copyPrompt}
-            </Button>
+            {result ? (
+              <Button type="button" variant="outline" onClick={onCopyPrompt} disabled={!canAnalyze}>
+                <ClipboardIcon data-icon="inline-start" />
+                {copiedPrompt ? verdictCopy.copied : spyCopy.copyPrompt}
+              </Button>
+            ) : null}
           </div>
         </div>
       </CardHeader>
@@ -2221,165 +2265,173 @@ function CompetitorSpyPanel({
               {isVietnamese ? "Nhập 1 đối thủ mỗi dòng hoặc ngăn cách bằng dấu phẩy." : "Enter one competitor per line or comma-separated."}
             </FieldDescription>
           </Field>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-1">
-            <Field>
-              <FieldLabel htmlFor={`${id}-market`}>{isVietnamese ? "Thị trường / offer" : "Market / offer"}</FieldLabel>
-              <Input
-                id={`${id}-market`}
-                value={market}
-                onChange={(event) => onMarketChange(event.target.value)}
-                placeholder={isVietnamese ? "VD: trị nám HCM, tư vấn qua inbox" : "Example: acne clinic leads, free consult"}
-                aria-describedby={`${id}-market-help`}
-              />
-              <FieldDescription id={`${id}-market-help`}>
-                {isVietnamese ? "Nêu ngành, địa bàn, offer chính hoặc funnel." : "Add category, geo, core offer, or funnel."}
-              </FieldDescription>
-            </Field>
-            <Field>
-              <FieldLabel id={`${id}-platform-label`}>{isVietnamese ? "Nền tảng" : "Platform"}</FieldLabel>
-              <Select
-                items={competitorPlatformItems}
-                value={platform}
-                onValueChange={(value) => {
-                  if (value) onPlatformChange(value as CompetitorPlatform);
-                }}
-              >
-                <SelectTrigger className="w-full" aria-labelledby={`${id}-platform-label`} aria-describedby={`${id}-platform-help`}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {competitorPlatformItems.map((item) => (
-                      <SelectItem key={item.value} value={item.value}>
-                        {item.label}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-              <FieldDescription id={`${id}-platform-help`}>
-                {isVietnamese ? "Chọn nền tảng muốn phân tích." : "Choose the platform to analyze."}
-              </FieldDescription>
-            </Field>
-          </div>
-          <Separator />
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-1">
-            <Field>
-              <FieldLabel id={`${id}-source-label`}>{isVietnamese ? "Công cụ lấy ads" : "Ads spy tool"}</FieldLabel>
-              <Select
-                items={competitorFetchItems}
-                value={fetchSource}
-                onValueChange={(value) => {
-                  if (value) onFetchSourceChange(value as CompetitorFetchSource);
-                }}
-              >
-                <SelectTrigger className="w-full" aria-labelledby={`${id}-source-label`} aria-describedby={`${id}-source-help`}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {competitorFetchItems.map((item) => (
-                      <SelectItem key={item.value} value={item.value}>
-                        {item.label}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-              <FieldDescription id={`${id}-source-help`}>
-                {isVietnamese
-                  ? "Public scrape chạy không cần key, thử Chrome local rồi giữ link dự phòng. Apify/API chỉ dùng khi đã cấu hình token."
-                  : "Public scrape works without keys, tries local Chrome, then keeps links as fallback. Use Apify/API only after tokens are configured."}
-              </FieldDescription>
-            </Field>
-            <Field>
-              <FieldLabel htmlFor={`${id}-country`}>{isVietnamese ? "Quốc gia" : "Country"}</FieldLabel>
-              <Input
-                id={`${id}-country`}
-                value={country}
-              onChange={(event) => onCountryChange(event.target.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 2))}
-              placeholder="VN"
-              aria-describedby={`${id}-country-help`}
-            />
-              <FieldDescription id={`${id}-country-help`}>
-                {isVietnamese ? "Mã 2 chữ cái. VD: VN, US, SG." : "Two-letter code. Example: VN, US, SG."}
-              </FieldDescription>
-            </Field>
-            <Field>
-              <FieldLabel htmlFor={`${id}-limit`}>{isVietnamese ? "Số ads tối đa" : "Max ads"}</FieldLabel>
-              <Input
-                id={`${id}-limit`}
-                type="number"
-                min={1}
-                max={80}
-                value={limit}
-                onChange={(event) => onLimitChange(normalizeCompetitorLimit(Number(event.target.value)))}
-                aria-describedby={`${id}-limit-help`}
-              />
-              <FieldDescription id={`${id}-limit-help`}>
-                {isVietnamese ? "Khuyên dùng 20-40 để không timeout." : "Use 20-40 to avoid timeout."}
-              </FieldDescription>
-            </Field>
-          </div>
           <Field>
-            <FieldLabel htmlFor={`${id}-urls`}>{isVietnamese ? "Meta Ad Library URLs" : "Meta Ad Library URLs"}</FieldLabel>
-            <Textarea
-              id={`${id}-urls`}
-              value={libraryUrls}
-              onChange={(event) => onLibraryUrlsChange(event.target.value)}
-              placeholder="https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=VN&view_all_page_id=..."
-              className="min-h-20 resize-none"
-              aria-describedby={`${id}-urls-help`}
+            <FieldLabel htmlFor={`${id}-market`}>{isVietnamese ? "Thị trường / offer" : "Market / offer"}</FieldLabel>
+            <Input
+              id={`${id}-market`}
+              value={market}
+              onChange={(event) => onMarketChange(event.target.value)}
+              placeholder={isVietnamese ? "VD: trị nám HCM, tư vấn qua inbox" : "Example: acne clinic leads, free consult"}
+              aria-describedby={`${id}-market-help`}
             />
-            <FieldDescription id={`${id}-urls-help`}>
-              {isVietnamese ? "Tùy chọn. Paste URL page/search từ Meta Ad Library, mỗi dòng 1 URL." : "Optional. Paste page/search URLs from Meta Ad Library, one per line."}
+            <FieldDescription id={`${id}-market-help`}>
+              {isVietnamese ? "Tùy chọn. Nêu ngành, địa bàn, offer chính hoặc funnel." : "Optional. Add category, geo, core offer, or funnel."}
             </FieldDescription>
           </Field>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-1">
-            <Field>
-              <FieldLabel id={`${id}-provider-label`}>{verdictCopy.provider}</FieldLabel>
-              <Select
-                items={providerItems}
-                value={provider}
-                onValueChange={(value) => {
-                  if (value) onProviderChange(value as Provider);
-                }}
-              >
-                <SelectTrigger className="w-full" aria-labelledby={`${id}-provider-label`}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {providerItems.map((item) => (
-                      <SelectItem key={item.value} value={item.value}>
-                        {providerLabel(item.value, language)}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </Field>
-          </div>
-          <Field>
-            <FieldLabel htmlFor={`${id}-notes`}>{isVietnamese ? "Ghi chú ads library" : "Ad-library notes"}</FieldLabel>
-            <Textarea
-              id={`${id}-notes`}
-              value={notes}
-              onChange={(event) => onNotesChange(event.target.value)}
-              placeholder={
-                isVietnamese
-                  ? "VD: Kangnam - video before/after, CTA Nhắn tin, offer soi da miễn phí, hook trị nám 7 ngày..."
-                  : "Example: Competitor A - UGC video, Send Message CTA, free audit offer, proof-led hook..."
-              }
-              className="min-h-28 resize-none"
-              aria-describedby={`${id}-notes-help`}
-            />
-            <FieldDescription id={`${id}-notes-help`}>
-              {isVietnamese
-                ? "Paste copy, CTA, format, offer, link. Có dữ liệu thật -> confidence cao hơn. Vercel Hobby tối đa khoảng 5 phút."
-                : "Paste copy, CTA, format, offer, link. Real data -> higher confidence. Vercel Hobby max roughly 5 minutes."}
-            </FieldDescription>
-          </Field>
+
+          <details className="group/adv rounded-lg border bg-background p-3">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-sm font-medium">
+              <span>{isVietnamese ? "Tùy chọn nâng cao" : "Advanced options"}</span>
+              <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground transition-transform group-open/adv:rotate-180" />
+            </summary>
+            <div className="mt-3 flex flex-col gap-3">
+              <Field>
+                <FieldLabel id={`${id}-platform-label`}>{isVietnamese ? "Nền tảng" : "Platform"}</FieldLabel>
+                <Select
+                  items={competitorPlatformItems}
+                  value={platform}
+                  onValueChange={(value) => {
+                    if (value) onPlatformChange(value as CompetitorPlatform);
+                  }}
+                >
+                  <SelectTrigger className="w-full" aria-labelledby={`${id}-platform-label`} aria-describedby={`${id}-platform-help`}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {competitorPlatformItems.map((item) => (
+                        <SelectItem key={item.value} value={item.value}>
+                          {item.label}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+                <FieldDescription id={`${id}-platform-help`}>
+                  {isVietnamese ? "Chọn nền tảng muốn phân tích." : "Choose the platform to analyze."}
+                </FieldDescription>
+              </Field>
+              <Field>
+                <FieldLabel id={`${id}-source-label`}>{isVietnamese ? "Công cụ lấy ads" : "Ads spy tool"}</FieldLabel>
+                <Select
+                  items={competitorFetchItems}
+                  value={fetchSource}
+                  onValueChange={(value) => {
+                    if (value) onFetchSourceChange(value as CompetitorFetchSource);
+                  }}
+                >
+                  <SelectTrigger className="w-full" aria-labelledby={`${id}-source-label`} aria-describedby={`${id}-source-help`}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {competitorFetchItems.map((item) => (
+                        <SelectItem key={item.value} value={item.value}>
+                          {item.label}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+                <FieldDescription id={`${id}-source-help`}>
+                  {isVietnamese
+                    ? "Public scrape chạy không cần key, thử Chrome local rồi giữ link dự phòng. Apify/API chỉ dùng khi đã cấu hình token."
+                    : "Public scrape works without keys, tries local Chrome, then keeps links as fallback. Use Apify/API only after tokens are configured."}
+                </FieldDescription>
+              </Field>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field>
+                  <FieldLabel htmlFor={`${id}-country`}>{isVietnamese ? "Quốc gia" : "Country"}</FieldLabel>
+                  <Input
+                    id={`${id}-country`}
+                    value={country}
+                    onChange={(event) => onCountryChange(event.target.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 2))}
+                    placeholder="VN"
+                    aria-describedby={`${id}-country-help`}
+                  />
+                  <FieldDescription id={`${id}-country-help`}>
+                    {isVietnamese ? "Mã 2 chữ cái. VD: VN, US, SG." : "Two-letter code. Example: VN, US, SG."}
+                  </FieldDescription>
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor={`${id}-limit`}>{isVietnamese ? "Số ads tối đa" : "Max ads"}</FieldLabel>
+                  <Input
+                    id={`${id}-limit`}
+                    type="number"
+                    min={1}
+                    max={80}
+                    value={limit}
+                    onChange={(event) => onLimitChange(normalizeCompetitorLimit(Number(event.target.value)))}
+                    aria-describedby={`${id}-limit-help`}
+                  />
+                  <FieldDescription id={`${id}-limit-help`}>
+                    {isVietnamese ? "Khuyên dùng 20-40 để không timeout." : "Use 20-40 to avoid timeout."}
+                  </FieldDescription>
+                </Field>
+              </div>
+              <Field>
+                <FieldLabel htmlFor={`${id}-urls`}>{isVietnamese ? "Meta Ad Library URLs" : "Meta Ad Library URLs"}</FieldLabel>
+                <Textarea
+                  id={`${id}-urls`}
+                  value={libraryUrls}
+                  onChange={(event) => onLibraryUrlsChange(event.target.value)}
+                  placeholder="https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=VN&view_all_page_id=..."
+                  className="min-h-20 resize-none"
+                  aria-describedby={`${id}-urls-help`}
+                />
+                <FieldDescription id={`${id}-urls-help`}>
+                  {isVietnamese ? "Paste URL page/search từ Meta Ad Library khi scrape lỗi, mỗi dòng 1 URL." : "Paste page/search URLs from Meta Ad Library as a fallback when scraping fails, one per line."}
+                </FieldDescription>
+              </Field>
+              <Field>
+                <FieldLabel id={`${id}-provider-label`}>{verdictCopy.provider}</FieldLabel>
+                <Select
+                  items={providerItems}
+                  value={provider}
+                  onValueChange={(value) => {
+                    if (value) onProviderChange(value as Provider);
+                  }}
+                >
+                  <SelectTrigger className="w-full" aria-labelledby={`${id}-provider-label`}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {providerItems.map((item) => (
+                        <SelectItem key={item.value} value={item.value}>
+                          {providerLabel(item.value, language)}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field>
+                <FieldLabel htmlFor={`${id}-notes`}>{isVietnamese ? "Ghi chú ads library" : "Ad-library notes"}</FieldLabel>
+                <Textarea
+                  id={`${id}-notes`}
+                  value={notes}
+                  onChange={(event) => onNotesChange(event.target.value)}
+                  placeholder={
+                    isVietnamese
+                      ? "VD: Kangnam - video before/after, CTA Nhắn tin, offer soi da miễn phí, hook trị nám 7 ngày..."
+                      : "Example: Competitor A - UGC video, Send Message CTA, free audit offer, proof-led hook..."
+                  }
+                  className="min-h-28 resize-none"
+                  aria-describedby={`${id}-notes-help`}
+                />
+                <FieldDescription id={`${id}-notes-help`}>
+                  {isVietnamese
+                    ? "Paste copy, CTA, format, offer, link. Có dữ liệu thật -> confidence cao hơn. Vercel Hobby tối đa khoảng 5 phút."
+                    : "Paste copy, CTA, format, offer, link. Real data -> higher confidence. Vercel Hobby max roughly 5 minutes."}
+                </FieldDescription>
+              </Field>
+              <Button type="button" variant="outline" size="sm" onClick={onFetchAds} disabled={fetchLoading || !canFetch} aria-busy={fetchLoading} className="w-full">
+                {fetchLoading ? <Spinner data-icon="inline-start" /> : <RefreshCcwIcon data-icon="inline-start" />}
+                {fetchLoading ? (isVietnamese ? "Đang lấy ads..." : "Fetching ads...") : isVietnamese ? "Chỉ lấy ads (không phân tích)" : "Fetch ads only (no analysis)"}
+              </Button>
+            </div>
+          </details>
         </div>
 
         {result ? (
