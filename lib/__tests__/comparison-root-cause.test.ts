@@ -109,6 +109,29 @@ describe("analyzeComparisonRootCauses", () => {
     expect(analysis.drivers[0].evidence).toContain("CPL down 50%");
   });
 
+  it("uses CPC as the traffic-pack efficiency metric for negative drivers", () => {
+    const current = report({
+      selectedPack: "traffic",
+      detectedPack: "traffic",
+      campaignRows: [row({ id: "campaign-1", name: "Traffic", spend: 200, linkClicks: 100, cpc: 2, ctr: 0.7, frequency: 3.4 })],
+    });
+    const previous = report({
+      selectedPack: "traffic",
+      detectedPack: "traffic",
+      campaignRows: [row({ id: "campaign-1", name: "Traffic", spend: 100, linkClicks: 120, cpc: 0.8, ctr: 1.4, frequency: 2 })],
+    });
+
+    const analysis = analyzeComparisonRootCauses(current, previous);
+
+    expect(analysis.status).toBe("drivers_found");
+    expect(analysis.drivers[0]).toMatchObject({
+      rowId: "campaign-1",
+      direction: "negative",
+      primaryMetric: "cpc",
+    });
+    expect(analysis.drivers[0].evidence).toContain("CPC up 150%");
+  });
+
   it("ignores matched rows when movement is too small to explain", () => {
     const current = report({ campaignRows: [row({ id: "campaign-1", spend: 110, leads: 11, cpl: 10 })] });
     const previous = report({ campaignRows: [row({ id: "campaign-1", spend: 100, leads: 10, cpl: 10 })] });

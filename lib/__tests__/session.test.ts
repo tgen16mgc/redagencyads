@@ -35,4 +35,25 @@ describe("encrypted token sessions", () => {
 
     expect(decryptSession(encrypted)).toBeNull();
   });
+
+  it("returns null for a malformed cookie instead of throwing", () => {
+    expect(decryptSession("not-a-real-cookie")).toBeNull();
+    expect(decryptSession("")).toBeNull();
+  });
+
+  it("returns null for a tampered auth tag instead of throwing", () => {
+    const encrypted = encryptSession("meta-token-123");
+    const raw = Buffer.from(encrypted, "base64url");
+    raw[13] ^= 0xff;
+    const tampered = raw.toString("base64url");
+
+    expect(decryptSession(tampered)).toBeNull();
+  });
+
+  it("returns null when the secret has rotated since the cookie was issued", () => {
+    const encrypted = encryptSession("meta-token-123");
+    process.env.SESSION_SECRET = "rotated-secret";
+
+    expect(decryptSession(encrypted)).toBeNull();
+  });
 });

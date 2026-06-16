@@ -97,4 +97,21 @@ describe("assessFunnelLeakage", () => {
     expect(result.variant).toBe("outline");
     expect(result.summary.vi.toLowerCase()).toContain("tối thiểu");
   });
+
+  it("treats a non-commerce campaign with clicks but no funnel events as insufficient data", () => {
+    const result = assessFunnelLeakage(
+      row({
+        spend: 500,
+        linkClicks: 800,
+        addToCart: 0,
+        initiateCheckout: 0,
+        purchases: 0,
+      }),
+    );
+
+    expect(result.status).toBe("insufficient_data");
+    expect(result.variant).toBe("outline");
+    expect(result.blockers.en).toHaveLength(0);
+    expect(result.summary.en).toContain("does not apply");
+  });
 });

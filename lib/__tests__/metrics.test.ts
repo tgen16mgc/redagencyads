@@ -77,6 +77,85 @@ describe("normalizeRows", () => {
   });
 });
 
+describe("normalizeRows edge cases", () => {
+  it("recognizes alternate messaging action types and computes reply/lead rates", () => {
+    const rows: InsightRow[] = [
+      {
+        campaign_id: "c1",
+        campaign_name: "Inbox",
+        spend: "50",
+        actions: [
+          { action_type: "messaging_conversation_started_7d", value: "20" },
+          { action_type: "onsite_conversion.messaging_conversation_replied_7d", value: "5" },
+          { action_type: "lead", value: "2" },
+        ],
+      },
+    ];
+
+    const row = normalizeRows(rows, "campaign")[0];
+    expect(row.messages).toBe(20);
+    expect(row.replies).toBe(5);
+    expect(row.replyRate).toBeCloseTo((5 / 20) * 100);
+    expect(row.leadRate).toBeCloseTo((2 / 20) * 100);
+  });
+
+  it("derives per-action costs by dividing spend when cost_per_action_type is absent", () => {
+    const rows: InsightRow[] = [
+      {
+        campaign_id: "c1",
+        campaign_name: "No cost map",
+        spend: "100",
+        actions: [
+          { action_type: "onsite_conversion.total_messaging_connection", value: "10" },
+          { action_type: "lead", value: "5" },
+          { action_type: "purchase", value: "4" },
+        ],
+      },
+    ];
+
+    const row = normalizeRows(rows, "campaign")[0];
+    expect(row.costPerMessage).toBeCloseTo(100 / 10);
+    expect(row.cpl).toBeCloseTo(100 / 5);
+    expect(row.cpaPurchase).toBeCloseTo(100 / 4);
+  });
+
+  it("falls back to the link_click action when inline_link_clicks is missing", () => {
+    const rows: InsightRow[] = [
+      {
+        campaign_id: "c1",
+        campaign_name: "Traffic",
+        spend: "10",
+        actions: [{ action_type: "link_click", value: "42" }],
+      },
+    ];
+
+    expect(normalizeRows(rows, "campaign")[0].linkClicks).toBe(42);
+  });
+
+  it("uses website_purchase_roas when purchase_roas is absent", () => {
+    const rows: InsightRow[] = [
+      {
+        campaign_id: "c1",
+        campaign_name: "Catalog",
+        spend: "200",
+        website_purchase_roas: [{ action_type: "offsite_conversion.purchase", value: "3.4" }],
+      },
+    ];
+
+    expect(normalizeRows(rows, "campaign")[0].roas).toBeCloseTo(3.4);
+  });
+
+  it("zero-fills metrics for an empty row and synthesizes an id from level and index", () => {
+    const row = normalizeRows([{}], "ad")[0];
+    expect(row.id).toBe("ad-0");
+    expect(row.name).toBe("Account total");
+    expect(row.spend).toBe(0);
+    expect(row.messages).toBe(0);
+    expect(row.roas).toBe(0);
+    expect(row.costPerMessage).toBe(0);
+  });
+});
+
 describe("sumRows", () => {
   it("aggregates frequency from total impressions and reach", () => {
     const total = sumRows([

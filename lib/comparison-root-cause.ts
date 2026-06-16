@@ -2,7 +2,7 @@ import type { DashboardReport, NormalizedRow } from "@/lib/types";
 
 export type ComparisonRootCauseStatus = "drivers_found" | "no_clear_driver" | "insufficient_data";
 export type ComparisonRootCauseDirection = "positive" | "negative";
-export type ComparisonRootCauseMetric = "leads" | "messages" | "purchases" | "linkClicks" | "cpl" | "costPerMessage" | "cpaPurchase" | "roas";
+export type ComparisonRootCauseMetric = "leads" | "messages" | "purchases" | "linkClicks" | "cpl" | "cpc" | "costPerMessage" | "cpaPurchase" | "roas";
 
 export type ComparisonRootCauseDriver = {
   rowId: string;
@@ -39,6 +39,7 @@ function formatPct(value: number) {
 
 function labelMetric(metric: MetricChange["metric"]) {
   if (metric === "cpl") return "CPL";
+  if (metric === "cpc") return "CPC";
   if (metric === "costPerMessage") return "Cost/message";
   if (metric === "cpaPurchase") return "CPA purchase";
   if (metric === "roas") return "ROAS";
@@ -61,7 +62,7 @@ function resultMetric(pack: DashboardReport["selectedPack"]): ComparisonRootCaus
 function efficiencyMetric(pack: DashboardReport["selectedPack"]): ComparisonRootCauseMetric {
   if (pack === "messages") return "costPerMessage";
   if (pack === "sales_roas") return "roas";
-  if (pack === "traffic") return "cpl";
+  if (pack === "traffic") return "cpc";
   return "cpl";
 }
 

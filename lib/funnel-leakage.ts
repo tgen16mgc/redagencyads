@@ -43,6 +43,21 @@ export function assessFunnelLeakage(totals: NormalizedRow): FunnelLeakage {
     };
   }
 
+  if (carts <= 0 && checkouts <= 0 && purchases <= 0) {
+    return {
+      status: "insufficient_data",
+      variant: "outline",
+      score: 100,
+      label: labels.insufficient_data,
+      summary: {
+        en: "No add-to-cart, checkout, or purchase events in scope; e-commerce funnel analysis does not apply to this campaign type.",
+        vi: "Không có sự kiện thêm giỏ hàng, checkout hay mua hàng; phân tích phễu e-commerce không áp dụng cho loại campaign này.",
+      },
+      blockers: { en: [], vi: [] },
+      rates: { clickToCart: 0, cartToCheckout: 0, checkoutToPurchase: 0 },
+    };
+  }
+
   const clickToCart = clicks > 0 ? carts / clicks : 0;
   const cartToCheckout = carts > 0 ? checkouts / carts : 0;
   const checkoutToPurchase = checkouts > 0 ? purchases / checkouts : 0;

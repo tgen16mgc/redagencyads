@@ -3,6 +3,7 @@ import {
   errorMessage,
   hasNineRouterCredentials,
   nineRouterCompletion,
+  parseJsonObject,
   promptInputJson,
 } from "@/lib/ai/transport";
 
@@ -70,7 +71,7 @@ function competitorFallback(prompt: string): CompetitorSpyResult {
 
 function parseCompetitorSpy(text: string, provider: CompetitorSpyResult["provider"]): CompetitorSpyResult {
   try {
-    return { ...JSON.parse(text), provider } as CompetitorSpyResult;
+    return { ...parseJsonObject(text), provider } as CompetitorSpyResult;
   } catch {
     return {
       provider,

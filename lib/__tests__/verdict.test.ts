@@ -180,6 +180,29 @@ describe("buildLocalVerdict", () => {
     expect(verdict.verdict).toContain("Tài khoản Test Account");
     expect(verdict.assumptions.join(" ")).toContain("không gọi nhà cung cấp AI");
   });
+
+  it("never emits winners, losers, or scaling moves for the non-scalable awareness pack", () => {
+    const verdict = buildLocalVerdict(report({ selectedPack: "awareness" }), "en");
+
+    expect(verdict.winners).toHaveLength(0);
+    expect(verdict.losers).toHaveLength(0);
+    expect(verdict.budget_moves.join(" ")).toContain("Hold budget");
+    expect(verdict.budget_moves.join(" ")).not.toMatch(/increas/i);
+  });
+
+  it("ranks the traffic pack on CPC against link clicks", () => {
+    const verdict = buildLocalVerdict(report({ selectedPack: "traffic" }), "en");
+
+    expect(verdict.winners.join(" ")).toContain("Message Winner");
+    expect(verdict.winners.join(" ")).toContain("link clicks");
+    expect(verdict.winners.join(" ")).toContain("CPC");
+    expect(verdict.losers.join(" ")).toContain("Message Loser");
+  });
+
+  it("only reports high confidence when spend, primary results, a winner/loser, and health checks all exist", () => {
+    expect(buildLocalVerdict(report(), "en").confidence).toBe("high");
+    expect(buildLocalVerdict(noSpendReport(), "en").confidence).toBe("low");
+  });
 });
 
 describe("generateVerdict", () => {

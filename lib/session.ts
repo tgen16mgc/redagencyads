@@ -27,16 +27,20 @@ export function encryptSession(token: string) {
 }
 
 export function decryptSession(value: string) {
-  const raw = Buffer.from(value, "base64url");
-  const iv = raw.subarray(0, 12);
-  const tag = raw.subarray(12, 28);
-  const encrypted = raw.subarray(28);
-  const decipher = crypto.createDecipheriv("aes-256-gcm", getKey(), iv);
-  decipher.setAuthTag(tag);
-  const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]).toString("utf8");
-  const payload = JSON.parse(decrypted) as SessionPayload;
-  if (Date.now() - payload.issuedAt > COOKIE_MAX_AGE_SECONDS * 1000) return null;
-  return payload;
+  try {
+    const raw = Buffer.from(value, "base64url");
+    const iv = raw.subarray(0, 12);
+    const tag = raw.subarray(12, 28);
+    const encrypted = raw.subarray(28);
+    const decipher = crypto.createDecipheriv("aes-256-gcm", getKey(), iv);
+    decipher.setAuthTag(tag);
+    const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]).toString("utf8");
+    const payload = JSON.parse(decrypted) as SessionPayload;
+    if (Date.now() - payload.issuedAt > COOKIE_MAX_AGE_SECONDS * 1000) return null;
+    return payload;
+  } catch {
+    return null;
+  }
 }
 
 export async function setTokenCookie(token: string) {
