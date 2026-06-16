@@ -973,7 +973,7 @@ export function DashboardShell() {
           {activeView === "ads" ? (
             <>
           {report && !scopeExpanded ? (
-            <Card>
+            <Card className="ra-fade-up">
               <CardContent className="flex flex-col gap-3 py-4 md:flex-row md:items-center md:justify-between">
                 <div className="min-w-0">
                   <div className="text-sm font-medium">{accounts.find((account) => account.id === accountId)?.name || copy.scope.account}</div>
@@ -996,7 +996,7 @@ export function DashboardShell() {
               </CardContent>
             </Card>
           ) : (
-            <Card>
+            <Card className="ra-fade-up">
               <CardHeader>
                 <CardTitle>{copy.scope.title}</CardTitle>
                 <CardDescription>{copy.scope.description}</CardDescription>
@@ -1067,16 +1067,23 @@ export function DashboardShell() {
                     </Select>
                     <FieldDescription>{copy.scope.kpiHelp}</FieldDescription>
                   </Field>
-                  <Field>
-                    <FieldLabel>{language === "vi" ? "Target CPA" : "Target CPA"}</FieldLabel>
-                    <Input type="number" min="0" step="0.01" inputMode="decimal" value={targetCpa} onChange={(event) => setTargetCpa(event.target.value)} placeholder="40" />
-                    <FieldDescription>{language === "vi" ? "Chặn scale nếu CPA vượt mục tiêu." : "Blocks scale when CPA is above target."}</FieldDescription>
-                  </Field>
-                  <Field>
-                    <FieldLabel>{language === "vi" ? "Target ROAS" : "Target ROAS"}</FieldLabel>
-                    <Input type="number" min="0" step="0.01" inputMode="decimal" value={targetRoas} onChange={(event) => setTargetRoas(event.target.value)} placeholder="2.5" />
-                    <FieldDescription>{language === "vi" ? "Chặn scale sales nếu ROAS dưới mục tiêu." : "Blocks sales scale when ROAS is below target."}</FieldDescription>
-                  </Field>
+                  <div className="rounded-lg border border-dashed bg-muted/15 p-3 md:col-span-2 xl:col-span-2">
+                    <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      {language === "vi" ? "Mục tiêu (tùy chọn)" : "Targets (optional)"}
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Field>
+                        <FieldLabel>{language === "vi" ? "Target CPA" : "Target CPA"}</FieldLabel>
+                        <Input type="number" min="0" step="0.01" inputMode="decimal" value={targetCpa} onChange={(event) => setTargetCpa(event.target.value)} placeholder="40" />
+                        <FieldDescription>{language === "vi" ? "Chặn scale nếu CPA vượt mục tiêu." : "Blocks scale when CPA is above target."}</FieldDescription>
+                      </Field>
+                      <Field>
+                        <FieldLabel>{language === "vi" ? "Target ROAS" : "Target ROAS"}</FieldLabel>
+                        <Input type="number" min="0" step="0.01" inputMode="decimal" value={targetRoas} onChange={(event) => setTargetRoas(event.target.value)} placeholder="2.5" />
+                        <FieldDescription>{language === "vi" ? "Chặn scale sales nếu ROAS dưới mục tiêu." : "Blocks sales scale when ROAS is below target."}</FieldDescription>
+                      </Field>
+                    </div>
+                  </div>
                   <Field>
                     <FieldLabel>{copy.scope.compare}</FieldLabel>
                     <Select
@@ -1131,8 +1138,7 @@ export function DashboardShell() {
           {loading === "report" ? <ReportSkeleton language={language} /> : null}
           {!report && loading !== "report" ? <EmptyState language={language} /> : null}
           {report ? (
-            <>
-              <div ref={reportStartRef} className="scroll-mt-4" />
+            <div ref={reportStartRef} className="ra-fade-up flex flex-col gap-4 scroll-mt-4">
               <Card className="border-primary/20">
                 <CardContent className="flex flex-col gap-3 py-4 md:flex-row md:items-center md:justify-between">
                   <div>
@@ -1143,10 +1149,11 @@ export function DashboardShell() {
                         : language === "vi" ? "Tạo Verdict để nhận khuyến nghị tối ưu ngân sách, creative và test tiếp theo." : "Generate a Verdict for budget, creative, and next-test recommendations."}
                     </div>
                   </div>
-                  <Button type="button" onClick={runAi} disabled={aiLoading.verdict || Boolean(verdict)} className="md:shrink-0">
-                    {aiLoading.verdict ? <Spinner data-icon="inline-start" /> : <SparklesIcon data-icon="inline-start" />}
-                    {verdict ? (language === "vi" ? "Đã có Verdict" : "Verdict ready") : language === "vi" ? "Tạo Verdict" : "Generate Verdict"}
-                  </Button>
+                  <Badge variant={verdict ? "secondary" : "outline"} className="md:shrink-0">
+                    {verdict
+                      ? <><CheckIcon data-icon="inline-start" />{language === "vi" ? "Verdict đã tạo" : "Verdict ready"}</>
+                      : <><SparklesIcon data-icon="inline-start" />{language === "vi" ? "Sẵn sàng tạo Verdict" : "Ready for Verdict"}</>}
+                  </Badge>
                 </CardContent>
               </Card>
               <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
@@ -1314,7 +1321,7 @@ export function DashboardShell() {
                   </CardContent>
                 </Card>
               </section>
-            </>
+            </div>
           ) : null}
           {activeView === "ads" && report && !verdict ? (
             <div className="sticky bottom-4 z-10 flex justify-center" data-print-hidden>
@@ -1323,7 +1330,7 @@ export function DashboardShell() {
                   <div className="text-sm font-medium">{language === "vi" ? "Báo cáo đã sẵn sàng" : "Report is ready"}</div>
                   <div className="text-xs text-muted-foreground">{language === "vi" ? "Bước tiếp theo: tạo Verdict để có khuyến nghị tối ưu." : "Next step: generate the Verdict for optimization recommendations."}</div>
                 </div>
-                <Button type="button" onClick={runAi} disabled={aiLoading.verdict} className="sm:shrink-0">
+                <Button type="button" onClick={runAi} disabled={aiLoading.verdict} className={`sm:shrink-0 ${aiLoading.verdict ? "" : "ra-verdict-glow"}`}>
                   {aiLoading.verdict ? <Spinner data-icon="inline-start" /> : <SparklesIcon data-icon="inline-start" />}
                   {language === "vi" ? "Tạo Verdict" : "Generate Verdict"}
                 </Button>
@@ -1406,33 +1413,6 @@ function TokenScreen(props: {
               </Alert>
             ) : null}
 
-            <button
-              type="button"
-              onClick={props.onUseCompetitor}
-              className="flex items-start gap-3 rounded-lg border border-primary/30 bg-primary/5 p-4 text-left transition-colors hover:bg-primary/10"
-            >
-              <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-                <SearchIcon className="size-4.5" />
-              </span>
-              <span className="min-w-0">
-                <span className="block text-sm font-medium">
-                  {props.language === "vi" ? "Theo dõi đối thủ — không cần token" : "Competitor spy — no token needed"}
-                </span>
-                <span className="mt-0.5 block text-xs text-muted-foreground">
-                  {props.language === "vi"
-                    ? "Phân tích quảng cáo public của đối thủ. Bắt đầu ngay, không cần kết nối tài khoản."
-                    : "Research competitors' public ads. Start now, no account connection required."}
-                </span>
-              </span>
-              <ChevronRightIcon className="mt-1 size-4 shrink-0 text-muted-foreground" />
-            </button>
-
-            <div className="flex items-center gap-3 text-xs text-muted-foreground">
-              <Separator className="flex-1" />
-              {props.language === "vi" ? "hoặc kết nối tài khoản" : "or connect your account"}
-              <Separator className="flex-1" />
-            </div>
-
             <form onSubmit={props.onSubmit} className="flex min-w-0 flex-col gap-4">
               <FieldGroup>
                 <Field>
@@ -1453,12 +1433,40 @@ function TokenScreen(props: {
                   </FieldDescription>
                 </Field>
               </FieldGroup>
-              <Button type="submit" variant="outline" disabled={props.loading} className="w-full">
+              <Button type="submit" disabled={props.loading} className="w-full">
                 {props.loading ? <Spinner data-icon="inline-start" /> : <KeyRoundIcon data-icon="inline-start" />}
                 {copy.submit}
               </Button>
               <FieldDescription className="break-words">{copy.help}</FieldDescription>
             </form>
+
+            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+              <Separator className="flex-1" />
+              {props.language === "vi" ? "hoặc nghiên cứu đối thủ" : "or research competitors"}
+              <Separator className="flex-1" />
+            </div>
+
+            <button
+              type="button"
+              onClick={props.onUseCompetitor}
+              aria-label={props.language === "vi" ? "Mở theo dõi đối thủ, không cần token" : "Open competitor spy, no token needed"}
+              className="flex items-start gap-3 rounded-lg border bg-card p-4 text-left transition-colors hover:bg-muted/50"
+            >
+              <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+                <SearchIcon className="size-4.5" />
+              </span>
+              <span className="min-w-0">
+                <span className="block text-sm font-medium">
+                  {props.language === "vi" ? "Theo dõi đối thủ — không cần token" : "Competitor spy — no token needed"}
+                </span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">
+                  {props.language === "vi"
+                    ? "Phân tích quảng cáo public của đối thủ. Bắt đầu ngay, không cần kết nối tài khoản."
+                    : "Research competitors' public ads. Start now, no account connection required."}
+                </span>
+              </span>
+              <ChevronRightIcon className="mt-1 size-4 shrink-0 text-muted-foreground" />
+            </button>
           </div>
         </CardContent>
       </Card>
@@ -1512,12 +1520,49 @@ function LanguageToggle({ language, onChange }: { language: ReportLanguage; onCh
 
 function ReportSkeleton({ language }: { language: ReportLanguage }) {
   const isVietnamese = language === "vi";
+  const steps = isVietnamese
+    ? ["Campaign", "Ad set", "Insight", "Breakdown"]
+    : ["Campaigns", "Ad sets", "Insights", "Breakdowns"];
+  const [activeStep, setActiveStep] = React.useState(0);
+  const [percent, setPercent] = React.useState(8);
+
+  React.useEffect(() => {
+    const startedAt = Date.now();
+    const interval = window.setInterval(() => {
+      const elapsed = (Date.now() - startedAt) / 1000;
+      setActiveStep(Math.min(steps.length - 1, Math.floor(elapsed / 3)));
+      setPercent(Math.min(92, 8 + elapsed * 7));
+    }, 400);
+    return () => window.clearInterval(interval);
+  }, [steps.length]);
+
   return (
     <Card className="border-primary/20">
       <CardContent className="py-4">
-        <div className="mb-4 flex items-center gap-2 text-sm font-medium">
+        <div className="mb-3 flex items-center gap-2 text-sm font-medium">
           <Spinner className="size-4" />
           {isVietnamese ? "Đang kéo dữ liệu từ Meta và chuẩn bị dashboard..." : "Pulling Meta data and preparing your dashboard..."}
+        </div>
+        <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2" role="status" aria-live="polite">
+          {steps.map((step, index) => {
+            const done = index < activeStep;
+            const active = index === activeStep;
+            return (
+              <div key={step} className="flex items-center gap-1.5 text-xs">
+                <span
+                  className={`flex size-4 items-center justify-center rounded-full ${
+                    done ? "bg-primary text-primary-foreground" : active ? "ra-step-active bg-primary" : "border bg-muted"
+                  }`}
+                >
+                  {done ? <CheckIcon className="size-3" /> : null}
+                </span>
+                <span className={done || active ? "font-medium text-foreground" : "text-muted-foreground"}>{step}</span>
+              </div>
+            );
+          })}
+        </div>
+        <div className="mb-4 h-1.5 overflow-hidden rounded-full bg-muted">
+          <div className="h-full rounded-full bg-primary transition-all duration-500" style={{ width: `${percent}%` }} />
         </div>
         <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
           {Array.from({ length: 6 }).map((_, index) => (
@@ -2017,7 +2062,7 @@ function VerdictPanel({
                 </SelectContent>
               </Select>
             </Field>
-            <Button onClick={onGenerate} disabled={loading}>
+            <Button onClick={onGenerate} disabled={loading} className={!verdict && !loading ? "ra-verdict-glow" : undefined}>
               {loading ? <Spinner data-icon="inline-start" /> : <SparklesIcon data-icon="inline-start" />}
               {copy.generate}
             </Button>
