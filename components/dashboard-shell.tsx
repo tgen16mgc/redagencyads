@@ -32,6 +32,7 @@ import {
   SparklesIcon,
 } from "lucide-react";
 import { AppSidebar, type AppSidebarItem, type WorkflowSidebarItem } from "@/components/dashboard/app-sidebar";
+import { CustomChartsSection } from "@/components/dashboard/custom-charts-section";
 import type { AdSetWithPreviews, AiInsightTable, CompareMode, CompetitorFetchResult, CompetitorFetchSource, CompetitorPlatform, CompetitorSpyAd, CompetitorSpyResult, DashboardReport, KpiPack, MetaAccount, MetaCampaign, NormalizedRow, Verdict } from "@/lib/types";
 import { buildWorkflowSteps, type DashboardWorkflowStep } from "@/lib/dashboard-workflow";
 import { canOpenDashboardView, initialDashboardViewFromSearch } from "@/lib/dashboard-access";
@@ -1173,6 +1174,8 @@ export function DashboardShell() {
               </section>
 
               <PerformanceCharts report={report} language={language} />
+
+              <CustomChartsSection report={report} language={language} />
 
               {previousReport ? <ComparisonPanel current={report} previous={previousReport} mode={compareMode} language={language} /> : null}
 
