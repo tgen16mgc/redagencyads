@@ -17,6 +17,17 @@ const insightResponse = {
   assumptions: ["Gemini generated JSON."],
 };
 
+function invalidJsonResponse() {
+  return new Response(
+    JSON.stringify({ choices: [{ message: { content: "not json at all" } }] }),
+    { status: 200, headers: { "content-type": "application/json" } },
+  );
+}
+
+function promptWith(payload: Record<string, unknown>) {
+  return `Some instructions\n\nInput JSON:\n${JSON.stringify(payload)}`;
+}
+
 describe("generateInsights", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -88,5 +99,87 @@ describe("generateInsights", () => {
     expect(insights.summary).toContain("unavailable");
     expect(insights.rows.length).toBeGreaterThan(0);
     expect(insights.rows[0].area).toBe("Creative"); // CTR low row triggered
+  });
+
+  it("surfaces a failing health check as the first high-priority local insight row", async () => {
+    vi.stubEnv("NINEROUTER_KEY", "test-key");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(invalidJsonResponse()));
+
+    const insights = await generateInsights(
+      promptWith({
+        totals: { spend: 100, ctr: 2.5, frequency: 1.2 },
+        health: { score: 55, checks: [{ label: "Pixel coverage", detail: "Pixel missing on 2 pages.", status: "fail" }] },
+      }),
+      "9router",
+    );
+
+    const healthRow = insights.rows.find((row) => row.area === "Account health");
+    expect(healthRow).toBeDefined();
+    expect(healthRow?.insight).toBe("Pixel coverage");
+    expect(healthRow?.priority).toBe("high");
+  });
+
+  it("flags high frequency as an audience-fatigue row with high priority above 5", async () => {
+    vi.stubEnv("NINEROUTER_KEY", "test-key");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(invalidJsonResponse()));
+
+    const insights = await generateInsights(
+      promptWith({ totals: { spend: 100, ctr: 2.5, frequency: 6 }, health: { score: 90, checks: [] } }),
+      "9router",
+    );
+
+    const audienceRow = insights.rows.find((row) => row.area === "Audience");
+    expect(audienceRow).toBeDefined();
+    expect(audienceRow?.priority).toBe("high");
+  });
+
+  it("names the top campaign as the first budget-review target", async () => {
+    vi.stubEnv("NINEROUTER_KEY", "test-key");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(invalidJsonResponse()));
+
+    const insights = await generateInsights(
+      promptWith({
+        totals: { spend: 100, ctr: 2.5, frequency: 1.2 },
+        health: { score: 90, checks: [] },
+        top_campaigns: [{ name: "Prospecting Core", spend: 80, messages: 12, leads: 0, purchases: 0 }],
+      }),
+      "9router",
+    );
+
+    const budgetRow = insights.rows.find((row) => row.area === "Budget");
+    expect(budgetRow).toBeDefined();
+    expect(budgetRow?.insight).toContain("Prospecting Core");
+  });
+
+  it("highlights the biggest comparison delta as a high-priority efficiency row when it moves at least 20%", async () => {
+    vi.stubEnv("NINEROUTER_KEY", "test-key");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(invalidJsonResponse()));
+
+    const insights = await generateInsights(
+      promptWith({
+        totals: { spend: 100, ctr: 2.5, frequency: 1.2 },
+        health: { score: 90, checks: [] },
+        comparison: { deltas: [{ key: "cpl", change_pct: 45 }, { key: "spend", change_pct: 5 }] },
+      }),
+      "9router",
+    );
+
+    const efficiencyRow = insights.rows.find((row) => row.area === "Efficiency" && row.insight.includes("cpl"));
+    expect(efficiencyRow).toBeDefined();
+    expect(efficiencyRow?.priority).toBe("high");
+  });
+
+  it("returns a single no-red-flag efficiency row when no metric breaches a threshold", async () => {
+    vi.stubEnv("NINEROUTER_KEY", "test-key");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(invalidJsonResponse()));
+
+    const insights = await generateInsights(
+      promptWith({ totals: { spend: 100, ctr: 2.5, frequency: 1.2, messages: 20 }, health: { score: 95, checks: [] } }),
+      "9router",
+    );
+
+    expect(insights.rows).toHaveLength(1);
+    expect(insights.rows[0].area).toBe("Efficiency");
+    expect(insights.rows[0].insight).toContain("No major red flag");
   });
 });

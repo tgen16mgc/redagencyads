@@ -295,6 +295,7 @@ const uiCopy = {
       view: "View",
       unknownAdvertiser: "Unknown advertiser",
       noCopy: "No ad copy returned.",
+      adCreativeAlt: "Ad creative from",
       start: "Start",
     },
   },
@@ -444,6 +445,7 @@ const uiCopy = {
       view: "Xem",
       unknownAdvertiser: "Advertiser không rõ",
       noCopy: "Không có copy quảng cáo.",
+      adCreativeAlt: "Creative quảng cáo từ",
       start: "Bắt đầu",
     },
   },
@@ -2692,7 +2694,7 @@ function SpyAdsPanel({
                 ) : null}
               </div>
               {ad.imageUrl ? (
-                <img src={ad.imageUrl} alt="" className="mt-3 aspect-video w-full rounded-md border object-cover" loading="lazy" />
+                <img src={ad.imageUrl} alt={`${copy.adCreativeAlt} ${ad.pageName || ad.competitorName || copy.unknownAdvertiser}`} className="mt-3 aspect-video w-full rounded-md border object-cover" loading="lazy" />
               ) : null}
               <p className="mt-3 line-clamp-2 text-sm font-medium" data-print-expand>
                 {compactText(ad.headline || ad.body || copy.noCopy, 160)}
@@ -3073,12 +3075,16 @@ function PerformanceTable({
   );
 }
 
+function diagnosticAccentClass(variant: "default" | "secondary" | "destructive" | "outline"): string | undefined {
+  return variant === "destructive" ? "border-l-4 border-l-destructive" : undefined;
+}
+
 function ExperimentReadinessCard({ report, language }: { report: DashboardReport; language: ReportLanguage }) {
   const copy = uiCopy[language].performance;
   const readiness = assessExperimentReadiness(report);
   const items = readiness.blockers[language].length > 0 ? readiness.blockers[language] : [readiness.nextAction[language]];
   return (
-    <Card data-print-flow>
+    <Card data-print-flow className={diagnosticAccentClass(readiness.variant)}>
       <CardHeader>
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -3109,7 +3115,7 @@ function DecisionConfidenceCard({ report, language, targets }: { report: Dashboa
   const variant = rows.length === 0 ? "outline" : blocked.length > actionable.length ? "destructive" : blocked.length > 0 ? "outline" : "secondary";
 
   return (
-    <Card data-print-flow>
+    <Card data-print-flow className={diagnosticAccentClass(variant)}>
       <CardHeader>
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -3154,7 +3160,7 @@ function CreativeVolumeCard({ report, language }: { report: DashboardReport; lan
   const displayAdsets = visibleAdsets.length > 0 ? visibleAdsets : assessment.adsets.slice(0, 2);
 
   return (
-    <Card data-print-flow>
+    <Card data-print-flow className={diagnosticAccentClass(assessment.variant)}>
       <CardHeader>
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -3191,7 +3197,7 @@ function BudgetMoveEngineCard({ report, language }: { report: DashboardReport; l
   const engine = recommendBudgetMoves(report);
   const reasons = engine.holdReasons[language];
   return (
-    <Card data-print-flow>
+    <Card data-print-flow className={diagnosticAccentClass(engine.variant)}>
       <CardHeader>
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -3246,7 +3252,7 @@ function FunnelLeakageCard({ report, language }: { report: DashboardReport; lang
   const leakage = assessFunnelLeakage(report.totals);
   const items = leakage.blockers[language].length > 0 ? leakage.blockers[language] : [leakage.summary[language]];
   return (
-    <Card data-print-flow>
+    <Card data-print-flow className={diagnosticAccentClass(leakage.variant)}>
       <CardHeader>
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -3289,7 +3295,7 @@ function AudienceOverlapCard({ report, language }: { report: DashboardReport; la
   const copy = uiCopy[language].performance;
   const overlap = assessAudienceOverlap(report.adsetRows);
   return (
-    <Card data-print-flow>
+    <Card data-print-flow className={diagnosticAccentClass(overlap.variant)}>
       <CardHeader>
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -3321,7 +3327,7 @@ function TargetingExclusionsCard({ report, language }: { report: DashboardReport
   const copy = uiCopy[language].performance;
   const assessment = assessTargetingExclusions(report.adsetRows);
   return (
-    <Card data-print-flow>
+    <Card data-print-flow className={diagnosticAccentClass(assessment.variant)}>
       <CardHeader>
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -3355,7 +3361,7 @@ function CreativeStarvationCard({ report, language }: { report: DashboardReport;
   const copy = uiCopy[language].performance;
   const assessment = assessCreativeStarvation(report.adRows);
   return (
-    <Card data-print-flow>
+    <Card data-print-flow className={diagnosticAccentClass(assessment.variant)}>
       <CardHeader>
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -3396,7 +3402,7 @@ function BreakdownWasteCard({ report, language }: { report: DashboardReport; lan
   const combinedRows = [...report.platformRows, ...report.ageGenderRows];
   const waste = assessBreakdownWaste(combinedRows, report.selectedPack);
   return (
-    <Card data-print-flow>
+    <Card data-print-flow className={diagnosticAccentClass(waste.variant)}>
       <CardHeader>
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -3427,7 +3433,7 @@ function ResultConcentrationCard({ report, language }: { report: DashboardReport
   const copy = uiCopy[language].performance;
   const concentration = assessResultConcentration(report.adRows.length > 0 ? report.adRows : report.adsetRows.length > 0 ? report.adsetRows : report.campaignRows, report.selectedPack);
   return (
-    <Card data-print-flow>
+    <Card data-print-flow className={diagnosticAccentClass(concentration.variant)}>
       <CardHeader>
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -3460,7 +3466,7 @@ function SpendPacingCard({ report, language }: { report: DashboardReport; langua
   const days = Math.max(1, (new Date(dateRange.until).getTime() - new Date(dateRange.since).getTime()) / (86400 * 1000) + 1);
   const pacing = assessSpendPacing(report.campaignRows, days);
   return (
-    <Card data-print-flow>
+    <Card data-print-flow className={diagnosticAccentClass(pacing.variant)}>
       <CardHeader>
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -3509,7 +3515,7 @@ function ConsolidationPressureCard({ report, language }: { report: DashboardRepo
   const days = Math.max(1, (new Date(dateRange.until).getTime() - new Date(dateRange.since).getTime()) / (86400 * 1000) + 1);
   const assessment = assessConsolidationPressure(report.adsetRows, report.selectedPack, days);
   return (
-    <Card data-print-flow>
+    <Card data-print-flow className={diagnosticAccentClass(assessment.variant)}>
       <CardHeader>
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -3552,7 +3558,7 @@ function CostCapDeliveryCard({ report, language }: { report: DashboardReport; la
   const days = Math.max(1, (new Date(dateRange.until).getTime() - new Date(dateRange.since).getTime()) / (86400 * 1000) + 1);
   const assessment = assessCostCapDelivery(report.campaignRows, days);
   return (
-    <Card data-print-flow>
+    <Card data-print-flow className={diagnosticAccentClass(assessment.variant)}>
       <CardHeader>
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -3596,7 +3602,7 @@ function MeasurementQualityCard({ report, language }: { report: DashboardReport;
   const copy = uiCopy[language].performance;
   const quality = assessMeasurementQuality(report);
   return (
-    <Card data-print-flow>
+    <Card data-print-flow className={diagnosticAccentClass(quality.variant)}>
       <CardHeader>
         <div className="flex items-start justify-between gap-3">
           <div>
