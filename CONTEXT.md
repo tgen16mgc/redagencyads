@@ -52,6 +52,30 @@ _Avoid_: report language, AI language, prompt language
 The single global control that changes Interface Language for the application.
 _Avoid_: panel language selector, report-only language select, duplicate language control
 
+**Custom Chart**:
+An expert-built chart composed only from metrics already pulled into a report, expressed as a validated, JSON-serializable spec.
+_Avoid_: ad-hoc chart, freeform chart, new-data chart
+
+**Chart Series**:
+One metric drawn on a Custom Chart, bound to a left or right axis. A series is pure data (`key` + `axis`); how it is drawn is decided at render time.
+_Avoid_: line, dataset, render function
+
+**Metric Catalog**:
+The fixed set of chartable metrics a Custom Chart may use — the 17 existing report metrics and nothing else.
+_Avoid_: field list, all metrics, invented metric
+
+**Chart Preset**:
+A named, ready-made Custom Chart template carrying a usage note and a "what it means" explainer, valid by construction.
+_Avoid_: default chart, sample, example
+
+**Spec Normalization**:
+The intent-preserving mechanical cleanup of a Custom Chart spec: dedupe series, clamp to the series cap, fill axis defaults, and toggle the dual-axis flag. It never deletes a metric or reassigns an axis to satisfy a rule.
+_Avoid_: sanitize, auto-fix, repair
+
+**Spec Validation**:
+The legibility gate on a Custom Chart spec. A valid spec renders legibly: non-empty, within the series cap, at most two distinct metric formats, and no single axis hosting two formats.
+_Avoid_: schema check, lint, sanitize
+
 ## Relationships
 
 - A **Verdict** is produced from one advertising report.
@@ -66,6 +90,11 @@ _Avoid_: panel language selector, report-only language select, duplicate languag
 - A **Verdict Enhancement** cannot raise **Verdict Confidence** above the local **Verdict**.
 - A **Verdict** uses the current **Interface Language**.
 - A **Language Toggle** controls the **Interface Language**.
+- A **Custom Chart** uses only metrics from the **Metric Catalog**.
+- A **Custom Chart** is built from one or more **Chart Series**.
+- A **Chart Preset** produces a **Custom Chart** that passes **Spec Validation** by construction.
+- **Spec Normalization** runs before **Spec Validation** and never makes a spec invalid.
+- A **Custom Chart** uses the current **Interface Language** for its labels and copy.
 
 ## Example dialogue
 
@@ -93,6 +122,16 @@ _Avoid_: panel language selector, report-only language select, duplicate languag
 > **Domain expert:** "No — local **Verdict** generation must use the selected **Interface Language** without requiring AI."
 > **Dev:** "Should AI panels have their own language selectors?"
 > **Domain expert:** "No — the **Language Toggle** is global; panels read the current **Interface Language**."
+> **Dev:** "Can a **Custom Chart** add a metric we don't already pull, like a CRM revenue field?"
+> **Domain expert:** "No — a **Custom Chart** draws only from the **Metric Catalog**, the 17 metrics already in the report. No new data."
+> **Dev:** "If a user crams CPL and CTR onto one axis, do we just render it?"
+> **Domain expert:** "No — that fails **Spec Validation** because one axis would host two formats. It blocks until they split the axes; the second axis is sitting empty."
+> **Dev:** "Can a user chart CPL, CTR, and ROAS together?"
+> **Domain expert:** "No — that's three distinct formats and we only have two axes. **Spec Validation** blocks it; drop one metric."
+> **Dev:** "When a user drags in a fourth, fifth, sixth metric, does **Spec Normalization** delete extras to fit?"
+> **Domain expert:** "It clamps to the series cap, but it never deletes a metric to satisfy a format rule or reassign an axis — that would destroy what the user asked for. It only does safe mechanical cleanup."
+> **Dev:** "A saved chart references a metric we later renamed. On reload, do we show a broken version?"
+> **Domain expert:** "No — deserialization drops the whole chart if any series points at an unknown metric. Every restored **Custom Chart** is render-ready; the user re-creates the dropped one."
 
 ## Flagged ambiguities
 
@@ -108,3 +147,6 @@ _Avoid_: panel language selector, report-only language select, duplicate languag
 - "confidence" was ambiguous between model confidence and evidence quality — resolved: **Verdict Confidence** is high only when meaningful spend, Primary Result signal, winner/loser signal, and health checks exist; medium for sparse Primary Result or health-only evidence; low for missing spend/results/rows or setup-only assumptions.
 - "language" was scoped only to AI/report text — resolved: **Interface Language** applies to all user-facing app text and generated report text.
 - Language controls were duplicated inside panels — resolved: **Language Toggle** is a single global header control, persisted across reloads, and must not translate raw Meta names or fetched ad copy.
+- "advanced chart" / "freeform chart" implied arbitrary data — resolved: a **Custom Chart** is constrained to the **Metric Catalog** (17 existing metrics); it adds views, never data.
+- chart "validity" was overloaded between cleanup and a legibility gate — resolved: **Spec Normalization** does intent-preserving mechanical fixes only, while **Spec Validation** is the blocking legibility gate; normalization never deletes a metric or reassigns an axis to pass validation.
+- "two axes vs two formats" were conflated — resolved: at most two distinct metric formats per chart (three+ blocks), and no single axis may host two formats (the soft collision the user splits manually); both are blocking **Spec Validation** failures, differing only in remedy.
