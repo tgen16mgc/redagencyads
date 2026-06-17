@@ -1,4 +1,7 @@
+import { sumRows } from "@/lib/metric-aggregation";
 import type { CompareMode, CompetitorPlatform, CompetitorSpyAd, DashboardReport, InsightAction, InsightRow, KpiCard, KpiPack, MetaAccount, MetaCampaign, NormalizedRow } from "@/lib/types";
+
+export { sumRows } from "@/lib/metric-aggregation";
 
 const ZERO_ROW: Omit<NormalizedRow, "id" | "level" | "name"> = {
   spend: 0,
@@ -99,39 +102,6 @@ export function normalizeRows(rows: InsightRow[], level: NormalizedRow["level"])
     };
     return normalized;
   });
-}
-
-export function sumRows(rows: NormalizedRow[], name: string): NormalizedRow {
-  const total = rows.reduce<NormalizedRow>(
-    (sum, row) => ({
-      ...sum,
-      spend: sum.spend + row.spend,
-      impressions: sum.impressions + row.impressions,
-      reach: sum.reach + row.reach,
-      clicks: sum.clicks + row.clicks,
-      linkClicks: sum.linkClicks + row.linkClicks,
-      messages: sum.messages + row.messages,
-      replies: sum.replies + row.replies,
-      leads: sum.leads + row.leads,
-      purchases: sum.purchases + row.purchases,
-      addToCart: sum.addToCart + row.addToCart,
-      initiateCheckout: sum.initiateCheckout + row.initiateCheckout,
-    }),
-    { ...ZERO_ROW, id: "total", level: "account", name },
-  );
-  total.ctr = safeDivide(total.clicks, total.impressions) * 100;
-  total.cpc = safeDivide(total.spend, total.clicks);
-  total.cpm = safeDivide(total.spend, total.impressions) * 1000;
-  total.frequency = safeDivide(total.impressions, total.reach);
-  total.costPerMessage = safeDivide(total.spend, total.messages);
-  total.costPerReply = safeDivide(total.spend, total.replies);
-  total.cpl = safeDivide(total.spend, total.leads);
-  total.cpaPurchase = safeDivide(total.spend, total.purchases);
-  total.replyRate = safeDivide(total.replies, total.messages) * 100;
-  total.leadRate = safeDivide(total.leads, total.messages) * 100;
-  const roasSpend = rows.reduce((sum, row) => sum + (row.roas > 0 ? row.spend : 0), 0);
-  total.roas = safeDivide(rows.reduce((sum, row) => sum + row.roas * row.spend, 0), roasSpend);
-  return total;
 }
 
 export function detectKpiPack(campaigns: MetaCampaign[], campaignRows: NormalizedRow[], adsetRows: NormalizedRow[]) {
