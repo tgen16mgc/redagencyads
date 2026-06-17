@@ -79,7 +79,8 @@ import {
   truncateLabel,
   type ChartKey,
 } from "@/lib/chart-spec";
-import { buildCompetitorSpyPrompt, buildInsightPrompt, comparisonDeltas, formatCompactNumber, formatMetric, formatSharePct } from "@/lib/metrics";
+import { buildKpiComparisons, metricMovementIsBad } from "@/lib/metric-comparison";
+import { buildCompetitorSpyPrompt, buildInsightPrompt, formatCompactNumber, formatMetric, formatSharePct } from "@/lib/metrics";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -589,6 +590,11 @@ export function DashboardShell() {
   const reportStartRef = React.useRef<HTMLDivElement>(null);
   const verdictProgress = useTimedProgress(aiLoading.verdict);
   const insightProgress = useTimedProgress(aiLoading.insights);
+  const kpiComparisons = React.useMemo(() => {
+    if (!report || !previousReport || compareMode === "off") return null;
+    return buildKpiComparisons({ report, previousReport, compareMode, language });
+  }, [report, previousReport, compareMode]);
+
   const decisionTargets = React.useMemo<DecisionTargets>(() => {
     const cpa = Number(targetCpa);
     const roas = Number(targetRoas);
@@ -1166,7 +1172,8 @@ export function DashboardShell() {
               </Card>
               <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
                 {report.kpis.map((kpi) => {
-                  const delta = kpiDelta(report, kpi);
+                  const comparison = kpiComparisons?.find((c) => c.key === kpi.key);
+                  
                   return (
                     <Card key={kpi.label} size="sm">
                       <CardHeader>
@@ -1174,9 +1181,9 @@ export function DashboardShell() {
                         <CardTitle className="text-3xl font-semibold tabular-nums leading-none">
                           {formatMetric(Number(report.totals[kpi.key as keyof NormalizedRow] || 0), kpi.format, report.account.currency || "VND")}
                         </CardTitle>
-                        {delta !== null ? (
-                          <CardDescription className={`text-xs tabular-nums ${isBadKpiDelta(kpi, delta) ? "text-destructive" : "text-muted-foreground"}`}>
-                            {delta > 0 ? "↑" : delta < 0 ? "↓" : "→"} {formatSignedPct(delta, language)} {language === "vi" ? "so với kỳ trước" : "vs prior period"}
+                        {comparison?.changePct !== undefined && comparison.changePct !== null ? (
+                          <CardDescription className={`text-xs tabular-nums ${metricMovementIsBad(kpi.key, comparison.changePct) ? "text-destructive" : "text-muted-foreground"}`}>
+                            {comparison.changePct > 0 ? "↑" : comparison.changePct < 0 ? "↓" : "→"} {formatSignedPct(comparison.changePct, language)} {language === "vi" ? "so với kỳ trước" : "vs prior period"}
                           </CardDescription>
                         ) : null}
                       </CardHeader>
@@ -1915,7 +1922,7 @@ function ComparisonPanel({
 }) {
   const currency = current.account.currency || "VND";
   const isVietnamese = language === "vi";
-  const deltas = comparisonDeltas(current, previous).filter((item) =>
+  const deltas = buildKpiComparisons({ report: current, previousReport: previous, compareMode: mode, language }).filter((item) =>
     ["spend", "messages", "leads", "purchases", "linkClicks", "ctr", "frequency", "costPerMessage", "cpl", "roas"].includes(item.key),
   );
   const rootCauses = analyzeComparisonRootCauses(current, previous);
@@ -1934,8 +1941,8 @@ function ComparisonPanel({
             <div key={delta.key} className="rounded-lg border p-3">
               <div className="text-xs font-medium text-muted-foreground">{metricLabel(delta.key, language)}</div>
               <div className="mt-1 text-lg font-semibold tabular-nums">{formatComparisonMetric(delta.key, delta.current, currency)}</div>
-              <Badge variant={delta.change === 0 ? "secondary" : isBadKpiDelta({ key: delta.key } as any, delta.change) ? "destructive" : "success"} className="mt-2 tabular-nums">
-                {formatSignedPct(delta.change_pct, language)}
+              <Badge variant={delta.change === 0 ? "secondary" : metricMovementIsBad(delta.key, delta.changePct || 0) ? "destructive" : "success"} className="mt-2 tabular-nums">
+                {formatSignedPct(delta.changePct, language)}
               </Badge>
             </div>
           ))}
