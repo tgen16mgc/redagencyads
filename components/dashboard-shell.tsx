@@ -592,8 +592,9 @@ export function DashboardShell() {
   const insightProgress = useTimedProgress(aiLoading.insights);
   const kpiComparisons = React.useMemo(() => {
     if (!report || !previousReport || compareMode === "off") return null;
-    return buildKpiComparisons({ report, previousReport, compareMode, language });
-  }, [report, previousReport, compareMode]);
+    const arr = buildKpiComparisons({ report, previousReport, compareMode, language });
+    return new Map(arr.map((c) => [c.key, c]));
+  }, [report, previousReport, compareMode, language]);
 
   const decisionTargets = React.useMemo<DecisionTargets>(() => {
     const cpa = Number(targetCpa);
@@ -1172,7 +1173,7 @@ export function DashboardShell() {
               </Card>
               <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
                 {report.kpis.map((kpi) => {
-                  const comparison = kpiComparisons?.find((c) => c.key === kpi.key);
+                  const comparison = kpiComparisons?.get(kpi.key as keyof NormalizedRow);
                   
                   return (
                     <Card key={kpi.label} size="sm">
@@ -1183,7 +1184,7 @@ export function DashboardShell() {
                         </CardTitle>
                         {comparison?.changePct !== undefined && comparison.changePct !== null ? (
                           <CardDescription className={`text-xs tabular-nums ${metricMovementIsBad(kpi.key, comparison.changePct) ? "text-destructive" : "text-muted-foreground"}`}>
-                            {comparison.changePct > 0 ? "↑" : comparison.changePct < 0 ? "↓" : "→"} {formatSignedPct(comparison.changePct, language)} {language === "vi" ? "so với kỳ trước" : "vs prior period"}
+                            {comparison.changePct > 0 ? "↑" : comparison.changePct < 0 ? "↓" : "→"} {formatSignedPct(comparison.changePct, language)} {comparison.descriptor}
                           </CardDescription>
                         ) : null}
                       </CardHeader>
@@ -2821,24 +2822,6 @@ function sumRows(rows: NormalizedRow[], key: keyof NormalizedRow): number {
 }
 
 
-
-function kpiDelta(report: DashboardReport, kpi: DashboardReport["kpis"][number]) {
-  if (kpi.key === "healthScore") return null;
-  const dated = report.dailyRows
-    .filter((row) => Boolean(row.date))
-    .slice()
-    .sort((a, b) => (a.date! < b.date! ? -1 : a.date! > b.date! ? 1 : 0));
-  if (dated.length < 6) return null;
-  const windowSize = Math.min(7, Math.floor(dated.length / 2));
-  const recentRows = dated.slice(dated.length - windowSize);
-  const priorRows = dated.slice(dated.length - windowSize * 2, dated.length - windowSize);
-  if (!recentRows.length || !priorRows.length) return null;
-
-  const recent = kpi.format === "number" ? sumRows(recentRows, kpi.key) : averageRows(recentRows, kpi.key);
-  const prior = kpi.format === "number" ? sumRows(priorRows, kpi.key) : averageRows(priorRows, kpi.key);
-  if (prior <= 0) return null;
-  return ((recent - prior) / prior) * 100;
-}
 
 function PerformanceCharts({ report, language }: { report: DashboardReport; language: ReportLanguage }) {
   const currency = report.account.currency || "VND";
