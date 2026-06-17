@@ -79,7 +79,7 @@ import {
   truncateLabel,
   type ChartKey,
 } from "@/lib/chart-spec";
-import { buildKpiComparisons, metricMovementIsBad } from "@/lib/metric-comparison";
+import { buildComparisonPanelDeltas, buildKpiComparisons, metricMovementIsBad } from "@/lib/metric-comparison";
 import { buildCompetitorSpyPrompt, buildInsightPrompt, formatCompactNumber, formatMetric, formatSharePct } from "@/lib/metrics";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -1923,9 +1923,7 @@ function ComparisonPanel({
 }) {
   const currency = current.account.currency || "VND";
   const isVietnamese = language === "vi";
-  const deltas = buildKpiComparisons({ report: current, previousReport: previous, compareMode: mode, language }).filter((item) =>
-    ["spend", "messages", "leads", "purchases", "linkClicks", "ctr", "frequency", "costPerMessage", "cpl", "roas"].includes(item.key),
-  );
+  const deltas = buildComparisonPanelDeltas(current, previous, language);
   const rootCauses = analyzeComparisonRootCauses(current, previous);
   return (
     <Card>
@@ -1938,11 +1936,11 @@ function ComparisonPanel({
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-5">
-          {deltas.slice(0, 10).map((delta) => (
+          {deltas.map((delta) => (
             <div key={delta.key} className="rounded-lg border p-3">
-              <div className="text-xs font-medium text-muted-foreground">{metricLabel(delta.key, language)}</div>
-              <div className="mt-1 text-lg font-semibold tabular-nums">{formatComparisonMetric(delta.key, delta.current, currency)}</div>
-              <Badge variant={delta.change === 0 ? "secondary" : metricMovementIsBad(delta.key, delta.changePct || 0) ? "destructive" : "success"} className="mt-2 tabular-nums">
+              <div className="text-xs font-medium text-muted-foreground">{delta.label}</div>
+              <div className="mt-1 text-lg font-semibold tabular-nums">{formatMetric(delta.current, delta.format, currency)}</div>
+              <Badge variant={delta.change === 0 ? "secondary" : metricMovementIsBad(delta.key, delta.change) ? "destructive" : "success"} className="mt-2 tabular-nums">
                 {formatSignedPct(delta.changePct, language)}
               </Badge>
             </div>
@@ -2796,13 +2794,6 @@ function metricLabel(key: string, language: ReportLanguage = "en") {
     },
   };
   return labels[language][key] || key;
-}
-
-function formatComparisonMetric(key: string, value: number, currency: string) {
-  if (["spend", "costPerMessage", "cpl"].includes(key)) return formatMetric(value, "currency", currency);
-  if (["ctr"].includes(key)) return formatMetric(value, "percent", currency);
-  if (["frequency", "roas"].includes(key)) return formatMetric(value, "ratio", currency);
-  return formatMetric(value, "number", currency);
 }
 
 function formatSignedPct(value: number | null, language: ReportLanguage = "en") {
