@@ -185,12 +185,27 @@ describe("buildComparisonPanelDeltas", () => {
       { key: "ctr", label: "CTR", format: "percent" },
       { key: "cpc", label: "CPC", format: "currency" },
     ];
-    const current = report({ selectedPack: "traffic", kpis: trafficKpis, totals: row({ spend: 100, linkClicks: 50, ctr: 2, cpc: 2 }) });
-    const previous = report({ selectedPack: "traffic", kpis: trafficKpis, totals: row({ spend: 80, linkClicks: 40, ctr: 1, cpc: 2 }) });
+    const current = report({
+      selectedPack: "traffic",
+      kpis: trafficKpis,
+      totals: row({ spend: 100, impressions: 1000, reach: 800, linkClicks: 50, ctr: 2, cpc: 2 }),
+    });
+    const previous = report({
+      selectedPack: "traffic",
+      kpis: trafficKpis,
+      totals: row({ spend: 80, impressions: 500, reach: 400, linkClicks: 40, ctr: 1, cpc: 4 }),
+    });
 
     const deltas = buildComparisonPanelDeltas(current, previous);
 
-    expect(deltas.map((delta) => delta.key)).toEqual(["spend", "impressions", "reach", "linkClicks", "ctr", "cpc"]);
+    expect(deltas).toEqual([
+      expect.objectContaining({ key: "spend", current: 100, previous: 80, change: 20, changePct: 25 }),
+      expect.objectContaining({ key: "impressions", current: 1000, previous: 500, change: 500, changePct: 100 }),
+      expect.objectContaining({ key: "reach", current: 800, previous: 400, change: 400, changePct: 100 }),
+      expect.objectContaining({ key: "linkClicks", current: 50, previous: 40, change: 10, changePct: 25 }),
+      expect.objectContaining({ key: "ctr", current: 2, previous: 1, change: 1, changePct: 100 }),
+      expect.objectContaining({ key: "cpc", current: 2, previous: 4, change: -2, changePct: -50 }),
+    ]);
   });
 });
 
