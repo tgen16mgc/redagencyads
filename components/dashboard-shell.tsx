@@ -2808,7 +2808,7 @@ function formatSignedPct(value: number | null, language: ReportLanguage = "en") 
   if (value === null) return language === "vi" ? "mới" : "new";
   const sign = value > 0 ? "+" : "";
   const locale = language === "vi" ? "vi-VN" : "en-US";
-  return `${sign}${value.toLocaleString(locale, { maximumFractionDigits: 1 })}%`;
+  return `${sign}${(value * 100).toLocaleString(locale, { maximumFractionDigits: 1 })}%`;
 }
 
 function averageRows(rows: NormalizedRow[], key: keyof NormalizedRow): number {
@@ -2820,15 +2820,7 @@ function sumRows(rows: NormalizedRow[], key: keyof NormalizedRow): number {
   return rows.reduce((sum, row) => sum + Number(row[key] || 0), 0);
 }
 
-const LOWER_IS_BETTER_KPIS = new Set<string>(["cpc", "cpm", "cpl", "costPerMessage", "costPerReply", "cpaPurchase", "frequency"]);
-const HIGHER_IS_BETTER_KPIS = new Set<string>(["messages", "replies", "leads", "purchases", "linkClicks", "clicks", "impressions", "reach", "ctr", "roas"]);
 
-function isBadKpiDelta(kpi: DashboardReport["kpis"][number], delta: number) {
-  if (delta === 0) return false;
-  if (LOWER_IS_BETTER_KPIS.has(String(kpi.key))) return delta > 0;
-  if (HIGHER_IS_BETTER_KPIS.has(String(kpi.key))) return delta < 0;
-  return false;
-}
 
 function kpiDelta(report: DashboardReport, kpi: DashboardReport["kpis"][number]) {
   if (kpi.key === "healthScore") return null;
