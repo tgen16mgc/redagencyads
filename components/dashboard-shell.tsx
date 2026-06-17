@@ -79,7 +79,8 @@ import {
   truncateLabel,
   type ChartKey,
 } from "@/lib/chart-spec";
-import { buildCompetitorSpyPrompt, buildInsightPrompt, comparisonDeltas, formatCompactNumber, formatMetric, formatSharePct } from "@/lib/metrics";
+import { buildComparisonPanelDeltas, buildKpiComparisons, metricMovementIsBad } from "@/lib/metric-comparison";
+import { buildCompetitorSpyPrompt, buildInsightPrompt, formatCompactNumber, formatMetric, formatSharePct } from "@/lib/metrics";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -589,6 +590,12 @@ export function DashboardShell() {
   const reportStartRef = React.useRef<HTMLDivElement>(null);
   const verdictProgress = useTimedProgress(aiLoading.verdict);
   const insightProgress = useTimedProgress(aiLoading.insights);
+  const kpiComparisons = React.useMemo(() => {
+    if (!report || !previousReport || compareMode === "off") return null;
+    const arr = buildKpiComparisons({ report, previousReport, compareMode, language });
+    return new Map(arr.map((c) => [c.key, c]));
+  }, [report, previousReport, compareMode, language]);
+
   const decisionTargets = React.useMemo<DecisionTargets>(() => {
     const cpa = Number(targetCpa);
     const roas = Number(targetRoas);
@@ -1166,7 +1173,8 @@ export function DashboardShell() {
               </Card>
               <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
                 {report.kpis.map((kpi) => {
-                  const delta = kpiDelta(report, kpi);
+                  const comparison = kpiComparisons?.get(kpi.key as keyof NormalizedRow);
+                  
                   return (
                     <Card key={kpi.label} size="sm">
                       <CardHeader>
@@ -1174,9 +1182,9 @@ export function DashboardShell() {
                         <CardTitle className="text-3xl font-semibold tabular-nums leading-none">
                           {formatMetric(Number(report.totals[kpi.key as keyof NormalizedRow] || 0), kpi.format, report.account.currency || "VND")}
                         </CardTitle>
-                        {delta !== null ? (
-                          <CardDescription className={`text-xs tabular-nums ${isBadKpiDelta(kpi, delta) ? "text-destructive" : "text-muted-foreground"}`}>
-                            {delta > 0 ? "↑" : delta < 0 ? "↓" : "→"} {formatSignedPct(delta, language)} {language === "vi" ? "so với kỳ trước" : "vs prior period"}
+                        {comparison?.changePct !== undefined && comparison.changePct !== null ? (
+                          <CardDescription className={`text-xs tabular-nums ${metricMovementIsBad(kpi.key, comparison.changePct) ? "text-destructive" : "text-muted-foreground"}`}>
+                            {comparison.changePct > 0 ? "↑" : comparison.changePct < 0 ? "↓" : "→"} {formatSignedPct(comparison.changePct, language)} {comparison.descriptor}
                           </CardDescription>
                         ) : null}
                       </CardHeader>
@@ -1915,9 +1923,7 @@ function ComparisonPanel({
 }) {
   const currency = current.account.currency || "VND";
   const isVietnamese = language === "vi";
-  const deltas = comparisonDeltas(current, previous).filter((item) =>
-    ["spend", "messages", "leads", "purchases", "linkClicks", "ctr", "frequency", "costPerMessage", "cpl", "roas"].includes(item.key),
-  );
+  const deltas = buildComparisonPanelDeltas(current, previous, mode, language);
   const rootCauses = analyzeComparisonRootCauses(current, previous);
   return (
     <Card>
@@ -1930,12 +1936,12 @@ function ComparisonPanel({
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-5">
-          {deltas.slice(0, 10).map((delta) => (
+          {deltas.map((delta) => (
             <div key={delta.key} className="rounded-lg border p-3">
-              <div className="text-xs font-medium text-muted-foreground">{metricLabel(delta.key, language)}</div>
-              <div className="mt-1 text-lg font-semibold tabular-nums">{formatComparisonMetric(delta.key, delta.current, currency)}</div>
-              <Badge variant={delta.change === 0 ? "secondary" : isBadKpiDelta({ key: delta.key } as any, delta.change) ? "destructive" : "success"} className="mt-2 tabular-nums">
-                {formatSignedPct(delta.change_pct, language)}
+              <div className="text-xs font-medium text-muted-foreground">{delta.label}</div>
+              <div className="mt-1 text-lg font-semibold tabular-nums">{formatMetric(delta.current, delta.format, currency)}</div>
+              <Badge variant={delta.change === 0 ? "secondary" : metricMovementIsBad(delta.key, delta.change) ? "destructive" : "success"} className="mt-2 tabular-nums">
+                {formatSignedPct(delta.changePct, language)}
               </Badge>
             </div>
           ))}
@@ -2790,18 +2796,11 @@ function metricLabel(key: string, language: ReportLanguage = "en") {
   return labels[language][key] || key;
 }
 
-function formatComparisonMetric(key: string, value: number, currency: string) {
-  if (["spend", "costPerMessage", "cpl"].includes(key)) return formatMetric(value, "currency", currency);
-  if (["ctr"].includes(key)) return formatMetric(value, "percent", currency);
-  if (["frequency", "roas"].includes(key)) return formatMetric(value, "ratio", currency);
-  return formatMetric(value, "number", currency);
-}
-
 function formatSignedPct(value: number | null, language: ReportLanguage = "en") {
   if (value === null) return language === "vi" ? "mới" : "new";
   const sign = value > 0 ? "+" : "";
   const locale = language === "vi" ? "vi-VN" : "en-US";
-  return `${sign}${value.toLocaleString(locale, { maximumFractionDigits: 1 })}%`;
+  return `${sign}${(value * 100).toLocaleString(locale, { maximumFractionDigits: 1 })}%`;
 }
 
 function averageRows(rows: NormalizedRow[], key: keyof NormalizedRow): number {
@@ -2813,33 +2812,7 @@ function sumRows(rows: NormalizedRow[], key: keyof NormalizedRow): number {
   return rows.reduce((sum, row) => sum + Number(row[key] || 0), 0);
 }
 
-const LOWER_IS_BETTER_KPIS = new Set<string>(["cpc", "cpm", "cpl", "costPerMessage", "costPerReply", "cpaPurchase", "frequency"]);
-const HIGHER_IS_BETTER_KPIS = new Set<string>(["messages", "replies", "leads", "purchases", "linkClicks", "clicks", "impressions", "reach", "ctr", "roas"]);
 
-function isBadKpiDelta(kpi: DashboardReport["kpis"][number], delta: number) {
-  if (delta === 0) return false;
-  if (LOWER_IS_BETTER_KPIS.has(String(kpi.key))) return delta > 0;
-  if (HIGHER_IS_BETTER_KPIS.has(String(kpi.key))) return delta < 0;
-  return false;
-}
-
-function kpiDelta(report: DashboardReport, kpi: DashboardReport["kpis"][number]) {
-  if (kpi.key === "healthScore") return null;
-  const dated = report.dailyRows
-    .filter((row) => Boolean(row.date))
-    .slice()
-    .sort((a, b) => (a.date! < b.date! ? -1 : a.date! > b.date! ? 1 : 0));
-  if (dated.length < 6) return null;
-  const windowSize = Math.min(7, Math.floor(dated.length / 2));
-  const recentRows = dated.slice(dated.length - windowSize);
-  const priorRows = dated.slice(dated.length - windowSize * 2, dated.length - windowSize);
-  if (!recentRows.length || !priorRows.length) return null;
-
-  const recent = kpi.format === "number" ? sumRows(recentRows, kpi.key) : averageRows(recentRows, kpi.key);
-  const prior = kpi.format === "number" ? sumRows(priorRows, kpi.key) : averageRows(priorRows, kpi.key);
-  if (prior <= 0) return null;
-  return ((recent - prior) / prior) * 100;
-}
 
 function PerformanceCharts({ report, language }: { report: DashboardReport; language: ReportLanguage }) {
   const currency = report.account.currency || "VND";
