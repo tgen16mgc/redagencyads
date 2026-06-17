@@ -1923,7 +1923,7 @@ function ComparisonPanel({
 }) {
   const currency = current.account.currency || "VND";
   const isVietnamese = language === "vi";
-  const deltas = buildComparisonPanelDeltas(current, previous, language);
+  const deltas = buildComparisonPanelDeltas(current, previous, mode, language);
   const rootCauses = analyzeComparisonRootCauses(current, previous);
   return (
     <Card>

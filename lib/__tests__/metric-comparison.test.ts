@@ -176,6 +176,13 @@ describe("buildKpiComparisons", () => {
 });
 
 describe("buildComparisonPanelDeltas", () => {
+  it("uses the active compare mode in panel descriptors", () => {
+    const current = report({ totals: row({ id: "total", level: "account", name: "Total", spend: 200 }) });
+    const previous = report({ totals: row({ id: "total", level: "account", name: "Total", spend: 100 }) });
+
+    expect(buildComparisonPanelDeltas(current, previous, "mom", "en")[0].descriptor).toBe("Month over month");
+  });
+
   it("returns the selected top-six KPI set instead of a hardcoded alternate metric set", () => {
     const trafficKpis: KpiCard[] = [
       { key: "spend", label: "Spend", format: "currency" },

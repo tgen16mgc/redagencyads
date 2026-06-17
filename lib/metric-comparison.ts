@@ -66,11 +66,13 @@ export function buildKpiComparisons(args: {
     }));
 }
 
-export function buildComparisonPanelDeltas(current: DashboardReport, previous: DashboardReport, language: ReportLanguage = "en") {
-  return buildKpiComparisons({ report: current, previousReport: previous, compareMode: "wow", language }).map((delta) => ({
-    ...delta,
-    descriptor: comparisonDescriptor({ compareMode: "wow", previousReport: previous, language }),
-  }));
+export function buildComparisonPanelDeltas(
+  current: DashboardReport,
+  previous: DashboardReport,
+  compareMode: CompareMode,
+  language: ReportLanguage = "en",
+) {
+  return buildKpiComparisons({ report: current, previousReport: previous, compareMode, language });
 }
 
 export function compareTotals(current: NormalizedRow, previous: NormalizedRow) {
