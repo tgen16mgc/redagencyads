@@ -1934,7 +1934,7 @@ function ComparisonPanel({
             <div key={delta.key} className="rounded-lg border p-3">
               <div className="text-xs font-medium text-muted-foreground">{metricLabel(delta.key, language)}</div>
               <div className="mt-1 text-lg font-semibold tabular-nums">{formatComparisonMetric(delta.key, delta.current, currency)}</div>
-              <Badge variant={delta.change >= 0 ? "secondary" : "destructive"} className="mt-2 tabular-nums">
+              <Badge variant={delta.change === 0 ? "secondary" : isBadKpiDelta({ key: delta.key } as any, delta.change) ? "destructive" : "success"} className="mt-2 tabular-nums">
                 {formatSignedPct(delta.change_pct, language)}
               </Badge>
             </div>
@@ -3125,7 +3125,7 @@ function PerformanceTable({
               ) : null}
               {action ? (
                 <TableCell>
-                  <Badge variant={action.intent === "danger" ? "destructive" : action.intent === "good" ? "secondary" : "outline"}>
+                  <Badge variant={action.intent === "danger" ? "destructive" : action.intent === "good" ? "success" : "outline"}>
                     {action.label}
                   </Badge>
                 </TableCell>
