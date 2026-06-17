@@ -1,4 +1,5 @@
 import type { KpiPack, NormalizedRow } from "@/lib/types";
+import { SUFFICIENCY } from "@/lib/data-sufficiency";
 
 export type BreakdownWasteStatus = "clean" | "waste_detected" | "insufficient_data";
 
@@ -26,6 +27,8 @@ const labels: Record<BreakdownWasteStatus, { en: string; vi: string }> = {
   insufficient_data: { en: "Insufficient data", vi: "Chưa đủ dữ liệu" },
 };
 
+const MIN_BREAKDOWN_ROWS = 2;
+
 function primaryResult(row: NormalizedRow, pack: KpiPack) {
   if (pack === "messages") return row.messages;
   if (pack === "lead_gen") return row.leads;
@@ -34,22 +37,26 @@ function primaryResult(row: NormalizedRow, pack: KpiPack) {
   return row.impressions;
 }
 
+function insufficientData(): BreakdownWaste {
+  return {
+    status: "insufficient_data",
+    variant: "outline",
+    label: labels.insufficient_data,
+    summary: {
+      en: `Need at least ${MIN_BREAKDOWN_ROWS} breakdown rows with spend to analyze allocation efficiency.`,
+      vi: `Chưa đủ ${MIN_BREAKDOWN_ROWS} dòng dữ liệu có chi tiêu để phân tích hiệu quả phân bổ.`,
+    },
+    rows: [],
+  };
+}
+
 export function assessBreakdownWaste(rows: NormalizedRow[], pack: KpiPack): BreakdownWaste {
   const usable = rows.filter((row) => row.spend > 0);
   const totalSpend = usable.reduce((sum, row) => sum + row.spend, 0);
   const totalResult = usable.reduce((sum, row) => sum + primaryResult(row, pack), 0);
 
-  if (usable.length < 2 || totalSpend <= 0) {
-    return {
-      status: "insufficient_data",
-      variant: "outline",
-      label: labels.insufficient_data,
-      summary: {
-        en: "Not enough breakdown rows with spend to analyze allocation efficiency.",
-        vi: "Chưa đủ dòng dữ liệu có chi tiêu để phân tích hiệu quả phân bổ.",
-      },
-      rows: [],
-    };
+  if (usable.length < MIN_BREAKDOWN_ROWS || totalSpend <= 0) {
+    return insufficientData();
   }
 
   const detailedRows: BreakdownWasteRow[] = usable.map((row) => {

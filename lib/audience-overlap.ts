@@ -1,4 +1,5 @@
 import type { NormalizedRow } from "@/lib/types";
+import { SUFFICIENCY } from "@/lib/data-sufficiency";
 
 export type AudienceOverlapStatus = "clean" | "overlap_risk" | "insufficient_data";
 
@@ -21,6 +22,8 @@ const labels: Record<AudienceOverlapStatus, { en: string; vi: string }> = {
   overlap_risk: { en: "Overlap risk", vi: "Trùng đối tượng" },
   insufficient_data: { en: "Insufficient data", vi: "Chưa đủ dữ liệu" },
 };
+
+const MIN_ACTIVE_ADSETS = 2;
 
 function cleanNameTokens(name: string): string[] {
   // Normalize common target/ad set terms
@@ -55,20 +58,24 @@ function calculateSimilarity(name1: string, name2: string): number {
   return tokenSim;
 }
 
+function insufficientData(): AudienceOverlap {
+  return {
+    status: "insufficient_data",
+    variant: "outline",
+    label: labels.insufficient_data,
+    summary: {
+      en: `Need at least ${MIN_ACTIVE_ADSETS} active ad sets with spend to analyze targeting overlap risk.`,
+      vi: `Cần tối thiểu ${MIN_ACTIVE_ADSETS} ad set active có chi tiêu để phân tích rủi ro trùng đối tượng.`,
+    },
+    pairs: [],
+  };
+}
+
 export function assessAudienceOverlap(adsets: NormalizedRow[]): AudienceOverlap {
   const activeAdsets = adsets.filter((row) => row.spend > 0);
 
-  if (activeAdsets.length < 2) {
-    return {
-      status: "insufficient_data",
-      variant: "outline",
-      label: labels.insufficient_data,
-      summary: {
-        en: "Need at least 2 active ad sets with spend to analyze targeting overlap risk.",
-        vi: "Cần tối thiểu 2 ad set active có chi tiêu để phân tích rủi ro trùng đối tượng.",
-      },
-      pairs: [],
-    };
+  if (activeAdsets.length < MIN_ACTIVE_ADSETS) {
+    return insufficientData();
   }
 
   const pairs: OverlapPair[] = [];

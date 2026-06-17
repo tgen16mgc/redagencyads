@@ -1,4 +1,5 @@
 import type { InterfaceLanguage, KpiPack, NormalizedRow } from "@/lib/types";
+import { SUFFICIENCY } from "@/lib/data-sufficiency";
 
 export type DecisionConfidenceStatus = "scale_candidate" | "kill_candidate" | "monitor" | "insufficient_data";
 
@@ -42,7 +43,7 @@ function resultThreshold(pack: KpiPack) {
 }
 
 function lowDelivery(row: NormalizedRow) {
-  return row.impressions > 0 && row.impressions < 1000;
+  return row.impressions > 0 && row.impressions < SUFFICIENCY.minRowImpressions;
 }
 
 export function assessDecisionConfidence(row: NormalizedRow, pack: KpiPack, language: InterfaceLanguage = "en", targets: DecisionTargets = {}): DecisionConfidence {
@@ -77,7 +78,7 @@ export function assessDecisionConfidence(row: NormalizedRow, pack: KpiPack, lang
     };
   }
 
-  if (result === 0 && row.spend >= zeroResultSpendThreshold && row.impressions >= 1000) {
+  if (result === 0 && row.spend >= zeroResultSpendThreshold && row.impressions >= SUFFICIENCY.minRowImpressions) {
     return {
       status: "kill_candidate",
       actionable: true,

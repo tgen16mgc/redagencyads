@@ -188,7 +188,7 @@ export function validateSpec(spec: CustomChartSpec): ValidationResult {
 
   const formats = distinctFormats(series);
   if (formats.length >= 3) {
-    issues.push({ code: "TOO_MANY_FORMATS", message: "A chart supports at most two metric formats (two axes)." });
+    issues.push({ code: "TOO_MANY_FORMATS", message: `A chart supports at most two metric formats, but this uses ${formats.join(", ")}. Drop one format or create a second chart.` });
   }
 
   const formatsByAxis = new Map<CustomAxis, Set<ChartFormat>>();
@@ -197,9 +197,9 @@ export function validateSpec(spec: CustomChartSpec): ValidationResult {
     set.add(metricFormat(s.key));
     formatsByAxis.set(s.axis, set);
   }
-  for (const set of formatsByAxis.values()) {
+  for (const [axis, set] of formatsByAxis.entries()) {
     if (set.size >= 2) {
-      issues.push({ code: "MIXED_FORMATS_SINGLE_AXIS", message: "One axis mixes two formats. Move a metric to the other axis." });
+      issues.push({ code: "MIXED_FORMATS_SINGLE_AXIS", message: `The ${axis} axis mixes ${[...set].join(" and ")}. Move one metric to the other axis.` });
       break;
     }
   }
@@ -377,12 +377,13 @@ export function formatAxisTick(value: number, format: ChartFormat, currency: str
   const locale = currency === "VND" ? "vi-VN" : "en-US";
   const safe = value || 0;
   if (format === "currency") {
-    return new Intl.NumberFormat(locale, {
+    const formatted = new Intl.NumberFormat(locale, {
       style: "currency",
       currency,
       notation: "compact",
       maximumFractionDigits: 1,
     }).format(safe);
+    return currency === "VND" ? formatted.replace(/\s+/g, "") : formatted;
   }
   const compact = new Intl.NumberFormat(locale, { notation: "compact", maximumFractionDigits: 1 }).format(safe);
   if (format === "percent") return `${compact}%`;

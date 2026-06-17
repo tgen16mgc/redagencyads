@@ -171,6 +171,10 @@
   }
 }
 
+[data-print-only] {
+  display: none !important;
+}
+
 @media print {
   @page {
     margin: 12mm;
@@ -182,6 +186,10 @@
 
   [data-print-hidden] {
     display: none !important;
+  }
+
+  [data-print-only] {
+    display: block !important;
   }
 
   [data-print-page] {
@@ -201,12 +209,18 @@
   }
 
   [data-slot="card"] {
-    break-inside: avoid;
+    break-inside: avoid-page;
+    page-break-inside: avoid;
     box-shadow: none !important;
   }
 
   [data-print-flow] {
     break-inside: auto !important;
+  }
+
+  [data-slot="card"][data-print-flow] {
+    break-inside: avoid-page !important;
+    page-break-inside: avoid;
   }
 
   main {

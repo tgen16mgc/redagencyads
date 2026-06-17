@@ -85,8 +85,8 @@ export function CustomChartCard({
           orientation={axis === "right" ? "right" : "left"}
           tickLine={false}
           axisLine={false}
-          width={48}
-          tickMargin={4}
+          width={fmt === "currency" ? 64 : 52}
+          tickMargin={6}
           tickFormatter={fmt ? (v) => formatAxisTick(Number(v), fmt, currency) : undefined}
         />
       );

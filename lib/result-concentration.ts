@@ -1,4 +1,5 @@
 import type { KpiPack, NormalizedRow } from "@/lib/types";
+import { SUFFICIENCY } from "@/lib/data-sufficiency";
 
 export type ResultConcentrationStatus = "low_risk" | "medium_risk" | "high_risk" | "insufficient_data";
 
@@ -26,6 +27,8 @@ const labels: Record<ResultConcentrationStatus, { en: string; vi: string }> = {
   insufficient_data: { en: "Insufficient data", vi: "Chưa đủ dữ liệu" },
 };
 
+const MIN_CONCENTRATION_ROWS = 3;
+
 function primaryResult(row: NormalizedRow, pack: KpiPack) {
   if (pack === "messages") return row.messages;
   if (pack === "lead_gen") return row.leads;
@@ -36,6 +39,19 @@ function primaryResult(row: NormalizedRow, pack: KpiPack) {
 
 function percent(value: number) {
   return `${(value * 100).toFixed(1)}%`;
+}
+
+function insufficientData(topRows: ResultConcentrationRow[]): ResultConcentration {
+  return {
+    status: "insufficient_data",
+    variant: "outline",
+    label: labels.insufficient_data,
+    summary: {
+      en: `Need at least ${MIN_CONCENTRATION_ROWS} rows with spend or results to judge concentration.`,
+      vi: `Chưa đủ ${MIN_CONCENTRATION_ROWS} dòng có chi tiêu hoặc kết quả để đánh giá tập trung.`,
+    },
+    topRows,
+  };
 }
 
 export function assessResultConcentration(rows: NormalizedRow[], pack: KpiPack): ResultConcentration {
@@ -57,17 +73,8 @@ export function assessResultConcentration(rows: NormalizedRow[], pack: KpiPack):
     spendShare: totalSpend > 0 ? row.spend / totalSpend : 0,
   }));
 
-  if (usableRows.length < 3 || denominator <= 0) {
-    return {
-      status: "insufficient_data",
-      variant: "outline",
-      label: labels.insufficient_data,
-      summary: {
-        en: "Not enough rows to judge whether results are concentrated.",
-        vi: "Chưa đủ dòng dữ liệu để đánh giá kết quả có bị tập trung hay không.",
-      },
-      topRows,
-    };
+  if (usableRows.length < MIN_CONCENTRATION_ROWS || denominator <= 0) {
+    return insufficientData(topRows);
   }
 
   const topOneShare = useResults ? topRows[0]?.resultShare || 0 : topRows[0]?.spendShare || 0;

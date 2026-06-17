@@ -37,7 +37,7 @@ import type { AdSetWithPreviews, AiInsightTable, CompareMode, CompetitorFetchRes
 import { buildWorkflowSteps, type DashboardWorkflowStep } from "@/lib/dashboard-workflow";
 import { canOpenDashboardView, initialDashboardViewFromSearch } from "@/lib/dashboard-access";
 import { getCompareRange } from "@/lib/report-ranges";
-import { classifyCreativeFatigue } from "@/lib/creative-fatigue";
+import { classifyCreativeFatigue, computeCreativeFatigueBaseline } from "@/lib/creative-fatigue";
 import { assessCreativeVolume } from "@/lib/creative-volume";
 import { assessCreativeStarvation } from "@/lib/creative-starvation";
 import { assessLearningLimited } from "@/lib/learning-limited";
@@ -46,10 +46,12 @@ import { assessExperimentReadiness } from "@/lib/experiment-readiness";
 import { assessMeasurementQuality } from "@/lib/measurement-quality";
 import { assessResultConcentration } from "@/lib/result-concentration";
 import { assessBreakdownWaste } from "@/lib/breakdown-waste";
-import { assessFunnelLeakage } from "@/lib/funnel-leakage";
+import { assessFunnelLeakage, FUNNEL_BENCHMARKS } from "@/lib/funnel-leakage";
 import { assessAudienceOverlap } from "@/lib/audience-overlap";
 import { recommendBudgetMoves } from "@/lib/budget-move-engine";
 import { analyzeComparisonRootCauses } from "@/lib/comparison-root-cause";
+import { diagnoseDailyChange } from "@/lib/daily-diagnosis";
+import { summarizeHealth } from "@/lib/health-score";
 import { assessConsolidationPressure } from "@/lib/consolidation-pressure";
 import { assessCostCapDelivery } from "@/lib/cost-cap-delivery";
 import { assessSpendPacing } from "@/lib/spend-pacing";
@@ -62,6 +64,8 @@ import {
   normalizeCompetitorUrls,
 } from "@/lib/competitor-input";
 import { shouldFetchBeforeCompetitorAnalysis } from "@/lib/competitor-workflow";
+import { detectBaselineAnomalies, anomalyBadgeText } from "@/lib/baseline-anomaly";
+import { diagnosticNextStep, type DiagnosticKind, type DiagnosticTone } from "@/lib/diagnostic-next-step";
 import { performanceChartConfig } from "@/lib/chart-palette";
 import {
   compactDate,
@@ -75,7 +79,7 @@ import {
   truncateLabel,
   type ChartKey,
 } from "@/lib/chart-spec";
-import { buildCompetitorSpyPrompt, buildInsightPrompt, comparisonDeltas, formatMetric } from "@/lib/metrics";
+import { buildCompetitorSpyPrompt, buildInsightPrompt, comparisonDeltas, formatCompactNumber, formatMetric, formatSharePct } from "@/lib/metrics";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -1161,16 +1165,24 @@ export function DashboardShell() {
                 </CardContent>
               </Card>
               <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-                {report.kpis.map((kpi) => (
-                  <Card key={kpi.label} size="sm">
-                    <CardHeader>
-                      <CardDescription className="text-xs font-medium uppercase tracking-wide">{kpi.label}</CardDescription>
-                      <CardTitle className="text-3xl font-semibold tabular-nums leading-none">
-                        {formatMetric(Number(report.totals[kpi.key as keyof NormalizedRow] || 0), kpi.format, report.account.currency || "VND")}
-                      </CardTitle>
-                    </CardHeader>
-                  </Card>
-                ))}
+                {report.kpis.map((kpi) => {
+                  const delta = kpiDelta(report, kpi);
+                  return (
+                    <Card key={kpi.label} size="sm">
+                      <CardHeader>
+                        <CardDescription className="text-xs font-medium uppercase tracking-wide">{kpi.label}</CardDescription>
+                        <CardTitle className="text-3xl font-semibold tabular-nums leading-none">
+                          {formatMetric(Number(report.totals[kpi.key as keyof NormalizedRow] || 0), kpi.format, report.account.currency || "VND")}
+                        </CardTitle>
+                        {delta !== null ? (
+                          <CardDescription className={`text-xs tabular-nums ${isBadKpiDelta(kpi, delta) ? "text-destructive" : "text-muted-foreground"}`}>
+                            {delta > 0 ? "↑" : delta < 0 ? "↓" : "→"} {formatSignedPct(delta, language)} {language === "vi" ? "so với kỳ trước" : "vs prior period"}
+                          </CardDescription>
+                        ) : null}
+                      </CardHeader>
+                    </Card>
+                  );
+                })}
               </section>
 
               <PerformanceCharts report={report} language={language} />
@@ -1210,7 +1222,7 @@ export function DashboardShell() {
                 />
               ) : null}
 
-              <section className="grid gap-4 xl:grid-cols-[1.5fr_1fr]">
+              <section className="grid gap-4 xl:grid-cols-[1.5fr_1fr]" data-print-flow>
                 <Card>
                   <CardHeader>
                     <CardTitle>{copy.performance.title}</CardTitle>
@@ -1260,33 +1272,14 @@ export function DashboardShell() {
                   </CardContent>
                 </Card>
 
-                <Card>
-                  <CardHeader>
-                    <CardTitle>{copy.performance.health}</CardTitle>
-                    <CardDescription>{copy.performance.healthDescription}</CardDescription>
-                  </CardHeader>
-                  <CardContent className="flex flex-col gap-3">
-                    <div className="flex items-end justify-between">
-                      <div className="text-4xl font-semibold tabular-nums">{report.health.score}/100</div>
-                      <Badge variant={report.health.score >= 75 ? "secondary" : "destructive"}>{copy.performance.grade} {report.health.grade}</Badge>
-                    </div>
-                    <Separator />
-                    <div className="flex flex-col gap-2">
-                      {report.health.checks.map((check) => (
-                        <div key={check.id} className={`rounded-lg border p-3 ${check.status === "fail" ? "border-destructive/30 bg-destructive/5" : "bg-muted/20"}`}>
-                          <div className="flex items-center justify-between gap-2">
-                            <div className={`text-sm font-medium ${check.status === "fail" ? "text-destructive" : ""}`}>{check.label}</div>
-                            <Badge variant={check.status === "fail" ? "destructive" : "secondary"}>{check.status}</Badge>
-                          </div>
-                          <p className="mt-1 text-xs text-muted-foreground">{check.detail}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
+                <HealthTriageCard report={report} language={language} />
               </section>
 
-              <section className="flex flex-col gap-3">
+              <section data-print-flow>
+                <DailyDiagnosisCard report={report} language={language} />
+              </section>
+
+              <section className="flex flex-col gap-3" data-print-flow>
                 <div className="flex flex-col gap-1">
                   <h2 className="font-heading text-lg font-semibold tracking-tight">
                     {language === "vi" ? "Chẩn đoán tài khoản" : "Account diagnostics"}
@@ -2807,13 +2800,55 @@ function formatComparisonMetric(key: string, value: number, currency: string) {
 function formatSignedPct(value: number | null, language: ReportLanguage = "en") {
   if (value === null) return language === "vi" ? "mới" : "new";
   const sign = value > 0 ? "+" : "";
-  return `${sign}${value.toLocaleString("vi-VN", { maximumFractionDigits: 1 })}%`;
+  const locale = language === "vi" ? "vi-VN" : "en-US";
+  return `${sign}${value.toLocaleString(locale, { maximumFractionDigits: 1 })}%`;
+}
+
+function averageRows(rows: NormalizedRow[], key: keyof NormalizedRow): number {
+  if (!rows.length) return 0;
+  return rows.reduce((sum, row) => sum + Number(row[key] || 0), 0) / rows.length;
+}
+
+function sumRows(rows: NormalizedRow[], key: keyof NormalizedRow): number {
+  return rows.reduce((sum, row) => sum + Number(row[key] || 0), 0);
+}
+
+const LOWER_IS_BETTER_KPIS = new Set<string>(["cpc", "cpm", "cpl", "costPerMessage", "costPerReply", "cpaPurchase", "frequency"]);
+const HIGHER_IS_BETTER_KPIS = new Set<string>(["messages", "replies", "leads", "purchases", "linkClicks", "clicks", "impressions", "reach", "ctr", "roas"]);
+
+function isBadKpiDelta(kpi: DashboardReport["kpis"][number], delta: number) {
+  if (delta === 0) return false;
+  if (LOWER_IS_BETTER_KPIS.has(String(kpi.key))) return delta > 0;
+  if (HIGHER_IS_BETTER_KPIS.has(String(kpi.key))) return delta < 0;
+  return false;
+}
+
+function kpiDelta(report: DashboardReport, kpi: DashboardReport["kpis"][number]) {
+  if (kpi.key === "healthScore") return null;
+  const dated = report.dailyRows
+    .filter((row) => Boolean(row.date))
+    .slice()
+    .sort((a, b) => (a.date! < b.date! ? -1 : a.date! > b.date! ? 1 : 0));
+  if (dated.length < 6) return null;
+  const windowSize = Math.min(7, Math.floor(dated.length / 2));
+  const recentRows = dated.slice(dated.length - windowSize);
+  const priorRows = dated.slice(dated.length - windowSize * 2, dated.length - windowSize);
+  if (!recentRows.length || !priorRows.length) return null;
+
+  const recent = kpi.format === "number" ? sumRows(recentRows, kpi.key) : averageRows(recentRows, kpi.key);
+  const prior = kpi.format === "number" ? sumRows(priorRows, kpi.key) : averageRows(priorRows, kpi.key);
+  if (prior <= 0) return null;
+  return ((recent - prior) / prior) * 100;
 }
 
 function PerformanceCharts({ report, language }: { report: DashboardReport; language: ReportLanguage }) {
   const currency = report.account.currency || "VND";
   const spec = getPackChartSpec(report.selectedPack, language);
   const trendAnnotation = spec.trendKeys.map((key) => detectTrendAnnotation(report.dailyRows, key)).find((annotation) => annotation !== null);
+  const anomalyResult = detectBaselineAnomalies(report.dailyRows);
+  const referenceRows = report.dailyRows.filter((row) => Boolean(row.date)).slice(0, -Math.min(7, Math.floor(report.dailyRows.length / 2)));
+  const trendReferenceValue = referenceRows.length ? averageRows(referenceRows, spec.trendKeys[0]) : null;
+  const efficiencyReferenceValue = referenceRows.length ? averageRows(referenceRows, spec.efficiencyKeys[0]) : null;
   const dailyData = report.dailyRows.map((row) => ({
     date: compactDate(row.date),
     spend: Math.round(row.spend),
@@ -2844,7 +2879,19 @@ function PerformanceCharts({ report, language }: { report: DashboardReport; lang
       result: roundForFormat(metricValue(row, spec.drilldownKey), spec.drilldownFormat),
     }));
 
-  if (!dailyData.length && !adsetData.length) return null;
+  if (!dailyData.length && !adsetData.length) {
+    return (
+      <Card data-print-flow>
+        <CardHeader>
+          <CardTitle>{language === "vi" ? "Chưa có dữ liệu biểu đồ" : "No chart data yet"}</CardTitle>
+          <CardDescription>{language === "vi" ? "Cần dữ liệu theo ngày hoặc ad set để hiển thị xu hướng." : "Daily or ad set data is needed to show performance trends."}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ChartEmpty language={language} />
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <section className="grid gap-4 xl:grid-cols-3">
@@ -2855,7 +2902,16 @@ function PerformanceCharts({ report, language }: { report: DashboardReport; lang
               <CardTitle>{spec.trendTitle}</CardTitle>
               <CardDescription>{spec.trendDescription}</CardDescription>
             </div>
-            {trendAnnotation ? <Badge variant="outline" className="shrink-0">{trendAnnotation.label}</Badge> : null}
+            <div className="flex shrink-0 items-center gap-2 flex-wrap justify-end">
+              {anomalyResult.status === "anomalies_found" ? (
+                anomalyResult.anomalies.slice(0, 2).map((anomaly) => (
+                  <Badge key={anomaly.key} variant={anomaly.severity === "danger" ? "destructive" : "outline"} className="shrink-0">
+                    {anomalyBadgeText(anomaly, language)}
+                  </Badge>
+                ))
+              ) : null}
+              {trendAnnotation ? <Badge variant="outline" className="shrink-0">{trendAnnotation.label}</Badge> : null}
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -2866,6 +2922,7 @@ function PerformanceCharts({ report, language }: { report: DashboardReport; lang
                 <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={8} minTickGap={16} />
                 <YAxis yAxisId="spend" hide />
                 <YAxis yAxisId="outcomes" orientation="right" hide />
+                {trendReferenceValue ? <ReferenceLine yAxisId="outcomes" y={trendReferenceValue} stroke="var(--chart-reference)" strokeDasharray="2 4" /> : null}
                 <ChartTooltip
                   content={
                     <ChartTooltipContent
@@ -2901,6 +2958,7 @@ function PerformanceCharts({ report, language }: { report: DashboardReport; lang
                 <CartesianGrid vertical={false} />
                 <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={8} minTickGap={16} />
                 <YAxis hide />
+                {efficiencyReferenceValue ? <ReferenceLine y={efficiencyReferenceValue} stroke="var(--chart-reference)" strokeDasharray="2 4" /> : null}
                 <ChartTooltip
                   content={
                     <ChartTooltipContent
@@ -3035,14 +3093,16 @@ function PerformanceTable({
           <TableHead className="text-right">{copy.table.leads}</TableHead>
           <TableHead className="text-right">{copy.table.costMessage}</TableHead>
           <TableHead className="text-right">{copy.table.cpl}</TableHead>
-          {!daily ? <TableHead>{copy.table.creativeFatigue}</TableHead> : null}
+          <TableHead>{copy.table.creativeFatigue}</TableHead>
           {pack ? <TableHead>{copy.table.action}</TableHead> : null}
         </TableRow>
       </TableHeader>
       <TableBody>
-        {rows.map((row) => {
+        {(() => {
+          const fatigueBaseline = daily ? null : computeCreativeFatigueBaseline(rows);
+          return rows.map((row) => {
           const action = pack ? rowDecision(row, pack, language) : null;
-          const creativeSignal = daily ? null : classifyCreativeFatigue(row);
+          const creativeSignal = classifyCreativeFatigue(row, fatigueBaseline);
           return (
             <TableRow key={`${row.level}-${row.id}-${row.date || ""}`} className="hover:bg-muted/40 transition-colors">
               <TableCell className="max-w-48 truncate font-medium">{daily ? row.date : row.name}</TableCell>
@@ -3072,7 +3132,8 @@ function PerformanceTable({
               ) : null}
             </TableRow>
           );
-        })}
+          });
+        })()}
       </TableBody>
     </Table>
   );
@@ -3080,6 +3141,154 @@ function PerformanceTable({
 
 function diagnosticAccentClass(variant: "default" | "secondary" | "destructive" | "outline"): string | undefined {
   return variant === "destructive" ? "border-l-4 border-l-destructive" : undefined;
+}
+
+function toneFromVariant(variant: "default" | "secondary" | "destructive" | "outline"): DiagnosticTone {
+  if (variant === "destructive") return "critical";
+  if (variant === "outline") return "warning";
+  return "ok";
+}
+
+function DiagnosticNextStep({ kind, tone, language }: { kind: DiagnosticKind; tone: DiagnosticTone; language: ReportLanguage }) {
+  return (
+    <p className="mt-1 border-t pt-2 text-xs">
+      <span className="font-medium text-foreground">{language === "vi" ? "Bước tiếp theo: " : "Next step: "}</span>
+      <span className="text-muted-foreground">{diagnosticNextStep(kind, tone, language)}</span>
+    </p>
+  );
+}
+
+function HealthTriageCard({ report, language }: { report: DashboardReport; language: ReportLanguage }) {
+  const diagnosis = diagnoseDailyChange({ dailyRows: report.dailyRows, selectedPack: report.selectedPack });
+  const summary = summarizeHealth(report, diagnosis);
+  const activeItems = summary.items.filter((item) => item.severity !== "healthy").slice(0, 4);
+  const healthyItems = summary.items.filter((item) => item.severity === "healthy");
+  const variant = summary.severity === "danger" ? "destructive" : summary.severity === "warning" ? "outline" : "secondary";
+  const healthyCopy = language === "vi" ? `${summary.counts.healthy} kiểm tra khỏe mạnh` : `${summary.counts.healthy} healthy checks`;
+
+  return (
+    <Card data-print-flow className={summary.severity === "danger" ? "border-l-4 border-l-destructive" : undefined}>
+      <CardHeader>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <CardTitle>{language === "vi" ? "Điểm sức khỏe & ưu tiên" : "Health score & priorities"}</CardTitle>
+            <CardDescription>{language === "vi" ? "Tổng hợp các kiểm tra quan trọng thành một hàng đợi xử lý." : "Rolls key checks into one prioritized action queue."}</CardDescription>
+          </div>
+          <Badge variant={variant}>{summary.label[language]}</Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        <div className="flex items-end justify-between gap-4">
+          <div>
+            <div className="text-4xl font-semibold tabular-nums">{summary.score}/100</div>
+            <p className="text-sm text-muted-foreground">{summary.summary[language]}</p>
+          </div>
+          <Badge variant={variant}>{language === "vi" ? "Hạng" : "Grade"} {summary.grade}</Badge>
+        </div>
+        <Separator />
+        {activeItems.length > 0 ? (
+          <div className="flex flex-col gap-2">
+            {activeItems.map((item) => (
+              <div key={item.id} className={`rounded-lg border p-3 ${item.severity === "danger" ? "border-destructive/30 bg-destructive/5" : "bg-muted/20"}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <div className={`text-sm font-medium ${item.severity === "danger" ? "text-destructive" : ""}`}>{item.title[language]}</div>
+                  <Badge variant={item.severity === "danger" ? "destructive" : "outline"}>{item.severity}</Badge>
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">{item.detail[language]}</p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">{language === "vi" ? "Không có vấn đề ưu tiên cần xử lý." : "No priority issues to review."}</p>
+        )}
+        {healthyItems.length > 0 ? (
+          <>
+            <details className="rounded-lg border bg-muted/20 p-3 text-sm text-muted-foreground" data-print-hidden>
+              <summary className="cursor-pointer font-medium text-foreground">{healthyCopy}</summary>
+              <ul className="mt-2 flex flex-col gap-1">
+                {healthyItems.map((item) => (
+                  <li key={item.id} className="flex items-start justify-between gap-2 text-xs">
+                    <span>{item.title[language]}</span>
+                    <span className="text-muted-foreground">{item.detail[language]}</span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+            <div className="rounded-lg border bg-muted/20 p-3 text-sm text-muted-foreground" data-print-only>
+              <div className="font-medium text-foreground">{healthyCopy}</div>
+              <ul className="mt-2 flex flex-col gap-1">
+                {healthyItems.map((item) => (
+                  <li key={item.id} className="flex items-start justify-between gap-2 text-xs">
+                    <span>{item.title[language]}</span>
+                    <span className="text-muted-foreground">{item.detail[language]}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </>
+        ) : null}
+        <DiagnosticNextStep kind="healthTriage" tone={toneFromVariant(variant)} language={language} />
+      </CardContent>
+    </Card>
+  );
+}
+
+function DailyDiagnosisCard({ report, language }: { report: DashboardReport; language: ReportLanguage }) {
+  const diagnosis = diagnoseDailyChange({ dailyRows: report.dailyRows, selectedPack: report.selectedPack });
+  const hasDanger = diagnosis.causes.some((cause) => cause.severity === "danger");
+  const title = language === "vi" ? "Vì sao có thay đổi?" : "Why did this change?";
+  const description =
+    language === "vi"
+      ? "Chẩn đoán nguyên nhân gốc từ xu hướng theo ngày trong báo cáo này."
+      : "Root-cause diagnosis from the daily trend inside this report.";
+  const badge =
+    diagnosis.status === "causes_found"
+      ? { variant: (hasDanger ? "destructive" : "outline") as "destructive" | "outline", text: language === "vi" ? `${diagnosis.causes.length} nguyên nhân` : `${diagnosis.causes.length} cause${diagnosis.causes.length > 1 ? "s" : ""}` }
+      : diagnosis.status === "stable"
+        ? { variant: "secondary" as const, text: language === "vi" ? "Ổn định" : "Stable" }
+        : { variant: "outline" as const, text: language === "vi" ? "Chưa đủ dữ liệu" : "Need more data" };
+
+  return (
+    <Card data-print-flow className={hasDanger ? "border-l-4 border-l-destructive" : undefined}>
+      <CardHeader>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <CardTitle>{title}</CardTitle>
+            <CardDescription>{description}</CardDescription>
+          </div>
+          <Badge variant={badge.variant}>{badge.text}</Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        <p className="text-sm text-muted-foreground">{diagnosis.summary[language]}</p>
+        {diagnosis.causes.length > 0 ? (
+          <ul className="flex flex-col gap-3">
+            {diagnosis.causes.map((cause) => (
+              <li
+                key={cause.id}
+                className={`flex flex-col gap-1.5 rounded-lg border p-3 ${cause.severity === "danger" ? "border-destructive/30 bg-destructive/5" : "bg-muted/20"}`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className={`text-sm font-medium ${cause.severity === "danger" ? "text-destructive" : ""}`}>{cause.title[language]}</span>
+                  <span className="flex flex-wrap justify-end gap-1">
+                    {cause.evidence.map((line) => (
+                      <Badge key={line.en} variant="outline" className="tabular-nums">{line[language]}</Badge>
+                    ))}
+                  </span>
+                </div>
+                <p className="text-sm text-muted-foreground">{cause.action[language]}</p>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        <DiagnosticNextStep
+          kind="dailyDiagnosis"
+          tone={diagnosis.status === "insufficient_data" ? "insufficient" : diagnosis.status === "stable" ? "ok" : hasDanger ? "critical" : "warning"}
+          language={language}
+        />
+      </CardContent>
+    </Card>
+  );
 }
 
 function ExperimentReadinessCard({ report, language }: { report: DashboardReport; language: ReportLanguage }) {
@@ -3103,6 +3312,7 @@ function ExperimentReadinessCard({ report, language }: { report: DashboardReport
             <li key={item}>{item}</li>
           ))}
         </ul>
+        <DiagnosticNextStep kind="experimentReadiness" tone={toneFromVariant(readiness.variant)} language={language} />
       </CardContent>
     </Card>
   );
@@ -3151,6 +3361,7 @@ function DecisionConfidenceCard({ report, language, targets }: { report: Dashboa
             ))}
           </div>
         ) : null}
+        <DiagnosticNextStep kind="decisionConfidence" tone={rows.length === 0 ? "insufficient" : toneFromVariant(variant)} language={language} />
       </CardContent>
     </Card>
   );
@@ -3190,6 +3401,7 @@ function CreativeVolumeCard({ report, language }: { report: DashboardReport; lan
             ))}
           </div>
         ) : null}
+        <DiagnosticNextStep kind="creativeVolume" tone={assessment.status === "insufficient_data" ? "insufficient" : toneFromVariant(assessment.variant)} language={language} />
       </CardContent>
     </Card>
   );
@@ -3245,6 +3457,7 @@ function BudgetMoveEngineCard({ report, language }: { report: DashboardReport; l
             {reasons.map((reason) => <li key={reason}>{reason}</li>)}
           </ul>
         )}
+        <DiagnosticNextStep kind="budgetMove" tone={toneFromVariant(engine.variant)} language={language} />
       </CardContent>
     </Card>
   );
@@ -3252,8 +3465,17 @@ function BudgetMoveEngineCard({ report, language }: { report: DashboardReport; l
 
 function FunnelLeakageCard({ report, language }: { report: DashboardReport; language: ReportLanguage }) {
   const copy = uiCopy[language].performance;
+  const currency = report.account.currency || "VND";
   const leakage = assessFunnelLeakage(report.totals);
   const items = leakage.blockers[language].length > 0 ? leakage.blockers[language] : [leakage.summary[language]];
+  const stages = [
+    { key: "clicks", label: language === "vi" ? "Click link" : "Link clicks", value: report.totals.linkClicks, benchmark: null },
+    { key: "cart", label: language === "vi" ? "Thêm giỏ" : "Add to cart", value: report.totals.addToCart, benchmark: FUNNEL_BENCHMARKS.clickToCart },
+    { key: "checkout", label: language === "vi" ? "Checkout" : "Checkout", value: report.totals.initiateCheckout, benchmark: FUNNEL_BENCHMARKS.cartToCheckout },
+    { key: "purchase", label: language === "vi" ? "Mua hàng" : "Purchase", value: report.totals.purchases, benchmark: FUNNEL_BENCHMARKS.checkoutToPurchase },
+  ];
+  const maxStage = Math.max(...stages.map((stage) => stage.value), 1);
+
   return (
     <Card data-print-flow className={diagnosticAccentClass(leakage.variant)}>
       <CardHeader>
@@ -3269,26 +3491,44 @@ function FunnelLeakageCard({ report, language }: { report: DashboardReport; lang
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         {leakage.status !== "insufficient_data" ? (
-          <div className="grid grid-cols-3 gap-2 border-b pb-3 text-center text-xs">
-            <div>
-              <div className="text-muted-foreground">Click → Cart</div>
-              <div className="font-semibold tabular-nums">{(leakage.rates.clickToCart * 100).toFixed(1)}%</div>
-            </div>
-            <div>
-              <div className="text-muted-foreground">Cart → Ckout</div>
-              <div className="font-semibold tabular-nums">{(leakage.rates.cartToCheckout * 100).toFixed(1)}%</div>
-            </div>
-            <div>
-              <div className="text-muted-foreground">Ckout → Purch</div>
-              <div className="font-semibold tabular-nums">{(leakage.rates.checkoutToPurchase * 100).toFixed(1)}%</div>
-            </div>
+          <div className="flex flex-col gap-2 border-b pb-3">
+            {stages.map((stage, index) => {
+              const previous = index > 0 ? stages[index - 1] : null;
+              const width = Math.max(8, (stage.value / maxStage) * 100);
+              const drop = previous && previous.value > 0 ? 100 - (stage.value / previous.value) * 100 : 0;
+              return (
+                <div key={stage.key} className="flex flex-col gap-1">
+                  <div className="flex items-center justify-between gap-2 text-xs">
+                    <span className="font-medium">{stage.label}</span>
+                    <span className="tabular-nums text-muted-foreground">
+                      {new Intl.NumberFormat(language === "vi" ? "vi-VN" : "en-US").format(stage.value)}
+                      {previous ? ` · ${formatSharePct(Math.max(0, drop), currency)} ${language === "vi" ? "rơi" : "drop"}` : ""}
+                      {stage.benchmark ? ` · ${language === "vi" ? "mốc" : "bench"} ${formatSharePct(stage.benchmark, currency)}` : ""}
+                    </span>
+                  </div>
+                  <div className="h-3 rounded-full bg-muted">
+                    <div
+                      className={`h-3 rounded-full ${index === 0 ? "bg-chart-1" : index === stages.length - 1 && leakage.status === "leakage_detected" ? "bg-destructive" : "bg-chart-2"}`}
+                      style={{ width: `${width}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
           </div>
-        ) : null}
+        ) : (
+          <div className="rounded-lg border bg-muted/20 p-3 text-sm text-muted-foreground">{leakage.summary[language]}</div>
+        )}
         <ul className="flex flex-col gap-2 text-sm text-muted-foreground">
           {items.map((item) => (
             <li key={item}>{item}</li>
           ))}
         </ul>
+        <DiagnosticNextStep
+          kind="funnelLeakage"
+          tone={leakage.status === "insufficient_data" ? "insufficient" : toneFromVariant(leakage.variant)}
+          language={language}
+        />
       </CardContent>
     </Card>
   );
@@ -3296,6 +3536,7 @@ function FunnelLeakageCard({ report, language }: { report: DashboardReport; lang
 
 function AudienceOverlapCard({ report, language }: { report: DashboardReport; language: ReportLanguage }) {
   const copy = uiCopy[language].performance;
+  const currency = report.account.currency || "VND";
   const overlap = assessAudienceOverlap(report.adsetRows);
   return (
     <Card data-print-flow className={diagnosticAccentClass(overlap.variant)}>
@@ -3314,13 +3555,18 @@ function AudienceOverlapCard({ report, language }: { report: DashboardReport; la
           <div className="flex flex-col gap-2">
             {overlap.pairs.map((pair) => (
               <div key={`${pair.name1}-${pair.name2}`} className="flex flex-col gap-1 rounded-lg border p-2 text-sm">
-                <div className="font-medium tabular-nums">{(pair.similarity * 100).toFixed(0)}% similarity</div>
+                <div className="font-medium tabular-nums">{formatSharePct(pair.similarity, currency)} similarity</div>
                 <div className="truncate text-xs text-muted-foreground">{pair.name1}</div>
                 <div className="truncate text-xs text-muted-foreground">{pair.name2}</div>
               </div>
             ))}
           </div>
         ) : null}
+        <DiagnosticNextStep
+          kind="audienceOverlap"
+          tone={overlap.status === "insufficient_data" ? "insufficient" : toneFromVariant(overlap.variant)}
+          language={language}
+        />
       </CardContent>
     </Card>
   );
@@ -3355,6 +3601,7 @@ function TargetingExclusionsCard({ report, language }: { report: DashboardReport
             ))}
           </div>
         ) : null}
+        <DiagnosticNextStep kind="targetingExclusions" tone={toneFromVariant(assessment.variant)} language={language} />
       </CardContent>
     </Card>
   );
@@ -3362,6 +3609,7 @@ function TargetingExclusionsCard({ report, language }: { report: DashboardReport
 
 function CreativeStarvationCard({ report, language }: { report: DashboardReport; language: ReportLanguage }) {
   const copy = uiCopy[language].performance;
+  const currency = report.account.currency || "VND";
   const assessment = assessCreativeStarvation(report.adRows);
   return (
     <Card data-print-flow className={diagnosticAccentClass(assessment.variant)}>
@@ -3387,7 +3635,7 @@ function CreativeStarvationCard({ report, language }: { report: DashboardReport;
                   {adset.starvedAds.map((ad) => (
                     <div key={ad.adId} className="flex items-center justify-between text-xs text-muted-foreground pl-2 border-l-2 border-primary/30">
                       <span className="truncate max-w-[180px]">{ad.adName}</span>
-                      <span className="tabular-nums shrink-0 ml-2">{(ad.spendShare * 100).toFixed(0)}% spend</span>
+                      <span className="tabular-nums shrink-0 ml-2">{formatSharePct(ad.spendShare, currency)} spend</span>
                     </div>
                   ))}
                 </div>
@@ -3395,6 +3643,11 @@ function CreativeStarvationCard({ report, language }: { report: DashboardReport;
             ))}
           </div>
         ) : null}
+        <DiagnosticNextStep
+          kind="creativeStarvation"
+          tone={assessment.status === "insufficient_data" ? "insufficient" : toneFromVariant(assessment.variant)}
+          language={language}
+        />
       </CardContent>
     </Card>
   );
@@ -3402,6 +3655,7 @@ function CreativeStarvationCard({ report, language }: { report: DashboardReport;
 
 function BreakdownWasteCard({ report, language }: { report: DashboardReport; language: ReportLanguage }) {
   const copy = uiCopy[language].performance;
+  const currency = report.account.currency || "VND";
   const combinedRows = [...report.platformRows, ...report.ageGenderRows];
   const waste = assessBreakdownWaste(combinedRows, report.selectedPack);
   return (
@@ -3422,11 +3676,12 @@ function BreakdownWasteCard({ report, language }: { report: DashboardReport; lan
             {waste.rows.map((row) => (
               <div key={row.id} className="grid grid-cols-[1fr_auto] gap-2 rounded-lg border p-2 text-sm">
                 <span className="truncate font-medium">{row.name}</span>
-                <span className="text-muted-foreground tabular-nums">{((row.spendShare) * 100).toFixed(0)}% spend</span>
+                <span className="text-muted-foreground tabular-nums">{formatSharePct(row.spendShare, currency)} spend</span>
               </div>
             ))}
           </div>
         ) : null}
+        <DiagnosticNextStep kind="breakdownWaste" tone={waste.status === "insufficient_data" ? "insufficient" : toneFromVariant(waste.variant)} language={language} />
       </CardContent>
     </Card>
   );
@@ -3434,6 +3689,7 @@ function BreakdownWasteCard({ report, language }: { report: DashboardReport; lan
 
 function ResultConcentrationCard({ report, language }: { report: DashboardReport; language: ReportLanguage }) {
   const copy = uiCopy[language].performance;
+  const currency = report.account.currency || "VND";
   const concentration = assessResultConcentration(report.adRows.length > 0 ? report.adRows : report.adsetRows.length > 0 ? report.adsetRows : report.campaignRows, report.selectedPack);
   return (
     <Card data-print-flow className={diagnosticAccentClass(concentration.variant)}>
@@ -3453,11 +3709,12 @@ function ResultConcentrationCard({ report, language }: { report: DashboardReport
             {concentration.topRows.map((row) => (
               <div key={row.id} className="grid grid-cols-[1fr_auto] gap-2 rounded-lg border p-2 text-sm">
                 <span className="truncate font-medium">{row.name}</span>
-                <span className="text-muted-foreground tabular-nums">{((row.resultShare || row.spendShare) * 100).toFixed(1)}%</span>
+                <span className="text-muted-foreground tabular-nums">{formatSharePct(row.resultShare || row.spendShare, currency)}</span>
               </div>
             ))}
           </div>
         ) : null}
+        <DiagnosticNextStep kind="resultConcentration" tone={concentration.status === "insufficient_data" ? "insufficient" : toneFromVariant(concentration.variant)} language={language} />
       </CardContent>
     </Card>
   );
@@ -3465,6 +3722,7 @@ function ResultConcentrationCard({ report, language }: { report: DashboardReport
 
 function SpendPacingCard({ report, language }: { report: DashboardReport; language: ReportLanguage }) {
   const isVietnamese = language === "vi";
+  const currency = report.account.currency || "VND";
   const dateRange = report.dateRange;
   const days = Math.max(1, (new Date(dateRange.until).getTime() - new Date(dateRange.since).getTime()) / (86400 * 1000) + 1);
   const pacing = assessSpendPacing(report.campaignRows, days);
@@ -3494,19 +3752,20 @@ function SpendPacingCard({ report, language }: { report: DashboardReport; langua
                 <div key={c.id} className="rounded-lg border p-2 text-sm">
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-medium truncate">{c.name}</span>
-                    <Badge variant={c.status === "severely_underpacing" ? "destructive" : "outline"}>
-                      {c.pacePercent.toFixed(0)}%
+                    <Badge variant={c.status === "severely_underpacing" ? "destructive" : "outline"} className="tabular-nums">
+                      {formatSharePct(c.pacePercent, currency)}
                     </Badge>
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">
                     {isVietnamese
-                      ? `Chi tiêu ${c.spend.toLocaleString()} / kỳ vọng ${c.expectedSpend.toLocaleString()}`
-                      : `Spent ${c.spend.toLocaleString()} / expected ${c.expectedSpend.toLocaleString()}`}
+                      ? `Chi tiêu ${formatMetric(c.spend, "currency", currency)} / kỳ vọng ${formatMetric(c.expectedSpend, "currency", currency)}`
+                      : `Spent ${formatMetric(c.spend, "currency", currency)} / expected ${formatMetric(c.expectedSpend, "currency", currency)}`}
                   </p>
                 </div>
               ))}
           </div>
         )}
+        <DiagnosticNextStep kind="spendPacing" tone={pacing.status === "no_budget_data" ? "insufficient" : toneFromVariant(pacing.variant)} language={language} />
       </CardContent>
     </Card>
   );
@@ -3514,6 +3773,7 @@ function SpendPacingCard({ report, language }: { report: DashboardReport; langua
 
 function ConsolidationPressureCard({ report, language }: { report: DashboardReport; language: ReportLanguage }) {
   const isVietnamese = language === "vi";
+  const currency = report.account.currency || "VND";
   const dateRange = report.dateRange;
   const days = Math.max(1, (new Date(dateRange.until).getTime() - new Date(dateRange.since).getTime()) / (86400 * 1000) + 1);
   const assessment = assessConsolidationPressure(report.adsetRows, report.selectedPack, days);
@@ -3538,18 +3798,19 @@ function ConsolidationPressureCard({ report, language }: { report: DashboardRepo
           <div className="flex gap-4 text-sm">
             <div>
               <span className="text-muted-foreground">{isVietnamese ? "Ad set active:" : "Active ad sets:"} </span>
-              <span className="font-medium">{assessment.activeAdsets}</span>
+              <span className="font-medium tabular-nums">{formatCompactNumber(assessment.activeAdsets, currency)}</span>
             </div>
             <div>
               <span className="text-muted-foreground">{isVietnamese ? "CV/ad set/tuần:" : "Conv/adset/week:"} </span>
-              <span className="font-medium">{assessment.conversionsPerAdset.toFixed(1)}</span>
+              <span className="font-medium tabular-nums">{assessment.conversionsPerAdset.toLocaleString(currency === "VND" ? "vi-VN" : "en-US", { maximumFractionDigits: 1 })}</span>
             </div>
             <div>
               <span className="text-muted-foreground">{isVietnamese ? "Ngưỡng:" : "Threshold:"} </span>
-              <span className="font-medium">{assessment.weeklyThreshold}</span>
+              <span className="font-medium tabular-nums">{formatCompactNumber(assessment.weeklyThreshold, currency)}</span>
             </div>
           </div>
         )}
+        <DiagnosticNextStep kind="consolidationPressure" tone={assessment.status === "insufficient_data" ? "insufficient" : toneFromVariant(assessment.variant)} language={language} />
       </CardContent>
     </Card>
   );
@@ -3557,6 +3818,7 @@ function ConsolidationPressureCard({ report, language }: { report: DashboardRepo
 
 function CostCapDeliveryCard({ report, language }: { report: DashboardReport; language: ReportLanguage }) {
   const isVietnamese = language === "vi";
+  const currency = report.account.currency || "VND";
   const dateRange = report.dateRange;
   const days = Math.max(1, (new Date(dateRange.until).getTime() - new Date(dateRange.since).getTime()) / (86400 * 1000) + 1);
   const assessment = assessCostCapDelivery(report.campaignRows, days);
@@ -3583,19 +3845,20 @@ function CostCapDeliveryCard({ report, language }: { report: DashboardReport; la
               <div key={item.id} className="rounded-lg border p-2 text-sm">
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-medium truncate">{item.name}</span>
-                  <Badge variant={item.spendRate < 0.6 ? "destructive" : "outline"}>
-                    {(item.spendRate * 100).toFixed(0)}%
+                  <Badge variant={item.spendRate < 0.6 ? "destructive" : "outline"} className="tabular-nums">
+                    {formatSharePct(item.spendRate, currency)}
                   </Badge>
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {isVietnamese
-                    ? `Chi tiêu ${item.spend.toLocaleString()} / ngân sách ngày ${item.dailyBudget.toLocaleString()}`
-                    : `Spent ${item.spend.toLocaleString()} / daily budget ${item.dailyBudget.toLocaleString()}`}
+                    ? `Chi tiêu ${formatMetric(item.spend, "currency", currency)} / ngân sách ngày ${formatMetric(item.dailyBudget, "currency", currency)}`
+                    : `Spent ${formatMetric(item.spend, "currency", currency)} / daily budget ${formatMetric(item.dailyBudget, "currency", currency)}`}
                 </p>
               </div>
             ))}
           </div>
         )}
+        <DiagnosticNextStep kind="costCapDelivery" tone={assessment.status === "no_cap_data" ? "insufficient" : toneFromVariant(assessment.variant)} language={language} />
       </CardContent>
     </Card>
   );
@@ -3621,6 +3884,7 @@ function MeasurementQualityCard({ report, language }: { report: DashboardReport;
             <li key={reason}>{reason}</li>
           ))}
         </ul>
+        <DiagnosticNextStep kind="measurementQuality" tone={quality.status === "not_applicable" ? "insufficient" : toneFromVariant(quality.variant)} language={language} />
       </CardContent>
     </Card>
   );

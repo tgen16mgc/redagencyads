@@ -253,8 +253,25 @@ export function scoreHealth(args: {
   return { score: points, grade, checks };
 }
 
+function metricLocale(currency = "VND") {
+  return currency === "VND" ? "vi-VN" : "en-US";
+}
+
+export function formatCompactNumber(value: number, currency = "VND") {
+  return (value || 0).toLocaleString(metricLocale(currency), { maximumFractionDigits: 0 });
+}
+
+export function formatSharePct(value: number, currency = "VND") {
+  const percent = Math.abs(value) <= 1 ? value * 100 : value;
+  return `${percent.toLocaleString(metricLocale(currency), { maximumFractionDigits: 0 })}%`;
+}
+
+export function formatRatePct(value: number, currency = "VND") {
+  return `${(value || 0).toLocaleString(metricLocale(currency), { maximumFractionDigits: 2 })}%`;
+}
+
 export function formatMetric(value: number, format: KpiCard["format"], currency = "VND") {
-  const locale = currency === "VND" ? "vi-VN" : "en-US";
+  const locale = metricLocale(currency);
   if (format === "currency") {
     return new Intl.NumberFormat(locale, {
       style: "currency",
@@ -262,9 +279,9 @@ export function formatMetric(value: number, format: KpiCard["format"], currency 
       maximumFractionDigits: 0,
     }).format(value || 0);
   }
-  if (format === "percent") return `${(value || 0).toLocaleString(locale, { maximumFractionDigits: 2 })}%`;
+  if (format === "percent") return formatRatePct(value, currency);
   if (format === "ratio") return `${(value || 0).toLocaleString(locale, { maximumFractionDigits: 2 })}x`;
-  return (value || 0).toLocaleString(locale, { maximumFractionDigits: 0 });
+  return formatCompactNumber(value, currency);
 }
 
 export function buildPrompt(args: {

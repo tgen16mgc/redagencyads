@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { detectKpiPack, formatMetric, normalizeRows, scoreHealth, sumRows } from "../metrics";
+import { detectKpiPack, formatMetric, formatSharePct, formatRatePct, formatCompactNumber, normalizeRows, scoreHealth, sumRows } from "../metrics";
 import type { InsightRow, NormalizedRow } from "../types";
 
 function normalized(overrides: Partial<NormalizedRow>): NormalizedRow {
@@ -313,5 +313,18 @@ describe("formatMetric", () => {
   it("formats ratio with x suffix", () => {
     const result = formatMetric(3.2, "ratio", "USD");
     expect(result).toContain("x");
+  });
+
+  it("formats share percentages with no decimal noise", () => {
+    expect(formatSharePct(0.456)).toBe("46%");
+    expect(formatSharePct(45.6)).toBe("46%");
+  });
+
+  it("formats rate percentages with precision for chart tooltips", () => {
+    expect(formatRatePct(2.345, "USD")).toBe("2.35%");
+  });
+
+  it("formats compact numbers for inline diagnostic copy", () => {
+    expect(formatCompactNumber(1234567, "USD")).toBe("1,234,567");
   });
 });

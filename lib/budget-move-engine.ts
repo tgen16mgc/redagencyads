@@ -1,5 +1,6 @@
 import type { DashboardReport, KpiPack, NormalizedRow } from "@/lib/types";
 import { assessDecisionConfidence } from "@/lib/decision-confidence";
+import { SUFFICIENCY } from "@/lib/data-sufficiency";
 
 export type BudgetMoveEngineStatus = "moves_recommended" | "hold" | "insufficient_data";
 
@@ -156,7 +157,7 @@ export function recommendBudgetMoves(report: DashboardReport): BudgetMoveEngineR
       const metrics = rowMetrics(row, pack);
       const inefficiencyDelta = metrics.result > 0 && metrics.costPerResult > 0 ? (metrics.costPerResult - accountCost) / accountCost : row.spend / totalSpend;
       const zeroResultWaste = metrics.result === 0 && row.spend >= totalSpend / rows.length;
-      const weakCtr = row.impressions >= 1000 && row.ctr < 0.5;
+      const weakCtr = row.impressions >= SUFFICIENCY.minRowImpressions && row.ctr < 0.5;
       const fatigueRisk = row.frequency >= 3 && row.ctr < 1;
       return { row, metrics, inefficiencyDelta, zeroResultWaste, weakCtr, fatigueRisk };
     })

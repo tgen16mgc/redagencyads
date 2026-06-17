@@ -278,6 +278,7 @@ describe("formatAxisTick", () => {
     expect(formatAxisTick(1_200_000, "currency", "USD")).toContain("$");
     expect(formatAxisTick(1_200_000, "currency", "USD")).toContain("1.2M");
     expect(formatAxisTick(1_200_000, "currency", "VND")).toContain("Tr");
+    expect(formatAxisTick(1_200_000, "currency", "VND")).not.toMatch(/\s/);
   });
 
   it("coerces zero and negative safely", () => {

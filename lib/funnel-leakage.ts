@@ -1,4 +1,11 @@
 import type { NormalizedRow } from "@/lib/types";
+import { SUFFICIENCY, hasFunnelClickVolume } from "@/lib/data-sufficiency";
+
+export const FUNNEL_BENCHMARKS = {
+  clickToCart: 0.05,
+  cartToCheckout: 0.15,
+  checkoutToPurchase: 0.2,
+} as const;
 
 export type FunnelLeakageStatus = "clean" | "leakage_detected" | "insufficient_data";
 
@@ -28,21 +35,7 @@ export function assessFunnelLeakage(totals: NormalizedRow): FunnelLeakage {
   const checkouts = totals.initiateCheckout || 0;
   const purchases = totals.purchases || 0;
 
-  if (clicks < 100) {
-    return {
-      status: "insufficient_data",
-      variant: "outline",
-      score: 100,
-      label: labels.insufficient_data,
-      summary: {
-        en: "Need at least 100 link clicks to analyze conversion funnel leakage.",
-        vi: "Cần tối thiểu 100 lượt click để phân tích rò rỉ phễu chuyển đổi.",
-      },
-      blockers: { en: [], vi: [] },
-      rates: { clickToCart: 0, cartToCheckout: 0, checkoutToPurchase: 0 },
-    };
-  }
-
+  // Non-commerce campaigns: has clicks but no funnel events
   if (carts <= 0 && checkouts <= 0 && purchases <= 0) {
     return {
       status: "insufficient_data",
@@ -58,6 +51,22 @@ export function assessFunnelLeakage(totals: NormalizedRow): FunnelLeakage {
     };
   }
 
+  // Need minimum funnel clicks + at least one downstream event
+  if (!hasFunnelClickVolume({ linkClicks: clicks, addToCart: carts, initiateCheckout: checkouts, purchases })) {
+    return {
+      status: "insufficient_data",
+      variant: "outline",
+      score: 100,
+      label: labels.insufficient_data,
+      summary: {
+        en: "Need at least 100 link clicks to analyze conversion funnel leakage.",
+        vi: "Cần tối thiểu 100 lượt click để phân tích rò rỉ phễu chuyển đổi.",
+      },
+      blockers: { en: [], vi: [] },
+      rates: { clickToCart: 0, cartToCheckout: 0, checkoutToPurchase: 0 },
+    };
+  }
+
   const clickToCart = clicks > 0 ? carts / clicks : 0;
   const cartToCheckout = carts > 0 ? checkouts / carts : 0;
   const checkoutToPurchase = checkouts > 0 ? purchases / checkouts : 0;
@@ -65,25 +74,22 @@ export function assessFunnelLeakage(totals: NormalizedRow): FunnelLeakage {
   const blockers = { en: [] as string[], vi: [] as string[] };
   let score = 100;
 
-  // Clicks to Cart: expected > 5%
-  if (clickToCart < 0.05) {
+  if (clickToCart < FUNNEL_BENCHMARKS.clickToCart) {
     score -= 25;
-    blockers.en.push(`Low click-to-cart rate (${(clickToCart * 100).toFixed(1)}% vs 5.0% benchmark). Optimize product landing page hook.`);
-    blockers.vi.push(`Tỷ lệ thêm giỏ hàng thấp (${(clickToCart * 100).toFixed(1)}% so với mốc 5.0%). Cần tối ưu hook trang sản phẩm.`);
+    blockers.en.push(`Low click-to-cart rate (${(clickToCart * 100).toFixed(1)}% vs ${(FUNNEL_BENCHMARKS.clickToCart * 100).toFixed(1)}% benchmark). Optimize product landing page hook.`);
+    blockers.vi.push(`Tỷ lệ thêm giỏ hàng thấp (${(clickToCart * 100).toFixed(1)}% so với mốc ${(FUNNEL_BENCHMARKS.clickToCart * 100).toFixed(1)}%). Cần tối ưu hook trang sản phẩm.`);
   }
 
-  // Cart to Checkout: expected > 30%
-  if (carts > 0 && cartToCheckout < 0.15) {
+  if (carts > 0 && cartToCheckout < FUNNEL_BENCHMARKS.cartToCheckout) {
     score -= 35;
-    blockers.en.push(`Severe checkout leakage: only ${(cartToCheckout * 100).toFixed(1)}% of carts reach checkout. Review shipping costs/options.`);
-    blockers.vi.push(`Rò rỉ checkout nghiêm trọng: chỉ ${(cartToCheckout * 100).toFixed(1)}% giỏ hàng vào checkout. Check phí/hình thức ship.`);
+    blockers.en.push(`Severe checkout leakage: ${(cartToCheckout * 100).toFixed(1)}% of carts reach checkout vs ${(FUNNEL_BENCHMARKS.cartToCheckout * 100).toFixed(1)}% benchmark. Review shipping costs/options.`);
+    blockers.vi.push(`Rò rỉ checkout nghiêm trọng: ${(cartToCheckout * 100).toFixed(1)}% giỏ hàng vào checkout so với mốc ${(FUNNEL_BENCHMARKS.cartToCheckout * 100).toFixed(1)}%. Check phí/hình thức ship.`);
   }
 
-  // Checkout to Purchase: expected > 40%
-  if (checkouts > 0 && checkoutToPurchase < 0.20) {
+  if (checkouts > 0 && checkoutToPurchase < FUNNEL_BENCHMARKS.checkoutToPurchase) {
     score -= 40;
-    blockers.en.push(`Weak purchase conversion: only ${(checkoutToPurchase * 100).toFixed(1)}% of checkouts purchase. Check payment gate or offer trust.`);
-    blockers.vi.push(`Chuyển đổi mua hàng yếu: chỉ ${(checkoutToPurchase * 100).toFixed(1)}% checkout thanh toán. Check cổng thanh toán hoặc độ uy tín offer.`);
+    blockers.en.push(`Weak purchase conversion: ${(checkoutToPurchase * 100).toFixed(1)}% of checkouts purchase vs ${(FUNNEL_BENCHMARKS.checkoutToPurchase * 100).toFixed(1)}% benchmark. Check payment gate or offer trust.`);
+    blockers.vi.push(`Chuyển đổi mua hàng yếu: ${(checkoutToPurchase * 100).toFixed(1)}% checkout thanh toán so với mốc ${(FUNNEL_BENCHMARKS.checkoutToPurchase * 100).toFixed(1)}%. Check cổng thanh toán hoặc độ uy tín offer.`);
   }
 
   score = Math.max(0, score);
