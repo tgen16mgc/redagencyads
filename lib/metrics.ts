@@ -1,5 +1,6 @@
 import { sumRows } from "@/lib/metric-aggregation";
 import type { CompareMode, CompetitorPlatform, CompetitorSpyAd, DashboardReport, InsightAction, InsightRow, KpiCard, KpiPack, MetaAccount, MetaCampaign, NormalizedRow } from "@/lib/types";
+import { compareTotals } from "@/lib/metric-comparison";
 
 export { sumRows } from "@/lib/metric-aggregation";
 
@@ -464,30 +465,5 @@ ${JSON.stringify(payload, null, 2)}`;
 }
 
 export function comparisonDeltas(current: DashboardReport, previous: DashboardReport) {
-  const keys: Array<keyof NormalizedRow> = [
-    "spend",
-    "impressions",
-    "reach",
-    "messages",
-    "leads",
-    "purchases",
-    "linkClicks",
-    "ctr",
-    "frequency",
-    "costPerMessage",
-    "cpl",
-    "cpaPurchase",
-    "roas",
-  ];
-  return keys.map((key) => {
-    const currentValue = Number(current.totals[key] || 0);
-    const previousValue = Number(previous.totals[key] || 0);
-    return {
-      key,
-      current: currentValue,
-      previous: previousValue,
-      change: currentValue - previousValue,
-      change_pct: previousValue ? ((currentValue - previousValue) / previousValue) * 100 : null,
-    };
-  });
+  return compareTotals(current.totals, previous.totals);
 }
