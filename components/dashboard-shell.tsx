@@ -11,6 +11,7 @@ import {
   LineChart,
   Pie,
   PieChart,
+  Cell,
   ReferenceLine,
   Scatter,
   ScatterChart,
@@ -1383,6 +1384,7 @@ export function DashboardShell() {
                 </div>
               </section>
 
+              <BreakdownsSection report={report} language={language} />
             </div>
           ) : null}
           {activeView === "ads" && report && !verdict ? (
@@ -4205,6 +4207,133 @@ function MeasurementQualityCard({ report, language }: { report: DashboardReport;
     </Card>
   );
 }
+
+
+function aggregateBy(rows: NormalizedRow[], key: "age" | "gender" | "platform", metric: keyof NormalizedRow) {
+  const map = new Map<string, number>();
+  for (const row of rows) {
+    let val = row[key];
+    if (!val) continue;
+    
+    if (key === "platform" && val.includes("facebook")) val = "Facebook";
+    else if (key === "platform" && val.includes("instagram")) val = "Instagram";
+    else if (key === "platform" && val.includes("audience_network")) val = "Audience Network";
+    else if (key === "platform" && val.includes("messenger")) val = "Messenger";
+    else if (key === "platform") val = val.charAt(0).toUpperCase() + val.slice(1);
+
+    if (key === "gender") {
+      val = val.toLowerCase() === "male" ? "Male" : val.toLowerCase() === "female" ? "Female" : "Unknown";
+    }
+
+    const current = map.get(val) || 0;
+    map.set(val, current + Number(row[metric] || 0));
+  }
+  return Array.from(map.entries())
+    .map(([name, value]) => ({ name, value }))
+    .filter(item => item.value > 0);
+}
+
+function BreakdownsSection({ report, language }: { report: DashboardReport; language: ReportLanguage }) {
+  const copy = uiCopy[language].performance;
+  const currency = report.account.currency || "VND";
+
+  const genderData = React.useMemo(() => aggregateBy(report.ageGenderRows, "gender", "spend"), [report.ageGenderRows]);
+  const ageData = React.useMemo(() => aggregateBy(report.ageGenderRows, "age", "spend").sort((a, b) => a.name.localeCompare(b.name)), [report.ageGenderRows]);
+  const platformData = React.useMemo(() => aggregateBy(report.platformRows, "platform", "spend").sort((a, b) => b.value - a.value).slice(0, 5), [report.platformRows]);
+
+  const chartConfig = {
+    spend: { label: language === "vi" ? "Chi tiêu" : "Spend" },
+    Male: { label: language === "vi" ? "Nam" : "Male", color: "var(--chart-1)" },
+    Female: { label: language === "vi" ? "Nữ" : "Female", color: "var(--chart-2)" },
+    Unknown: { label: language === "vi" ? "Khác" : "Unknown", color: "var(--muted)" },
+    value: { label: language === "vi" ? "Chi tiêu" : "Spend" },
+  };
+
+  return (
+    <section className="flex flex-col gap-4" data-print-flow>
+      <div className="flex flex-col gap-1">
+        <h2 className="font-heading text-lg font-semibold tracking-tight">{copy.breakdowns}</h2>
+        <p className="text-sm text-muted-foreground">{copy.breakdownsDescription}</p>
+      </div>
+      
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">{language === "vi" ? "Giới tính" : "Gender"}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {genderData.length > 0 ? (
+              <ChartContainer config={chartConfig} className="mx-auto aspect-square max-h-[250px]">
+                <PieChart>
+                  <ChartTooltip
+                    cursor={false}
+                    content={<ChartTooltipContent hideLabel formatter={(value, name) => <span className="tabular-nums">{formatMetric(Number(value), "currency", currency)}</span>} />}
+                  />
+                  <Pie data={genderData} dataKey="value" nameKey="name" innerRadius={60} outerRadius={80} paddingAngle={2}>
+                    {genderData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={`var(--color-${entry.name})`} />
+                    ))}
+                  </Pie>
+                </PieChart>
+              </ChartContainer>
+            ) : (
+              <ChartEmpty language={language} />
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">{language === "vi" ? "Độ tuổi" : "Age"}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {ageData.length > 0 ? (
+              <ChartContainer config={chartConfig} className="h-[250px] w-full">
+                <BarChart data={ageData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <CartesianGrid vertical={false} />
+                  <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} />
+                  <YAxis tickLine={false} axisLine={false} tickFormatter={(value) => formatChartValue(value, "currency", currency)} />
+                  <ChartTooltip
+                    cursor={false}
+                    content={<ChartTooltipContent hideLabel formatter={(value) => <span className="tabular-nums">{formatMetric(Number(value), "currency", currency)}</span>} />}
+                  />
+                  <Bar dataKey="value" fill="var(--chart-3)" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ChartContainer>
+            ) : (
+              <ChartEmpty language={language} />
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">{language === "vi" ? "Nền tảng" : "Platform"}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {platformData.length > 0 ? (
+              <ChartContainer config={chartConfig} className="h-[250px] w-full">
+                <BarChart data={platformData} layout="vertical" margin={{ top: 0, right: 10, left: -20, bottom: 0 }}>
+                  <CartesianGrid horizontal={false} />
+                  <XAxis type="number" hide />
+                  <YAxis dataKey="name" type="category" tickLine={false} axisLine={false} width={80} tickMargin={8} />
+                  <ChartTooltip
+                    cursor={false}
+                    content={<ChartTooltipContent hideLabel formatter={(value) => <span className="tabular-nums">{formatMetric(Number(value), "currency", currency)}</span>} />}
+                  />
+                  <Bar dataKey="value" fill="var(--chart-4)" radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ChartContainer>
+            ) : (
+              <ChartEmpty language={language} />
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </section>
+  );
+}
+
 
 function BarList({ rows, metric, currency, language }: { rows: NormalizedRow[]; metric: "spend" | "leads"; currency: string; language: ReportLanguage }) {
   const max = Math.max(1, ...rows.map((row) => Number(row[metric] || 0)));
