@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildComparisonPanelDeltas,
   buildKpiComparisons,
   comparisonDescriptor,
+  formatComparisonChangePct,
   metricMovementIsBad,
 } from "../metric-comparison";
 import type { CompareMode, DashboardReport, InterfaceLanguage, KpiCard, NormalizedRow } from "../types";
@@ -175,44 +175,11 @@ describe("buildKpiComparisons", () => {
   });
 });
 
-describe("buildComparisonPanelDeltas", () => {
-  it("uses the active compare mode in panel descriptors", () => {
-    const current = report({ totals: row({ id: "total", level: "account", name: "Total", spend: 200 }) });
-    const previous = report({ totals: row({ id: "total", level: "account", name: "Total", spend: 100 }) });
 
-    expect(buildComparisonPanelDeltas(current, previous, "mom", "en")[0].descriptor).toBe("Month over month");
-  });
-
-  it("returns the selected top-six KPI set instead of a hardcoded alternate metric set", () => {
-    const trafficKpis: KpiCard[] = [
-      { key: "spend", label: "Spend", format: "currency" },
-      { key: "impressions", label: "Impressions", format: "number" },
-      { key: "reach", label: "Reach", format: "number" },
-      { key: "linkClicks", label: "Link clicks", format: "number", intent: "good" },
-      { key: "ctr", label: "CTR", format: "percent" },
-      { key: "cpc", label: "CPC", format: "currency" },
-    ];
-    const current = report({
-      selectedPack: "traffic",
-      kpis: trafficKpis,
-      totals: row({ spend: 100, impressions: 1000, reach: 800, linkClicks: 50, ctr: 2, cpc: 2 }),
-    });
-    const previous = report({
-      selectedPack: "traffic",
-      kpis: trafficKpis,
-      totals: row({ spend: 80, impressions: 500, reach: 400, linkClicks: 40, ctr: 1, cpc: 4 }),
-    });
-
-    const deltas = buildComparisonPanelDeltas(current, previous);
-
-    expect(deltas).toEqual([
-      expect.objectContaining({ key: "spend", current: 100, previous: 80, change: 20, changePct: 25 }),
-      expect.objectContaining({ key: "impressions", current: 1000, previous: 500, change: 500, changePct: 100 }),
-      expect.objectContaining({ key: "reach", current: 800, previous: 400, change: 400, changePct: 100 }),
-      expect.objectContaining({ key: "linkClicks", current: 50, previous: 40, change: 10, changePct: 25 }),
-      expect.objectContaining({ key: "ctr", current: 2, previous: 1, change: 1, changePct: 100 }),
-      expect.objectContaining({ key: "cpc", current: 2, previous: 4, change: -2, changePct: -50 }),
-    ]);
+describe("formatComparisonChangePct", () => {
+  it("formats percentage-point deltas without multiplying them again", () => {
+    expect(formatComparisonChangePct(-34.529, "en")).toBe("-34.5%");
+    expect(formatComparisonChangePct(57.725, "en")).toBe("+57.7%");
   });
 });
 
@@ -231,14 +198,14 @@ describe("comparisonDescriptor", () => {
   it("labels WoW and MoM descriptors in English and Vietnamese", () => {
     const previous = report({});
 
-    expect(comparisonDescriptor(descriptorArgs({ compareMode: "wow", previousReport: previous, language: "en" }))).toBe("Week over week");
-    expect(comparisonDescriptor(descriptorArgs({ compareMode: "mom", previousReport: previous, language: "en" }))).toBe("Month over month");
-    expect(comparisonDescriptor(descriptorArgs({ compareMode: "wow", previousReport: previous, language: "vi" }))).toBe("So với tuần trước");
-    expect(comparisonDescriptor(descriptorArgs({ compareMode: "mom", previousReport: previous, language: "vi" }))).toBe("So với tháng trước");
+    expect(comparisonDescriptor(descriptorArgs({ compareMode: "wow", previousReport: previous, language: "en" }))).toBe("vs WoW");
+    expect(comparisonDescriptor(descriptorArgs({ compareMode: "mom", previousReport: previous, language: "en" }))).toBe("vs MoM");
+    expect(comparisonDescriptor(descriptorArgs({ compareMode: "wow", previousReport: previous, language: "vi" }))).toBe("so với WoW");
+    expect(comparisonDescriptor(descriptorArgs({ compareMode: "mom", previousReport: previous, language: "vi" }))).toBe("so với MoM");
   });
 
   it("labels recent-window descriptors in English and Vietnamese", () => {
-    expect(comparisonDescriptor(descriptorArgs({ compareMode: "off", language: "en" }))).toBe("Recent vs prior window");
-    expect(comparisonDescriptor(descriptorArgs({ compareMode: "off", language: "vi" }))).toBe("Gần đây so với kỳ trước");
+    expect(comparisonDescriptor(descriptorArgs({ compareMode: "off", language: "en" }))).toBe("vs prior period");
+    expect(comparisonDescriptor(descriptorArgs({ compareMode: "off", language: "vi" }))).toBe("so với kỳ trước");
   });
 });

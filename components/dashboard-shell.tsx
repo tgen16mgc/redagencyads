@@ -29,11 +29,12 @@ import {
   RefreshCcwIcon,
   SearchIcon,
   ShieldCheckIcon,
+  SlidersHorizontalIcon,
   SparklesIcon,
 } from "lucide-react";
 import { AppSidebar, type AppSidebarItem, type WorkflowSidebarItem } from "@/components/dashboard/app-sidebar";
 import { CustomChartsSection } from "@/components/dashboard/custom-charts-section";
-import type { AdSetWithPreviews, AiInsightTable, CompareMode, CompetitorFetchResult, CompetitorFetchSource, CompetitorPlatform, CompetitorSpyAd, CompetitorSpyResult, DashboardReport, KpiPack, MetaAccount, MetaCampaign, NormalizedRow, Verdict } from "@/lib/types";
+import type { AdSetWithPreviews, AiInsightTable, CompareMode, CompetitorFetchResult, CompetitorFetchSource, CompetitorPlatform, CompetitorSpyAd, CompetitorSpyResult, DashboardReport, KpiCard, KpiPack, MetaAccount, MetaCampaign, NormalizedRow, Verdict } from "@/lib/types";
 import { buildWorkflowSteps, type DashboardWorkflowStep } from "@/lib/dashboard-workflow";
 import { canOpenDashboardView, initialDashboardViewFromSearch } from "@/lib/dashboard-access";
 import { getCompareRange } from "@/lib/report-ranges";
@@ -79,7 +80,15 @@ import {
   truncateLabel,
   type ChartKey,
 } from "@/lib/chart-spec";
-import { buildComparisonPanelDeltas, buildKpiComparisons, metricMovementIsBad } from "@/lib/metric-comparison";
+import { buildKpiComparisons, formatComparisonChangePct, metricMovementIsBad } from "@/lib/metric-comparison";
+import {
+  buildCustomKpiCards,
+  CUSTOM_KPI_SET_STORAGE_KEY,
+  type CustomKpiKey,
+  deserializeCustomKpiSet,
+  getCustomKpiCatalogGroups,
+  serializeCustomKpiSet,
+} from "@/lib/custom-kpi-set";
 import { buildCompetitorSpyPrompt, buildInsightPrompt, formatCompactNumber, formatMetric, formatSharePct } from "@/lib/metrics";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -99,6 +108,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import {
   SidebarInset,
   SidebarProvider,
@@ -590,11 +607,20 @@ export function DashboardShell() {
   const reportStartRef = React.useRef<HTMLDivElement>(null);
   const verdictProgress = useTimedProgress(aiLoading.verdict);
   const insightProgress = useTimedProgress(aiLoading.insights);
+  const [customKpiKeys, setCustomKpiKeys] = React.useState<CustomKpiKey[] | null>(null);
+  const effectiveKpis = React.useMemo<KpiCard[]>(() => {
+    if (!report) return [];
+    return customKpiKeys?.length ? buildCustomKpiCards(customKpiKeys) : report.kpis;
+  }, [customKpiKeys, report]);
+  const comparisonReport = React.useMemo<DashboardReport | null>(() => {
+    if (!report) return null;
+    return { ...report, kpis: effectiveKpis };
+  }, [effectiveKpis, report]);
   const kpiComparisons = React.useMemo(() => {
-    if (!report || !previousReport || compareMode === "off") return null;
-    const arr = buildKpiComparisons({ report, previousReport, compareMode, language });
+    if (!comparisonReport || !previousReport || compareMode === "off") return null;
+    const arr = buildKpiComparisons({ report: comparisonReport, previousReport, compareMode, language });
     return new Map(arr.map((c) => [c.key, c]));
-  }, [report, previousReport, compareMode, language]);
+  }, [comparisonReport, previousReport, compareMode, language]);
 
   const decisionTargets = React.useMemo<DecisionTargets>(() => {
     const cpa = Number(targetCpa);
@@ -637,6 +663,17 @@ export function DashboardShell() {
     window.localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
     document.documentElement.lang = language;
   }, [language]);
+
+  React.useEffect(() => {
+    if (!report) return;
+    const keys = deserializeCustomKpiSet(window.localStorage.getItem(CUSTOM_KPI_SET_STORAGE_KEY), report.kpis);
+    setCustomKpiKeys(keys);
+  }, [report]);
+
+  function saveCustomKpis(keys: CustomKpiKey[]) {
+    window.localStorage.setItem(CUSTOM_KPI_SET_STORAGE_KEY, serializeCustomKpiSet(keys));
+    setCustomKpiKeys(keys);
+  }
 
   const loadAccounts = React.useCallback(async () => {
     setLoading("accounts");
@@ -1171,26 +1208,42 @@ export function DashboardShell() {
                   </Badge>
                 </CardContent>
               </Card>
-              <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-                {report.kpis.map((kpi) => {
-                  const comparison = kpiComparisons?.get(kpi.key as keyof NormalizedRow);
-                  
-                  return (
-                    <Card key={kpi.label} size="sm">
-                      <CardHeader>
-                        <CardDescription className="text-xs font-medium uppercase tracking-wide">{kpi.label}</CardDescription>
-                        <CardTitle className="text-3xl font-semibold tabular-nums leading-none">
-                          {formatMetric(Number(report.totals[kpi.key as keyof NormalizedRow] || 0), kpi.format, report.account.currency || "VND")}
-                        </CardTitle>
-                        {comparison?.changePct !== undefined && comparison.changePct !== null ? (
-                          <CardDescription className={`text-xs tabular-nums ${metricMovementIsBad(kpi.key, comparison.changePct) ? "text-destructive" : "text-muted-foreground"}`}>
-                            {comparison.changePct > 0 ? "↑" : comparison.changePct < 0 ? "↓" : "→"} {formatSignedPct(comparison.changePct, language)} {comparison.descriptor}
-                          </CardDescription>
-                        ) : null}
-                      </CardHeader>
-                    </Card>
-                  );
-                })}
+              <section className="flex flex-col gap-3">
+                <div className="flex flex-wrap items-center justify-between gap-2" data-print-hidden>
+                  <div>
+                    <h2 className="font-heading text-lg font-semibold tracking-tight">{language === "vi" ? "KPI chính" : "Top KPIs"}</h2>
+                    <p className="text-sm text-muted-foreground">
+                      {language === "vi" ? "Các thẻ này là phần hiển thị, không đổi bộ KPI đang chọn hoặc Verdict." : "These cards are display-only and do not change the selected KPI pack or Verdict."}
+                    </p>
+                  </div>
+                  <CustomKpiSetSheet
+                    defaultKpis={report.kpis}
+                    language={language}
+                    selectedKeys={customKpiKeys || effectiveKpis.map((kpi) => kpi.key as CustomKpiKey)}
+                    onSave={saveCustomKpis}
+                  />
+                </div>
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+                  {effectiveKpis.map((kpi) => {
+                    const comparison = kpiComparisons?.get(kpi.key as keyof NormalizedRow);
+
+                    return (
+                      <Card key={kpi.key} size="sm">
+                        <CardHeader>
+                          <CardDescription className="text-xs font-medium uppercase tracking-wide">{kpi.label}</CardDescription>
+                          <CardTitle className="text-3xl font-semibold tabular-nums leading-none">
+                            {formatMetric(Number(report.totals[kpi.key as keyof NormalizedRow] || 0), kpi.format, report.account.currency || "VND")}
+                          </CardTitle>
+                          {comparison ? (
+                            <CardDescription className={`text-xs tabular-nums ${metricMovementIsBad(kpi.key, comparison.change) ? "text-destructive" : "text-muted-foreground"}`}>
+                              {comparison.change > 0 ? "↑" : comparison.change < 0 ? "↓" : "→"} {formatComparisonChangePct(comparison.changePct, language)} {comparison.descriptor}
+                            </CardDescription>
+                          ) : null}
+                        </CardHeader>
+                      </Card>
+                    );
+                  })}
+                </div>
               </section>
 
               <PerformanceCharts report={report} language={language} />
@@ -1402,6 +1455,117 @@ export function DashboardShell() {
         </main>
       </SidebarInset>
     </SidebarProvider>
+  );
+}
+
+function CustomKpiSetSheet({
+  defaultKpis,
+  language,
+  selectedKeys,
+  onSave,
+}: {
+  defaultKpis: KpiCard[];
+  language: ReportLanguage;
+  selectedKeys: CustomKpiKey[];
+  onSave: (keys: CustomKpiKey[]) => void;
+}) {
+  const isVietnamese = language === "vi";
+  const [open, setOpen] = React.useState(false);
+  const [draftKeys, setDraftKeys] = React.useState<CustomKpiKey[]>(selectedKeys);
+  const groups = getCustomKpiCatalogGroups(language);
+  const selectedSet = React.useMemo(() => new Set(draftKeys), [draftKeys]);
+  const selectedCards = buildCustomKpiCards(draftKeys);
+
+  function handleOpenChange(nextOpen: boolean) {
+    setOpen(nextOpen);
+    if (nextOpen) setDraftKeys(selectedKeys.length ? selectedKeys : deserializeCustomKpiSet(null, defaultKpis));
+  }
+
+  function toggleMetric(key: CustomKpiKey) {
+    setDraftKeys((current) => {
+      if (current.includes(key)) return current.length > 1 ? current.filter((item) => item !== key) : current;
+      return [...current, key];
+    });
+  }
+
+  function handleSave() {
+    if (!draftKeys.length) return;
+    onSave(draftKeys);
+    setOpen(false);
+  }
+
+  return (
+    <Sheet open={open} onOpenChange={handleOpenChange}>
+      <SheetTrigger
+        render={
+          <Button type="button" variant="outline" size="sm">
+            <SlidersHorizontalIcon data-icon="inline-start" />
+            {isVietnamese ? "Tùy chỉnh KPI" : "Customize KPIs"}
+          </Button>
+        }
+      />
+      <SheetContent className="w-full gap-0 overflow-y-auto sm:max-w-md">
+        <SheetHeader>
+          <SheetTitle>{isVietnamese ? "Tùy chỉnh KPI" : "Customize KPIs"}</SheetTitle>
+          <SheetDescription>
+            {isVietnamese
+              ? "Chọn các thẻ KPI hiển thị ở đầu dashboard. Việc này không đổi bộ KPI hoặc Verdict."
+              : "Choose the KPI cards shown at the top of the dashboard. This does not change the KPI pack or Verdict."}
+          </SheetDescription>
+        </SheetHeader>
+        <Separator />
+        <div className="flex flex-col gap-4 p-4">
+          <div className="rounded-lg border bg-muted/20 p-3">
+            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              {isVietnamese ? "KPI đã chọn" : "Selected KPIs"}
+            </div>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {selectedCards.map((kpi, index) => (
+                <Badge key={kpi.key} variant="secondary">
+                  {index + 1}. {kpi.label}
+                </Badge>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-4">
+            {groups.map((group) => (
+              <div key={group.id} className="flex flex-col gap-2">
+                <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{group.label}</div>
+                <div className="grid gap-2">
+                  {group.metrics.map((metric) => {
+                    const checked = selectedSet.has(metric.key);
+                    const disabled = checked && draftKeys.length === 1;
+                    return (
+                      <label
+                        key={metric.key}
+                        className="flex cursor-pointer items-start gap-3 rounded-lg border bg-background p-3 text-sm transition-colors hover:bg-muted/50 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-60"
+                      >
+                        <input
+                          type="checkbox"
+                          className="mt-1"
+                          checked={checked}
+                          disabled={disabled}
+                          onChange={() => toggleMetric(metric.key)}
+                        />
+                        <span className="min-w-0">
+                          <span className="block font-medium text-foreground">{metric.label}</span>
+                          <span className="block text-xs text-muted-foreground">{metric.format}</span>
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <Button type="button" onClick={handleSave} disabled={!draftKeys.length}>
+            {isVietnamese ? "Lưu KPI" : "Save KPIs"}
+          </Button>
+        </div>
+      </SheetContent>
+    </Sheet>
   );
 }
 
@@ -1921,31 +2085,19 @@ function ComparisonPanel({
   mode: CompareMode;
   language: ReportLanguage;
 }) {
-  const currency = current.account.currency || "VND";
   const isVietnamese = language === "vi";
-  const deltas = buildComparisonPanelDeltas(current, previous, mode, language);
   const rootCauses = analyzeComparisonRootCauses(current, previous);
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{isVietnamese ? "Chế độ so sánh" : "Compare mode"}: {modeLabel(mode, language)}</CardTitle>
+        <CardTitle>{isVietnamese ? "Yếu tố dẫn dắt so sánh" : "Comparison Drivers"}: {modeLabel(mode, language)}</CardTitle>
         <CardDescription>
+          {isVietnamese ? "Thẻ KPI phía trên cho biết chỉ số nào đã thay đổi; phần này giải thích campaign/ad set nào đang dẫn dắt thay đổi đó." : "The KPI cards above show what changed; this section explains which matched campaigns or ad sets drove the movement."}{" "}
           {isVietnamese ? "Hiện tại" : "Current"} {current.dateRange.since} {isVietnamese ? "đến" : "to"} {current.dateRange.until}.{" "}
           {isVietnamese ? "Kỳ trước" : "Previous"} {previous.dateRange.since} {isVietnamese ? "đến" : "to"} {previous.dateRange.until}.
         </CardDescription>
       </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-5">
-          {deltas.map((delta) => (
-            <div key={delta.key} className="rounded-lg border p-3">
-              <div className="text-xs font-medium text-muted-foreground">{delta.label}</div>
-              <div className="mt-1 text-lg font-semibold tabular-nums">{formatMetric(delta.current, delta.format, currency)}</div>
-              <Badge variant={delta.change === 0 ? "secondary" : metricMovementIsBad(delta.key, delta.change) ? "destructive" : "success"} className="mt-2 tabular-nums">
-                {formatSignedPct(delta.changePct, language)}
-              </Badge>
-            </div>
-          ))}
-        </div>
+      <CardContent>
         <div className="rounded-lg border bg-muted/20 p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
@@ -2794,13 +2946,6 @@ function metricLabel(key: string, language: ReportLanguage = "en") {
     },
   };
   return labels[language][key] || key;
-}
-
-function formatSignedPct(value: number | null, language: ReportLanguage = "en") {
-  if (value === null) return language === "vi" ? "mới" : "new";
-  const sign = value > 0 ? "+" : "";
-  const locale = language === "vi" ? "vi-VN" : "en-US";
-  return `${sign}${(value * 100).toLocaleString(locale, { maximumFractionDigits: 1 })}%`;
 }
 
 function averageRows(rows: NormalizedRow[], key: keyof NormalizedRow): number {

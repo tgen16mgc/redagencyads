@@ -66,15 +66,6 @@ export function buildKpiComparisons(args: {
     }));
 }
 
-export function buildComparisonPanelDeltas(
-  current: DashboardReport,
-  previous: DashboardReport,
-  compareMode: CompareMode,
-  language: ReportLanguage = "en",
-) {
-  return buildKpiComparisons({ report: current, previousReport: previous, compareMode, language });
-}
-
 export function compareTotals(current: NormalizedRow, previous: NormalizedRow) {
   const keys: Array<keyof NormalizedRow> = [
     "spend",
@@ -113,6 +104,13 @@ export function metricMovementIsBad(key: keyof NormalizedRow | string, change: n
   return false;
 }
 
+export function formatComparisonChangePct(value: number | null, language: ReportLanguage = "en") {
+  if (value === null) return language === "vi" ? "mới" : "new";
+  const sign = value > 0 ? "+" : "";
+  const locale = language === "vi" ? "vi-VN" : "en-US";
+  return `${sign}${value.toLocaleString(locale, { maximumFractionDigits: 1 })}%`;
+}
+
 export function comparisonDescriptor(args: {
   compareMode: CompareMode;
   previousReport?: DashboardReport | null;
@@ -121,11 +119,11 @@ export function comparisonDescriptor(args: {
   const language = args.language ?? "en";
   const basis: ComparisonBasis = args.previousReport ? "compare-range" : "recent-window";
 
-  if (basis === "recent-window") return language === "vi" ? "Gần đây so với kỳ trước" : "Recent vs prior window";
-  if (args.compareMode === "wow") return language === "vi" ? "So với tuần trước" : "Week over week";
-  if (args.compareMode === "mom") return language === "vi" ? "So với tháng trước" : "Month over month";
-  if (args.compareMode === "yoy") return language === "vi" ? "So với năm trước" : "Year over year";
-  return language === "vi" ? "So với kỳ trước" : "vs prior period";
+  if (basis === "recent-window") return language === "vi" ? "so với kỳ trước" : "vs prior period";
+  if (args.compareMode === "wow") return language === "vi" ? "so với WoW" : "vs WoW";
+  if (args.compareMode === "mom") return language === "vi" ? "so với MoM" : "vs MoM";
+  if (args.compareMode === "yoy") return language === "vi" ? "so với YoY" : "vs YoY";
+  return language === "vi" ? "so với kỳ trước" : "vs prior period";
 }
 
 function buildDelta(args: {

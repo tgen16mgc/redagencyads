@@ -56,6 +56,10 @@ _Avoid_: panel language selector, report-only language select, duplicate languag
 An expert-built chart composed only from metrics already pulled into a report, expressed as a validated, JSON-serializable spec.
 _Avoid_: ad-hoc chart, freeform chart, new-data chart
 
+**Custom KPI Set**:
+A display-only selection of top KPI cards from the KPI-card metric catalog. It changes which cards are visible, but never changes the Selected KPI Pack, Primary Result, Verdict, diagnosis logic, or comparison logic.
+_Avoid_: custom metric, metric formula, KPI pack override, custom chart
+
 **Chart Series**:
 One metric drawn on a Custom Chart, bound to a left or right axis. A series is pure data (`key` + `axis`); how it is drawn is decided at render time.
 _Avoid_: line, dataset, render function
@@ -91,6 +95,8 @@ _Avoid_: schema check, lint, sanitize
 - A **Verdict** uses the current **Interface Language**.
 - A **Language Toggle** controls the **Interface Language**.
 - A **Custom Chart** uses only metrics from the **Metric Catalog**.
+- A **Custom KPI Set** uses the KPI-card metric catalog, including card-only metrics such as reply rate and lead/message rate.
+- A **Custom KPI Set** affects visible top cards only and does not override the **Selected KPI Pack** or **Primary Result**.
 - A **Custom Chart** is built from one or more **Chart Series**.
 - A **Chart Preset** produces a **Custom Chart** that passes **Spec Validation** by construction.
 - **Spec Normalization** runs before **Spec Validation** and never makes a spec invalid.
