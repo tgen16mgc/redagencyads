@@ -63,7 +63,7 @@ export function assessBreakdownWaste(rows: NormalizedRow[], pack: KpiPack): Brea
     const resultVal = primaryResult(row, pack);
     return {
       id: row.id,
-      name: row.name || row.platform || [row.age, row.gender].filter(Boolean).join(" / "),
+      name: row.name || row.region || row.country || row.platform || [row.age, row.gender].filter(Boolean).join(" / "),
       spend: row.spend,
       result: resultVal,
       spendShare: row.spend / totalSpend,

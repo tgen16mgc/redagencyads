@@ -96,6 +96,7 @@ function report(overrides: Partial<DashboardReport> = {}): DashboardReport {
     dailyRows: [],
     platformRows: [],
     ageGenderRows: [],
+    regionRows: [],
     health: {
       score: 68,
       grade: "C",

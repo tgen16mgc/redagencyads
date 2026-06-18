@@ -18,6 +18,7 @@ function mockReport(overrides: Partial<DashboardReport>): DashboardReport {
     dailyRows: [],
     platformRows: [],
     ageGenderRows: [],
+    regionRows: [],
     health: { score: 100, grade: "A", checks: [] },
     prompt: "",
     pulledAt: new Date().toISOString(),

@@ -61,7 +61,7 @@ export function normalizeRows(rows: InsightRow[], level: NormalizedRow["level"])
       ...ZERO_ROW,
       id: row.ad_id || row.adset_id || row.campaign_id || `${level}-${index}`,
       level,
-      name: row.ad_name || row.adset_name || row.campaign_name || row.publisher_platform || row.date_start || "Account total",
+      name: row.ad_name || row.adset_name || row.campaign_name || row.publisher_platform || row.region || row.country || row.date_start || "Account total",
       campaignId: row.campaign_id,
       campaignName: row.campaign_name,
       adsetId: row.adset_id,
@@ -74,6 +74,7 @@ export function normalizeRows(rows: InsightRow[], level: NormalizedRow["level"])
       age: row.age,
       gender: row.gender,
       region: row.region,
+      country: row.country,
       spend,
       impressions: Number(row.impressions || 0),
       reach: Number(row.reach || 0),
@@ -266,6 +267,7 @@ export function buildPrompt(args: {
   dailyRows: NormalizedRow[];
   platformRows: NormalizedRow[];
   ageGenderRows: NormalizedRow[];
+  regionRows: NormalizedRow[];
   health: DashboardReport["health"];
   dateRange: { since: string; until: string };
 }) {
@@ -286,6 +288,7 @@ export function buildPrompt(args: {
     daily_rows: args.dailyRows.slice(-31),
     platform_rows: args.platformRows,
     age_gender_rows: args.ageGenderRows,
+    region_rows: args.regionRows,
     health: args.health,
   };
   return `You are a senior Meta Ads strategist. Analyze this campaign data with a long-term system mindset.

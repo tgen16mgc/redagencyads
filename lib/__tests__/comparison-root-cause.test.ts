@@ -49,6 +49,7 @@ function report(overrides: Partial<DashboardReport>): DashboardReport {
     dailyRows: [],
     platformRows: [],
     ageGenderRows: [],
+    regionRows: [],
     health: { score: 100, grade: "A", checks: [] },
     prompt: "",
     pulledAt: "2026-06-07T00:00:00.000Z",

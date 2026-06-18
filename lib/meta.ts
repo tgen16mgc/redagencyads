@@ -208,6 +208,7 @@ export async function buildReport(params: {
     dailyInsights,
     platformInsights,
     ageGenderInsights,
+    regionInsights,
     activeAdSetsData,
     activeAdsData,
   ] = await Promise.all([
@@ -226,6 +227,10 @@ export async function buildReport(params: {
       filtering: filter,
       breakdowns: "age,gender",
     }),
+    getInsights(params.token, accountId, "campaign", params.since, params.until, {
+      filtering: filter,
+      breakdowns: "region",
+    }),
     getAdSets(params.token, accountId, campaignIds),
     getActiveAdsForCampaigns(params.token, accountId, campaignIds),
   ]);
@@ -242,6 +247,7 @@ export async function buildReport(params: {
   const dailyRows = normalizeRows(dailyInsights, "daily");
   const platformRows = normalizeRows(platformInsights, "breakdown");
   const ageGenderRows = normalizeRows(ageGenderInsights, "breakdown");
+  const regionRows = normalizeRows(regionInsights, "breakdown");
   const totals = sumRows(campaignRows, "Account total");
   const detected = detectKpiPack(selectedCampaigns, campaignRows, adsetRows);
   const selectedPack = params.pack || detected.pack;
@@ -257,6 +263,7 @@ export async function buildReport(params: {
     dailyRows,
     platformRows,
     ageGenderRows,
+    regionRows,
     health,
     dateRange: { since: params.since, until: params.until },
   });
@@ -276,6 +283,7 @@ export async function buildReport(params: {
     dailyRows,
     platformRows,
     ageGenderRows,
+    regionRows,
     health,
     prompt,
     pulledAt: new Date().toISOString(),

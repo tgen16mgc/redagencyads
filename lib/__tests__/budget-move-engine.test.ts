@@ -50,6 +50,7 @@ function report(overrides: Partial<DashboardReport> = {}): DashboardReport {
     dailyRows: [],
     platformRows: [],
     ageGenderRows: [],
+    regionRows: [],
     health: { score: 85, grade: "B", checks: [] },
     prompt: "",
     pulledAt: "2026-06-06T00:00:00.000Z",

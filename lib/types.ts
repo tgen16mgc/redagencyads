@@ -79,6 +79,7 @@ export type InsightRow = {
   age?: string;
   gender?: string;
   region?: string;
+  country?: string;
   date_start?: string;
   date_stop?: string;
   impressions?: string;
@@ -112,6 +113,7 @@ export type NormalizedRow = {
   age?: string;
   gender?: string;
   region?: string;
+  country?: string;
   spend: number;
   impressions: number;
   reach: number;
@@ -162,6 +164,8 @@ export type DashboardReport = {
   dailyRows: NormalizedRow[];
   platformRows: NormalizedRow[];
   ageGenderRows: NormalizedRow[];
+  regionRows: NormalizedRow[];
+  countryRows?: NormalizedRow[];
   health: {
     score: number;
     grade: string;
