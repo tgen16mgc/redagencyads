@@ -3,7 +3,7 @@ import { sumRows } from "@/lib/metric-aggregation";
 
 export type BreakdownMetricMode = "spend" | "results" | "efficiency";
 export type BreakdownDimension = "platform" | "age" | "gender" | "geography";
-export type BreakdownChartType = "bar" | "scatter";
+export type BreakdownChartType = "pie" | "area" | "bar" | "scatter";
 export type BreakdownInsightTone = "neutral" | "positive" | "warning" | "insufficient";
 
 export type BreakdownChartRow = {
@@ -48,6 +48,9 @@ export type BreakdownViewModel = {
   summaryRows: BreakdownChartRow[];
 };
 
+const MIN_ACTIONABLE_SPEND_SHARE = 0.05;
+const SMALL_PIE_ROW_LIMIT = 4;
+
 export function buildBreakdownDimensions(input: {
   platformRows: NormalizedRow[];
   ageGenderRows: NormalizedRow[];
@@ -55,11 +58,12 @@ export function buildBreakdownDimensions(input: {
   countryRows?: NormalizedRow[];
   language: "en" | "vi";
 }): BreakdownDimensionModel[] {
-  const geographyRows = input.regionRows.length ? input.regionRows : input.countryRows || [];
+  const platformRows = groupDimensionRows(input.platformRows, "platform");
+  const geographyRows = groupDimensionRows(input.regionRows.length ? input.regionRows : input.countryRows || [], "geography");
   const ageRows = groupDemographicRows(input.ageGenderRows, "age", input.language);
   const genderRows = groupDemographicRows(input.ageGenderRows, "gender", input.language);
   return [
-    { value: "platform", label: input.language === "vi" ? "Nền tảng" : "Platform", rows: input.platformRows, available: input.platformRows.length > 0 },
+    { value: "platform", label: input.language === "vi" ? "Nền tảng" : "Platform", rows: platformRows, available: platformRows.length > 0 },
     { value: "age", label: input.language === "vi" ? "Tuổi" : "Age", rows: ageRows, available: ageRows.length > 0 },
     { value: "gender", label: input.language === "vi" ? "Giới tính" : "Gender", rows: genderRows, available: genderRows.length > 0 },
     { value: "geography", label: input.language === "vi" ? "Khu vực" : "Geography", rows: geographyRows, available: geographyRows.length > 0 },
@@ -146,7 +150,7 @@ export function buildBreakdownChartRows(rows: NormalizedRow[], pack: KpiPack): B
         allocationGap,
         efficiencyIndex,
         efficiencyValue: row.costPerResult ?? noResultCost,
-        tone: breakdownRowTone(row.spend, row.results, allocationGap, efficiencyIndex),
+        tone: breakdownRowTone(spendShare, row.results, allocationGap, efficiencyIndex),
         diagnosis: breakdownRowDiagnosis({ label: row.label, spendShare, resultShare, allocationGap, efficiencyIndex, hasResults: row.results > 0 }),
       };
     })
@@ -155,7 +159,8 @@ export function buildBreakdownChartRows(rows: NormalizedRow[], pack: KpiPack): B
 
 export function chooseBreakdownChartType(rows: BreakdownChartRow[], mode: BreakdownMetricMode): BreakdownChartType {
   if (mode === "efficiency" && rows.length >= 6) return "scatter";
-  return "bar";
+  if (mode === "efficiency") return "bar";
+  return rows.length <= SMALL_PIE_ROW_LIMIT ? "pie" : "area";
 }
 
 export function primaryResultValue(row: NormalizedRow, pack: KpiPack) {
@@ -168,6 +173,7 @@ export function primaryResultValue(row: NormalizedRow, pack: KpiPack) {
 }
 
 export function breakdownRowLabel(row: NormalizedRow) {
+  if (row.id.startsWith("age:") || row.id.startsWith("gender:")) return row.name;
   const demographic = row.age && row.gender ? `${row.age} / ${row.gender}` : row.age || row.gender;
   return row.region || row.country || row.platform || demographic || row.name;
 }
@@ -185,14 +191,28 @@ export function breakdownMetricLabel(mode: BreakdownMetricMode, language: "en" |
 
 export function breakdownChartLabel(type: BreakdownChartType, language: "en" | "vi") {
   if (language === "vi") {
+    if (type === "pie") return "Tỷ trọng";
+    if (type === "area") return "Chi tiêu vs kết quả";
     if (type === "scatter") return "Bản đồ hiệu suất";
-    return "Xếp hạng phân khúc";
+    return "Xếp hạng chi phí";
   }
+  if (type === "pie") return "Share";
+  if (type === "area") return "Spend vs result share";
   if (type === "scatter") return "Efficiency map";
-  return "Segment ranking";
+  return "Cost ranking";
 }
 
 export function breakdownChartExplanation(type: BreakdownChartType, mode: BreakdownMetricMode, language: "en" | "vi") {
+  if (type === "pie") {
+    return language === "vi"
+      ? "Tỷ trọng của từng phân khúc trong tổng hiện tại."
+      : "Shows each segment's share of the selected total.";
+  }
+  if (type === "area") {
+    return language === "vi"
+      ? "So sánh tỷ trọng chi tiêu với tỷ trọng kết quả để thấy phân bổ lệch."
+      : "Compares spend share with result share to expose allocation gaps.";
+  }
   if (type === "scatter") {
     return language === "vi"
       ? "Mỗi điểm là một phân khúc: bên phải là chi tiêu cao, càng lên trên là chi phí/kết quả càng đắt."
@@ -234,6 +254,25 @@ function groupDemographicRows(rows: NormalizedRow[], key: "age" | "gender", lang
   }));
 }
 
+function groupDimensionRows(rows: NormalizedRow[], dimension: "platform" | "geography"): NormalizedRow[] {
+  const groups = new Map<string, { label: string; rows: NormalizedRow[] }>();
+  rows.forEach((row) => {
+    const label = dimension === "platform"
+      ? row.platform || row.name
+      : row.region || row.country || row.name;
+    if (!label) return;
+    const key = label.toLowerCase();
+    const current = groups.get(key);
+    groups.set(key, { label, rows: current ? [...current.rows, row] : [row] });
+  });
+  return Array.from(groups.entries()).map(([key, group]) => ({
+    ...sumRows(group.rows, group.label),
+    id: `${dimension}:${key}`,
+    level: "breakdown",
+    ...(dimension === "platform" ? { platform: group.label } : { region: group.label }),
+  }));
+}
+
 function demographicLabel(value: string, key: "age" | "gender", language: "en" | "vi") {
   if (key === "age") return value;
   if (language === "vi") {
@@ -247,8 +286,8 @@ function demographicLabel(value: string, key: "age" | "gender", language: "en" |
   return value;
 }
 
-function breakdownRowTone(spend: number, results: number, allocationGap: number, efficiencyIndex: number): BreakdownInsightTone {
-  if (spend > 0 && results === 0) return "warning";
+function breakdownRowTone(spendShare: number, results: number, allocationGap: number, efficiencyIndex: number): BreakdownInsightTone {
+  if (spendShare > 0 && results === 0) return spendShare >= MIN_ACTIONABLE_SPEND_SHARE ? "warning" : "insufficient";
   if (allocationGap >= 0.15 && efficiencyIndex < 0.8) return "warning";
   if (allocationGap <= -0.1 && efficiencyIndex >= 1) return "positive";
   return "neutral";
@@ -262,7 +301,8 @@ function breakdownRowDiagnosis(input: {
   efficiencyIndex: number;
   hasResults: boolean;
 }) {
-  if (!input.hasResults && input.spendShare > 0) return "Spend with no primary result";
+  if (!input.hasResults && input.spendShare >= MIN_ACTIONABLE_SPEND_SHARE) return "Spend with no primary result";
+  if (!input.hasResults && input.spendShare > 0) return "Too little spend to judge";
   if (input.allocationGap >= 0.15 && input.efficiencyIndex < 0.8) return "High spend share with weak result share";
   if (input.allocationGap <= -0.1 && input.efficiencyIndex >= 1) return "Result share beats spend share";
   return "Spend and result share are aligned";
@@ -291,7 +331,7 @@ function buildBreakdownDiagnosis(input: {
   const { rows, dimensionLabel, resultLabel, language, selectedDimension } = input;
   const totalResults = rows.reduce((sum, row) => sum + row.results, 0);
   const warning = [...rows]
-    .filter((row) => row.tone === "warning")
+    .filter((row) => row.tone === "warning" && row.spendShare >= MIN_ACTIONABLE_SPEND_SHARE)
     .sort((a, b) => b.allocationGap - a.allocationGap || b.spend - a.spend)[0];
   const opportunity = [...rows]
     .filter((row) => row.tone === "positive")
@@ -376,5 +416,6 @@ function primaryResultLabel(pack: KpiPack, language: "en" | "vi") {
 }
 
 function formatPct(value: number) {
+  if (value > 0 && value < 0.01) return "<1%";
   return `${Math.round(value * 100)}%`;
 }

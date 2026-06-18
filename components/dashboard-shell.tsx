@@ -2,12 +2,16 @@
 
 import * as React from "react";
 import {
+  Area,
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
   ComposedChart,
   Line,
   LineChart,
+  Pie,
+  PieChart,
   ReferenceLine,
   Scatter,
   ScatterChart,
@@ -2973,6 +2977,13 @@ function BreakdownAnalysisSection({ report, language }: { report: DashboardRepor
   const selectedDimension = dimensions.find((dimensionItem) => dimensionItem.value === dimension && dimensionItem.available)
     || dimensions.find((dimensionItem) => dimensionItem.available)
     || dimensions[0];
+  const sideModel = buildBreakdownViewModel({
+    dimensions,
+    selectedDimension: dimension,
+    mode: "spend",
+    pack: report.selectedPack,
+    language,
+  });
 
   React.useEffect(() => {
     if (selectedDimension?.value && selectedDimension.value !== dimension) {
@@ -2981,7 +2992,7 @@ function BreakdownAnalysisSection({ report, language }: { report: DashboardRepor
   }, [dimension, selectedDimension?.value]);
 
   return (
-    <section className="grid gap-4 xl:grid-cols-[1.6fr_1fr]" data-print-flow>
+    <section className="grid items-start gap-4 xl:grid-cols-[1.6fr_1fr]" data-print-flow>
       <Card>
         <CardHeader>
           <CardTitle>{copy.breakdowns}</CardTitle>
@@ -2997,7 +3008,13 @@ function BreakdownAnalysisSection({ report, language }: { report: DashboardRepor
           />
         </CardContent>
       </Card>
-      <BreakdownWasteCard report={report} language={language} rows={selectedDimension?.rows || []} dimensionLabel={selectedDimension?.label || ""} />
+      <BreakdownWasteCard
+        report={report}
+        language={language}
+        rows={selectedDimension?.rows || []}
+        chartRows={sideModel.summaryRows}
+        dimensionLabel={selectedDimension?.label || ""}
+      />
     </section>
   );
 }
@@ -3074,24 +3091,51 @@ function AdaptiveBreakdownChart({
         <AlertDescription>{model.recommendedAction}</AlertDescription>
       </Alert>
 
-      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-        <Badge variant="outline">{model.chartLabel}</Badge>
-        <Badge variant={model.insightTone === "positive" ? "success" : model.insightTone === "warning" ? "destructive" : "secondary"}>{model.confidenceLabel}</Badge>
-        <Badge variant="outline">{model.resultLabel}</Badge>
-        <span>{model.chartExplanation}</span>
-      </div>
-      {model.dataCaveat ? <p className="text-xs text-muted-foreground">{model.dataCaveat}</p> : null}
-
       {!model.rows.length ? <ChartEmpty language={language} /> : null}
+      {model.rows.length && model.chartType === "pie" ? (
+        <BreakdownPieChart rows={model.rows} mode={mode} currency={currency} language={language} ariaLabel={model.ariaLabel} dimensionLabel={model.activeDimensionLabel} />
+      ) : null}
+      {model.rows.length && model.chartType === "area" ? (
+        <BreakdownAreaChart rows={model.rows} mode={mode} currency={currency} language={language} ariaLabel={model.ariaLabel} dimensionLabel={model.activeDimensionLabel} />
+      ) : null}
       {model.rows.length && model.chartType === "bar" ? (
         <BreakdownBarChart rows={model.rows} mode={mode} currency={currency} language={language} ariaLabel={model.ariaLabel} dimensionLabel={model.activeDimensionLabel} />
       ) : null}
       {model.rows.length && model.chartType === "scatter" ? (
         <BreakdownScatterChart rows={model.rows} currency={currency} language={language} ariaLabel={model.ariaLabel} dimensionLabel={model.activeDimensionLabel} />
       ) : null}
-
-      {model.summaryRows.length ? <BreakdownRowsTable rows={model.summaryRows} currency={currency} language={language} resultLabel={model.resultLabel} /> : null}
     </div>
+  );
+}
+
+const BREAKDOWN_COLORS = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)"];
+
+function BreakdownPieChart({ rows, mode, currency, language, ariaLabel, dimensionLabel }: { rows: BreakdownChartRow[]; mode: BreakdownMetricMode; currency: string; language: ReportLanguage; ariaLabel: string; dimensionLabel: string }) {
+  const dataKey = mode === "results" ? "results" : "spend";
+  return (
+    <ChartContainer config={performanceChartConfig} className="h-[300px] w-full" role="img" aria-label={ariaLabel}>
+      <PieChart>
+        <ChartTooltip content={<BreakdownTooltip mode={mode} currency={currency} language={language} dimensionLabel={dimensionLabel} />} />
+        <Pie data={rows} dataKey={dataKey} nameKey="label" innerRadius={62} outerRadius={104} paddingAngle={2}>
+          {rows.map((row, index) => <Cell key={row.id} fill={BREAKDOWN_COLORS[index % BREAKDOWN_COLORS.length]} />)}
+        </Pie>
+      </PieChart>
+    </ChartContainer>
+  );
+}
+
+function BreakdownAreaChart({ rows, mode, currency, language, ariaLabel, dimensionLabel }: { rows: BreakdownChartRow[]; mode: BreakdownMetricMode; currency: string; language: ReportLanguage; ariaLabel: string; dimensionLabel: string }) {
+  return (
+    <ChartContainer config={performanceChartConfig} className="h-[300px] w-full" role="img" aria-label={ariaLabel}>
+      <ComposedChart data={rows} margin={{ left: 8, right: 8, top: 12, bottom: 8 }}>
+        <CartesianGrid vertical={false} />
+        <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} minTickGap={12} />
+        <YAxis type="number" tickLine={false} axisLine={false} tickFormatter={(value) => formatSharePct(Number(value), currency)} domain={paddedPositiveDomain()} />
+        <ChartTooltip content={<BreakdownTooltip mode={mode} currency={currency} language={language} dimensionLabel={dimensionLabel} />} />
+        <Area type="monotone" dataKey="spendShare" name={language === "vi" ? "Tỷ trọng chi tiêu" : "Spend share"} stroke="var(--color-spend)" fill="var(--color-spend)" fillOpacity={0.18} strokeWidth={2} />
+        <Area type="monotone" dataKey="resultShare" name={language === "vi" ? "Tỷ trọng kết quả" : "Result share"} stroke="var(--color-result)" fill="var(--color-result)" fillOpacity={0.12} strokeWidth={2} />
+      </ComposedChart>
+    </ChartContainer>
   );
 }
 
@@ -3112,57 +3156,16 @@ function BreakdownBarChart({ rows, mode, currency, language, ariaLabel, dimensio
 
 function BreakdownScatterChart({ rows, currency, language, ariaLabel, dimensionLabel }: { rows: BreakdownChartRow[]; currency: string; language: ReportLanguage; ariaLabel: string; dimensionLabel: string }) {
   return (
-    <div className="flex flex-col gap-2">
-      <ChartContainer config={performanceChartConfig} className="h-[300px] w-full" role="img" aria-label={ariaLabel}>
-        <ScatterChart margin={{ left: 8, right: 16, top: 12, bottom: 8 }}>
-          <CartesianGrid />
-          <XAxis dataKey="spend" name={language === "vi" ? "Chi tiêu" : "Spend"} type="number" domain={paddedPositiveDomain()} tickFormatter={(value) => formatCompactNumber(Number(value), currency)} />
-          <YAxis dataKey="efficiencyValue" name={language === "vi" ? "Chi phí/kết quả" : "Cost/result"} type="number" domain={paddedPositiveDomain()} tickFormatter={(value) => formatCompactNumber(Number(value), currency)} />
-          <ZAxis dataKey="results" range={[60, 320]} />
-          <ChartTooltip content={<BreakdownTooltip mode="efficiency" currency={currency} language={language} dimensionLabel={dimensionLabel} />} />
-          <Scatter data={rows} fill="var(--color-spend)" name={language === "vi" ? "Phân khúc" : "Segment"} />
-        </ScatterChart>
-      </ChartContainer>
-      <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
-        <div>{language === "vi" ? "Trục ngang: chi tiêu cao hơn nằm bên phải." : "X-axis: higher spend sits farther right."}</div>
-        <div>{language === "vi" ? "Trục dọc: chi phí/kết quả cao hơn nằm phía trên." : "Y-axis: costlier results sit higher."}</div>
-      </div>
-    </div>
-  );
-}
-
-function BreakdownRowsTable({ rows, currency, language, resultLabel }: { rows: BreakdownChartRow[]; currency: string; language: ReportLanguage; resultLabel: string }) {
-  return (
-    <div className="overflow-x-auto">
-      <Table aria-label={language === "vi" ? "Bảng breakdown" : "Breakdown table"}>
-        <TableHeader>
-          <TableRow>
-            <TableHead>{language === "vi" ? "Phân khúc" : "Segment"}</TableHead>
-            <TableHead className="text-right">{language === "vi" ? "Chi tiêu" : "Spend"}</TableHead>
-            <TableHead className="text-right">{resultLabel}</TableHead>
-            <TableHead className="text-right">{language === "vi" ? "CPR" : "Cost/result"}</TableHead>
-            <TableHead className="text-right">{language === "vi" ? "Lệch" : "Gap"}</TableHead>
-            <TableHead>{language === "vi" ? "Tín hiệu" : "Signal"}</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.map((row) => (
-            <TableRow key={row.id}>
-              <TableCell className="max-w-40 truncate font-medium">{row.label}</TableCell>
-              <TableCell className="text-right tabular-nums">{formatMetric(row.spend, "currency", currency)}</TableCell>
-              <TableCell className="text-right tabular-nums">{formatMetric(row.results, "number", currency)}</TableCell>
-              <TableCell className="text-right tabular-nums">
-                {row.costPerResult === null ? (language === "vi" ? "Chưa có" : "No result") : formatMetric(row.costPerResult, "currency", currency)}
-              </TableCell>
-              <TableCell className="text-right tabular-nums">{formatSharePct(row.allocationGap, currency)}</TableCell>
-              <TableCell>
-                <Badge variant={breakdownToneBadgeVariant(row.tone)}>{row.diagnosis}</Badge>
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
+    <ChartContainer config={performanceChartConfig} className="h-[300px] w-full" role="img" aria-label={ariaLabel}>
+      <ScatterChart margin={{ left: 8, right: 16, top: 12, bottom: 8 }}>
+        <CartesianGrid />
+        <XAxis dataKey="spend" name={language === "vi" ? "Chi tiêu" : "Spend"} type="number" domain={paddedPositiveDomain()} tickFormatter={(value) => formatCompactNumber(Number(value), currency)} />
+        <YAxis dataKey="efficiencyValue" name={language === "vi" ? "Chi phí/kết quả" : "Cost/result"} type="number" domain={paddedPositiveDomain()} tickFormatter={(value) => formatCompactNumber(Number(value), currency)} />
+        <ZAxis dataKey="results" range={[60, 320]} />
+        <ChartTooltip content={<BreakdownTooltip mode="efficiency" currency={currency} language={language} dimensionLabel={dimensionLabel} />} />
+        <Scatter data={rows} fill="var(--color-spend)" name={language === "vi" ? "Phân khúc" : "Segment"} />
+      </ScatterChart>
+    </ChartContainer>
   );
 }
 
@@ -3230,13 +3233,6 @@ function breakdownBarFill(mode: BreakdownMetricMode) {
   if (mode === "results") return "var(--color-result)";
   if (mode === "efficiency") return "var(--color-costPerMessage)";
   return "var(--color-spend)";
-}
-
-function breakdownToneBadgeVariant(tone: BreakdownChartRow["tone"]) {
-  if (tone === "warning") return "destructive";
-  if (tone === "positive") return "success";
-  if (tone === "insufficient") return "outline";
-  return "secondary";
 }
 
 function breakdownMetricCopy(language: ReportLanguage) {
@@ -4066,15 +4062,28 @@ function CreativeStarvationCard({ report, language }: { report: DashboardReport;
   );
 }
 
-function BreakdownWasteCard({ report, language, rows, dimensionLabel }: { report: DashboardReport; language: ReportLanguage; rows: NormalizedRow[]; dimensionLabel: string }) {
+function BreakdownWasteCard({
+  report,
+  language,
+  rows,
+  chartRows,
+  dimensionLabel,
+}: {
+  report: DashboardReport;
+  language: ReportLanguage;
+  rows: NormalizedRow[];
+  chartRows: BreakdownChartRow[];
+  dimensionLabel: string;
+}) {
   const copy = uiCopy[language].performance;
   const currency = report.account.currency || "VND";
   const waste = assessBreakdownWaste(rows, report.selectedPack);
   const description = language === "vi"
-    ? `Kiểm tra lãng phí chi tiêu trong dimension ${dimensionLabel}.`
-    : `Checks high-spend waste inside the selected ${dimensionLabel.toLowerCase()} breakdown.`;
+    ? `${dimensionLabel}: phân bổ chi tiêu và kết quả.`
+    : `${dimensionLabel}: spend and result allocation.`;
+  const topRows = chartRows.slice(0, 3);
   return (
-    <Card data-print-flow className={diagnosticAccentClass(waste.variant)}>
+    <Card data-print-flow className={`${diagnosticAccentClass(waste.variant)} self-start`}>
       <CardHeader>
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -4092,6 +4101,24 @@ function BreakdownWasteCard({ report, language, rows, dimensionLabel }: { report
               <div key={row.id} className="grid grid-cols-[1fr_auto] gap-2 rounded-lg border p-2 text-sm">
                 <span className="truncate font-medium">{row.name}</span>
                 <span className="text-muted-foreground tabular-nums">{formatSharePct(row.spendShare, currency)} spend</span>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        {topRows.length > 0 ? (
+          <div className="flex flex-col gap-2">
+            <div className="text-xs font-medium text-muted-foreground">{language === "vi" ? "Phân khúc chi tiêu lớn" : "Top spend segments"}</div>
+            {topRows.map((row) => (
+              <div key={row.id} className="grid grid-cols-[1fr_auto] gap-2 rounded-lg border p-2 text-sm">
+                <div className="min-w-0">
+                  <div className="truncate font-medium">{row.label}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {formatSharePct(row.spendShare, currency)} {language === "vi" ? "chi tiêu" : "spend"} · {formatSharePct(row.resultShare, currency)} {language === "vi" ? "kết quả" : "results"}
+                  </div>
+                </div>
+                <div className="text-right text-xs tabular-nums text-muted-foreground">
+                  {formatMetric(row.spend, "currency", currency)}
+                </div>
               </div>
             ))}
           </div>

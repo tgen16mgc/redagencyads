@@ -72,17 +72,37 @@ describe("buildBreakdownChartRows", () => {
 });
 
 describe("chooseBreakdownChartType", () => {
-  it("uses ranked bars by default and scatter only when efficiency has enough rows", () => {
+  it("uses pie for small share views, area for larger share views, and scatter only when efficiency has enough rows", () => {
     const fourRows = buildBreakdownChartRows(Array.from({ length: 4 }, (_, index) => row({ id: String(index), platform: `p${index}`, spend: 10, messages: 1 })), "messages");
     const sixRows = buildBreakdownChartRows(Array.from({ length: 6 }, (_, index) => row({ id: String(index), platform: `p${index}`, spend: 10, messages: 1 })), "messages");
 
-    expect(chooseBreakdownChartType(fourRows, "spend")).toBe("bar");
+    expect(chooseBreakdownChartType(fourRows, "spend")).toBe("pie");
+    expect(chooseBreakdownChartType(sixRows, "results")).toBe("area");
     expect(chooseBreakdownChartType(fourRows, "efficiency")).toBe("bar");
     expect(chooseBreakdownChartType(sixRows, "efficiency")).toBe("scatter");
   });
 });
 
 describe("buildBreakdownViewModel", () => {
+  it("aggregates duplicate platform rows before building dimensions", () => {
+    const dimensions = buildBreakdownDimensions({
+      platformRows: [
+        row({ id: "fb-1", platform: "facebook", spend: 100, messages: 1 }),
+        row({ id: "fb-2", platform: "facebook", spend: 200, messages: 2 }),
+        row({ id: "ig", platform: "instagram", spend: 50, messages: 5 }),
+      ],
+      ageGenderRows: [],
+      regionRows: [],
+      language: "en",
+    });
+
+    const platform = dimensions.find((dimension) => dimension.value === "platform");
+
+    expect(platform?.rows).toHaveLength(2);
+    expect(platform?.rows.find((dimensionRow) => dimensionRow.platform === "facebook")?.spend).toBe(300);
+    expect(platform?.rows.find((dimensionRow) => dimensionRow.platform === "facebook")?.messages).toBe(3);
+  });
+
   it("splits combined age and gender breakdown rows into separate dimensions", () => {
     const dimensions = buildBreakdownDimensions({
       platformRows: [],
@@ -121,9 +141,9 @@ describe("buildBreakdownViewModel", () => {
     });
 
     expect(model.activeDimension).toBe("geography");
-    expect(model.chartLabel).toBe("Segment ranking");
-    expect(model.ariaLabel).toBe("Segment ranking for Geography, measured by Spend");
-    expect(model.chartExplanation).toContain("allocation is out of balance");
+    expect(model.chartLabel).toBe("Share");
+    expect(model.ariaLabel).toBe("Share for Geography, measured by Spend");
+    expect(model.chartExplanation).toContain("selected total");
     expect(model.resultLabel).toBe("leads");
   });
 
@@ -152,5 +172,32 @@ describe("buildBreakdownViewModel", () => {
     expect(model.insightTone).toBe("warning");
     expect(model.topInsight).toContain("facebook owns");
     expect(model.recommendedAction).toContain("Reduce or inspect facebook");
+  });
+
+  it("does not turn tiny unknown no-result spend into an action recommendation", () => {
+    const dimensions = buildBreakdownDimensions({
+      platformRows: [],
+      ageGenderRows: [
+        row({ id: "female", gender: "female", age: "18-24", spend: 3104278, messages: 17 }),
+        row({ id: "male", gender: "male", age: "18-24", spend: 1910153, messages: 10 }),
+        row({ id: "unknown", gender: "unknown", age: "18-24", spend: 48725, messages: 0 }),
+      ],
+      regionRows: [],
+      language: "en",
+    });
+
+    const model = buildBreakdownViewModel({
+      dimensions,
+      selectedDimension: "gender",
+      mode: "efficiency",
+      pack: "messages",
+      language: "en",
+    });
+
+    const unknown = model.rows.find((dimensionRow) => dimensionRow.label === "Unknown");
+    expect(unknown?.tone).toBe("insufficient");
+    expect(unknown?.diagnosis).toBe("Too little spend to judge");
+    expect(model.insightTone).not.toBe("warning");
+    expect(model.topInsight).toContain("broadly aligned");
   });
 });
