@@ -87,4 +87,16 @@ describe("assessBreakdownWaste", () => {
     expect(result.rows[0].name).toBe("Traffic Placement");
     expect(result.summary.en).toContain("Traffic Placement");
   });
+
+  it("labels high-spend geography rows as waste by region when row names are generic", () => {
+    const result = assess([
+      row({ id: "hcm", name: "1", region: "Ho Chi Minh City", spend: 300, messages: 2 }),
+      row({ id: "hn", name: "2", region: "Hanoi", spend: 100, messages: 15 }),
+      row({ id: "dn", name: "3", region: "Da Nang", spend: 100, messages: 15 }),
+    ]);
+
+    expect(result.status).toBe("waste_detected");
+    expect(result.rows[0].name).toBe("Ho Chi Minh City");
+    expect(result.summary.en).toContain("Ho Chi Minh City");
+  });
 });

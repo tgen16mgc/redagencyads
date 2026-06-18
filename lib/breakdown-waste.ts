@@ -37,6 +37,12 @@ function primaryResult(row: NormalizedRow, pack: KpiPack) {
   return row.impressions;
 }
 
+function breakdownWasteRowName(row: NormalizedRow) {
+  if (row.region || row.country) return row.region || row.country || row.name;
+  const demographic = [row.age, row.gender].filter(Boolean).join(" / ");
+  return row.name || row.platform || demographic;
+}
+
 function insufficientData(): BreakdownWaste {
   return {
     status: "insufficient_data",
@@ -63,7 +69,7 @@ export function assessBreakdownWaste(rows: NormalizedRow[], pack: KpiPack): Brea
     const resultVal = primaryResult(row, pack);
     return {
       id: row.id,
-      name: row.name || row.region || row.country || row.platform || [row.age, row.gender].filter(Boolean).join(" / "),
+      name: breakdownWasteRowName(row),
       spend: row.spend,
       result: resultVal,
       spendShare: row.spend / totalSpend,

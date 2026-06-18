@@ -88,6 +88,13 @@ import {
 } from "@/lib/chart-spec";
 import { buildKpiComparisons, formatComparisonChangePct, metricMovementIsBad } from "@/lib/metric-comparison";
 import {
+  buildBreakdownDimensions,
+  buildBreakdownViewModel,
+  type BreakdownChartRow,
+  type BreakdownDimension,
+  type BreakdownMetricMode,
+} from "@/lib/breakdown-view-model";
+import {
   buildCustomKpiCards,
   CUSTOM_KPI_SET_STORAGE_KEY,
   type CustomKpiKey,
@@ -2952,18 +2959,6 @@ function sumRows(rows: NormalizedRow[], key: keyof NormalizedRow): number {
   return rows.reduce((sum, row) => sum + Number(row[key] || 0), 0);
 }
 
-type BreakdownMetricMode = "spend" | "results" | "efficiency";
-type BreakdownDimension = "platform" | "ageGender" | "geography";
-
-type BreakdownChartRow = {
-  id: string;
-  label: string;
-  spend: number;
-  results: number;
-  efficiency: number;
-  share: number;
-};
-
 const BREAKDOWN_COLORS = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)"];
 
 function BreakdownAnalysisSection({ report, language }: { report: DashboardReport; language: ReportLanguage }) {
@@ -2987,24 +2982,30 @@ function BreakdownAnalysisSection({ report, language }: { report: DashboardRepor
 function AdaptiveBreakdownChart({ report, language }: { report: DashboardReport; language: ReportLanguage }) {
   const [mode, setMode] = React.useState<BreakdownMetricMode>("spend");
   const currency = report.account.currency || "VND";
-  const dimensions: { value: BreakdownDimension; label: string; rows: NormalizedRow[] }[] = [
-    { value: "platform", label: language === "vi" ? "Nền tảng" : "Platform", rows: report.platformRows },
-    { value: "ageGender", label: language === "vi" ? "Tuổi/Giới" : "Age/Gender", rows: report.ageGenderRows },
-    { value: "geography", label: language === "vi" ? "Khu vực" : "Geography", rows: report.regionRows || report.countryRows || [] },
-  ];
-  const defaultDimension = dimensions.find((dimension) => dimension.rows.length)?.value || "platform";
+  const dimensions = React.useMemo(
+    () => buildBreakdownDimensions({
+      platformRows: report.platformRows,
+      ageGenderRows: report.ageGenderRows,
+      regionRows: report.regionRows || [],
+      countryRows: report.countryRows,
+      language,
+    }),
+    [language, report.ageGenderRows, report.countryRows, report.platformRows, report.regionRows],
+  );
+  const defaultDimension = dimensions.find((dimensionItem) => dimensionItem.available)?.value || "platform";
   const [dimension, setDimension] = React.useState<BreakdownDimension>(defaultDimension);
-  const activeDimension = dimensions.find((item) => item.value === dimension) || dimensions[0];
-  const rows = buildBreakdownChartRows(activeDimension.rows, report.selectedPack).slice(0, mode === "efficiency" ? 14 : 10);
-  const chartType = mode === "efficiency" ? "scatter" : rows.length <= 4 ? "pie" : "bar";
+  const model = buildBreakdownViewModel({
+    dimensions,
+    selectedDimension: dimension,
+    mode,
+    pack: report.selectedPack,
+    language,
+  });
   const metricCopy = breakdownMetricCopy(language);
 
   React.useEffect(() => {
-    if (!activeDimension.rows.length) {
-      const nextDimension = dimensions.find((item) => item.rows.length)?.value;
-      if (nextDimension && nextDimension !== dimension) setDimension(nextDimension);
-    }
-  }, [activeDimension.rows.length, dimension, dimensions]);
+    if (model.activeDimension !== dimension) setDimension(model.activeDimension);
+  }, [dimension, model.activeDimension]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -3012,7 +3013,7 @@ function AdaptiveBreakdownChart({ report, language }: { report: DashboardReport;
         <Tabs value={dimension} onValueChange={(value) => setDimension(value as BreakdownDimension)}>
           <TabsList>
             {dimensions.map((item) => (
-              <TabsTrigger key={item.value} value={item.value} disabled={!item.rows.length}>
+              <TabsTrigger key={item.value} value={item.value} disabled={!item.available}>
                 {item.label}
               </TabsTrigger>
             ))}
@@ -3036,18 +3037,18 @@ function AdaptiveBreakdownChart({ report, language }: { report: DashboardReport;
       </div>
 
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-        <Badge variant="outline">{chartType === "pie" ? "Pie" : chartType === "scatter" ? "Scatter" : "Bar"}</Badge>
-        <span>{breakdownChartExplanation(chartType, language)}</span>
+        <Badge variant="outline">{model.chartLabel}</Badge>
+        <span>{model.chartExplanation}</span>
       </div>
 
-      {!rows.length ? <ChartEmpty language={language} /> : null}
-      {rows.length && chartType === "pie" ? <BreakdownPieChart rows={rows} mode={mode} currency={currency} language={language} /> : null}
-      {rows.length && chartType === "bar" ? <BreakdownBarChart rows={rows} mode={mode} currency={currency} language={language} /> : null}
-      {rows.length && chartType === "scatter" ? <BreakdownScatterChart rows={rows} currency={currency} language={language} /> : null}
+      {!model.rows.length ? <ChartEmpty language={language} /> : null}
+      {model.rows.length && model.chartType === "donut" ? <BreakdownPieChart rows={model.rows} mode={mode} currency={currency} language={language} ariaLabel={model.ariaLabel} /> : null}
+      {model.rows.length && model.chartType === "bar" ? <BreakdownBarChart rows={model.rows} mode={mode} currency={currency} language={language} ariaLabel={model.ariaLabel} /> : null}
+      {model.rows.length && model.chartType === "scatter" ? <BreakdownScatterChart rows={model.rows} currency={currency} language={language} ariaLabel={model.ariaLabel} /> : null}
 
-      {rows.length ? (
-        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-          {rows.slice(0, 6).map((row) => (
+      {model.summaryRows.length ? (
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3" aria-label={language === "vi" ? "Tóm tắt breakdown" : "Breakdown summary"}>
+          {model.summaryRows.map((row) => (
             <div key={row.id} className="rounded-lg border bg-muted/20 p-2 text-sm">
               <div className="truncate font-medium">{row.label}</div>
               <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
@@ -3063,34 +3064,41 @@ function AdaptiveBreakdownChart({ report, language }: { report: DashboardReport;
   );
 }
 
-function BreakdownPieChart({ rows, mode, currency, language }: { rows: BreakdownChartRow[]; mode: BreakdownMetricMode; currency: string; language: ReportLanguage }) {
+function BreakdownPieChart({ rows, mode, currency, language, ariaLabel }: { rows: BreakdownChartRow[]; mode: BreakdownMetricMode; currency: string; language: ReportLanguage; ariaLabel: string }) {
   const dataKey = mode === "results" ? "results" : "spend";
   return (
-    <ChartContainer config={performanceChartConfig} className="h-[280px] w-full">
-      <PieChart>
-        <ChartTooltip
-          content={
-            <ChartTooltipContent
-              formatter={(value) => (
-                <span className="tabular-nums">
-                  {formatMetric(Number(value), dataKey === "spend" ? "currency" : "number", currency)}
-                </span>
-              )}
-            />
-          }
-        />
-        <Pie data={rows} dataKey={dataKey} nameKey="label" innerRadius={58} outerRadius={96} paddingAngle={2}>
-          {rows.map((row, index) => <Cell key={row.id} fill={BREAKDOWN_COLORS[index % BREAKDOWN_COLORS.length]} />)}
-        </Pie>
-      </PieChart>
-    </ChartContainer>
+    <div className="relative">
+      <ChartContainer config={performanceChartConfig} className="h-[280px] w-full" role="img" aria-label={ariaLabel}>
+        <PieChart>
+          <ChartTooltip
+            content={
+              <ChartTooltipContent
+                formatter={(value) => (
+                  <span className="tabular-nums">
+                    {formatMetric(Number(value), dataKey === "spend" ? "currency" : "number", currency)}
+                  </span>
+                )}
+              />
+            }
+          />
+          <Pie data={rows} dataKey={dataKey} nameKey="label" innerRadius={58} outerRadius={96} paddingAngle={2}>
+            {rows.map((row, index) => <Cell key={row.id} fill={BREAKDOWN_COLORS[index % BREAKDOWN_COLORS.length]} />)}
+          </Pie>
+        </PieChart>
+      </ChartContainer>
+      <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+        <div className="max-w-28 text-center text-xs font-medium text-muted-foreground">
+          {language === "vi" ? "Tỷ trọng" : "Share"}
+        </div>
+      </div>
+    </div>
   );
 }
 
-function BreakdownBarChart({ rows, mode, currency, language }: { rows: BreakdownChartRow[]; mode: BreakdownMetricMode; currency: string; language: ReportLanguage }) {
+function BreakdownBarChart({ rows, mode, currency, language, ariaLabel }: { rows: BreakdownChartRow[]; mode: BreakdownMetricMode; currency: string; language: ReportLanguage; ariaLabel: string }) {
   const dataKey = mode === "results" ? "results" : "spend";
   return (
-    <ChartContainer config={performanceChartConfig} className="h-[300px] w-full">
+    <ChartContainer config={performanceChartConfig} className="h-[300px] w-full" role="img" aria-label={ariaLabel}>
       <BarChart data={rows} layout="vertical" margin={{ left: 12, right: 8, top: 4, bottom: 4 }}>
         <CartesianGrid horizontal={false} />
         <XAxis type="number" hide />
@@ -3112,71 +3120,41 @@ function BreakdownBarChart({ rows, mode, currency, language }: { rows: Breakdown
   );
 }
 
-function BreakdownScatterChart({ rows, currency, language }: { rows: BreakdownChartRow[]; currency: string; language: ReportLanguage }) {
+function BreakdownScatterChart({ rows, currency, language, ariaLabel }: { rows: BreakdownChartRow[]; currency: string; language: ReportLanguage; ariaLabel: string }) {
   return (
-    <ChartContainer config={performanceChartConfig} className="h-[300px] w-full">
-      <ScatterChart margin={{ left: 8, right: 16, top: 12, bottom: 8 }}>
-        <CartesianGrid />
-        <XAxis dataKey="spend" name={language === "vi" ? "Chi tiêu" : "Spend"} type="number" tickFormatter={(value) => formatCompactNumber(Number(value), currency)} />
-        <YAxis dataKey="efficiency" name={language === "vi" ? "Chi phí/kết quả" : "Cost/result"} type="number" tickFormatter={(value) => formatCompactNumber(Number(value), currency)} />
-        <ZAxis dataKey="results" range={[60, 320]} />
-        <ChartTooltip
-          content={
-            <ChartTooltipContent
-              formatter={(value, name) => (
-                <span className="tabular-nums">
-                  {name === "spend" || name === "efficiency" ? formatMetric(Number(value), "currency", currency) : formatMetric(Number(value), "number", currency)}
-                </span>
-              )}
-            />
-          }
-        />
-        <Scatter data={rows} fill="var(--color-spend)" />
-      </ScatterChart>
-    </ChartContainer>
+    <div className="flex flex-col gap-2">
+      <ChartContainer config={performanceChartConfig} className="h-[300px] w-full" role="img" aria-label={ariaLabel}>
+        <ScatterChart margin={{ left: 8, right: 16, top: 12, bottom: 8 }}>
+          <CartesianGrid />
+          <XAxis dataKey="spend" name={language === "vi" ? "Chi tiêu" : "Spend"} type="number" tickFormatter={(value) => formatCompactNumber(Number(value), currency)} />
+          <YAxis dataKey="efficiency" name={language === "vi" ? "Chi phí/kết quả" : "Cost/result"} type="number" tickFormatter={(value) => formatCompactNumber(Number(value), currency)} />
+          <ZAxis dataKey="results" range={[60, 320]} />
+          <ChartTooltip
+            content={
+              <ChartTooltipContent
+                formatter={(value, name) => (
+                  <span className="tabular-nums">
+                    {name === "spend" || name === "efficiency" ? formatMetric(Number(value), "currency", currency) : formatMetric(Number(value), "number", currency)}
+                  </span>
+                )}
+              />
+            }
+          />
+          <Scatter data={rows} fill="var(--color-spend)" name={language === "vi" ? "Phân khúc" : "Segment"} />
+        </ScatterChart>
+      </ChartContainer>
+      <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
+        <div>{language === "vi" ? "Trục ngang: chi tiêu cao hơn nằm bên phải." : "X-axis: higher spend sits farther right."}</div>
+        <div>{language === "vi" ? "Trục dọc: chi phí/kết quả cao hơn nằm phía trên." : "Y-axis: costlier results sit higher."}</div>
+      </div>
+    </div>
   );
-}
-
-function buildBreakdownChartRows(rows: NormalizedRow[], pack: KpiPack): BreakdownChartRow[] {
-  const mapped = rows.map((row) => {
-    const results = primaryResultValue(row, pack);
-    return {
-      id: row.id,
-      label: breakdownRowLabel(row),
-      spend: row.spend,
-      results,
-      efficiency: results > 0 ? row.spend / results : 0,
-      share: 0,
-    };
-  }).filter((row) => row.spend > 0 || row.results > 0);
-  const totalSpend = mapped.reduce((sum, row) => sum + row.spend, 0);
-  return mapped
-    .map((row) => ({ ...row, share: totalSpend > 0 ? row.spend / totalSpend : 0 }))
-    .sort((a, b) => b.spend - a.spend);
-}
-
-function primaryResultValue(row: NormalizedRow, pack: KpiPack) {
-  if (pack === "messages") return row.messages;
-  if (pack === "sales_roas") return row.purchases;
-  if (pack === "traffic") return row.linkClicks;
-  if (pack === "awareness") return row.impressions;
-  return row.leads || row.messages;
-}
-
-function breakdownRowLabel(row: NormalizedRow) {
-  return row.region || row.country || row.platform || [row.age, row.gender].filter(Boolean).join(" / ") || row.name;
 }
 
 function breakdownMetricCopy(language: ReportLanguage) {
   return language === "vi"
-    ? { spend: "Chi tiêu", results: "Kết quả", efficiency: "Hiệu suất" }
-    : { spend: "Spend", results: "Results", efficiency: "Efficiency" };
-}
-
-function breakdownChartExplanation(type: "pie" | "bar" | "scatter", language: ReportLanguage) {
-  if (type === "pie") return language === "vi" ? "Ít lát cắt nên dùng pie để đọc tỷ trọng nhanh." : "Few segments, so pie shows share quickly.";
-  if (type === "scatter") return language === "vi" ? "Scatter soi điểm vừa tốn tiền vừa đắt kết quả." : "Scatter highlights high-spend, high-cost outliers.";
-  return language === "vi" ? "Nhiều lát cắt nên dùng bar để giữ nhãn dễ đọc." : "Many segments, so bars keep labels readable.";
+    ? { spend: "Chi tiêu", results: "Kết quả", efficiency: "Chi phí/kết quả" }
+    : { spend: "Spend", results: "Results", efficiency: "Cost per result" };
 }
 
 function PerformanceCharts({ report, language }: { report: DashboardReport; language: ReportLanguage }) {
