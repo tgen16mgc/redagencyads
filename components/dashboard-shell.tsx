@@ -104,6 +104,7 @@ import {
   serializeCustomKpiSet,
 } from "@/lib/custom-kpi-set";
 import { buildCompetitorSpyPrompt, buildInsightPrompt, formatCompactNumber, formatMetric, formatSharePct } from "@/lib/metrics";
+import BorderGlow from "@/components/BorderGlow";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -1398,10 +1399,24 @@ export function DashboardShell() {
                     {language === "vi" ? "Tạo Verdict" : "Generate Verdict"}
                   </Button>
                 ) : (
-                  <Button type="button" onClick={runAi} className="w-full sm:w-auto sm:shrink-0">
-                    <SparklesIcon data-icon="inline-start" />
-                    {language === "vi" ? "Tạo Verdict" : "Generate Verdict"}
-                  </Button>
+                  <BorderGlow
+                    spin
+                    showShadow={false}
+                    borderRadius={999}
+                    borderWidth={2.5}
+                    coneSpread={18}
+                    glowRadius={22}
+                    glowIntensity={1.5}
+                    glowColor="245 90 65"
+                    colors={["#6a4cf5", "#d44df0", "#ff5577"]}
+                    backgroundColor="transparent"
+                    className="sm:shrink-0"
+                  >
+                    <Button type="button" onClick={runAi} className="w-full sm:w-auto">
+                      <SparklesIcon data-icon="inline-start" />
+                      {language === "vi" ? "Tạo Verdict" : "Generate Verdict"}
+                    </Button>
+                  </BorderGlow>
                 )}
               </div>
             </div>
@@ -2229,10 +2244,23 @@ function VerdictPanel({
               </Select>
             </Field>
             {!verdict && !loading ? (
-              <Button onClick={onGenerate}>
-                <SparklesIcon data-icon="inline-start" />
-                {copy.generate}
-              </Button>
+              <BorderGlow
+                spin
+                showShadow={false}
+                borderRadius={999}
+                borderWidth={2.5}
+                coneSpread={18}
+                glowRadius={22}
+                glowIntensity={1.5}
+                glowColor="245 90 65"
+                colors={["#6a4cf5", "#d44df0", "#ff5577"]}
+                backgroundColor="transparent"
+              >
+                <Button onClick={onGenerate} className="w-full">
+                  <SparklesIcon data-icon="inline-start" />
+                  {copy.generate}
+                </Button>
+              </BorderGlow>
             ) : (
               <Button onClick={onGenerate} disabled={loading}>
                 {loading ? <Spinner data-icon="inline-start" /> : <SparklesIcon data-icon="inline-start" />}
