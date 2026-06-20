@@ -107,7 +107,6 @@ import { buildCompetitorSpyPrompt, buildInsightPrompt, formatCompactNumber, form
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import BorderGlow from "@/components/BorderGlow";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
@@ -1186,7 +1185,7 @@ export function DashboardShell() {
           )}
 
           {!report && loading !== "report" ? (
-            <Card className="border-primary/20 bg-primary/5">
+            <Card className="border-border bg-card">
               <CardContent className="flex flex-col gap-3 py-4 md:flex-row md:items-center md:justify-between">
                 <div>
                   <div className="text-sm font-medium">{language === "vi" ? "Sẵn sàng kéo dashboard" : "Ready to pull your dashboard"}</div>
@@ -1205,7 +1204,7 @@ export function DashboardShell() {
           {!report && loading !== "report" ? <EmptyState language={language} /> : null}
           {report ? (
             <div ref={reportStartRef} className="ra-fade-up flex flex-col gap-4 scroll-mt-4">
-              <Card className="border-primary/20">
+              <Card className="border-border">
                 <CardContent className="flex flex-col gap-3 py-4 md:flex-row md:items-center md:justify-between">
                   <div>
                     <div className="text-sm font-medium">{language === "vi" ? "Dashboard đã sẵn sàng" : "Dashboard is ready"}</div>
@@ -1388,7 +1387,7 @@ export function DashboardShell() {
           ) : null}
           {activeView === "ads" && report && !verdict ? (
             <div className="sticky bottom-4 z-10 flex justify-center" data-print-hidden>
-              <div className="flex w-full max-w-xl flex-col gap-3 rounded-xl border bg-background/95 p-3 shadow-lg backdrop-blur sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex w-full max-w-xl flex-col gap-3 rounded-xl border border-border bg-card/95 p-3 backdrop-blur sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
                   <div className="text-sm font-medium">{language === "vi" ? "Báo cáo đã sẵn sàng" : "Report is ready"}</div>
                   <div className="text-xs text-muted-foreground">{language === "vi" ? "Bước tiếp theo: tạo Verdict để có khuyến nghị tối ưu." : "Next step: generate the Verdict for optimization recommendations."}</div>
@@ -1399,24 +1398,10 @@ export function DashboardShell() {
                     {language === "vi" ? "Tạo Verdict" : "Generate Verdict"}
                   </Button>
                 ) : (
-                  <BorderGlow
-                    spin
-                    showShadow={false}
-                    borderRadius={8}
-                    borderWidth={2.5}
-                    coneSpread={18}
-                    glowRadius={22}
-                    glowIntensity={1.5}
-                    glowColor="245 90 65"
-                    colors={["#6366f1", "#a855f7", "#22d3ee"]}
-                    backgroundColor="transparent"
-                    className="sm:shrink-0"
-                  >
-                    <Button type="button" onClick={runAi} className="w-full">
-                      <SparklesIcon data-icon="inline-start" />
-                      {language === "vi" ? "Tạo Verdict" : "Generate Verdict"}
-                    </Button>
-                  </BorderGlow>
+                  <Button type="button" onClick={runAi} className="w-full sm:w-auto sm:shrink-0">
+                    <SparklesIcon data-icon="inline-start" />
+                    {language === "vi" ? "Tạo Verdict" : "Generate Verdict"}
+                  </Button>
                 )}
               </div>
             </div>
@@ -1732,7 +1717,7 @@ function ReportSkeleton({ language }: { language: ReportLanguage }) {
   }, [steps.length]);
 
   return (
-    <Card className="border-primary/20">
+    <Card className="border-border">
       <CardContent className="py-4">
         <div className="mb-3 flex items-center gap-2 text-sm font-medium">
           <Spinner className="size-4" />
@@ -1884,9 +1869,9 @@ function CampaignPicker({
                         type="button"
                         aria-pressed={selected}
                         onClick={() => toggleCampaign(campaign.id)}
-                        className="grid grid-cols-[auto_1fr_auto] items-center gap-2 rounded-md border px-2 py-2 text-left text-sm transition-colors hover:bg-muted aria-pressed:border-primary aria-pressed:bg-primary/5"
+                        className="group grid grid-cols-[auto_1fr_auto] items-center gap-2 rounded-md border px-2 py-2 text-left text-sm transition-colors hover:bg-muted focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none aria-pressed:border-ring/70 aria-pressed:bg-muted aria-pressed:ring-1 aria-pressed:ring-ring/50"
                       >
-                        <span className="flex size-5 items-center justify-center rounded-md border text-primary">
+                        <span className="flex size-5 items-center justify-center rounded-md border text-ring group-aria-pressed:border-ring group-aria-pressed:bg-ring group-aria-pressed:text-black">
                           {selected ? <CheckIcon className="size-3.5" /> : null}
                         </span>
                         <span className="min-w-0">
@@ -2019,7 +2004,7 @@ function RunningAdSetsPanel({
                       {selectedAd.previewHtml ? (
                         <div className="w-full flex justify-center bg-muted/10 p-2 rounded-md">
                           <div
-                            className="w-full max-w-[500px] overflow-hidden rounded-md border p-1 bg-white max-h-[600px] overflow-y-auto"
+                            className="max-h-[600px] w-full max-w-[500px] overflow-y-auto overflow-hidden rounded-md border border-border bg-white p-1 text-black"
                             dangerouslySetInnerHTML={{ __html: sanitizeAdPreviewHtml(selectedAd.previewHtml) }}
                           />
                         </div>
@@ -2244,23 +2229,10 @@ function VerdictPanel({
               </Select>
             </Field>
             {!verdict && !loading ? (
-              <BorderGlow
-                spin
-                showShadow={false}
-                borderRadius={8}
-                borderWidth={2.5}
-                coneSpread={18}
-                glowRadius={22}
-                glowIntensity={1.5}
-                glowColor="245 90 65"
-                colors={["#6366f1", "#a855f7", "#22d3ee"]}
-                backgroundColor="transparent"
-              >
-                <Button onClick={onGenerate} className="w-full">
-                  <SparklesIcon data-icon="inline-start" />
-                  {copy.generate}
-                </Button>
-              </BorderGlow>
+              <Button onClick={onGenerate}>
+                <SparklesIcon data-icon="inline-start" />
+                {copy.generate}
+              </Button>
             ) : (
               <Button onClick={onGenerate} disabled={loading}>
                 {loading ? <Spinner data-icon="inline-start" /> : <SparklesIcon data-icon="inline-start" />}

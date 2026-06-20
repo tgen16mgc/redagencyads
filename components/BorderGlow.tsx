@@ -81,13 +81,13 @@ const BorderGlow: React.FC<BorderGlowProps> = ({
   className = '',
   edgeSensitivity = 30,
   glowColor = '40 80 80',
-  backgroundColor = '#120F17',
+  backgroundColor = '#141414',
   borderRadius = 28,
   glowRadius = 40,
   glowIntensity = 1.0,
   coneSpread = 25,
   animated = false,
-  colors = ['#c084fc', '#f472b6', '#38bdf8'],
+  colors = ['#6a4cf5', '#d44df0', '#ff5577'],
   fillOpacity = 0.5,
   spin = false,
   spinDuration = 3000,
@@ -100,6 +100,16 @@ const BorderGlow: React.FC<BorderGlowProps> = ({
   const [edgeProximity, setEdgeProximity] = useState(0);
   const [sweepActive, setSweepActive] = useState(false);
   const [spinning, setSpinning] = useState(false);
+  const [reduceMotion, setReduceMotion] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const query = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const updateReduceMotion = () => setReduceMotion(query.matches);
+    updateReduceMotion();
+    query.addEventListener('change', updateReduceMotion);
+    return () => query.removeEventListener('change', updateReduceMotion);
+  }, []);
 
   const getCenterOfElement = useCallback((el: HTMLElement) => {
     const { width, height } = el.getBoundingClientRect();
@@ -129,6 +139,7 @@ const BorderGlow: React.FC<BorderGlowProps> = ({
   }, [getCenterOfElement]);
 
   const handlePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (reduceMotion) return;
     const card = cardRef.current;
     if (!card) return;
     const rect = card.getBoundingClientRect();
@@ -136,10 +147,10 @@ const BorderGlow: React.FC<BorderGlowProps> = ({
     const y = e.clientY - rect.top;
     setEdgeProximity(getEdgeProximity(card, x, y));
     setCursorAngle(getCursorAngle(card, x, y));
-  }, [getEdgeProximity, getCursorAngle]);
+  }, [getEdgeProximity, getCursorAngle, reduceMotion]);
 
   useEffect(() => {
-    if (!animated) return;
+    if (!animated || reduceMotion) return;
     const angleStart = 110;
     const angleEnd = 465;
     setSweepActive(true);
@@ -159,11 +170,9 @@ const BorderGlow: React.FC<BorderGlowProps> = ({
   }, [animated]);
 
   useEffect(() => {
-    if (!spin) return;
-    if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
-      setSpinning(true);
-      setEdgeProximity(1);
-      setCursorAngle(45);
+    if (!spin || reduceMotion) {
+      setSpinning(false);
+      setEdgeProximity(0);
       return;
     }
     setSpinning(true);
@@ -177,7 +186,7 @@ const BorderGlow: React.FC<BorderGlowProps> = ({
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, [spin, spinDuration]);
+  }, [spin, spinDuration, reduceMotion]);
 
   const colorSensitivity = edgeSensitivity + 20;
   const isVisible = isHovered || sweepActive || spinning;
