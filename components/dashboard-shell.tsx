@@ -40,6 +40,7 @@ import {
   SparklesIcon,
 } from "lucide-react";
 import { AppSidebar, type AppSidebarItem, type WorkflowSidebarItem } from "@/components/dashboard/app-sidebar";
+import { ClientReportWorkspace } from "@/components/dashboard/client-report-workspace";
 import { CustomChartsSection } from "@/components/dashboard/custom-charts-section";
 import type { AdSetWithPreviews, AiInsightTable, CompareMode, CompetitorFetchResult, CompetitorFetchSource, CompetitorPlatform, CompetitorSpyAd, CompetitorSpyResult, DashboardReport, KpiCard, KpiPack, MetaAccount, MetaCampaign, NormalizedRow, Verdict } from "@/lib/types";
 import { buildWorkflowSteps, type DashboardWorkflowStep } from "@/lib/dashboard-workflow";
@@ -787,7 +788,6 @@ export function DashboardShell() {
       const current = await fetchReportForRange({ since, until });
       setReport(current.report);
       setScopeExpanded(false);
-      window.setTimeout(() => reportStartRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
       if (compareMode !== "off") {
         const previousRange = getCompareRange({ since, until }, compareMode);
         const previous = await fetchReportForRange(previousRange);
@@ -1204,221 +1204,163 @@ export function DashboardShell() {
           {loading === "report" ? <ReportSkeleton language={language} /> : null}
           {!report && loading !== "report" ? <EmptyState language={language} /> : null}
           {report ? (
-            <div ref={reportStartRef} className="ra-fade-up flex flex-col gap-4 scroll-mt-4">
-              <Card className="border-border">
-                <CardContent className="flex flex-col gap-3 py-4 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <div className="text-sm font-medium">{language === "vi" ? "Dashboard đã sẵn sàng" : "Dashboard is ready"}</div>
-                    <div className="text-sm text-muted-foreground">
-                      {verdict
-                        ? language === "vi" ? "Verdict đã tạo. Kiểm tra khuyến nghị và các bảng drilldown bên dưới." : "Verdict generated. Review recommendations and drilldown tables below."
-                        : language === "vi" ? "Tạo Verdict để nhận khuyến nghị tối ưu ngân sách, creative và test tiếp theo." : "Generate a Verdict for budget, creative, and next-test recommendations."}
-                    </div>
-                  </div>
-                  <Badge variant={verdict ? "secondary" : "outline"} className="md:shrink-0">
-                    {verdict
-                      ? <><CheckIcon data-icon="inline-start" />{language === "vi" ? "Verdict đã tạo" : "Verdict ready"}</>
-                      : <><SparklesIcon data-icon="inline-start" />{language === "vi" ? "Sẵn sàng tạo Verdict" : "Ready for Verdict"}</>}
-                  </Badge>
-                </CardContent>
-              </Card>
-              <section className="flex flex-col gap-3">
-                <div className="flex flex-wrap items-center justify-between gap-2" data-print-hidden>
-                  <div>
-                    <h2 className="font-heading text-lg font-semibold tracking-tight">{language === "vi" ? "KPI chính" : "Top KPIs"}</h2>
-                    <p className="text-sm text-muted-foreground">
-                      {language === "vi" ? "Các thẻ này là phần hiển thị, không đổi bộ KPI đang chọn hoặc Verdict." : "These cards are display-only and do not change the selected KPI pack or Verdict."}
-                    </p>
-                  </div>
-                  <CustomKpiSetSheet
-                    defaultKpis={report.kpis}
-                    language={language}
-                    selectedKeys={customKpiKeys || effectiveKpis.map((kpi) => kpi.key as CustomKpiKey)}
-                    onSave={saveCustomKpis}
-                  />
-                </div>
-                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-                  {effectiveKpis.map((kpi) => {
-                    const comparison = kpiComparisons?.get(kpi.key as keyof NormalizedRow);
-
-                    return (
-                      <Card key={kpi.key} size="sm">
-                        <CardHeader>
-                          <CardDescription className="text-xs font-medium uppercase tracking-wide">{kpi.label}</CardDescription>
-                          <CardTitle className="text-3xl font-semibold tabular-nums leading-none">
-                            {formatMetric(Number(report.totals[kpi.key as keyof NormalizedRow] || 0), kpi.format, report.account.currency || "VND")}
-                          </CardTitle>
-                          {comparison ? (
-                            <CardDescription className={`text-xs tabular-nums ${metricMovementIsBad(kpi.key, comparison.change) ? "text-destructive" : "text-muted-foreground"}`}>
-                              {comparison.change > 0 ? "↑" : comparison.change < 0 ? "↓" : "→"} {formatComparisonChangePct(comparison.changePct, language)} {comparison.descriptor}
-                            </CardDescription>
-                          ) : null}
-                        </CardHeader>
-                      </Card>
-                    );
-                  })}
-                </div>
-              </section>
-
-              <PerformanceCharts report={report} language={language} />
-
-              <BreakdownAnalysisSection report={report} language={language} />
-
-              <CustomChartsSection report={report} language={language} />
-
-              {previousReport ? <ComparisonPanel current={report} previous={previousReport} mode={compareMode} language={language} /> : null}
-
-              <VerdictPanel
-                provider={provider}
-                loading={aiLoading.verdict}
-                progress={verdictProgress}
+            <div ref={reportStartRef} className="ra-fade-up scroll-mt-4">
+              <ClientReportWorkspace
+                report={comparisonReport || report}
+                previousReport={previousReport}
                 verdict={verdict}
-                copiedPrompt={copiedPrompt}
-                language={language}
-                onProviderChange={setProvider}
-                onGenerate={runAi}
-                onCopyPrompt={copyPrompt}
-              />
-
-              <InsightPanel
-                provider={provider}
                 insights={insights}
-                loading={aiLoading.insights}
-                progress={insightProgress}
                 compareMode={compareMode}
-                hasComparison={Boolean(previousReport)}
                 language={language}
-                onGenerate={runInsights}
+                loadingReport={loading === "report"}
+                loadingVerdict={aiLoading.verdict}
+                onEditScope={() => setScopeExpanded(true)}
+                onRefreshReport={pullReport}
+                onGenerateVerdict={runAi}
+                onExportReport={exportPdf}
+                onSaveCustomKpis={saveCustomKpis}
+                customKpiKeys={customKpiKeys || effectiveKpis.map((kpi) => kpi.key as CustomKpiKey)}
+                defaultKpis={report.kpis}
+                appendix={
+                  <>
+                    <section className="flex flex-col gap-3" data-print-hidden>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <h2 className="font-heading text-lg font-semibold tracking-tight">{language === "vi" ? "KPI trong báo cáo" : "Report KPI set"}</h2>
+                          <p className="text-sm text-muted-foreground">
+                            {language === "vi" ? "Chọn các KPI hỗ trợ câu chuyện khách hàng ở phần đầu báo cáo." : "Choose the KPI cards that support the client story at the top of the report."}
+                          </p>
+                        </div>
+                        
+                      </div>
+                    </section>
+
+                    <PerformanceCharts report={report} language={language} />
+
+                    <BreakdownAnalysisSection report={report} language={language} />
+
+                    <CustomChartsSection report={report} language={language} />
+
+                    {previousReport ? <ComparisonPanel current={report} previous={previousReport} mode={compareMode} language={language} /> : null}
+
+                    <VerdictPanel
+                      provider={provider}
+                      loading={aiLoading.verdict}
+                      progress={verdictProgress}
+                      verdict={verdict}
+                      copiedPrompt={copiedPrompt}
+                      language={language}
+                      onProviderChange={setProvider}
+                      onGenerate={runAi}
+                      onCopyPrompt={copyPrompt}
+                    />
+
+                    <InsightPanel
+                      provider={provider}
+                      insights={insights}
+                      loading={aiLoading.insights}
+                      progress={insightProgress}
+                      compareMode={compareMode}
+                      hasComparison={Boolean(previousReport)}
+                      language={language}
+                      onGenerate={runInsights}
+                    />
+
+                    {report.adsetPreviews ? (
+                      <RunningAdSetsPanel
+                        adsets={report.adsetPreviews}
+                        currency={report.account.currency || "VND"}
+                        language={language}
+                      />
+                    ) : null}
+
+                    <section className="grid gap-4 xl:grid-cols-[1.5fr_1fr]" data-print-flow>
+                      <Card>
+                        <CardHeader>
+                          <CardTitle>{copy.performance.title}</CardTitle>
+                          <CardDescription>
+                            {copy.performance.description
+                              .replace("{detected}", report.detectedPack)
+                              .replace("{active}", report.selectedPack)
+                              .replace("{reason}", report.packReason)}
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <Tabs defaultValue="campaigns">
+                            <TabsList>
+                              <TabsTrigger value="campaigns">{copy.performance.campaigns}</TabsTrigger>
+                              <TabsTrigger value="adsets">{copy.performance.adsets}</TabsTrigger>
+                              <TabsTrigger value="ads">{copy.performance.ads}</TabsTrigger>
+                              <TabsTrigger value="daily">{copy.performance.daily}</TabsTrigger>
+                            </TabsList>
+                            <TabsContent value="campaigns" className="mt-3">
+                              <PerformanceTable
+                                rows={report.campaignRows}
+                                currency={report.account.currency || "VND"}
+                                language={language}
+                                pack={report.selectedPack}
+                              />
+                            </TabsContent>
+                            <TabsContent value="adsets" className="mt-3">
+                              <PerformanceTable
+                                rows={report.adsetRows}
+                                currency={report.account.currency || "VND"}
+                                language={language}
+                                pack={report.selectedPack}
+                              />
+                            </TabsContent>
+                            <TabsContent value="ads" className="mt-3">
+                              <PerformanceTable
+                                rows={report.adRows}
+                                currency={report.account.currency || "VND"}
+                                language={language}
+                                pack={report.selectedPack}
+                              />
+                            </TabsContent>
+                            <TabsContent value="daily" className="mt-3">
+                              <PerformanceTable rows={report.dailyRows} currency={report.account.currency || "VND"} language={language} daily />
+                            </TabsContent>
+                          </Tabs>
+                        </CardContent>
+                      </Card>
+
+                      <HealthTriageCard report={report} language={language} />
+                    </section>
+
+                    <section data-print-flow>
+                      <DailyDiagnosisCard report={report} language={language} />
+                    </section>
+
+                    <section className="flex flex-col gap-3" data-print-flow>
+                      <div className="flex flex-col gap-1">
+                        <h2 className="font-heading text-lg font-semibold tracking-tight">
+                          {language === "vi" ? "Chẩn đoán tài khoản" : "Account diagnostics"}
+                        </h2>
+                        <p className="text-sm text-muted-foreground">
+                          {language === "vi"
+                            ? "Các kiểm tra ads-skill chuyên sâu. Mỗi thẻ là một góc nhìn độc lập về sức khỏe tài khoản."
+                            : "In-depth ads-skill checks. Each card is an independent lens on account health."}
+                        </p>
+                      </div>
+                      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                        <ExperimentReadinessCard report={report} language={language} />
+                        <DecisionConfidenceCard report={report} language={language} targets={decisionTargets} />
+                        <SpendPacingCard report={report} language={language} />
+                        <ConsolidationPressureCard report={report} language={language} />
+                        <CostCapDeliveryCard report={report} language={language} />
+                        <CreativeVolumeCard report={report} language={language} />
+                        <CreativeStarvationCard report={report} language={language} />
+                        <BudgetMoveEngineCard report={report} language={language} />
+                        <ResultConcentrationCard report={report} language={language} />
+                        <FunnelLeakageCard report={report} language={language} />
+                        <AudienceOverlapCard report={report} language={language} />
+                        <TargetingExclusionsCard report={report} language={language} />
+                        <MeasurementQualityCard report={report} language={language} />
+                      </div>
+                    </section>
+                  </>
+                }
               />
-
-              {report.adsetPreviews ? (
-                <RunningAdSetsPanel
-                  adsets={report.adsetPreviews}
-                  currency={report.account.currency || "VND"}
-                  language={language}
-                />
-              ) : null}
-
-              <section className="grid gap-4 xl:grid-cols-[1.5fr_1fr]" data-print-flow>
-                <Card>
-                  <CardHeader>
-                    <CardTitle>{copy.performance.title}</CardTitle>
-                    <CardDescription>
-                      {copy.performance.description
-                        .replace("{detected}", report.detectedPack)
-                        .replace("{active}", report.selectedPack)
-                        .replace("{reason}", report.packReason)}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <Tabs defaultValue="campaigns">
-                      <TabsList>
-                        <TabsTrigger value="campaigns">{copy.performance.campaigns}</TabsTrigger>
-                        <TabsTrigger value="adsets">{copy.performance.adsets}</TabsTrigger>
-                        <TabsTrigger value="ads">{copy.performance.ads}</TabsTrigger>
-                        <TabsTrigger value="daily">{copy.performance.daily}</TabsTrigger>
-                      </TabsList>
-                      <TabsContent value="campaigns" className="mt-3">
-                        <PerformanceTable
-                          rows={report.campaignRows}
-                          currency={report.account.currency || "VND"}
-                          language={language}
-                          pack={report.selectedPack}
-                        />
-                      </TabsContent>
-                      <TabsContent value="adsets" className="mt-3">
-                        <PerformanceTable
-                          rows={report.adsetRows}
-                          currency={report.account.currency || "VND"}
-                          language={language}
-                          pack={report.selectedPack}
-                        />
-                      </TabsContent>
-                      <TabsContent value="ads" className="mt-3">
-                        <PerformanceTable
-                          rows={report.adRows}
-                          currency={report.account.currency || "VND"}
-                          language={language}
-                          pack={report.selectedPack}
-                        />
-                      </TabsContent>
-                      <TabsContent value="daily" className="mt-3">
-                        <PerformanceTable rows={report.dailyRows} currency={report.account.currency || "VND"} language={language} daily />
-                      </TabsContent>
-                    </Tabs>
-                  </CardContent>
-                </Card>
-
-                <HealthTriageCard report={report} language={language} />
-              </section>
-
-              <section data-print-flow>
-                <DailyDiagnosisCard report={report} language={language} />
-              </section>
-
-              <section className="flex flex-col gap-3" data-print-flow>
-                <div className="flex flex-col gap-1">
-                  <h2 className="font-heading text-lg font-semibold tracking-tight">
-                    {language === "vi" ? "Chẩn đoán tài khoản" : "Account diagnostics"}
-                  </h2>
-                  <p className="text-sm text-muted-foreground">
-                    {language === "vi"
-                      ? "Các kiểm tra ads-skill chuyên sâu. Mỗi thẻ là một góc nhìn độc lập về sức khỏe tài khoản."
-                      : "In-depth ads-skill checks. Each card is an independent lens on account health."}
-                  </p>
-                </div>
-                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                  <ExperimentReadinessCard report={report} language={language} />
-                  <DecisionConfidenceCard report={report} language={language} targets={decisionTargets} />
-                  <SpendPacingCard report={report} language={language} />
-                  <ConsolidationPressureCard report={report} language={language} />
-                  <CostCapDeliveryCard report={report} language={language} />
-                  <CreativeVolumeCard report={report} language={language} />
-                  <CreativeStarvationCard report={report} language={language} />
-                  <BudgetMoveEngineCard report={report} language={language} />
-                  <ResultConcentrationCard report={report} language={language} />
-                  <FunnelLeakageCard report={report} language={language} />
-                  <AudienceOverlapCard report={report} language={language} />
-                  <TargetingExclusionsCard report={report} language={language} />
-                  <MeasurementQualityCard report={report} language={language} />
-                </div>
-              </section>
-
-            </div>
-          ) : null}
-          {activeView === "ads" && report && !verdict ? (
-            <div className="sticky bottom-4 z-10 flex justify-center" data-print-hidden>
-              <div className="flex w-full max-w-xl flex-col gap-3 rounded-xl border border-border bg-card/95 p-3 backdrop-blur sm:flex-row sm:items-center sm:justify-between">
-                <div className="min-w-0">
-                  <div className="text-sm font-medium">{language === "vi" ? "Báo cáo đã sẵn sàng" : "Report is ready"}</div>
-                  <div className="text-xs text-muted-foreground">{language === "vi" ? "Bước tiếp theo: tạo Verdict để có khuyến nghị tối ưu." : "Next step: generate the Verdict for optimization recommendations."}</div>
-                </div>
-                {aiLoading.verdict ? (
-                  <Button type="button" onClick={runAi} disabled className="sm:shrink-0">
-                    <Spinner data-icon="inline-start" />
-                    {language === "vi" ? "Tạo Verdict" : "Generate Verdict"}
-                  </Button>
-                ) : (
-                  <BorderGlow
-                    spin
-                    showShadow={false}
-                    borderRadius={999}
-                    borderWidth={2.5}
-                    coneSpread={18}
-                    glowRadius={22}
-                    glowIntensity={1.5}
-                    glowColor="245 90 65"
-                    colors={["#6a4cf5", "#d44df0", "#ff5577"]}
-                    backgroundColor="transparent"
-                    className="sm:shrink-0"
-                  >
-                    <Button type="button" onClick={runAi} className="w-full sm:w-auto">
-                      <SparklesIcon data-icon="inline-start" />
-                      {language === "vi" ? "Tạo Verdict" : "Generate Verdict"}
-                    </Button>
-                  </BorderGlow>
-                )}
-              </div>
             </div>
           ) : null}
             </>
@@ -1458,117 +1400,6 @@ export function DashboardShell() {
         </main>
       </SidebarInset>
     </SidebarProvider>
-  );
-}
-
-function CustomKpiSetSheet({
-  defaultKpis,
-  language,
-  selectedKeys,
-  onSave,
-}: {
-  defaultKpis: KpiCard[];
-  language: ReportLanguage;
-  selectedKeys: CustomKpiKey[];
-  onSave: (keys: CustomKpiKey[]) => void;
-}) {
-  const isVietnamese = language === "vi";
-  const [open, setOpen] = React.useState(false);
-  const [draftKeys, setDraftKeys] = React.useState<CustomKpiKey[]>(selectedKeys);
-  const groups = getCustomKpiCatalogGroups(language);
-  const selectedSet = React.useMemo(() => new Set(draftKeys), [draftKeys]);
-  const selectedCards = buildCustomKpiCards(draftKeys);
-
-  function handleOpenChange(nextOpen: boolean) {
-    setOpen(nextOpen);
-    if (nextOpen) setDraftKeys(selectedKeys.length ? selectedKeys : deserializeCustomKpiSet(null, defaultKpis));
-  }
-
-  function toggleMetric(key: CustomKpiKey) {
-    setDraftKeys((current) => {
-      if (current.includes(key)) return current.length > 1 ? current.filter((item) => item !== key) : current;
-      return [...current, key];
-    });
-  }
-
-  function handleSave() {
-    if (!draftKeys.length) return;
-    onSave(draftKeys);
-    setOpen(false);
-  }
-
-  return (
-    <Sheet open={open} onOpenChange={handleOpenChange}>
-      <SheetTrigger
-        render={
-          <Button type="button" variant="outline" size="sm">
-            <SlidersHorizontalIcon data-icon="inline-start" />
-            {isVietnamese ? "Tùy chỉnh KPI" : "Customize KPIs"}
-          </Button>
-        }
-      />
-      <SheetContent className="w-full gap-0 overflow-y-auto sm:max-w-md">
-        <SheetHeader>
-          <SheetTitle>{isVietnamese ? "Tùy chỉnh KPI" : "Customize KPIs"}</SheetTitle>
-          <SheetDescription>
-            {isVietnamese
-              ? "Chọn các thẻ KPI hiển thị ở đầu dashboard. Việc này không đổi bộ KPI hoặc Verdict."
-              : "Choose the KPI cards shown at the top of the dashboard. This does not change the KPI pack or Verdict."}
-          </SheetDescription>
-        </SheetHeader>
-        <Separator />
-        <div className="flex flex-col gap-4 p-4">
-          <div className="rounded-lg border bg-muted/20 p-3">
-            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              {isVietnamese ? "KPI đã chọn" : "Selected KPIs"}
-            </div>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {selectedCards.map((kpi, index) => (
-                <Badge key={kpi.key} variant="secondary">
-                  {index + 1}. {kpi.label}
-                </Badge>
-              ))}
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-4">
-            {groups.map((group) => (
-              <div key={group.id} className="flex flex-col gap-2">
-                <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{group.label}</div>
-                <div className="grid gap-2">
-                  {group.metrics.map((metric) => {
-                    const checked = selectedSet.has(metric.key);
-                    const disabled = checked && draftKeys.length === 1;
-                    return (
-                      <label
-                        key={metric.key}
-                        className="flex cursor-pointer items-start gap-3 rounded-lg border bg-background p-3 text-sm transition-colors hover:bg-muted/50 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-60"
-                      >
-                        <input
-                          type="checkbox"
-                          className="mt-1"
-                          checked={checked}
-                          disabled={disabled}
-                          onChange={() => toggleMetric(metric.key)}
-                        />
-                        <span className="min-w-0">
-                          <span className="block font-medium text-foreground">{metric.label}</span>
-                          <span className="block text-xs text-muted-foreground">{metric.format}</span>
-                        </span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <Button type="button" onClick={handleSave} disabled={!draftKeys.length}>
-            {isVietnamese ? "Lưu KPI" : "Save KPIs"}
-          </Button>
-        </div>
-      </SheetContent>
-    </Sheet>
   );
 }
 
