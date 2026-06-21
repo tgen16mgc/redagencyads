@@ -95,6 +95,7 @@ import {
   type BreakdownDimension,
   type BreakdownMetricMode,
 } from "@/lib/breakdown-view-model";
+import { buildBreakdownChartAnnotations, type BreakdownChartAnnotations } from "@/lib/breakdown-chart-annotations";
 import {
   buildCustomKpiCards,
   CUSTOM_KPI_SET_STORAGE_KEY,
@@ -3041,6 +3042,17 @@ function AdaptiveBreakdownChart({
     pack: report.selectedPack,
     language,
   });
+  const annotations = buildBreakdownChartAnnotations({
+    chartType: model.chartType,
+    mode,
+    dimensionLabel: model.activeDimensionLabel,
+    metricLabel: model.metricLabel,
+    chartLabel: model.chartLabel,
+    chartExplanation: model.chartExplanation,
+    resultLabel: model.resultLabel,
+    currency,
+    language,
+  });
   const metricCopy = breakdownMetricCopy(language);
 
   React.useEffect(() => {
@@ -3093,16 +3105,16 @@ function AdaptiveBreakdownChart({
 
       {!model.rows.length ? <ChartEmpty language={language} /> : null}
       {model.rows.length && model.chartType === "pie" ? (
-        <BreakdownPieChart rows={model.rows} mode={mode} currency={currency} language={language} ariaLabel={model.ariaLabel} dimensionLabel={model.activeDimensionLabel} />
+        <BreakdownPieChart rows={model.rows} mode={mode} currency={currency} language={language} annotations={annotations} />
       ) : null}
       {model.rows.length && model.chartType === "area" ? (
-        <BreakdownAreaChart rows={model.rows} mode={mode} currency={currency} language={language} ariaLabel={model.ariaLabel} dimensionLabel={model.activeDimensionLabel} />
+        <BreakdownAreaChart rows={model.rows} mode={mode} currency={currency} language={language} annotations={annotations} />
       ) : null}
       {model.rows.length && model.chartType === "bar" ? (
-        <BreakdownBarChart rows={model.rows} mode={mode} currency={currency} language={language} ariaLabel={model.ariaLabel} dimensionLabel={model.activeDimensionLabel} />
+        <BreakdownBarChart rows={model.rows} mode={mode} currency={currency} language={language} annotations={annotations} />
       ) : null}
       {model.rows.length && model.chartType === "scatter" ? (
-        <BreakdownScatterChart rows={model.rows} currency={currency} language={language} ariaLabel={model.ariaLabel} dimensionLabel={model.activeDimensionLabel} />
+        <BreakdownScatterChart rows={model.rows} currency={currency} language={language} annotations={annotations} />
       ) : null}
     </div>
   );
@@ -3110,62 +3122,90 @@ function AdaptiveBreakdownChart({
 
 const BREAKDOWN_COLORS = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)"];
 
-function BreakdownPieChart({ rows, mode, currency, language, ariaLabel, dimensionLabel }: { rows: BreakdownChartRow[]; mode: BreakdownMetricMode; currency: string; language: ReportLanguage; ariaLabel: string; dimensionLabel: string }) {
+function BreakdownPieChart({ rows, mode, currency, language, annotations }: { rows: BreakdownChartRow[]; mode: BreakdownMetricMode; currency: string; language: ReportLanguage; annotations: BreakdownChartAnnotations }) {
   const dataKey = mode === "results" ? "results" : "spend";
+  const totalSpend = rows.reduce((sum, row) => sum + row.spend, 0);
+  const totalResults = rows.reduce((sum, row) => sum + row.results, 0);
+  const centerValue = dataKey === "results" ? formatMetric(totalResults, "number", currency) : formatMetric(totalSpend, "currency", currency);
   return (
-    <ChartContainer config={performanceChartConfig} className="h-[300px] w-full" role="img" aria-label={ariaLabel}>
-      <PieChart>
-        <ChartTooltip content={<BreakdownTooltip mode={mode} currency={currency} language={language} dimensionLabel={dimensionLabel} />} />
-        <Pie data={rows} dataKey={dataKey} nameKey="label" innerRadius={62} outerRadius={104} paddingAngle={2}>
-          {rows.map((row, index) => <Cell key={row.id} fill={BREAKDOWN_COLORS[index % BREAKDOWN_COLORS.length]} />)}
-        </Pie>
-      </PieChart>
-    </ChartContainer>
+    <div className="flex flex-col gap-2">
+      <ChartAnnotationHeader annotations={annotations} />
+      <ChartContainer config={performanceChartConfig} className="h-[300px] w-full" role="img" aria-label={annotations.title}>
+        <PieChart>
+          <ChartTooltip content={<BreakdownTooltip mode={mode} currency={currency} language={language} dimensionLabel={annotations.title} />} />
+          <Pie data={rows} dataKey={dataKey} nameKey="label" innerRadius={62} outerRadius={104} paddingAngle={2} label={(props: { percent?: number }) => formatSharePct(Number(props.percent ?? 0), currency)} labelLine={false}>
+            {rows.map((row, index) => <Cell key={row.id} fill={BREAKDOWN_COLORS[index % BREAKDOWN_COLORS.length]} />)}
+          </Pie>
+        </PieChart>
+        {annotations.centerTotalLabel ? (
+          <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+            <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{annotations.centerTotalLabel}</span>
+            <span className="font-mono text-sm font-semibold tabular-nums text-foreground">{centerValue}</span>
+          </div>
+        ) : null}
+      </ChartContainer>
+      <ChartAnnotationLegend annotations={annotations} />
+    </div>
   );
 }
 
-function BreakdownAreaChart({ rows, mode, currency, language, ariaLabel, dimensionLabel }: { rows: BreakdownChartRow[]; mode: BreakdownMetricMode; currency: string; language: ReportLanguage; ariaLabel: string; dimensionLabel: string }) {
+function BreakdownAreaChart({ rows, mode, currency, language, annotations }: { rows: BreakdownChartRow[]; mode: BreakdownMetricMode; currency: string; language: ReportLanguage; annotations: BreakdownChartAnnotations }) {
   return (
-    <ChartContainer config={performanceChartConfig} className="h-[300px] w-full" role="img" aria-label={ariaLabel}>
-      <ComposedChart data={rows} margin={{ left: 8, right: 8, top: 12, bottom: 8 }}>
-        <CartesianGrid vertical={false} />
-        <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} minTickGap={12} />
-        <YAxis type="number" tickLine={false} axisLine={false} tickFormatter={(value) => formatSharePct(Number(value), currency)} domain={paddedPositiveDomain()} />
-        <ChartTooltip content={<BreakdownTooltip mode={mode} currency={currency} language={language} dimensionLabel={dimensionLabel} />} />
-        <Area type="monotone" dataKey="spendShare" name={language === "vi" ? "Tỷ trọng chi tiêu" : "Spend share"} stroke="var(--color-spend)" fill="var(--color-spend)" fillOpacity={0.18} strokeWidth={2} />
-        <Area type="monotone" dataKey="resultShare" name={language === "vi" ? "Tỷ trọng kết quả" : "Result share"} stroke="var(--color-result)" fill="var(--color-result)" fillOpacity={0.12} strokeWidth={2} />
-      </ComposedChart>
-    </ChartContainer>
+    <div className="flex flex-col gap-2">
+      <ChartAnnotationHeader annotations={annotations} />
+      <ChartContainer config={performanceChartConfig} className="h-[300px] w-full" role="img" aria-label={annotations.title}>
+        <ComposedChart data={rows} margin={{ left: 8, right: 8, top: 12, bottom: 8 }}>
+          <CartesianGrid vertical={false} />
+          <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} minTickGap={12} />
+          <YAxis type="number" tickLine={false} axisLine={false} tickFormatter={(value) => formatSharePct(Number(value), currency)} domain={paddedPositiveDomain()} label={annotations.yAxisLabel ? { value: annotations.yAxisLabel, angle: -90, position: "insideLeft", offset: 10, style: { fontSize: 11, fill: "currentColor" } } : undefined} />
+          <ChartTooltip content={<BreakdownTooltip mode={mode} currency={currency} language={language} dimensionLabel={annotations.title} />} />
+          <Area type="monotone" dataKey="spendShare" name={language === "vi" ? "Tỷ trọng chi tiêu" : "Spend share"} stroke="var(--color-spend)" fill="var(--color-spend)" fillOpacity={0.18} strokeWidth={2} />
+          <Area type="monotone" dataKey="resultShare" name={language === "vi" ? "Tỷ trọng kết quả" : "Result share"} stroke="var(--color-result)" fill="var(--color-result)" fillOpacity={0.12} strokeWidth={2} />
+        </ComposedChart>
+      </ChartContainer>
+      <ChartAnnotationLegend annotations={annotations} />
+    </div>
   );
 }
 
-function BreakdownBarChart({ rows, mode, currency, language, ariaLabel, dimensionLabel }: { rows: BreakdownChartRow[]; mode: BreakdownMetricMode; currency: string; language: ReportLanguage; ariaLabel: string; dimensionLabel: string }) {
+function BreakdownBarChart({ rows, mode, currency, language, annotations }: { rows: BreakdownChartRow[]; mode: BreakdownMetricMode; currency: string; language: ReportLanguage; annotations: BreakdownChartAnnotations }) {
   const dataKey = breakdownChartDataKey(mode);
   return (
-    <ChartContainer config={performanceChartConfig} className="h-[300px] w-full" role="img" aria-label={ariaLabel}>
-      <BarChart data={rows} layout="vertical" margin={{ left: 12, right: 8, top: 4, bottom: 4 }}>
-        <CartesianGrid horizontal={false} />
-        <XAxis type="number" hide domain={paddedPositiveDomain()} />
-        <YAxis dataKey="label" type="category" tickLine={false} axisLine={false} width={132} tickMargin={8} />
-        <ChartTooltip content={<BreakdownTooltip mode={mode} currency={currency} language={language} dimensionLabel={dimensionLabel} />} />
-        <Bar dataKey={dataKey} fill={breakdownBarFill(mode)} radius={[0, 4, 4, 0]} />
-      </BarChart>
-    </ChartContainer>
+    <div className="flex flex-col gap-2">
+      <ChartAnnotationHeader annotations={annotations} />
+      <ChartContainer config={performanceChartConfig} className="h-[300px] w-full" role="img" aria-label={annotations.title}>
+        <BarChart data={rows} layout="vertical" margin={{ left: 12, right: 36, top: 4, bottom: 4 }}>
+          <CartesianGrid horizontal={false} />
+          <XAxis type="number" domain={paddedPositiveDomain()} tickLine={false} axisLine={false} tickFormatter={(value) => formatCompactNumber(Number(value), currency)} label={annotations.xAxisLabel ? { value: annotations.xAxisLabel, position: "insideBottom", offset: -2, style: { fontSize: 11, fill: "currentColor" } } : undefined} />
+          <YAxis dataKey="label" type="category" tickLine={false} axisLine={false} width={132} tickMargin={8} />
+          <ChartTooltip content={<BreakdownTooltip mode={mode} currency={currency} language={language} dimensionLabel={annotations.title} />} />
+          <Bar dataKey={dataKey} fill={breakdownBarFill(mode)} radius={[0, 4, 4, 0]} label={(props: { value?: unknown; x?: string | number; y?: string | number; width?: string | number }) => {
+            if (typeof props.value !== "number" || typeof props.x !== "number" || typeof props.y !== "number" || typeof props.width !== "number") return null;
+            return <text x={props.x + props.width + 6} y={props.y} dy={4} fontSize={11} textAnchor="start" fill="currentColor" className="font-mono tabular-nums">{formatMetric(props.value, mode === "results" ? "number" : "currency", currency)}</text>;
+          }} />
+        </BarChart>
+      </ChartContainer>
+      <ChartAnnotationLegend annotations={annotations} />
+    </div>
   );
 }
 
-function BreakdownScatterChart({ rows, currency, language, ariaLabel, dimensionLabel }: { rows: BreakdownChartRow[]; currency: string; language: ReportLanguage; ariaLabel: string; dimensionLabel: string }) {
+function BreakdownScatterChart({ rows, currency, language, annotations }: { rows: BreakdownChartRow[]; currency: string; language: ReportLanguage; annotations: BreakdownChartAnnotations }) {
   return (
-    <ChartContainer config={performanceChartConfig} className="h-[300px] w-full" role="img" aria-label={ariaLabel}>
-      <ScatterChart margin={{ left: 8, right: 16, top: 12, bottom: 8 }}>
-        <CartesianGrid />
-        <XAxis dataKey="spend" name={language === "vi" ? "Chi tiêu" : "Spend"} type="number" domain={paddedPositiveDomain()} tickFormatter={(value) => formatCompactNumber(Number(value), currency)} />
-        <YAxis dataKey="efficiencyValue" name={language === "vi" ? "Chi phí/kết quả" : "Cost/result"} type="number" domain={paddedPositiveDomain()} tickFormatter={(value) => formatCompactNumber(Number(value), currency)} />
-        <ZAxis dataKey="results" range={[60, 320]} />
-        <ChartTooltip content={<BreakdownTooltip mode="efficiency" currency={currency} language={language} dimensionLabel={dimensionLabel} />} />
-        <Scatter data={rows} fill="var(--color-spend)" name={language === "vi" ? "Phân khúc" : "Segment"} />
-      </ScatterChart>
-    </ChartContainer>
+    <div className="flex flex-col gap-2">
+      <ChartAnnotationHeader annotations={annotations} />
+      <ChartContainer config={performanceChartConfig} className="h-[300px] w-full" role="img" aria-label={annotations.title}>
+        <ScatterChart margin={{ left: 8, right: 16, top: 12, bottom: 8 }}>
+          <CartesianGrid />
+          <XAxis dataKey="spend" name={language === "vi" ? "Chi tiêu" : "Spend"} type="number" domain={paddedPositiveDomain()} tickFormatter={(value) => formatCompactNumber(Number(value), currency)} label={annotations.xAxisLabel ? { value: annotations.xAxisLabel, position: "insideBottom", offset: -2, style: { fontSize: 11, fill: "currentColor" } } : undefined} />
+          <YAxis dataKey="efficiencyValue" name={language === "vi" ? "Chi phí/kết quả" : "Cost/result"} type="number" domain={paddedPositiveDomain()} tickFormatter={(value) => formatCompactNumber(Number(value), currency)} label={annotations.yAxisLabel ? { value: annotations.yAxisLabel, angle: -90, position: "insideLeft", offset: 10, style: { fontSize: 11, fill: "currentColor" } } : undefined} />
+          <ZAxis dataKey="results" range={[60, 320]} />
+          <ChartTooltip content={<BreakdownTooltip mode="efficiency" currency={currency} language={language} dimensionLabel={annotations.title} />} />
+          <Scatter data={rows} fill="var(--color-spend)" name={language === "vi" ? "Phân khúc" : "Segment"} />
+        </ScatterChart>
+      </ChartContainer>
+      <ChartAnnotationLegend annotations={annotations} />
+    </div>
   );
 }
 
@@ -3219,6 +3259,29 @@ function TooltipMetric({ label, value }: { label: string; value: string }) {
     <div className="flex items-center justify-between gap-4">
       <span className="text-muted-foreground">{label}</span>
       <span className="font-mono font-medium tabular-nums">{value}</span>
+    </div>
+  );
+}
+
+function ChartAnnotationHeader({ annotations }: { annotations: BreakdownChartAnnotations }) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="text-xs font-medium text-foreground">{annotations.title}</span>
+      <span className="text-[11px] leading-snug text-muted-foreground">{annotations.subtitle}</span>
+    </div>
+  );
+}
+
+function ChartAnnotationLegend({ annotations }: { annotations: BreakdownChartAnnotations }) {
+  if (!annotations.legend.length) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
+      {annotations.legend.map((item) => (
+        <span key={item.label} className="flex items-center gap-1.5">
+          <span aria-hidden className="inline-block size-2.5 rounded-sm" style={{ backgroundColor: item.color }} />
+          {item.label}
+        </span>
+      ))}
     </div>
   );
 }
