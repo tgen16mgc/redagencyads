@@ -1206,23 +1206,6 @@ export function DashboardShell() {
           {!report && loading !== "report" ? <EmptyState language={language} /> : null}
           {report ? (
             <div ref={reportStartRef} className="ra-fade-up flex flex-col gap-4 scroll-mt-4">
-              <Card className="border-border">
-                <CardContent className="flex flex-col gap-3 py-4 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <div className="text-sm font-medium">{language === "vi" ? "Dashboard đã sẵn sàng" : "Dashboard is ready"}</div>
-                    <div className="text-sm text-muted-foreground">
-                      {verdict
-                        ? language === "vi" ? "Verdict đã tạo. Kiểm tra khuyến nghị và các bảng drilldown bên dưới." : "Verdict generated. Review recommendations and drilldown tables below."
-                        : language === "vi" ? "Tạo Verdict để nhận khuyến nghị tối ưu ngân sách, creative và test tiếp theo." : "Generate a Verdict for budget, creative, and next-test recommendations."}
-                    </div>
-                  </div>
-                  <Badge variant={verdict ? "secondary" : "outline"} className="md:shrink-0">
-                    {verdict
-                      ? <><CheckIcon data-icon="inline-start" />{language === "vi" ? "Verdict đã tạo" : "Verdict ready"}</>
-                      : <><SparklesIcon data-icon="inline-start" />{language === "vi" ? "Sẵn sàng tạo Verdict" : "Ready for Verdict"}</>}
-                  </Badge>
-                </CardContent>
-              </Card>
               <section className="flex flex-col gap-3">
                 <div className="flex flex-wrap items-center justify-between gap-2" data-print-hidden>
                   <div>
