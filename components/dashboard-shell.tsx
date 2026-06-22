@@ -1947,10 +1947,10 @@ function RunningAdSetsPanel({
                     variant={selectedAdSetId === adset.id ? "secondary" : "ghost"}
                     size="sm"
                     onClick={() => setSelectedAdSetId(adset.id)}
-                    className={`justify-start text-left w-full h-auto py-3 px-4 flex flex-col items-start gap-1 font-normal border transition-all ${
+                    className={`justify-start text-left w-full h-auto py-3 px-4 flex flex-col items-start gap-1 font-normal transition-all rounded-2xl ${
                       selectedAdSetId === adset.id
-                        ? "bg-accent border-accent text-accent-foreground font-medium"
-                        : "bg-background hover:bg-muted/50 border-transparent text-muted-foreground"
+                        ? "bg-secondary text-foreground font-medium"
+                        : "bg-transparent hover:bg-muted/50 text-muted-foreground hover:text-foreground"
                     }`}
                   >
                     <span className="line-clamp-2 text-sm">{adset.name}</span>
@@ -1962,7 +1962,7 @@ function RunningAdSetsPanel({
           )}
 
           <div className={hasMultipleAdSets ? "md:col-span-8 lg:col-span-9 flex flex-col gap-4" : "flex flex-col gap-4"}>
-            <div className="rounded-lg border p-4 bg-muted/5">
+            <div className="rounded-xl border p-4 bg-muted/10">
               <div className="flex flex-wrap items-start justify-between gap-2 border-b pb-3 mb-4">
                 <div>
                   <h3 className="font-heading text-lg font-semibold">{selectedAdSet.name}</h3>
@@ -1971,8 +1971,8 @@ function RunningAdSetsPanel({
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Badge variant="outline">{formatAdSetBudget(selectedAdSet, currency, language)}</Badge>
-                  <Badge variant="secondary">{selectedAdSet.status}</Badge>
+                  <Badge variant="outline" className="rounded-full">{formatAdSetBudget(selectedAdSet, currency, language)}</Badge>
+                  <Badge variant="secondary" className="rounded-full">{selectedAdSet.status}</Badge>
                 </div>
               </div>
 
@@ -1983,10 +1983,10 @@ function RunningAdSetsPanel({
                       {selectedAdSet.ads.map((ad, idx) => (
                         <Button
                           key={ad.id}
-                          variant={selectedAdId === ad.id ? "default" : "outline"}
+                          variant={selectedAdId === ad.id ? "secondary" : "ghost"}
                           size="sm"
                           onClick={() => setSelectedAdId(ad.id)}
-                          className="text-xs"
+                          className="text-xs rounded-full px-4"
                         >
                           {ad.name || `Creative ${idx + 1}`}
                         </Button>
@@ -1996,19 +1996,19 @@ function RunningAdSetsPanel({
 
                   {selectedAd ? (
                     <div className="flex flex-col gap-4">
-                      <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b">
+                      <div className="flex flex-wrap items-center justify-between gap-2 pb-2">
                         <div className="font-semibold text-sm truncate">{selectedAd.name}</div>
-                        <Badge variant="outline" className="text-xs">ID: {selectedAd.id}</Badge>
+                        <span className="text-xs text-muted-foreground">ID: {selectedAd.id}</span>
                       </div>
                       {selectedAd.previewHtml ? (
-                        <div className="w-full flex justify-center bg-muted/10 p-2 rounded-md">
+                        <div className="w-full flex justify-center bg-background p-4 rounded-xl border">
                           <div
-                            className="max-h-[600px] w-full max-w-[500px] overflow-y-auto overflow-hidden rounded-md border border-border bg-white p-1 text-black"
+                            className="max-h-[600px] w-full max-w-[500px] overflow-y-auto overflow-hidden rounded-lg bg-white [&_iframe]:!border-0"
                             dangerouslySetInnerHTML={{ __html: sanitizeAdPreviewHtml(selectedAd.previewHtml) }}
                           />
                         </div>
                       ) : (
-                        <div className="flex h-40 items-center justify-center rounded-md border bg-muted/10 text-xs text-muted-foreground">
+                        <div className="flex h-40 items-center justify-center rounded-xl border bg-muted/10 text-xs text-muted-foreground">
                           {isVietnamese ? "Không tải được bản xem trước" : "Unable to load ad preview"}
                         </div>
                       )}
