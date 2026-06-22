@@ -3130,7 +3130,7 @@ function BreakdownPieChart({ rows, mode, currency, language, annotations }: { ro
   return (
     <div className="flex flex-col gap-2">
       <ChartAnnotationHeader annotations={annotations} />
-      <ChartContainer config={performanceChartConfig} className="h-[300px] w-full" role="img" aria-label={annotations.title}>
+      <ChartContainer config={performanceChartConfig} className="relative h-[300px] w-full" role="img" aria-label={annotations.title}>
         <PieChart>
           <ChartTooltip content={<BreakdownTooltip mode={mode} currency={currency} language={language} dimensionLabel={annotations.title} />} />
           <Pie data={rows} dataKey={dataKey} nameKey="label" innerRadius={62} outerRadius={104} paddingAngle={2} label={(props: { percent?: number }) => formatSharePct(Number(props.percent ?? 0), currency)} labelLine={false}>
