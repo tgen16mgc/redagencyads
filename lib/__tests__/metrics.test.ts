@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { detectKpiPack, formatMetric, formatSharePct, formatRatePct, formatCompactNumber, normalizeRows, scoreHealth, sumRows } from "../metrics";
+import { detectKpiPack, formatMetric, formatSharePct, formatRatePct, formatCompactNumber, getKpiCards, normalizeRows, scoreHealth, sumRows } from "../metrics";
 import type { InsightRow, NormalizedRow } from "../types";
 
 function normalized(overrides: Partial<NormalizedRow>): NormalizedRow {
@@ -191,6 +191,16 @@ describe("detectKpiPack", () => {
     const detected = detectKpiPack([{ id: "1", name: "Brand reach" }], [normalized({ impressions: 1000 })], []);
 
     expect(detected.pack).toBe("awareness");
+  });
+});
+
+describe("getKpiCards", () => {
+  it("excludes spend from default dashboard KPI cards", () => {
+    expect(getKpiCards("messages").map((kpi) => kpi.key)).not.toContain("spend");
+    expect(getKpiCards("lead_gen").map((kpi) => kpi.key)).not.toContain("spend");
+    expect(getKpiCards("sales_roas").map((kpi) => kpi.key)).not.toContain("spend");
+    expect(getKpiCards("traffic").map((kpi) => kpi.key)).not.toContain("spend");
+    expect(getKpiCards("awareness").map((kpi) => kpi.key)).not.toContain("spend");
   });
 });
 

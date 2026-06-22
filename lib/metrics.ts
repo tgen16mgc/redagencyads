@@ -126,7 +126,6 @@ export function detectKpiPack(campaigns: MetaCampaign[], campaignRows: Normalize
 
 export function getKpiCards(pack: KpiPack): KpiCard[] {
   const common: KpiCard[] = [
-    { key: "spend", label: "Spend", format: "currency" },
     { key: "impressions", label: "Impressions", format: "number" },
     { key: "reach", label: "Reach", format: "number" },
   ];
