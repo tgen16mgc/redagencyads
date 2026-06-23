@@ -2001,9 +2001,9 @@ function RunningAdSetsPanel({
                         <span className="text-xs text-muted-foreground">ID: {selectedAd.id}</span>
                       </div>
                       {selectedAd.previewHtml ? (
-                        <div className="w-full flex justify-center bg-background p-4 rounded-xl border">
+                        <div className="flex w-full justify-center overflow-hidden rounded-xl border bg-muted/20 p-4 sm:p-6">
                           <div
-                            className="max-h-[600px] w-full max-w-[500px] overflow-y-auto overflow-hidden rounded-lg bg-white [&_iframe]:!border-0"
+                            className="relative max-h-[75vh] w-full max-w-[400px] overflow-hidden rounded-xl border border-border/50 bg-white shadow-sm [&_iframe]:!h-full [&_iframe]:!w-full [&_iframe]:!border-0"
                             dangerouslySetInnerHTML={{ __html: sanitizeAdPreviewHtml(selectedAd.previewHtml) }}
                           />
                         </div>

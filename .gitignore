@@ -18,3 +18,5 @@ Ba*TBW*.png
 B*TBW*.png
 skills-lock.json
 .worktrees/
+.aidesigner/*
+!.aidesigner/.gitkeep
