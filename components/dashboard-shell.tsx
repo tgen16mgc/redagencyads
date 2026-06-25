@@ -2793,11 +2793,21 @@ function CompetitorSpyPanel({
         {result ? (
           <div className="flex flex-col gap-3" data-print-expand>
             <SpyAdsPanel ads={ads} warnings={fetchWarnings} fetchedAt={fetchedAt} language={language} />
-            <div className="rounded-lg border bg-background p-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="secondary">{result.provider}</Badge>
-                <Badge variant="outline">{platformLabel(platform)}</Badge>
-                <span className="text-sm font-medium">{compactText(result.summary, 260)}</span>
+            <div className="relative overflow-hidden rounded-2xl border bg-background p-4 md:p-5">
+              <div className="pointer-events-none absolute -right-14 -top-20 size-40 rounded-full bg-[radial-gradient(circle,_rgba(0,153,255,0.12),_transparent_68%)]" />
+              <div className="relative flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div className="min-w-0">
+                  <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    {isVietnamese ? "Tóm tắt phân tích" : "Analysis summary"}
+                  </div>
+                  <p className="mt-2 max-w-3xl text-sm font-medium leading-6 text-foreground">
+                    {compactText(result.summary, 260)}
+                  </p>
+                </div>
+                <div className="flex shrink-0 flex-wrap gap-2 md:justify-end">
+                  <Badge variant="secondary">{result.provider}</Badge>
+                  <Badge variant="outline">{platformLabel(platform)}</Badge>
+                </div>
               </div>
             </div>
 
