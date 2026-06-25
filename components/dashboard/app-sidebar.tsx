@@ -61,12 +61,21 @@ export function AppSidebar<T extends string>({
 }: AppSidebarProps<T>) {
   return (
     <Sidebar collapsible="icon" data-print-hidden>
-      <SidebarHeader>
+      <SidebarHeader className="p-3">
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton tooltip="Meta Ads Console">
-              <img src="/red-agency-logo.png" alt="Red Agency" className="size-5 rounded-sm object-contain" />
-              <span>Meta Ads Console</span>
+            <SidebarMenuButton
+              size="lg"
+              tooltip="Meta Ads Console"
+              className="h-auto border border-sidebar-border/80 bg-sidebar-accent/35 p-3 group-data-[collapsible=icon]:border-0 group-data-[collapsible=icon]:bg-transparent"
+            >
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-background/70 ring-1 ring-sidebar-border group-data-[collapsible=icon]:size-8">
+                <img src="/red-agency-logo.png" alt="Red Agency" className="size-6 rounded-md object-contain" />
+              </span>
+              <span className="min-w-0 group-data-[collapsible=icon]:hidden">
+                <span className="block truncate text-sm font-semibold leading-5">Red Agency</span>
+                <span className="block truncate text-xs font-normal text-sidebar-foreground/65">Ads intelligence</span>
+              </span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
@@ -75,10 +84,11 @@ export function AppSidebar<T extends string>({
         <SidebarGroup>
           <SidebarGroupLabel>{functionsLabel}</SidebarGroupLabel>
           <SidebarGroupContent>
-            <SidebarMenu>
+            <SidebarMenu className="gap-1">
               {appItems.map(({ value, label, icon: Icon }) => (
                 <SidebarMenuItem key={value}>
                   <SidebarMenuButton
+                    size="lg"
                     isActive={activeView === value}
                     onClick={() => onActiveViewChange(value)}
                     aria-current={activeView === value ? "page" : undefined}
@@ -126,9 +136,15 @@ export function AppSidebar<T extends string>({
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
-                <SidebarMenuButton tooltip={aiProviderLabel}>
-                  <SparklesIcon />
-                  <span>{aiProviderLabel}</span>
+                <SidebarMenuButton
+                  tooltip={aiProviderLabel}
+                  className="h-auto items-start border border-sidebar-border/70 bg-background/35 p-3 group-data-[collapsible=icon]:h-8 group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:border-0 group-data-[collapsible=icon]:bg-transparent group-data-[collapsible=icon]:p-2"
+                >
+                  <SparklesIcon className="mt-0.5 group-data-[collapsible=icon]:mt-0" />
+                  <span className="min-w-0 group-data-[collapsible=icon]:hidden">
+                    <span className="block truncate text-sm font-medium">{aiProviderLabel}</span>
+                    <span className="block truncate text-[11px] font-normal text-sidebar-foreground/65">Workspace AI status</span>
+                  </span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
@@ -136,10 +152,14 @@ export function AppSidebar<T extends string>({
         </SidebarGroup>
       </SidebarContent>
       {showClearSession ? (
-        <SidebarFooter>
+        <SidebarFooter className="p-3">
           <SidebarMenu>
             <SidebarMenuItem>
-              <SidebarMenuButton onClick={onLogout} tooltip={clearSessionLabel}>
+              <SidebarMenuButton
+                onClick={onLogout}
+                tooltip={clearSessionLabel}
+                className="border border-sidebar-border/70 text-sidebar-foreground/80 hover:text-sidebar-foreground"
+              >
                 <LogOutIcon />
                 <span>{clearSessionLabel}</span>
               </SidebarMenuButton>
