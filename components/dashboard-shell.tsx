@@ -2413,39 +2413,44 @@ function InsightPanel({
   const visibleRows = insights?.rows.slice(0, 5) || [];
   const isVietnamese = language === "vi";
   return (
-    <Card data-print-flow>
-      <CardHeader>
-        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div>
-            <CardTitle>{isVietnamese ? "Tóm tắt insight AI" : "AI insight brief"}</CardTitle>
-            <CardDescription>
-              {isVietnamese
-                ? compareMode !== "off" && hasComparison
-                  ? "Các thay đổi chính, nguyên nhân và hành động đề xuất."
-                  : "Các hành động ưu tiên. Dữ liệu chi tiết nằm trong bảng drilldown."
-                : compareMode !== "off" && hasComparison
-                  ? "Top comparison deltas, causes, and actions."
-                  : "Top action items. Full raw performance stays in drilldown tables."}
-            </CardDescription>
-          </div>
-          <Button type="button" onClick={onGenerate} disabled={loading} data-print-hidden>
+    <div className="rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5" data-print-flow>
+      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+        <div className="max-w-2xl space-y-1.5">
+          <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+            {isVietnamese ? "Chuyên gia AI" : "AI Analyst"}
+          </p>
+          <h2 className="text-xl font-semibold tracking-tight">{isVietnamese ? "Tóm tắt insight AI" : "AI insight brief"}</h2>
+          <p className="text-sm text-muted-foreground">
+            {isVietnamese
+              ? compareMode !== "off" && hasComparison
+                ? "Các thay đổi chính, nguyên nhân và hành động đề xuất."
+                : "Các hành động ưu tiên. Dữ liệu chi tiết nằm trong bảng drilldown."
+              : compareMode !== "off" && hasComparison
+                ? "Top comparison deltas, causes, and actions."
+                : "Top action items. Full raw performance stays in drilldown tables."}
+          </p>
+        </div>
+        <div className="flex justify-start md:justify-end" data-print-hidden>
+          <Button type="button" onClick={onGenerate} disabled={loading}>
             {loading ? <Spinner data-icon="inline-start" /> : <FileTextIcon data-icon="inline-start" />}
             {isVietnamese ? "Tạo insight" : "Generate insights"}
           </Button>
         </div>
-      </CardHeader>
-      <CardContent>
+      </div>
+      <div className="mt-5 space-y-4">
         {loading ? <AiProgressStatus kind="insights" provider={provider} progress={progress} language={language} /> : null}
         {insights ? (
           <div className="flex flex-col gap-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="secondary">{insights.provider}</Badge>
-              <Badge variant="outline">{insights.confidence} confidence</Badge>
-              <span className="text-sm text-muted-foreground">{insights.summary}</span>
+            <div className="rounded-xl border bg-background/50 p-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="secondary">{insights.provider}</Badge>
+                <Badge variant="outline">{insights.confidence} confidence</Badge>
+                <span className="text-sm text-muted-foreground">{insights.summary}</span>
+              </div>
             </div>
-            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
               {visibleRows.map((row, index) => (
-                <div key={`${row.area}-${index}`} className="rounded-lg border bg-background p-3" data-print-expand>
+                <div key={`${row.area}-${index}`} className="rounded-xl border bg-card/70 p-4 shadow-sm" data-print-expand>
                   <div className="flex items-center justify-between gap-2">
                     <div className="truncate text-sm font-medium">{row.area}</div>
                     <Badge variant={row.priority === "high" ? "destructive" : row.priority === "medium" ? "secondary" : "outline"}>
@@ -2458,7 +2463,7 @@ function InsightPanel({
                   <p className="mt-2 line-clamp-2 text-xs leading-5 text-muted-foreground" data-print-expand>
                     {row.evidence}
                   </p>
-                  <Separator className="my-2" />
+                  <Separator className="my-3" />
                   <p className="line-clamp-2 text-sm leading-5" data-print-expand>
                     {row.action}
                   </p>
@@ -2474,7 +2479,7 @@ function InsightPanel({
             ) : null}
           </div>
         ) : (
-          <Empty className="border">
+          <Empty className="rounded-xl border bg-background/50">
             <EmptyHeader>
               <EmptyTitle>{isVietnamese ? "Chưa có insight AI" : "No insight table yet"}</EmptyTitle>
               <EmptyDescription>
@@ -2483,8 +2488,8 @@ function InsightPanel({
             </EmptyHeader>
           </Empty>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
