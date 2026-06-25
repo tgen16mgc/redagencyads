@@ -2502,6 +2502,18 @@ function CompetitorSpyPanel({
   const competitors = result?.competitors.slice(0, 4) || [];
   const verdictCopy = uiCopy[language].verdict;
   const spyCopy = uiCopy[language].spy;
+  const firstRun = {
+    title: isVietnamese ? "Bắt đầu research đối thủ trong 3 bước" : "Start competitor research in 3 steps",
+    description: isVietnamese
+      ? "Dùng dữ liệu public để biến ads đối thủ thành angle, gap sáng tạo và brief test mới mà không cần token Meta."
+      : "Use public data to turn competitor ads into angles, creative gaps, and new test briefs without a Meta token.",
+    steps: isVietnamese
+      ? ["Thêm tên đối thủ hoặc URL Meta Ad Library.", "Lấy ads public hoặc paste ghi chú thật.", "Tạo theme, gap, brief test và hành động tiếp theo."]
+      : ["Add competitor names or Meta Ad Library URLs.", "Fetch public ads or paste real ad notes.", "Generate themes, gaps, test briefs, and next actions."],
+    cues: isVietnamese
+      ? ["Không cần token", "Ghi chú thật tăng confidence", "Output sẵn để brief creative"]
+      : ["No token required", "Real notes improve confidence", "Outputs are ready for creative briefs"],
+  };
 
   return (
     <Card data-print-flow>
@@ -2804,16 +2816,41 @@ function CompetitorSpyPanel({
         ) : (
           <div className="flex flex-col gap-3">
             <SpyAdsPanel ads={ads} warnings={fetchWarnings} fetchedAt={fetchedAt} language={language} />
-            <Empty className="border">
-              <EmptyHeader>
-                <EmptyTitle>{isVietnamese ? "Chưa có phân tích AI" : "No AI analysis yet"}</EmptyTitle>
-                <EmptyDescription>
-                  {isVietnamese
-                    ? "Lấy ads hoặc paste ghi chú, rồi phân tích."
-                    : "Fetch ads or paste notes, then analyze."}
-                </EmptyDescription>
-              </EmptyHeader>
-            </Empty>
+            <div className="relative overflow-hidden rounded-2xl border bg-background p-4 md:p-5">
+              <div className="pointer-events-none absolute -right-16 -top-20 size-48 rounded-full bg-[radial-gradient(circle,_rgba(0,153,255,0.16),_transparent_68%)]" />
+              <div className="relative">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="secondary">{isVietnamese ? "Public research" : "Public research"}</Badge>
+                  <Badge variant="outline">{isVietnamese ? "No-token" : "No-token"}</Badge>
+                </div>
+                <h2 className="mt-4 font-heading text-2xl font-semibold tracking-[-0.035em] text-foreground md:text-3xl">
+                  {firstRun.title}
+                </h2>
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground md:text-base">
+                  {firstRun.description}
+                </p>
+
+                <ol className="mt-5 grid gap-3 md:grid-cols-3">
+                  {firstRun.steps.map((step, index) => (
+                    <li key={step} className="rounded-xl border bg-muted/20 p-3">
+                      <div className="mb-3 flex size-7 items-center justify-center rounded-lg bg-ring/15 font-mono text-xs font-semibold text-ring">
+                        {index + 1}
+                      </div>
+                      <p className="text-sm font-medium leading-5 text-foreground">{step}</p>
+                    </li>
+                  ))}
+                </ol>
+
+                <div className="mt-5 grid gap-2 sm:grid-cols-3">
+                  {firstRun.cues.map((cue) => (
+                    <div key={cue} className="flex items-center gap-2 rounded-xl border bg-card/70 px-3 py-2 text-xs font-medium text-muted-foreground">
+                      <CheckIcon className="size-3.5 shrink-0 text-ring" />
+                      {cue}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </CardContent>
