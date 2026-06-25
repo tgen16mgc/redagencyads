@@ -2307,86 +2307,87 @@ function VerdictPanel({
   const isVietnamese = language === "vi";
   const copy = uiCopy[language].verdict;
   return (
-    <Card data-print-break data-print-flow>
-      <CardHeader>
-        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div>
-            <CardTitle>Verdict</CardTitle>
-            <CardDescription>
-              {isVietnamese
-                ? "Verdict local có thể chạy không cần model; auto dùng 9router để enhancement khi có key."
-                : "Local Verdict works without a model call; auto uses 9router for enhancement when a key exists."}
-            </CardDescription>
-          </div>
-          <div className="flex flex-col gap-2 md:flex-row md:items-end" data-print-hidden>
-            <Field className="md:w-56">
-              <FieldLabel>{copy.provider}</FieldLabel>
-              <Select
-                items={providerItems}
-                value={provider}
-                onValueChange={(value) => {
-                  if (value) onProviderChange(value as Provider);
-                }}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {providerItems.map((item) => (
-                      <SelectItem key={item.value} value={item.value}>
-                        {providerLabel(item.value, language)}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </Field>
-            {!verdict && !loading ? (
-              <BorderGlow
-                spin
-                showShadow={false}
-                borderRadius={999}
-                borderWidth={2.5}
-                coneSpread={18}
-                glowRadius={22}
-                glowIntensity={1.5}
-                glowColor="245 90 65"
-                colors={["#6a4cf5", "#d44df0", "#ff5577"]}
-                backgroundColor="transparent"
-              >
-                <Button onClick={onGenerate} className="w-full">
-                  <SparklesIcon data-icon="inline-start" />
-                  {copy.generate}
-                </Button>
-              </BorderGlow>
-            ) : (
-              <Button onClick={onGenerate} disabled={loading}>
-                {loading ? <Spinner data-icon="inline-start" /> : <SparklesIcon data-icon="inline-start" />}
+    <div className="rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5" data-print-break data-print-flow>
+      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+        <div className="max-w-2xl space-y-1.5">
+          <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+            {isVietnamese ? "Bộ máy quyết định" : "Decision Engine"}
+          </p>
+          <h2 className="text-xl font-semibold tracking-tight">Verdict</h2>
+          <p className="text-sm text-muted-foreground">
+            {isVietnamese
+              ? "Verdict local có thể chạy không cần model; auto dùng 9router để enhancement khi có key."
+              : "Local Verdict works without a model call; auto uses 9router for enhancement when a key exists."}
+          </p>
+        </div>
+        <div className="flex flex-col gap-2 md:flex-row md:items-end" data-print-hidden>
+          <Field className="md:w-56">
+            <FieldLabel>{copy.provider}</FieldLabel>
+            <Select
+              items={providerItems}
+              value={provider}
+              onValueChange={(value) => {
+                if (value) onProviderChange(value as Provider);
+              }}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {providerItems.map((item) => (
+                    <SelectItem key={item.value} value={item.value}>
+                      {providerLabel(item.value, language)}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </Field>
+          {!verdict && !loading ? (
+            <BorderGlow
+              spin
+              showShadow={false}
+              borderRadius={999}
+              borderWidth={2.5}
+              coneSpread={18}
+              glowRadius={22}
+              glowIntensity={1.5}
+              glowColor="245 90 65"
+              colors={["#6a4cf5", "#d44df0", "#ff5577"]}
+              backgroundColor="transparent"
+            >
+              <Button onClick={onGenerate} className="w-full">
+                <SparklesIcon data-icon="inline-start" />
                 {copy.generate}
               </Button>
-            )}
-            <Button type="button" variant="outline" onClick={onCopyPrompt}>
-              <ClipboardIcon data-icon="inline-start" />
-              {copiedPrompt ? copy.copied : copy.copyPrompt}
+            </BorderGlow>
+          ) : (
+            <Button onClick={onGenerate} disabled={loading}>
+              {loading ? <Spinner data-icon="inline-start" /> : <SparklesIcon data-icon="inline-start" />}
+              {copy.generate}
             </Button>
-          </div>
+          )}
+          <Button type="button" variant="outline" onClick={onCopyPrompt}>
+            <ClipboardIcon data-icon="inline-start" />
+            {copiedPrompt ? copy.copied : copy.copyPrompt}
+          </Button>
         </div>
-      </CardHeader>
-      <CardContent>
+      </div>
+      <div className="mt-5 space-y-4">
         {loading ? <AiProgressStatus kind="verdict" provider={provider} progress={progress} language={language} /> : null}
         {verdict ? (
           <VerdictCard verdict={verdict} language={language} />
         ) : (
-          <Empty className="border">
+          <Empty className="rounded-xl border bg-background/50">
             <EmptyHeader>
               <EmptyTitle>{copy.emptyTitle}</EmptyTitle>
               <EmptyDescription>{copy.emptyDescription}</EmptyDescription>
             </EmptyHeader>
           </Empty>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
