@@ -3231,12 +3231,15 @@ function BreakdownAnalysisSection({ report, language }: { report: DashboardRepor
 
   return (
     <section className="grid items-start gap-4 xl:grid-cols-[1.6fr_1fr]" data-print-flow>
-      <Card>
-        <CardHeader>
-          <CardTitle>{copy.breakdowns}</CardTitle>
-          <CardDescription>{copy.breakdownsDescription}</CardDescription>
-        </CardHeader>
-        <CardContent>
+      <div className="rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5">
+        <div className="max-w-2xl space-y-1.5">
+          <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+            {language === "vi" ? "Chẩn đoán phân khúc" : "Segment Diagnostics"}
+          </p>
+          <h2 className="text-xl font-semibold tracking-tight">{copy.breakdowns}</h2>
+          <p className="text-sm text-muted-foreground">{copy.breakdownsDescription}</p>
+        </div>
+        <div className="mt-5 rounded-xl border bg-background/50 p-4">
           <AdaptiveBreakdownChart
             report={report}
             language={language}
@@ -3244,8 +3247,8 @@ function BreakdownAnalysisSection({ report, language }: { report: DashboardRepor
             dimension={dimension}
             onDimensionChange={setDimension}
           />
-        </CardContent>
-      </Card>
+        </div>
+      </div>
       <BreakdownWasteCard
         report={report}
         language={language}
@@ -4383,22 +4386,23 @@ function BreakdownWasteCard({
     : `${dimensionLabel}: spend and result allocation.`;
   const topRows = chartRows.slice(0, 3);
   return (
-    <Card data-print-flow className={`${diagnosticAccentClass(waste.variant)} self-start`}>
-      <CardHeader>
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <CardTitle>{copy.breakdownWaste}</CardTitle>
-            <CardDescription>{description}</CardDescription>
-          </div>
-          <Badge variant={waste.variant}>{waste.label[language]}</Badge>
+    <div data-print-flow className={`${diagnosticAccentClass(waste.variant)} self-start rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="space-y-1.5">
+          <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+            {language === "vi" ? "Rủi ro phân bổ" : "Allocation Risk"}
+          </p>
+          <h2 className="text-xl font-semibold tracking-tight">{copy.breakdownWaste}</h2>
+          <p className="text-sm text-muted-foreground">{description}</p>
         </div>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-3">
+        <Badge variant={waste.variant} className="shrink-0">{waste.label[language]}</Badge>
+      </div>
+      <div className="mt-5 flex flex-col gap-3">
         <p className="text-sm text-muted-foreground">{waste.summary[language]}</p>
         {waste.rows.length > 0 ? (
           <div className="flex flex-col gap-2">
             {waste.rows.map((row) => (
-              <div key={row.id} className="grid grid-cols-[1fr_auto] gap-2 rounded-lg border p-2 text-sm">
+              <div key={row.id} className="grid grid-cols-[1fr_auto] gap-2 rounded-xl border bg-background/50 px-3 py-2 text-sm">
                 <span className="truncate font-medium">{row.name}</span>
                 <span className="text-muted-foreground tabular-nums">{formatSharePct(row.spendShare, currency)} spend</span>
               </div>
@@ -4409,7 +4413,7 @@ function BreakdownWasteCard({
           <div className="flex flex-col gap-2">
             <div className="text-xs font-medium text-muted-foreground">{language === "vi" ? "Phân khúc chi tiêu lớn" : "Top spend segments"}</div>
             {topRows.map((row) => (
-              <div key={row.id} className="grid grid-cols-[1fr_auto] gap-2 rounded-lg border p-2 text-sm">
+              <div key={row.id} className="grid grid-cols-[1fr_auto] gap-2 rounded-xl border bg-background/50 px-3 py-2 text-sm">
                 <div className="min-w-0">
                   <div className="truncate font-medium">{row.label}</div>
                   <div className="text-xs text-muted-foreground">
@@ -4424,8 +4428,8 @@ function BreakdownWasteCard({
           </div>
         ) : null}
         <DiagnosticNextStep kind="breakdownWaste" tone={waste.status === "insufficient_data" ? "insufficient" : toneFromVariant(waste.variant)} language={language} />
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
