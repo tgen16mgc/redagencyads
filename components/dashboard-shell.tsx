@@ -3895,18 +3895,21 @@ function HealthTriageCard({ report, language }: { report: DashboardReport; langu
   const healthyCopy = language === "vi" ? `${summary.counts.healthy} kiểm tra khỏe mạnh` : `${summary.counts.healthy} healthy checks`;
 
   return (
-    <Card data-print-flow className={summary.severity === "danger" ? "border-l-4 border-l-destructive" : undefined}>
-      <CardHeader>
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <CardTitle>{language === "vi" ? "Điểm sức khỏe & ưu tiên" : "Health score & priorities"}</CardTitle>
-            <CardDescription>{language === "vi" ? "Tổng hợp các kiểm tra quan trọng thành một hàng đợi xử lý." : "Rolls key checks into one prioritized action queue."}</CardDescription>
-          </div>
-          <Badge variant={variant}>{summary.label[language]}</Badge>
+    <div data-print-flow className={`${summary.severity === "danger" ? "border-l-4 border-l-destructive" : ""} rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="max-w-2xl space-y-1.5">
+          <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+            {language === "vi" ? "Phân loại sức khỏe" : "Health Triage"}
+          </p>
+          <h2 className="text-xl font-semibold tracking-tight">{language === "vi" ? "Điểm sức khỏe & ưu tiên" : "Health score & priorities"}</h2>
+          <p className="text-sm text-muted-foreground">
+            {language === "vi" ? "Tổng hợp các kiểm tra quan trọng thành một hàng đợi xử lý." : "Rolls key checks into one prioritized action queue."}
+          </p>
         </div>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-3">
-        <div className="flex items-end justify-between gap-4">
+        <Badge variant={variant}>{summary.label[language]}</Badge>
+      </div>
+      <div className="mt-5 flex flex-col gap-3">
+        <div className="flex items-end justify-between gap-4 rounded-xl border bg-background/50 p-4">
           <div>
             <div className="text-4xl font-semibold tabular-nums">{summary.score}/100</div>
             <p className="text-sm text-muted-foreground">{summary.summary[language]}</p>
@@ -3917,7 +3920,7 @@ function HealthTriageCard({ report, language }: { report: DashboardReport; langu
         {activeItems.length > 0 ? (
           <div className="flex flex-col gap-2">
             {activeItems.map((item) => (
-              <div key={item.id} className={`rounded-lg border p-3 ${item.severity === "danger" ? "border-destructive/30 bg-destructive/5" : "bg-muted/20"}`}>
+              <div key={item.id} className={`rounded-xl border px-3 py-2.5 ${item.severity === "danger" ? "border-destructive/30 bg-destructive/5" : "bg-background/50"}`}>
                 <div className="flex items-center justify-between gap-2">
                   <div className={`text-sm font-medium ${item.severity === "danger" ? "text-destructive" : ""}`}>{item.title[language]}</div>
                   <Badge variant={item.severity === "danger" ? "destructive" : "outline"}>{item.severity}</Badge>
@@ -3931,7 +3934,7 @@ function HealthTriageCard({ report, language }: { report: DashboardReport; langu
         )}
         {healthyItems.length > 0 ? (
           <>
-            <details className="rounded-lg border bg-muted/20 p-3 text-sm text-muted-foreground" data-print-hidden>
+            <details className="rounded-xl border bg-background/50 p-3 text-sm text-muted-foreground" data-print-hidden>
               <summary className="cursor-pointer font-medium text-foreground">{healthyCopy}</summary>
               <ul className="mt-2 flex flex-col gap-1">
                 {healthyItems.map((item) => (
@@ -3942,7 +3945,7 @@ function HealthTriageCard({ report, language }: { report: DashboardReport; langu
                 ))}
               </ul>
             </details>
-            <div className="rounded-lg border bg-muted/20 p-3 text-sm text-muted-foreground" data-print-only>
+            <div className="rounded-xl border bg-background/50 p-3 text-sm text-muted-foreground" data-print-only>
               <div className="font-medium text-foreground">{healthyCopy}</div>
               <ul className="mt-2 flex flex-col gap-1">
                 {healthyItems.map((item) => (
@@ -3956,8 +3959,8 @@ function HealthTriageCard({ report, language }: { report: DashboardReport; langu
           </>
         ) : null}
         <DiagnosticNextStep kind="healthTriage" tone={toneFromVariant(variant)} language={language} />
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
