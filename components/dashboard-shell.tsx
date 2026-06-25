@@ -2605,35 +2605,36 @@ function CompetitorSpyPanel({
   };
 
   return (
-    <Card data-print-flow>
-      <CardHeader>
-        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div>
-            <CardTitle>{isVietnamese ? "Theo dõi đối thủ" : "Competitor spy"}</CardTitle>
-            <CardDescription>
-              {isVietnamese
-                ? "Biến tên đối thủ hoặc ghi chú từ thư viện quảng cáo thành theme, gap và brief test mới."
-                : "Turn competitor names or ad-library notes into themes, gaps, and original test briefs."}
-            </CardDescription>
-          </div>
-          <div className="flex flex-wrap gap-2" data-print-hidden>
-            <Button type="button" onClick={onGenerate} disabled={loading || !canAnalyze} aria-busy={loading}>
-              {loading ? <Spinner data-icon="inline-start" /> : <SearchIcon data-icon="inline-start" />}
-              {loading
-                ? isVietnamese ? "Đang phân tích sâu..." : "Deep scan running..."
-                : isVietnamese ? "Tìm & phân tích ads" : "Find and analyze ads"}
-            </Button>
-            {result ? (
-              <Button type="button" variant="outline" onClick={onCopyPrompt} disabled={!canAnalyze}>
-                <ClipboardIcon data-icon="inline-start" />
-                {copiedPrompt ? verdictCopy.copied : spyCopy.copyPrompt}
-              </Button>
-            ) : null}
-          </div>
+    <div className="rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5" data-print-flow>
+      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+        <div className="max-w-2xl space-y-1.5">
+          <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+            {isVietnamese ? "Tình báo cạnh tranh" : "Competitive Intelligence"}
+          </p>
+          <h2 className="text-xl font-semibold tracking-tight">{isVietnamese ? "Theo dõi đối thủ" : "Competitor spy"}</h2>
+          <p className="text-sm text-muted-foreground">
+            {isVietnamese
+              ? "Biến tên đối thủ hoặc ghi chú từ thư viện quảng cáo thành theme, gap và brief test mới."
+              : "Turn competitor names or ad-library notes into themes, gaps, and original test briefs."}
+          </p>
         </div>
-      </CardHeader>
-      <CardContent className="grid gap-4 xl:grid-cols-[380px_1fr]">
-        <div className="relative overflow-hidden rounded-2xl border bg-muted/20 p-4" data-print-hidden>
+        <div className="flex flex-wrap gap-2" data-print-hidden>
+          <Button type="button" onClick={onGenerate} disabled={loading || !canAnalyze} aria-busy={loading}>
+            {loading ? <Spinner data-icon="inline-start" /> : <SearchIcon data-icon="inline-start" />}
+            {loading
+              ? isVietnamese ? "Đang phân tích sâu..." : "Deep scan running..."
+              : isVietnamese ? "Tìm & phân tích ads" : "Find and analyze ads"}
+          </Button>
+          {result ? (
+            <Button type="button" variant="outline" onClick={onCopyPrompt} disabled={!canAnalyze}>
+              <ClipboardIcon data-icon="inline-start" />
+              {copiedPrompt ? verdictCopy.copied : spyCopy.copyPrompt}
+            </Button>
+          ) : null}
+        </div>
+      </div>
+      <div className="mt-5 grid gap-4 xl:grid-cols-[380px_1fr]">
+        <div className="relative overflow-hidden rounded-2xl border bg-background/50 p-4 shadow-sm" data-print-hidden>
           <div className="pointer-events-none absolute -right-16 -top-20 size-44 rounded-full bg-[radial-gradient(circle,_rgba(0,153,255,0.14),_transparent_68%)]" />
           <div className="relative flex flex-col gap-4">
             <div className="space-y-3">
@@ -2685,7 +2686,7 @@ function CompetitorSpyPanel({
             </FieldDescription>
           </Field>
 
-          <details className="group/adv rounded-lg border bg-background p-3">
+          <details className="group/adv rounded-xl border bg-background/50 p-3">
             <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-sm font-medium">
               <span>{isVietnamese ? "Tùy chọn nâng cao" : "Advanced options"}</span>
               <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground transition-transform group-open/adv:rotate-180" />
@@ -2844,7 +2845,7 @@ function CompetitorSpyPanel({
         {result ? (
           <div className="flex flex-col gap-3" data-print-expand>
             <SpyAdsPanel ads={ads} warnings={fetchWarnings} fetchedAt={fetchedAt} language={language} />
-            <div className="relative overflow-hidden rounded-2xl border bg-background p-4 md:p-5">
+            <div className="relative overflow-hidden rounded-2xl border bg-background/50 p-4 md:p-5">
               <div className="pointer-events-none absolute -right-14 -top-20 size-40 rounded-full bg-[radial-gradient(circle,_rgba(0,153,255,0.12),_transparent_68%)]" />
               <div className="relative flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                 <div className="min-w-0">
@@ -2888,7 +2889,7 @@ function CompetitorSpyPanel({
             ) : null}
 
             <div className="grid gap-3 xl:grid-cols-[1fr_0.8fr]">
-              <div className="rounded-2xl border bg-background p-4">
+              <div className="rounded-2xl border bg-background/50 p-4">
                 <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                   {isVietnamese ? "Theme đối thủ" : "Competitor themes"}
                 </div>
@@ -2909,7 +2910,7 @@ function CompetitorSpyPanel({
                   ))}
                 </div>
               </div>
-              <div className="rounded-2xl border bg-background p-4">
+              <div className="rounded-2xl border bg-background/50 p-4">
                 <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                   {isVietnamese ? "Gap sáng tạo" : "Creative gaps"}
                 </div>
@@ -2920,7 +2921,7 @@ function CompetitorSpyPanel({
               </div>
             </div>
 
-            <div className="rounded-2xl border bg-background p-4">
+            <div className="rounded-2xl border bg-background/50 p-4">
               <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 {isVietnamese ? "Brief test mới" : "Original test briefs"}
               </div>
@@ -2942,7 +2943,7 @@ function CompetitorSpyPanel({
               </div>
             </div>
 
-            <div className="rounded-2xl border bg-background p-4">
+            <div className="rounded-2xl border bg-background/50 p-4">
               <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 {isVietnamese ? "Hành động tiếp theo" : "Next actions"}
               </div>
@@ -2952,7 +2953,7 @@ function CompetitorSpyPanel({
         ) : (
           <div className="flex flex-col gap-3">
             <SpyAdsPanel ads={ads} warnings={fetchWarnings} fetchedAt={fetchedAt} language={language} />
-            <div className="relative overflow-hidden rounded-2xl border bg-background p-4 md:p-5">
+            <div className="relative overflow-hidden rounded-2xl border bg-background/50 p-4 md:p-5">
               <div className="pointer-events-none absolute -right-16 -top-20 size-48 rounded-full bg-[radial-gradient(circle,_rgba(0,153,255,0.16),_transparent_68%)]" />
               <div className="relative">
                 <div className="flex flex-wrap items-center gap-2">
@@ -2989,8 +2990,8 @@ function CompetitorSpyPanel({
             </div>
           </div>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
