@@ -1602,9 +1602,13 @@ function TokenScreen(props: {
   };
 
   return (
-    <main className="min-h-svh w-full bg-background p-4 md:p-6">
-      <div className="mx-auto grid min-h-[calc(100svh-2rem)] w-full max-w-6xl items-center gap-6 md:min-h-[calc(100svh-3rem)] lg:grid-cols-[1.05fr_0.95fr]">
-        <section className="relative overflow-hidden rounded-3xl border bg-card/60 p-6 shadow-2xl shadow-black/30 md:p-8 lg:min-h-[640px]">
+    <main className="relative min-h-svh w-full bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-muted/30 via-background to-background p-4 md:p-6">
+      <div className="absolute right-4 top-4 md:right-8 md:top-8 z-50">
+        <LanguageToggle language={props.language} onChange={props.onLanguageChange} />
+      </div>
+
+      <div className="mx-auto grid min-h-[calc(100svh-2rem)] w-full max-w-6xl items-center gap-8 py-4 md:min-h-[calc(100svh-3rem)] lg:grid-cols-[1.1fr_0.9fr] lg:gap-12">
+        <section className="relative overflow-hidden rounded-[2rem] border bg-card/60 p-6 shadow-2xl shadow-black/30 md:p-8 lg:min-h-[640px]">
           <div className="pointer-events-none absolute -right-24 -top-24 size-72 rounded-full bg-[radial-gradient(circle,_rgba(0,153,255,0.24),_transparent_68%)]" />
           <div className="pointer-events-none absolute -bottom-32 left-10 size-80 rounded-full bg-[radial-gradient(circle,_rgba(212,77,240,0.18),_transparent_70%)]" />
           <div className="relative flex h-full flex-col justify-between gap-10">
@@ -1628,7 +1632,7 @@ function TokenScreen(props: {
 
             <div className="grid gap-3 sm:grid-cols-3">
               {[hero.secure, hero.diagnostics, hero.competitor].map((item) => (
-                <div key={item} className="rounded-2xl border bg-background/70 p-3 text-sm font-medium leading-5 text-foreground/90">
+                <div key={item} className="rounded-2xl border border-white/10 bg-background/50 p-3 text-sm font-medium leading-5 text-foreground/90 shadow-sm backdrop-blur-sm">
                   <CheckIcon className="mb-3 size-4 text-ring" />
                   {item}
                 </div>
@@ -1637,83 +1641,77 @@ function TokenScreen(props: {
           </div>
         </section>
 
-        <Card className="min-w-0 w-full border-border/80 bg-card/95 shadow-xl shadow-black/25">
-          <CardHeader>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div className="min-w-0">
-                <CardTitle>{hero.formTitle}</CardTitle>
-                <CardDescription>{hero.formDescription}</CardDescription>
-              </div>
-              <LanguageToggle language={props.language} onChange={props.onLanguageChange} />
-            </div>
-            <CardDescription className="break-words">{copy.storage}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex min-w-0 flex-col gap-4">
-              {props.error ? (
-                <Alert variant="destructive">
-                  <AlertTitle>{copy.rejected}</AlertTitle>
-                  <AlertDescription>{props.error}</AlertDescription>
-                </Alert>
-              ) : null}
+        <div className="min-w-0 w-full rounded-[2rem] border border-border/60 bg-card/90 p-6 shadow-2xl shadow-black/10 backdrop-blur-xl sm:p-8">
+          <div className="mb-6 flex flex-col gap-1.5">
+            <h2 className="text-xl font-semibold leading-none tracking-tight text-foreground">{hero.formTitle}</h2>
+            <p className="text-sm text-muted-foreground">{hero.formDescription}</p>
+            <p className="mt-1 text-sm text-muted-foreground break-words">{copy.storage}</p>
+          </div>
 
-              <form onSubmit={props.onSubmit} className="flex min-w-0 flex-col gap-4">
-                <FieldGroup>
-                  <Field>
-                    <FieldLabel>{copy.field}</FieldLabel>
-                    <Input
-                      value={props.token}
-                      onChange={(event) => props.onTokenChange(event.target.value)}
-                      type="password"
-                      autoComplete="off"
-                      placeholder={copy.placeholder}
-                      className="w-full"
-                      required
-                    />
-                    <FieldDescription className="break-words">
-                      {props.language === "vi"
-                        ? "Token chỉ cần cho phân tích tài khoản ads của bạn (KPI, verdict, drilldown)."
-                        : "A token is only needed to analyze your own ad account (KPIs, verdict, drilldown)."}
-                    </FieldDescription>
-                  </Field>
-                </FieldGroup>
-                <Button type="submit" disabled={props.loading} className="w-full">
-                  {props.loading ? <Spinner data-icon="inline-start" /> : <KeyRoundIcon data-icon="inline-start" />}
-                  {copy.submit}
-                </Button>
-                <FieldDescription className="break-words">{copy.help}</FieldDescription>
-              </form>
+          <div className="flex min-w-0 flex-col gap-6">
+            {props.error ? (
+              <Alert variant="destructive">
+                <AlertTitle>{copy.rejected}</AlertTitle>
+                <AlertDescription>{props.error}</AlertDescription>
+              </Alert>
+            ) : null}
 
-              <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                <Separator className="flex-1" />
-                {props.language === "vi" ? "hoặc nghiên cứu đối thủ" : "or research competitors"}
-                <Separator className="flex-1" />
-              </div>
-
-              <button
-                type="button"
-                onClick={props.onUseCompetitor}
-                aria-label={props.language === "vi" ? "Mở theo dõi đối thủ, không cần token" : "Open competitor spy, no token needed"}
-                className="group flex items-start gap-3 rounded-2xl border bg-background p-4 text-left transition-all duration-200 hover:-translate-y-0.5 hover:bg-muted/45 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none active:translate-y-0"
-              >
-                <span className="mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground transition-colors group-hover:text-foreground">
-                  <SearchIcon className="size-4.5" />
-                </span>
-                <span className="min-w-0">
-                  <span className="block text-sm font-medium">
-                    {props.language === "vi" ? "Theo dõi đối thủ — không cần token" : "Competitor spy — no token needed"}
-                  </span>
-                  <span className="mt-1 block text-xs leading-5 text-muted-foreground">
+            <form onSubmit={props.onSubmit} className="flex min-w-0 flex-col gap-4">
+              <FieldGroup>
+                <Field>
+                  <FieldLabel>{copy.field}</FieldLabel>
+                  <Input
+                    value={props.token}
+                    onChange={(event) => props.onTokenChange(event.target.value)}
+                    type="password"
+                    autoComplete="off"
+                    placeholder={copy.placeholder}
+                    className="w-full"
+                    required
+                  />
+                  <FieldDescription className="break-words">
                     {props.language === "vi"
-                      ? "Phân tích quảng cáo public của đối thủ. Bắt đầu ngay, không cần kết nối tài khoản."
-                      : "Research competitors' public ads. Start now, no account connection required."}
-                  </span>
-                </span>
-                <ChevronRightIcon className="mt-1 size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
-              </button>
+                      ? "Token chỉ cần cho phân tích tài khoản ads của bạn (KPI, verdict, drilldown)."
+                      : "A token is only needed to analyze your own ad account (KPIs, verdict, drilldown)."}
+                  </FieldDescription>
+                </Field>
+              </FieldGroup>
+              <Button type="submit" disabled={props.loading} className="w-full">
+                {props.loading ? <Spinner data-icon="inline-start" /> : <KeyRoundIcon data-icon="inline-start" />}
+                {copy.submit}
+              </Button>
+              <FieldDescription className="break-words">{copy.help}</FieldDescription>
+            </form>
+
+            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+              <Separator className="flex-1" />
+              {props.language === "vi" ? "hoặc nghiên cứu đối thủ" : "or research competitors"}
+              <Separator className="flex-1" />
             </div>
-          </CardContent>
-        </Card>
+
+            <button
+              type="button"
+              onClick={props.onUseCompetitor}
+              aria-label={props.language === "vi" ? "Mở theo dõi đối thủ, không cần token" : "Open competitor spy, no token needed"}
+              className="group flex items-start gap-3 rounded-2xl border border-border/60 bg-muted/30 p-5 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-muted/60 hover:shadow-md focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none active:translate-y-0"
+            >
+              <span className="mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground transition-colors group-hover:bg-background group-hover:text-foreground">
+                <SearchIcon className="size-4.5" />
+              </span>
+              <span className="min-w-0">
+                <span className="block text-sm font-medium">
+                  {props.language === "vi" ? "Theo dõi đối thủ — không cần token" : "Competitor spy — no token needed"}
+                </span>
+                <span className="mt-1 block text-xs leading-5 text-muted-foreground">
+                  {props.language === "vi"
+                    ? "Phân tích quảng cáo public của đối thủ. Bắt đầu ngay, không cần kết nối tài khoản."
+                    : "Research competitors' public ads. Start now, no account connection required."}
+                </span>
+              </span>
+              <ChevronRightIcon className="mt-1 size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+            </button>
+          </div>
+        </div>
       </div>
     </main>
   );
