@@ -3593,40 +3593,46 @@ function PerformanceCharts({ report, language }: { report: DashboardReport; lang
 
   if (!dailyData.length && !adsetData.length) {
     return (
-      <Card data-print-flow>
-        <CardHeader>
-          <CardTitle>{language === "vi" ? "Chưa có dữ liệu biểu đồ" : "No chart data yet"}</CardTitle>
-          <CardDescription>{language === "vi" ? "Cần dữ liệu theo ngày hoặc ad set để hiển thị xu hướng." : "Daily or ad set data is needed to show performance trends."}</CardDescription>
-        </CardHeader>
-        <CardContent>
+      <div className="rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5" data-print-flow>
+        <div className="max-w-2xl space-y-1.5">
+          <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+            {language === "vi" ? "Không gian phân tích" : "Analytics Workspace"}
+          </p>
+          <h2 className="text-xl font-semibold tracking-tight">{language === "vi" ? "Chưa có dữ liệu biểu đồ" : "No chart data yet"}</h2>
+          <p className="text-sm text-muted-foreground">
+            {language === "vi" ? "Cần dữ liệu theo ngày hoặc ad set để hiển thị xu hướng." : "Daily or ad set data is needed to show performance trends."}
+          </p>
+        </div>
+        <div className="mt-5 rounded-xl border bg-background/50 p-4">
           <ChartEmpty language={language} />
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     );
   }
 
   return (
     <section className="grid gap-4 xl:grid-cols-3">
-      <Card className="xl:col-span-2">
-        <CardHeader>
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <CardTitle>{spec.trendTitle}</CardTitle>
-              <CardDescription>{spec.trendDescription}</CardDescription>
-            </div>
-            <div className="flex shrink-0 items-center gap-2 flex-wrap justify-end">
-              {anomalyResult.status === "anomalies_found" ? (
-                anomalyResult.anomalies.slice(0, 2).map((anomaly) => (
-                  <Badge key={anomaly.key} variant={anomaly.severity === "danger" ? "destructive" : "outline"} className="shrink-0">
-                    {anomalyBadgeText(anomaly, language)}
-                  </Badge>
-                ))
-              ) : null}
-              {trendAnnotation ? <Badge variant="outline" className="shrink-0">{trendAnnotation.label}</Badge> : null}
-            </div>
+      <div className="rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5 xl:col-span-2">
+        <div className="flex items-start justify-between gap-3">
+          <div className="max-w-2xl space-y-1.5">
+            <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+              {language === "vi" ? "Theo dõi xu hướng" : "Trend Monitor"}
+            </p>
+            <h2 className="text-xl font-semibold tracking-tight">{spec.trendTitle}</h2>
+            <p className="text-sm text-muted-foreground">{spec.trendDescription}</p>
           </div>
-        </CardHeader>
-        <CardContent>
+          <div className="flex shrink-0 items-center gap-2 flex-wrap justify-end">
+            {anomalyResult.status === "anomalies_found" ? (
+              anomalyResult.anomalies.slice(0, 2).map((anomaly) => (
+                <Badge key={anomaly.key} variant={anomaly.severity === "danger" ? "destructive" : "outline"} className="shrink-0">
+                  {anomalyBadgeText(anomaly, language)}
+                </Badge>
+              ))
+            ) : null}
+            {trendAnnotation ? <Badge variant="outline" className="shrink-0">{trendAnnotation.label}</Badge> : null}
+          </div>
+        </div>
+        <div className="mt-5 rounded-xl border bg-background/50 p-4">
           {dailyData.length ? (
             <ChartContainer config={performanceChartConfig} className="h-[280px] w-full">
               <ComposedChart data={dailyData} margin={{ left: 8, right: 8, top: 8, bottom: 0 }}>
@@ -3655,15 +3661,18 @@ function PerformanceCharts({ report, language }: { report: DashboardReport; lang
           ) : (
             <ChartEmpty language={language} />
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{spec.efficiencyTitle}</CardTitle>
-          <CardDescription>{spec.efficiencyDescription}</CardDescription>
-        </CardHeader>
-        <CardContent>
+      <div className="rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5">
+        <div className="max-w-2xl space-y-1.5">
+          <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+            {language === "vi" ? "Đường hiệu quả" : "Efficiency Curve"}
+          </p>
+          <h2 className="text-xl font-semibold tracking-tight">{spec.efficiencyTitle}</h2>
+          <p className="text-sm text-muted-foreground">{spec.efficiencyDescription}</p>
+        </div>
+        <div className="mt-5 rounded-xl border bg-background/50 p-4">
           {dailyData.length ? (
             <ChartContainer config={performanceChartConfig} className="h-[280px] w-full">
               <LineChart data={dailyData} margin={{ left: 8, right: 8, top: 8, bottom: 0 }}>
@@ -3690,15 +3699,18 @@ function PerformanceCharts({ report, language }: { report: DashboardReport; lang
           ) : (
             <ChartEmpty language={language} />
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{spec.diagnosticTitle}</CardTitle>
-          <CardDescription>{spec.diagnosticDescription}</CardDescription>
-        </CardHeader>
-        <CardContent>
+      <div className="rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5">
+        <div className="max-w-2xl space-y-1.5">
+          <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+            {language === "vi" ? "Tín hiệu chẩn đoán" : "Diagnostic Signal"}
+          </p>
+          <h2 className="text-xl font-semibold tracking-tight">{spec.diagnosticTitle}</h2>
+          <p className="text-sm text-muted-foreground">{spec.diagnosticDescription}</p>
+        </div>
+        <div className="mt-5 rounded-xl border bg-background/50 p-4">
           {dailyData.length ? (
             <ChartContainer config={performanceChartConfig} className="h-[240px] w-full">
               <LineChart data={dailyData} margin={{ left: 8, right: 8, top: 8, bottom: 0 }}>
@@ -3726,15 +3738,18 @@ function PerformanceCharts({ report, language }: { report: DashboardReport; lang
           ) : (
             <ChartEmpty language={language} />
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
-      <Card className="xl:col-span-2">
-        <CardHeader>
-          <CardTitle>{spec.drilldownTitle}</CardTitle>
-          <CardDescription>{spec.drilldownDescription}</CardDescription>
-        </CardHeader>
-        <CardContent>
+      <div className="rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5 xl:col-span-2">
+        <div className="max-w-2xl space-y-1.5">
+          <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+            {language === "vi" ? "Phân rã nhóm quảng cáo" : "Ad Set Drilldown"}
+          </p>
+          <h2 className="text-xl font-semibold tracking-tight">{spec.drilldownTitle}</h2>
+          <p className="text-sm text-muted-foreground">{spec.drilldownDescription}</p>
+        </div>
+        <div className="mt-5 rounded-xl border bg-background/50 p-4">
           {adsetData.length ? (
             <ChartContainer config={performanceChartConfig} className="h-[240px] w-full">
               <BarChart data={adsetData} layout="vertical" margin={{ left: 12, right: 8, top: 4, bottom: 4 }}>
@@ -3759,8 +3774,8 @@ function PerformanceCharts({ report, language }: { report: DashboardReport; lang
           ) : (
             <ChartEmpty language={language} />
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </section>
   );
 }
