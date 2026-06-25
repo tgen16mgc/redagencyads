@@ -2812,25 +2812,38 @@ function CompetitorSpyPanel({
             </div>
 
             {competitors.length ? (
-              <div className="grid gap-2 md:grid-cols-2">
-                {competitors.map((competitor) => (
-                  <div key={competitor.name} className="rounded-lg border bg-background p-3">
-                    <div className="text-sm font-semibold">{competitor.name}</div>
-                    <p className="mt-1 text-sm text-muted-foreground">{compactText(competitor.likely_positioning, 150)}</p>
-                    <p className="mt-2 text-sm">{compactText(competitor.gap, 150)}</p>
-                  </div>
-                ))}
-              </div>
+              <>
+                <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  {isVietnamese ? "Hồ sơ đối thủ" : "Competitor profiles"}
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  {competitors.map((competitor) => (
+                    <div key={competitor.name} className="rounded-2xl border bg-card/70 p-4 shadow-sm">
+                      <div className="text-sm font-semibold text-foreground">{competitor.name}</div>
+                      <div className="mt-2 space-y-1.5">
+                        <div>
+                          <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{isVietnamese ? "Định vị" : "Positioning"}</div>
+                          <p className="mt-0.5 text-sm leading-5 text-muted-foreground">{compactText(competitor.likely_positioning, 150)}</p>
+                        </div>
+                        <div>
+                          <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{isVietnamese ? "Gap" : "Gap"}</div>
+                          <p className="mt-0.5 text-sm leading-5 text-foreground">{compactText(competitor.gap, 150)}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
             ) : null}
 
             <div className="grid gap-3 xl:grid-cols-[1fr_0.8fr]">
-              <div className="rounded-lg border bg-background p-3">
-                <div className="text-xs font-medium uppercase text-muted-foreground">
+              <div className="rounded-2xl border bg-background p-4">
+                <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                   {isVietnamese ? "Theme đối thủ" : "Competitor themes"}
                 </div>
-                <div className="mt-2 grid gap-2 md:grid-cols-2">
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
                   {themeRows.map((theme, index) => (
-                    <div key={`${theme.theme}-${index}`} className="rounded-md border p-3">
+                    <div key={`${theme.theme}-${index}`} className="rounded-xl border bg-card/70 p-3 shadow-sm">
                       <div className="flex items-center justify-between gap-2">
                         <div className="truncate text-sm font-medium">{theme.theme}</div>
                         <Badge variant="outline">{theme.confidence}</Badge>
@@ -2845,8 +2858,8 @@ function CompetitorSpyPanel({
                   ))}
                 </div>
               </div>
-              <div className="rounded-lg border bg-background p-3">
-                <div className="text-xs font-medium uppercase text-muted-foreground">
+              <div className="rounded-2xl border bg-background p-4">
+                <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                   {isVietnamese ? "Gap sáng tạo" : "Creative gaps"}
                 </div>
                 <CompactList
@@ -2856,13 +2869,13 @@ function CompetitorSpyPanel({
               </div>
             </div>
 
-            <div className="rounded-lg border bg-background p-3">
-              <div className="text-xs font-medium uppercase text-muted-foreground">
+            <div className="rounded-2xl border bg-background p-4">
+              <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 {isVietnamese ? "Brief test mới" : "Original test briefs"}
               </div>
-              <div className="mt-2 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+              <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                 {briefs.map((brief, index) => (
-                  <div key={`${brief.angle}-${index}`} className="rounded-md border p-3">
+                  <div key={`${brief.angle}-${index}`} className="rounded-xl border bg-card/70 p-3 shadow-sm">
                     <div className="text-sm font-semibold">{brief.angle}</div>
                     <p className="mt-2 line-clamp-2 text-sm" data-print-expand>
                       {brief.hook}
@@ -2878,8 +2891,8 @@ function CompetitorSpyPanel({
               </div>
             </div>
 
-            <div className="rounded-lg border bg-background p-3">
-              <div className="text-xs font-medium uppercase text-muted-foreground">
+            <div className="rounded-2xl border bg-background p-4">
+              <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 {isVietnamese ? "Hành động tiếp theo" : "Next actions"}
               </div>
               <CompactList rows={result.next_actions.slice(0, 4)} emptyLabel={isVietnamese ? "Chưa có hành động." : "No actions yet."} />
