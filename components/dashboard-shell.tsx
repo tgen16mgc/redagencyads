@@ -1719,17 +1719,42 @@ function TokenScreen(props: {
 
 function LoadingScreen({ language }: { language: ReportLanguage }) {
   const copy = uiCopy[language].loading;
+  const isVietnamese = language === "vi";
+
   return (
-    <main className="grid min-h-svh place-items-center">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle>{copy.title}</CardTitle>
-          <CardDescription>{copy.description}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Skeleton className="h-24" />
-        </CardContent>
-      </Card>
+    <main className="grid min-h-svh place-items-center bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-muted/30 via-background to-background p-4">
+      <div
+        className="w-full max-w-md rounded-[2rem] border border-border/60 bg-card/90 p-6 shadow-2xl shadow-black/10 backdrop-blur-xl sm:p-8"
+        role="status"
+        aria-live="polite"
+      >
+        <div className="mb-6 flex items-center gap-3">
+          <img src="/red-agency-logo.png" alt="Red Agency" className="size-11 rounded-xl object-contain" />
+          <div>
+            <div className="text-sm font-medium text-foreground">Red Agency Ads Tool</div>
+            <div className="text-xs text-muted-foreground">Meta Ads intelligence</div>
+          </div>
+        </div>
+
+        <div className="mb-6">
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">{copy.title}</h1>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">{copy.description}</p>
+        </div>
+
+        <div className="mb-4 flex items-center gap-2 text-sm font-medium text-foreground">
+          <Spinner className="size-4" />
+          {isVietnamese ? "Đang chuẩn bị dashboard..." : "Preparing your dashboard..."}
+        </div>
+        <div className="space-y-3">
+          <Skeleton className="h-12 rounded-2xl" />
+          <Skeleton className="h-20 rounded-2xl" />
+          <div className="grid grid-cols-3 gap-3">
+            <Skeleton className="h-14 rounded-xl" />
+            <Skeleton className="h-14 rounded-xl" />
+            <Skeleton className="h-14 rounded-xl" />
+          </div>
+        </div>
+      </div>
     </main>
   );
 }
