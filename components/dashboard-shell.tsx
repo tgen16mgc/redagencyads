@@ -2937,73 +2937,102 @@ function SpyAdsPanel({
 }) {
   const isVietnamese = language === "vi";
   const copy = uiCopy[language].spy;
+  const fetchedAtLabel = fetchedAt ? new Date(fetchedAt).toLocaleString() : null;
+  const dataSourcePanel = {
+    eyebrow: isVietnamese ? "Ads đã lấy" : "Fetched ads",
+    source: isVietnamese ? "Nguồn public" : "Public data source",
+    count: isVietnamese ? `${ads.length} ads đã lưu` : `${ads.length} ads captured`,
+    sync: fetchedAtLabel ? (isVietnamese ? `Cập nhật ${fetchedAtLabel}` : `Synced ${fetchedAtLabel}`) : (isVietnamese ? "Chưa đồng bộ" : "Not synced yet"),
+    status: ads.length
+      ? isVietnamese
+        ? `${ads.length} ads trong session${fetchedAtLabel ? ` - ${fetchedAtLabel}` : ""}.`
+        : `${ads.length} ads in session${fetchedAtLabel ? ` - ${fetchedAtLabel}` : ""}.`
+      : isVietnamese
+        ? "Chưa lấy ads. Lấy dữ liệu public để có bằng chứng creative trước khi phân tích."
+        : "No ads fetched yet. Pull public data to ground the analysis in real creative evidence.",
+  };
+
   return (
-    <div className="rounded-lg border bg-background p-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <div className="text-xs font-medium uppercase text-muted-foreground">
-            {isVietnamese ? "Ads đã lấy" : "Fetched ads"}
-          </div>
-          <p className="text-sm text-muted-foreground">
-            {ads.length
-              ? isVietnamese
-                ? `${ads.length} ads trong session${fetchedAt ? ` - ${new Date(fetchedAt).toLocaleString()}` : ""}.`
-                : `${ads.length} ads in session${fetchedAt ? ` - ${new Date(fetchedAt).toLocaleString()}` : ""}.`
-              : isVietnamese
-                ? "Chưa lấy ads."
-                : "No ads fetched yet."}
-          </p>
-        </div>
-        {ads.length ? <Badge variant="secondary">{ads.length} ads</Badge> : null}
-      </div>
-      {warnings.length ? (
-        <div className="mt-3 flex flex-col gap-2">
-          {warnings.slice(0, 3).map((warning, index) => (
-            <Alert key={`${warning}-${index}`}>
-              <AlertTitle>{isVietnamese ? "Lưu ý nguồn dữ liệu" : "Data source note"}</AlertTitle>
-              <AlertDescription>{warning}</AlertDescription>
-            </Alert>
-          ))}
-        </div>
-      ) : null}
-      {ads.length ? (
-        <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-          {ads.slice(0, 12).map((ad, index) => (
-            <div key={`${ad.source}-${ad.id}-${index}`} className="rounded-md border p-3">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-semibold">{ad.pageName || ad.competitorName || copy.unknownAdvertiser}</div>
-                  <div className="mt-1 flex flex-wrap gap-1">
-                    <Badge variant="outline">{ad.source}</Badge>
-                    {ad.platform ? <Badge variant="secondary">{compactText(ad.platform, 24)}</Badge> : null}
-                    {ad.format ? <Badge variant="outline">{compactText(ad.format, 18)}</Badge> : null}
-                  </div>
-                </div>
-                {ad.snapshotUrl ? (
-                  <Button type="button" variant="ghost" size="sm" onClick={() => window.open(ad.snapshotUrl, "_blank", "noopener,noreferrer")}>
-                    {copy.view}
-                  </Button>
-                ) : null}
-              </div>
-              {ad.imageUrl ? (
-                <img src={ad.imageUrl} alt={`${copy.adCreativeAlt} ${ad.pageName || ad.competitorName || copy.unknownAdvertiser}`} className="mt-3 aspect-video w-full rounded-md border object-cover" loading="lazy" />
-              ) : null}
-              <p className="mt-3 line-clamp-2 text-sm font-medium" data-print-expand>
-                {compactText(ad.headline || ad.body || copy.noCopy, 160)}
-              </p>
-              {ad.description || ad.body ? (
-                <p className="mt-2 line-clamp-3 text-xs leading-5 text-muted-foreground" data-print-expand>
-                  {compactText(ad.description || ad.body || "", 220)}
-                </p>
-              ) : null}
-              <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                {ad.cta ? <span>CTA: {compactText(ad.cta, 28)}</span> : null}
-                {ad.startDate ? <span>{copy.start}: {ad.startDate.slice(0, 10)}</span> : null}
-              </div>
+    <div className="relative overflow-hidden rounded-2xl border bg-background p-4 md:p-5">
+      <div className="pointer-events-none absolute -right-16 -top-20 size-44 rounded-full bg-[radial-gradient(circle,_rgba(0,153,255,0.12),_transparent_68%)]" />
+      <div className="relative flex flex-col gap-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="secondary">{dataSourcePanel.source}</Badge>
+              {ads.length ? <Badge variant="outline">{ads.length} ads</Badge> : null}
             </div>
-          ))}
+            <div className="mt-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              {dataSourcePanel.eyebrow}
+            </div>
+            <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
+              {dataSourcePanel.status}
+            </p>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2 lg:min-w-64">
+            <div className="rounded-xl border bg-card/70 px-3 py-2">
+              <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                {isVietnamese ? "Bằng chứng" : "Evidence"}
+              </div>
+              <div className="mt-1 text-sm font-semibold tabular-nums text-foreground">{dataSourcePanel.count}</div>
+            </div>
+            <div className="rounded-xl border bg-card/70 px-3 py-2">
+              <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                {isVietnamese ? "Sync" : "Sync"}
+              </div>
+              <div className="mt-1 text-sm font-semibold text-foreground">{dataSourcePanel.sync}</div>
+            </div>
+          </div>
         </div>
-      ) : null}
+        {warnings.length ? (
+          <div className="flex flex-col gap-2">
+            {warnings.slice(0, 3).map((warning, index) => (
+              <Alert key={`${warning}-${index}`}>
+                <AlertTitle>{isVietnamese ? "Lưu ý nguồn dữ liệu" : "Data source note"}</AlertTitle>
+                <AlertDescription>{warning}</AlertDescription>
+              </Alert>
+            ))}
+          </div>
+        ) : null}
+        {ads.length ? (
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {ads.slice(0, 12).map((ad, index) => (
+              <div key={`${ad.source}-${ad.id}-${index}`} className="rounded-xl border bg-card/70 p-3 shadow-sm">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-semibold">{ad.pageName || ad.competitorName || copy.unknownAdvertiser}</div>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      <Badge variant="outline">{ad.source}</Badge>
+                      {ad.platform ? <Badge variant="secondary">{compactText(ad.platform, 24)}</Badge> : null}
+                      {ad.format ? <Badge variant="outline">{compactText(ad.format, 18)}</Badge> : null}
+                    </div>
+                  </div>
+                  {ad.snapshotUrl ? (
+                    <Button type="button" variant="ghost" size="sm" onClick={() => window.open(ad.snapshotUrl, "_blank", "noopener,noreferrer")}>
+                      {copy.view}
+                    </Button>
+                  ) : null}
+                </div>
+                {ad.imageUrl ? (
+                  <img src={ad.imageUrl} alt={`${copy.adCreativeAlt} ${ad.pageName || ad.competitorName || copy.unknownAdvertiser}`} className="mt-3 aspect-video w-full rounded-lg border object-cover" loading="lazy" />
+                ) : null}
+                <p className="mt-3 line-clamp-2 text-sm font-medium leading-5" data-print-expand>
+                  {compactText(ad.headline || ad.body || copy.noCopy, 160)}
+                </p>
+                {ad.description || ad.body ? (
+                  <p className="mt-2 line-clamp-3 text-xs leading-5 text-muted-foreground" data-print-expand>
+                    {compactText(ad.description || ad.body || "", 220)}
+                  </p>
+                ) : null}
+                <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                  {ad.cta ? <span>CTA: {compactText(ad.cta, 28)}</span> : null}
+                  {ad.startDate ? <span>{copy.start}: {ad.startDate.slice(0, 10)}</span> : null}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
