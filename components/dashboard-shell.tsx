@@ -1993,6 +1993,7 @@ function RunningAdSetsPanel({
   language: ReportLanguage;
 }) {
   const isVietnamese = language === "vi";
+  const eyebrow = isVietnamese ? "Cấu trúc & Quảng cáo" : "Ad Set Preview";
   const title = isVietnamese ? "Ad set & Creative đang chạy" : "Running Ad Sets & Creatives";
   const description = isVietnamese
     ? "Xem trước cấu trúc ad set active và bài đăng ad post đang chạy (banner, caption, ảnh, video)."
@@ -2017,107 +2018,120 @@ function RunningAdSetsPanel({
   const hasMultipleAdSets = adsets.length > 1;
 
   return (
-    <Card className="w-full" data-print-flow>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-        <CardDescription>{description}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className={`grid gap-6 ${hasMultipleAdSets ? "grid-cols-1 md:grid-cols-12" : "grid-cols-1"}`}>
-          {hasMultipleAdSets && (
-            <div className="md:col-span-4 lg:col-span-3 flex flex-col gap-2">
-              <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
-                {isVietnamese ? "Chọn Ad Set" : "Select Ad Set"}
-              </div>
-              <div className="flex flex-col gap-2 max-h-[600px] overflow-y-auto pr-2">
-                {adsets.map((adset) => (
-                  <Button
+    <div className="w-full rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5" data-print-flow>
+      <div className="mb-6 flex flex-col gap-1.5">
+        <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{eyebrow}</div>
+        <h2 className="text-xl font-semibold leading-none tracking-tight text-foreground">{title}</h2>
+        <p className="text-sm text-muted-foreground">{description}</p>
+      </div>
+
+      <div className={`grid gap-6 ${hasMultipleAdSets ? "grid-cols-1 md:grid-cols-12" : "grid-cols-1"}`}>
+        {hasMultipleAdSets && (
+          <div className="flex flex-col gap-2 md:col-span-4 lg:col-span-3">
+            <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              {isVietnamese ? "Chọn Ad Set" : "Select Ad Set"}
+            </div>
+            <div className="flex max-h-[600px] flex-col gap-2 overflow-y-auto pr-2">
+              {adsets.map((adset) => {
+                const isSelected = selectedAdSetId === adset.id;
+                return (
+                  <button
                     key={adset.id}
-                    variant={selectedAdSetId === adset.id ? "secondary" : "ghost"}
-                    size="sm"
                     onClick={() => setSelectedAdSetId(adset.id)}
-                    className={`justify-start text-left w-full h-auto py-3 px-4 flex flex-col items-start gap-1 font-normal transition-all rounded-2xl ${
-                      selectedAdSetId === adset.id
-                        ? "bg-secondary text-foreground font-medium"
-                        : "bg-transparent hover:bg-muted/50 text-muted-foreground hover:text-foreground"
+                    className={`group flex w-full flex-col items-start gap-1 rounded-xl px-4 py-3 text-left transition-all ${
+                      isSelected
+                        ? "border border-border/50 bg-background font-medium text-foreground shadow-sm"
+                        : "border border-transparent bg-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground"
                     }`}
                   >
                     <span className="line-clamp-2 text-sm">{adset.name}</span>
-                    <span className="text-xs opacity-70">{formatAdSetBudget(adset, currency, language)}</span>
-                  </Button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className={hasMultipleAdSets ? "md:col-span-8 lg:col-span-9 flex flex-col gap-4" : "flex flex-col gap-4"}>
-            <div className="rounded-xl border p-4 bg-muted/10">
-              <div className="flex flex-wrap items-start justify-between gap-2 border-b pb-3 mb-4">
-                <div>
-                  <h3 className="font-heading text-lg font-semibold">{selectedAdSet.name}</h3>
-                  <p className="text-xs text-muted-foreground">
-                    {isVietnamese ? "Campaign: " : "Campaign: "}{selectedAdSet.campaignName}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="rounded-full">{formatAdSetBudget(selectedAdSet, currency, language)}</Badge>
-                  <Badge variant="secondary" className="rounded-full">{selectedAdSet.status}</Badge>
-                </div>
-              </div>
-
-              {selectedAdSet.ads && selectedAdSet.ads.length > 0 ? (
-                <>
-                  {selectedAdSet.ads.length > 1 && (
-                    <div className="flex flex-wrap gap-2 border-b pb-3 mb-4">
-                      {selectedAdSet.ads.map((ad, idx) => (
-                        <Button
-                          key={ad.id}
-                          variant={selectedAdId === ad.id ? "secondary" : "ghost"}
-                          size="sm"
-                          onClick={() => setSelectedAdId(ad.id)}
-                          className="text-xs rounded-full px-4"
-                        >
-                          {ad.name || `Creative ${idx + 1}`}
-                        </Button>
-                      ))}
-                    </div>
-                  )}
-
-                  {selectedAd ? (
-                    <div className="flex flex-col gap-4">
-                      <div className="flex flex-wrap items-center justify-between gap-2 pb-2">
-                        <div className="font-semibold text-sm truncate">{selectedAd.name}</div>
-                        <span className="text-xs text-muted-foreground">ID: {selectedAd.id}</span>
-                      </div>
-                      {selectedAd.previewHtml ? (
-                        <div
-                          className="flex w-full justify-center overflow-x-auto rounded-xl border bg-muted/20 p-4 sm:p-6"
-                          data-ad-preview-frame
-                        >
-                          <div
-                            className="relative max-h-[75vh] w-full max-w-[500px] overflow-y-auto overflow-x-hidden rounded-xl border border-border/50 bg-white shadow-sm [&_iframe]:!block [&_iframe]:!w-full [&_iframe]:!max-w-full [&_iframe]:!border-0"
-                            data-ad-preview-html
-                            dangerouslySetInnerHTML={{ __html: sanitizeAdPreviewHtml(selectedAd.previewHtml) }}
-                          />
-                        </div>
-                      ) : (
-                        <div className="flex h-40 items-center justify-center rounded-xl border bg-muted/10 text-xs text-muted-foreground">
-                          {isVietnamese ? "Không tải được bản xem trước" : "Unable to load ad preview"}
-                        </div>
-                      )}
-                    </div>
-                  ) : null}
-                </>
-              ) : (
-                <p className="text-sm text-muted-foreground italic">
-                  {isVietnamese ? "Không có ad nào hoạt động trong ad set này." : "No active ads found in this ad set."}
-                </p>
-              )}
+                    <span className={`text-xs ${isSelected ? "text-muted-foreground" : "opacity-70"}`}>
+                      {formatAdSetBudget(adset, currency, language)}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
+        )}
+
+        <div className={hasMultipleAdSets ? "flex flex-col gap-4 md:col-span-8 lg:col-span-9" : "flex flex-col gap-4"}>
+          <div className="rounded-xl border bg-background/50 p-5 shadow-sm">
+            <div className="mb-5 flex flex-wrap items-start justify-between gap-3 border-b border-border/60 pb-4">
+              <div className="min-w-0 flex-1">
+                <h3 className="font-heading text-lg font-semibold">{selectedAdSet.name}</h3>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {isVietnamese ? "Campaign: " : "Campaign: "}
+                  <span className="font-medium text-foreground/80">{selectedAdSet.campaignName}</span>
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <Badge variant="outline" className="rounded-full bg-background/50 backdrop-blur-sm">
+                  {formatAdSetBudget(selectedAdSet, currency, language)}
+                </Badge>
+                <Badge variant="secondary" className="rounded-full">
+                  {selectedAdSet.status}
+                </Badge>
+              </div>
+            </div>
+
+            {selectedAdSet.ads && selectedAdSet.ads.length > 0 ? (
+              <>
+                {selectedAdSet.ads.length > 1 && (
+                  <div className="mb-5 flex flex-wrap gap-2">
+                    {selectedAdSet.ads.map((ad, idx) => {
+                      const isAdSelected = selectedAdId === ad.id;
+                      return (
+                        <button
+                          key={ad.id}
+                          onClick={() => setSelectedAdId(ad.id)}
+                          className={`rounded-full px-4 py-1.5 text-xs font-medium transition-colors ${
+                            isAdSelected
+                              ? "bg-primary text-primary-foreground shadow-sm"
+                              : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground"
+                          }`}
+                        >
+                          {ad.name || `Creative ${idx + 1}`}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {selectedAd ? (
+                  <div className="flex flex-col gap-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2 pb-1">
+                      <div className="min-w-0 flex-1 truncate text-sm font-semibold">{selectedAd.name}</div>
+                      <span className="shrink-0 text-xs text-muted-foreground">ID: {selectedAd.id}</span>
+                    </div>
+                    {selectedAd.previewHtml ? (
+                      <div
+                        className="flex w-full justify-center overflow-x-auto rounded-xl border bg-muted/20 p-4 sm:p-6"
+                        data-ad-preview-frame
+                      >
+                        <div
+                          className="relative max-h-[75vh] w-full max-w-[500px] overflow-y-auto overflow-x-hidden rounded-xl border border-border/50 bg-white shadow-sm [&_iframe]:!block [&_iframe]:!w-full [&_iframe]:!max-w-full [&_iframe]:!border-0"
+                          data-ad-preview-html
+                          dangerouslySetInnerHTML={{ __html: sanitizeAdPreviewHtml(selectedAd.previewHtml) }}
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex h-40 items-center justify-center rounded-xl border border-dashed bg-muted/10 text-xs text-muted-foreground">
+                        {isVietnamese ? "Không tải được bản xem trước" : "Unable to load ad preview"}
+                      </div>
+                    )}
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <p className="text-sm italic text-muted-foreground">
+                {isVietnamese ? "Không có ad nào hoạt động trong ad set này." : "No active ads found in this ad set."}
+              </p>
+            )}
+          </div>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
