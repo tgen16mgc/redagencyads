@@ -3980,24 +3980,25 @@ function DailyDiagnosisCard({ report, language }: { report: DashboardReport; lan
         : { variant: "outline" as const, text: language === "vi" ? "Chưa đủ dữ liệu" : "Need more data" };
 
   return (
-    <Card data-print-flow className={hasDanger ? "border-l-4 border-l-destructive" : undefined}>
-      <CardHeader>
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <CardTitle>{title}</CardTitle>
-            <CardDescription>{description}</CardDescription>
-          </div>
-          <Badge variant={badge.variant}>{badge.text}</Badge>
+    <div data-print-flow className={`${hasDanger ? "border-l-4 border-l-destructive" : ""} rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="max-w-2xl space-y-1.5">
+          <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+            {language === "vi" ? "Nguyên nhân gốc" : "Root Cause"}
+          </p>
+          <h2 className="text-xl font-semibold tracking-tight">{title}</h2>
+          <p className="text-sm text-muted-foreground">{description}</p>
         </div>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-3">
-        <p className="text-sm text-muted-foreground">{diagnosis.summary[language]}</p>
+        <Badge variant={badge.variant}>{badge.text}</Badge>
+      </div>
+      <div className="mt-5 flex flex-col gap-3">
+        <p className="rounded-xl border bg-background/50 p-4 text-sm text-muted-foreground">{diagnosis.summary[language]}</p>
         {diagnosis.causes.length > 0 ? (
           <ul className="flex flex-col gap-3">
             {diagnosis.causes.map((cause) => (
               <li
                 key={cause.id}
-                className={`flex flex-col gap-1.5 rounded-lg border p-3 ${cause.severity === "danger" ? "border-destructive/30 bg-destructive/5" : "bg-muted/20"}`}
+                className={`flex flex-col gap-1.5 rounded-xl border px-3 py-2.5 ${cause.severity === "danger" ? "border-destructive/30 bg-destructive/5" : "bg-background/50"}`}
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className={`text-sm font-medium ${cause.severity === "danger" ? "text-destructive" : ""}`}>{cause.title[language]}</span>
@@ -4017,8 +4018,8 @@ function DailyDiagnosisCard({ report, language }: { report: DashboardReport; lan
           tone={diagnosis.status === "insufficient_data" ? "insufficient" : diagnosis.status === "stable" ? "ok" : hasDanger ? "critical" : "warning"}
           language={language}
         />
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
