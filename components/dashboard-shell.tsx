@@ -2495,6 +2495,7 @@ function CompetitorSpyPanel({
     .split(/[\n,]/)
     .map((url) => url.trim())
     .filter(Boolean).length > 0;
+  const hasNotes = notes.trim().length > 0;
   const canFetch = hasCompetitors || hasLibraryUrls;
   const canAnalyze = canFetch || ads.length > 0;
   const themeRows = result?.themes.slice(0, 4) || [];
@@ -2513,6 +2514,25 @@ function CompetitorSpyPanel({
     cues: isVietnamese
       ? ["Không cần token", "Ghi chú thật tăng confidence", "Output sẵn để brief creative"]
       : ["No token required", "Real notes improve confidence", "Outputs are ready for creative briefs"],
+  };
+  const researchBrief = {
+    title: isVietnamese ? "Research brief" : "Research brief",
+    description: isVietnamese
+      ? "Nhập đối thủ, thị trường và dữ liệu public để tạo brief phân tích có ngữ cảnh."
+      : "Add competitors, market context, and public data to create a grounded research brief.",
+    ready: isVietnamese ? "Sẵn sàng" : "Ready",
+    next: isVietnamese ? "Cần thêm" : "Needed",
+    inputs: isVietnamese
+      ? [
+          { label: "Đối thủ hoặc URL", done: canFetch },
+          { label: "Thị trường / offer", done: Boolean(market.trim()) },
+          { label: "Ghi chú ads thật", done: hasNotes },
+        ]
+      : [
+          { label: "Competitor or URL", done: canFetch },
+          { label: "Market / offer", done: Boolean(market.trim()) },
+          { label: "Real ad notes", done: hasNotes },
+        ],
   };
 
   return (
@@ -2543,10 +2563,33 @@ function CompetitorSpyPanel({
           </div>
         </div>
       </CardHeader>
-      <CardContent className="grid gap-4 xl:grid-cols-[360px_1fr]">
-        <div className="flex flex-col gap-3 rounded-lg border bg-muted/20 p-3" data-print-hidden>
-          <Field>
-            <FieldLabel htmlFor={`${id}-competitors`}>{isVietnamese ? "Đối thủ" : "Competitors"}</FieldLabel>
+      <CardContent className="grid gap-4 xl:grid-cols-[380px_1fr]">
+        <div className="relative overflow-hidden rounded-2xl border bg-muted/20 p-4" data-print-hidden>
+          <div className="pointer-events-none absolute -right-16 -top-20 size-44 rounded-full bg-[radial-gradient(circle,_rgba(0,153,255,0.14),_transparent_68%)]" />
+          <div className="relative flex flex-col gap-4">
+            <div className="space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{researchBrief.title}</div>
+                  <p className="mt-1 text-sm leading-5 text-muted-foreground">{researchBrief.description}</p>
+                </div>
+                <Badge variant="outline" className="shrink-0">No-token</Badge>
+              </div>
+              <div className="grid gap-2">
+                {researchBrief.inputs.map((item) => (
+                  <div key={item.label} className="flex items-center justify-between gap-3 rounded-xl border bg-background/60 px-3 py-2 text-xs">
+                    <span className="font-medium text-foreground">{item.label}</span>
+                    <span className={`flex items-center gap-1.5 ${item.done ? "text-ring" : "text-muted-foreground"}`}>
+                      {item.done ? <CheckIcon className="size-3.5" /> : <ChevronRightIcon className="size-3.5" />}
+                      {item.done ? researchBrief.ready : researchBrief.next}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <Field>
+              <FieldLabel htmlFor={`${id}-competitors`}>{isVietnamese ? "Đối thủ" : "Competitors"}</FieldLabel>
             <Textarea
               id={`${id}-competitors`}
               value={names}
@@ -2726,6 +2769,7 @@ function CompetitorSpyPanel({
               </Button>
             </div>
           </details>
+          </div>
         </div>
 
         {result ? (
