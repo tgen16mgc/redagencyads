@@ -673,6 +673,16 @@ export function DashboardShell() {
       }),
     [language, workflowSteps],
   );
+  const headerMode = {
+    badge: activeView === "ads" ? copy.header.adsCrumb : "Public research",
+    description: activeView === "ads"
+      ? language === "vi"
+        ? "Theo dõi KPI, chẩn đoán tài khoản và tạo Verdict tối ưu."
+        : "Track KPIs, diagnose account health, and generate optimization Verdicts."
+      : language === "vi"
+        ? "Nghiên cứu ads public của đối thủ mà không cần kết nối token."
+        : "Research competitors' public ads without connecting a Meta token.",
+  };
 
   React.useEffect(() => {
     window.localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
@@ -1000,33 +1010,41 @@ export function DashboardShell() {
       />
       <SidebarInset>
         <main className="flex min-h-svh flex-col gap-4 p-4 md:p-6" data-print-page>
-          <header className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div className="flex items-center gap-2">
-              <SidebarTrigger data-print-hidden />
-              <img src="/red-agency-logo.png" alt="Red Agency" className="size-11 rounded-lg object-contain" />
-              <div>
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  {activeView === "ads" ? copy.header.adsCrumb : copy.header.competitorCrumb} <ChevronRightIcon />{" "}
-                  {activeView === "ads" ? copy.header.adsDetail : copy.header.competitorDetail}
+          <header className="relative overflow-hidden rounded-3xl border bg-card/80 p-4 shadow-xl shadow-black/10 md:p-5">
+            <div className="pointer-events-none absolute -right-16 -top-20 size-48 rounded-full bg-[radial-gradient(circle,_rgba(0,153,255,0.13),_transparent_68%)]" />
+            <div className="relative flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex min-w-0 items-start gap-3">
+                <SidebarTrigger className="mt-1" data-print-hidden />
+                <span className="flex size-12 shrink-0 items-center justify-center rounded-2xl border bg-background/70">
+                  <img src="/red-agency-logo.png" alt="Red Agency" className="size-8 rounded-lg object-contain" />
+                </span>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                    <Badge variant="secondary" className="shrink-0">{headerMode.badge}</Badge>
+                    <span className="flex items-center gap-1">
+                      {activeView === "ads" ? copy.header.adsDetail : copy.header.competitorDetail}
+                    </span>
+                  </div>
+                  <h1 className="mt-2 font-heading text-2xl font-semibold tracking-[-0.035em] md:text-3xl">
+                    {activeView === "ads" ? copy.header.adsTitle : copy.header.competitorTitle}
+                  </h1>
+                  <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">{headerMode.description}</p>
                 </div>
-                <h1 className="font-heading text-2xl font-semibold tracking-tight md:text-3xl">
-                  {activeView === "ads" ? copy.header.adsTitle : copy.header.competitorTitle}
-                </h1>
               </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <LanguageToggle language={language} onChange={setLanguage} />
-              <Badge variant="secondary">
-                <ShieldCheckIcon />
-                {authenticated ? copy.header.session : activeView === "competitor" ? (language === "vi" ? "Không cần token" : "No token needed") : copy.header.session}
-              </Badge>
-              {activeView === "ads" && report ? <Badge variant="outline">{copy.header.pulled} {new Date(report.pulledAt).toLocaleString()}</Badge> : null}
-              {activeView === "ads" ? (
-                <Button type="button" variant="outline" onClick={exportPdf} disabled={!report} data-print-hidden>
-                  <DownloadIcon data-icon="inline-start" />
-                  {copy.header.exportPdf}
-                </Button>
-              ) : null}
+              <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                <LanguageToggle language={language} onChange={setLanguage} />
+                <Badge variant="secondary">
+                  <ShieldCheckIcon />
+                  {authenticated ? copy.header.session : activeView === "competitor" ? (language === "vi" ? "Không cần token" : "No token needed") : copy.header.session}
+                </Badge>
+                {activeView === "ads" && report ? <Badge variant="outline">{copy.header.pulled} {new Date(report.pulledAt).toLocaleString()}</Badge> : null}
+                {activeView === "ads" ? (
+                  <Button type="button" variant="outline" onClick={exportPdf} disabled={!report} data-print-hidden>
+                    <DownloadIcon data-icon="inline-start" />
+                    {copy.header.exportPdf}
+                  </Button>
+                ) : null}
+              </div>
             </div>
           </header>
 
