@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { buildClientReportViewModel } from "../client-report";
+import { describe, expect, it, vi } from "vitest";
+import { buildClientReportPdf, buildClientReportViewModel, downloadClientReportPdf } from "../client-report";
 import type { DashboardReport, KpiCard, NormalizedRow, Verdict } from "../types";
 
 function row(overrides: Partial<NormalizedRow>): NormalizedRow {
@@ -142,5 +142,47 @@ describe("buildClientReportViewModel", () => {
     expect(model.copy.executiveSummary).toBe("Tóm tắt điều hành");
     expect(model.copy.appendixCharts).toContain("Phụ lục A");
     expect(model.dateRangeLabel).toContain("2026");
+  });
+
+  it("builds a downloadable PDF report file", async () => {
+    const model = buildClientReportViewModel({
+      report: report(),
+      compareMode: "off",
+      language: "en",
+      kpis,
+      verdict: verdict(),
+    });
+
+    const pdf = buildClientReportPdf(model);
+    const bytes = new Uint8Array(await pdf.blob.arrayBuffer());
+    const text = new TextDecoder("latin1").decode(bytes);
+
+    expect(pdf.filename).toBe("seoul-beauty-clinic-meta-ads-report-2026-06-01-to-2026-06-26.pdf");
+    expect(pdf.blob.type).toBe("application/pdf");
+    expect(String.fromCharCode(...bytes.slice(0, 8))).toBe("%PDF-1.3");
+    expect(text).toContain("Meta Ads Performance Report");
+    expect(text).toContain("EXECUTIVE SUMMARY");
+    expect(text).toContain("Appendix A");
+    expect(text).toContain("Appendix B");
+    expect(text).toContain("Appendix C");
+    expect(text).toContain("%%EOF");
+  });
+
+  it("downloads the generated PDF without opening browser print", () => {
+    const pdf = new Blob(["%PDF-1.3\n%%EOF"], { type: "application/pdf" });
+    const link = { href: "", download: "", click: vi.fn() };
+    const runtime = {
+      createObjectUrl: vi.fn(() => "blob:report-pdf"),
+      revokeObjectUrl: vi.fn(),
+      createLink: vi.fn(() => link),
+    };
+
+    downloadClientReportPdf({ filename: "report.pdf", blob: pdf }, runtime);
+
+    expect(runtime.createObjectUrl).toHaveBeenCalledWith(pdf);
+    expect(link.href).toBe("blob:report-pdf");
+    expect(link.download).toBe("report.pdf");
+    expect(link.click).toHaveBeenCalledOnce();
+    expect(runtime.revokeObjectUrl).toHaveBeenCalledWith("blob:report-pdf");
   });
 });

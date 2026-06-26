@@ -40,7 +40,7 @@ import {
   SparklesIcon,
 } from "lucide-react";
 import { AppSidebar, type AppSidebarItem, type WorkflowSidebarItem } from "@/components/dashboard/app-sidebar";
-import { ClientPdfReport } from "@/components/dashboard/client-pdf-report";
+import { buildClientReportPdf, buildClientReportViewModel, downloadClientReportPdf } from "@/lib/client-report";
 import { CustomChartsSection } from "@/components/dashboard/custom-charts-section";
 import type { AdSetWithPreviews, AiInsightTable, CompareMode, CompetitorFetchResult, CompetitorFetchSource, CompetitorPlatform, CompetitorSpyAd, CompetitorSpyResult, DashboardReport, KpiCard, KpiPack, MetaAccount, MetaCampaign, NormalizedRow, Verdict } from "@/lib/types";
 import { buildWorkflowSteps, type DashboardWorkflowStep } from "@/lib/dashboard-workflow";
@@ -619,7 +619,6 @@ export function DashboardShell() {
   const [error, setError] = React.useState("");
   const [loading, setLoading] = React.useState("");
   const [scopeExpanded, setScopeExpanded] = React.useState(false);
-  const [printingClientReport, setPrintingClientReport] = React.useState(false);
   const [aiLoading, setAiLoading] = React.useState({ verdict: false, insights: false });
   const reportStartRef = React.useRef<HTMLDivElement>(null);
   const verdictProgress = useTimedProgress(aiLoading.verdict);
@@ -696,15 +695,6 @@ export function DashboardShell() {
     const keys = deserializeCustomKpiSet(window.localStorage.getItem(CUSTOM_KPI_SET_STORAGE_KEY), report.kpis);
     setCustomKpiKeys(keys);
   }, [report]);
-
-  React.useEffect(() => {
-    function handleAfterPrint() {
-      setPrintingClientReport(false);
-    }
-
-    window.addEventListener("afterprint", handleAfterPrint);
-    return () => window.removeEventListener("afterprint", handleAfterPrint);
-  }, []);
 
   function saveCustomKpis(keys: CustomKpiKey[]) {
     window.localStorage.setItem(CUSTOM_KPI_SET_STORAGE_KEY, serializeCustomKpiSet(keys));
@@ -971,8 +961,13 @@ export function DashboardShell() {
 
   function exportPdf() {
     if (!report) return;
-    setPrintingClientReport(true);
-    window.requestAnimationFrame(() => window.print());
+    const model = buildClientReportViewModel({ report, previousReport, compareMode, verdict, insights, language, kpis: effectiveKpis });
+    const pdf = buildClientReportPdf(model);
+    downloadClientReportPdf(pdf, {
+      createObjectUrl: (blob) => URL.createObjectURL(blob),
+      revokeObjectUrl: (url) => URL.revokeObjectURL(url),
+      createLink: () => document.createElement("a"),
+    });
   }
 
   function withReportLanguage(prompt: string, lang: ReportLanguage, type: "verdict" | "insights" | "competitor") {
@@ -1022,7 +1017,7 @@ export function DashboardShell() {
         onLogout={logout}
       />
       <SidebarInset>
-        <main className="flex min-h-svh flex-col gap-4 p-4 md:p-6" data-print-page data-client-report-print-hidden={printingClientReport ? "true" : undefined}>
+        <main className="flex min-h-svh flex-col gap-4 p-4 md:p-6" data-print-page>
           <header className="relative overflow-hidden rounded-3xl border bg-card/80 p-4 shadow-xl shadow-black/10 md:p-5">
             <div className="pointer-events-none absolute -right-16 -top-20 size-48 rounded-full bg-[radial-gradient(circle,_rgba(0,153,255,0.13),_transparent_68%)]" />
             <div className="relative flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -1471,17 +1466,6 @@ export function DashboardShell() {
             />
           )}
         </main>
-        {report ? (
-          <ClientPdfReport
-            report={report}
-            previousReport={previousReport}
-            compareMode={compareMode}
-            verdict={verdict}
-            insights={insights}
-            language={language}
-            kpis={effectiveKpis}
-          />
-        ) : null}
       </SidebarInset>
     </SidebarProvider>
   );

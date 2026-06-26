@@ -1,3 +1,4 @@
+import { jsPDF } from "jspdf";
 import { buildKpiComparisons, formatComparisonChangePct, metricMovementIsBad } from "@/lib/metric-comparison";
 import { formatMetric } from "@/lib/metrics";
 import type { AiInsightTable, CompareMode, DashboardReport, InterfaceLanguage, KpiCard, NormalizedRow, Verdict } from "@/lib/types";
@@ -22,6 +23,7 @@ export type ClientReportTable = {
 
 export type ClientReportViewModel = {
   accountName: string;
+  dateRange: DashboardReport["dateRange"];
   dateRangeLabel: string;
   generatedLabel: string;
   currency: string;
@@ -138,6 +140,7 @@ export function buildClientReportViewModel(args: {
 
   return {
     accountName: report.account.name,
+    dateRange: report.dateRange,
     dateRangeLabel: formatDateRange(report.dateRange, args.language),
     generatedLabel: formatDateTime(report.pulledAt, args.language),
     currency,
@@ -190,6 +193,214 @@ export function buildClientReportViewModel(args: {
       ads: adset.ads.map((ad) => ad.name || ad.id).slice(0, 6),
     })),
   };
+}
+
+export type ClientReportPdfFile = {
+  filename: string;
+  blob: Blob;
+};
+
+export type PdfDownloadRuntime = {
+  createObjectUrl: (blob: Blob) => string;
+  revokeObjectUrl: (url: string) => void;
+  createLink: () => { href: string; download: string; click: () => void };
+};
+
+export function downloadClientReportPdf(pdf: ClientReportPdfFile, runtime: PdfDownloadRuntime) {
+  const url = runtime.createObjectUrl(pdf.blob);
+  const link = runtime.createLink();
+  link.href = url;
+  link.download = pdf.filename;
+  link.click();
+  runtime.revokeObjectUrl(url);
+}
+
+export function buildClientReportPdf(model: ClientReportViewModel): ClientReportPdfFile {
+  const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
+  const width = doc.internal.pageSize.getWidth();
+  const height = doc.internal.pageSize.getHeight();
+  const margin = 42;
+  const filename = `${slugify(model.accountName)}-meta-ads-report-${model.dateRange.since}-to-${model.dateRange.until}.pdf`;
+
+  const text = (value: string) => pdfText(value);
+
+  const addFooter = (page: string, footnote?: string) => {
+    doc.setDrawColor(229, 231, 235);
+    doc.line(margin, height - 54, width - margin, height - 54);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.setTextColor(102, 112, 133);
+    doc.text("Red Agency", margin, height - 34);
+    doc.text(text(page), width / 2, height - 34, { align: "center" });
+    doc.text(text(model.accountName), width - margin, height - 34, { align: "right" });
+    if (footnote) {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7.5);
+      doc.text(doc.splitTextToSize(text(footnote), width - margin * 2), margin, height - 72);
+    }
+  };
+
+  const addHeader = (section: string) => {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.setTextColor(102, 112, 133);
+    doc.text(text(section).toUpperCase(), margin, 36);
+    doc.text(text(model.dateRangeLabel).toUpperCase(), width - margin, 36, { align: "right" });
+    doc.setDrawColor(229, 231, 235);
+    doc.line(margin, 48, width - margin, 48);
+  };
+
+  const addTitle = (kicker: string, title: string, y: number) => {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.setTextColor(102, 112, 133);
+    doc.text(text(kicker).toUpperCase(), margin, y);
+    doc.setFontSize(24);
+    doc.setTextColor(17, 24, 39);
+    doc.text(text(title), margin, y + 28);
+  };
+
+  const addBullets = (title: string, items: string[], x: number, y: number, maxWidth: number) => {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(17, 24, 39);
+    doc.text(text(title), x, y);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(71, 84, 103);
+    let cursor = y + 18;
+    items.forEach((item) => {
+      const lines = doc.splitTextToSize(text(`- ${item}`), maxWidth);
+      doc.text(lines, x, cursor);
+      cursor += lines.length * 12 + 6;
+    });
+  };
+
+  const addRows = (title: string, rows: NormalizedRow[], y: number) => {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.setTextColor(17, 24, 39);
+    doc.text(text(title), margin, y);
+    doc.setFontSize(8);
+    doc.setTextColor(52, 64, 84);
+    let cursor = y + 18;
+    rows.slice(0, 8).forEach((row) => {
+      doc.text(text(row.date || row.name.slice(0, 42)), margin, cursor);
+      doc.text(text(formatMetric(row.spend, "currency", model.currency)), width - margin, cursor, { align: "right" });
+      cursor += 14;
+    });
+  };
+
+  doc.setFillColor(9, 9, 9);
+  doc.rect(0, 0, width, height, "F");
+  doc.setTextColor(255, 255, 255);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(34);
+  doc.text(text(model.copy.title), margin, 130, { maxWidth: width - margin * 2 });
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(12);
+  doc.setTextColor(208, 213, 221);
+  doc.text(doc.splitTextToSize(text(model.copy.subtitle), width - margin * 2), margin, 205);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.text(text(model.accountName), margin, 330);
+  doc.text(text(model.dateRangeLabel), margin, 354);
+  doc.text(text(model.healthLabel), margin, 378);
+  doc.text(text(model.copy.source), margin, 402);
+  addFooter("Cover");
+
+  doc.addPage();
+  addHeader(model.copy.executiveSummary);
+  addTitle(model.copy.executiveSummary, model.language === "vi" ? "Hiệu quả tổng quan" : "Performance at a glance", 86);
+  let kpiX = margin;
+  model.kpis.slice(0, 4).forEach((kpi) => {
+    doc.setDrawColor(234, 236, 240);
+    doc.roundedRect(kpiX, 145, 116, 72, 10, 10);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.setTextColor(102, 112, 133);
+    doc.text(text(kpi.label).toUpperCase(), kpiX + 12, 169);
+    doc.setFontSize(16);
+    doc.setTextColor(16, 24, 40);
+    doc.text(text(kpi.value), kpiX + 12, 195, { maxWidth: 92 });
+    kpiX += 126;
+  });
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.text(text(model.copy.verdictLabel), margin, 260);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.setTextColor(71, 84, 103);
+  doc.text(doc.splitTextToSize(text(model.verdictText), width - margin * 2), margin, 280);
+  addBullets(model.copy.wins, model.wins, margin, 365, 150);
+  addBullets(model.copy.risks, model.risks, margin + 178, 365, 150);
+  addBullets(model.copy.nextMoves, model.actions.map((action) => action.title), margin + 356, 365, 150);
+  addFooter("Page 2", model.copy.footnoteSource);
+
+  doc.addPage();
+  addHeader(model.copy.performanceStory);
+  addTitle(model.copy.performanceStory, model.language === "vi" ? "Điều gì thay đổi và vì sao" : "What changed and why", 86);
+  addRows(model.language === "vi" ? "Top campaign" : "Top campaigns", model.topCampaigns, 160);
+  addRows(model.language === "vi" ? "Top ad set" : "Top ad sets", model.topAdsets, 310);
+  addRows(model.language === "vi" ? "Khu vực" : "Regions", model.breakdowns.regions, 460);
+  addFooter("Page 3", model.copy.footnoteComparison);
+
+  doc.addPage();
+  addHeader(model.copy.recommendations);
+  addTitle(model.copy.recommendations, model.language === "vi" ? "Red Agency khuyến nghị gì tiếp theo" : "What Red Agency recommends next", 86);
+  let actionY = 160;
+  model.actions.forEach((action, index) => {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(17, 24, 39);
+    doc.text(text(`${index + 1}. ${action.title}`), margin, actionY);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(71, 84, 103);
+    doc.text(doc.splitTextToSize(text(action.detail), width - margin * 2), margin, actionY + 16);
+    actionY += 64;
+  });
+  addFooter("Page 4", model.copy.footnoteRecommendations);
+
+  doc.addPage();
+  addHeader(model.copy.appendixCharts);
+  addTitle("Appendix A", model.language === "vi" ? "Biểu đồ và breakdown" : "Charts and breakdowns", 86);
+  addRows(model.language === "vi" ? "Platform" : "Platform breakdown", model.breakdowns.platforms, 160);
+  addRows(model.language === "vi" ? "Địa lý" : "Geography", model.breakdowns.regions, 300);
+  addRows(model.language === "vi" ? "Tuổi / giới tính" : "Age / gender", model.breakdowns.ageGender, 440);
+  addFooter("Appendix A · Page 5", model.copy.footnoteSource);
+
+  doc.addPage();
+  addHeader(model.copy.appendixTables);
+  addTitle("Appendix B", model.language === "vi" ? "Bảng hiệu quả" : "Performance tables", 86);
+  let tableY = 150;
+  model.tables.forEach((table) => {
+    addRows(table.title, table.rows, tableY);
+    tableY += 130;
+  });
+  addFooter("Appendix B · Page 6", model.language === "vi" ? "Bảng dài có thể tiếp tục qua trang tiếp theo khi lưu PDF." : "Long tables may continue across pages when saved to PDF.");
+
+  doc.addPage();
+  addHeader(model.copy.appendixDiagnostics);
+  addTitle("Appendix C", model.language === "vi" ? "Chẩn đoán và creative" : "Diagnostics and creative detail", 86);
+  addBullets(model.language === "vi" ? "Chẩn đoán" : "Diagnostics", model.diagnostics.map((check) => `${check.label}: ${check.detail}`), margin, 155, width - margin * 2);
+  addBullets(model.language === "vi" ? "Creative đang chạy" : "Running creative detail", model.creativeDetails.map((creative) => `${creative.name} · ${creative.campaignName} · ${creative.adCount} ads`), margin, 390, width - margin * 2);
+  addFooter("Appendix C · Page 7", model.language === "vi" ? "Creative preview dùng metadata in được nếu iframe không an toàn cho PDF." : "Creative previews use printable metadata when embedded previews are not PDF-safe.");
+
+  return { filename, blob: doc.output("blob") };
+}
+
+function slugify(value: string) {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "client";
+}
+
+function pdfText(value: string) {
+  return value
+    .replace(/[–—]/g, "-")
+    .replace(/[↑↓→]/g, "")
+    .replace(/[₫đ]/gi, "VND")
+    .replace(/ /g, " ")
+    .replace(/[^\x09\x0a\x0d\x20-\x7e -ÿ]/g, "");
 }
 
 function primaryMetricKey(pack: DashboardReport["selectedPack"]): keyof NormalizedRow {
