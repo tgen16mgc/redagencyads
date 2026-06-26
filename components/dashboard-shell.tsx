@@ -4065,20 +4065,21 @@ function DecisionConfidenceCard({ report, language, targets }: { report: Dashboa
   const variant = rows.length === 0 ? "outline" : blocked.length > actionable.length ? "destructive" : blocked.length > 0 ? "outline" : "secondary";
 
   return (
-    <Card data-print-flow className={diagnosticAccentClass(variant)}>
-      <CardHeader>
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <CardTitle>{isVietnamese ? "Độ tin cậy quyết định" : "Decision confidence"}</CardTitle>
-            <CardDescription>
-              {isVietnamese ? "Chặn kill/scale khi dữ liệu còn mỏng hoặc delivery chưa đủ ổn định." : "Downgrades kill/scale advice when evidence is thin or delivery is unstable."}
-            </CardDescription>
-          </div>
-          <Badge variant={variant}>{actionable.length}/{rows.length || 0} {isVietnamese ? "actionable" : "actionable"}</Badge>
+    <div data-print-flow className={`${diagnosticAccentClass(variant)} rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="max-w-2xl space-y-1.5">
+          <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+            {isVietnamese ? "Cổng bằng chứng" : "Evidence Gate"}
+          </p>
+          <h2 className="text-xl font-semibold tracking-tight">{isVietnamese ? "Độ tin cậy quyết định" : "Decision confidence"}</h2>
+          <p className="text-sm text-muted-foreground">
+            {isVietnamese ? "Chặn kill/scale khi dữ liệu còn mỏng hoặc delivery chưa đủ ổn định." : "Downgrades kill/scale advice when evidence is thin or delivery is unstable."}
+          </p>
         </div>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-3">
-        <p className="text-sm text-muted-foreground">
+        <Badge variant={variant}>{actionable.length}/{rows.length || 0} {isVietnamese ? "actionable" : "actionable"}</Badge>
+      </div>
+      <div className="mt-5 flex flex-col gap-3">
+        <p className="rounded-xl border bg-background/50 p-4 text-sm text-muted-foreground">
           {rows.length === 0
             ? isVietnamese ? "Chưa có dòng có chi tiêu để đánh giá." : "No spent rows are available for confidence checks."
             : isVietnamese
@@ -4088,7 +4089,7 @@ function DecisionConfidenceCard({ report, language, targets }: { report: Dashboa
         {topBlocked.length > 0 ? (
           <div className="flex flex-col gap-2">
             {topBlocked.map(({ row, confidence }) => (
-              <div key={row.id} className="rounded-lg border p-2 text-sm">
+              <div key={row.id} className="rounded-xl border bg-background/50 px-3 py-2.5 text-sm">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 truncate font-medium">{row.name}</div>
                   <Badge variant={confidence.variant} className="shrink-0">{confidence.label[language]}</Badge>
@@ -4099,8 +4100,8 @@ function DecisionConfidenceCard({ report, language, targets }: { report: Dashboa
           </div>
         ) : null}
         <DiagnosticNextStep kind="decisionConfidence" tone={rows.length === 0 ? "insufficient" : toneFromVariant(variant)} language={language} />
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
