@@ -4151,22 +4151,23 @@ function BudgetMoveEngineCard({ report, language }: { report: DashboardReport; l
   const engine = recommendBudgetMoves(report);
   const reasons = engine.holdReasons[language];
   return (
-    <Card data-print-flow className={diagnosticAccentClass(engine.variant)}>
-      <CardHeader>
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <CardTitle>{copy.budgetMoveEngine}</CardTitle>
-            <CardDescription>{copy.budgetMoveEngineDescription}</CardDescription>
-          </div>
-          <Badge variant={engine.variant}>{engine.label[language]}</Badge>
+    <div data-print-flow className={`${diagnosticAccentClass(engine.variant)} rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="max-w-2xl space-y-1.5">
+          <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+            {language === "vi" ? "Động cơ ngân sách" : "Budget Engine"}
+          </p>
+          <h2 className="text-xl font-semibold tracking-tight">{copy.budgetMoveEngine}</h2>
+          <p className="text-sm text-muted-foreground">{copy.budgetMoveEngineDescription}</p>
         </div>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-3">
-        <p className="text-sm text-muted-foreground">{engine.summary[language]}</p>
+        <Badge variant={engine.variant}>{engine.label[language]}</Badge>
+      </div>
+      <div className="mt-5 flex flex-col gap-3">
+        <p className="rounded-xl border bg-background/50 p-4 text-sm text-muted-foreground">{engine.summary[language]}</p>
         {engine.recommendations.length > 0 ? (
           <div className="flex flex-col gap-2">
             {engine.recommendations.map((recommendation) => (
-              <div key={recommendation.id} className="flex flex-col gap-2 rounded-lg border p-3 text-sm">
+              <div key={recommendation.id} className="flex flex-col gap-2 rounded-xl border bg-background/50 px-3 py-2.5 text-sm">
                 <div className="flex items-start justify-between gap-3">
                   <div className="font-medium">{recommendation.summary[language]}</div>
                   <Badge variant="outline" className="shrink-0 tabular-nums">{recommendation.suggestedMovePercent}%</Badge>
@@ -4192,13 +4193,15 @@ function BudgetMoveEngineCard({ report, language }: { report: DashboardReport; l
             ))}
           </div>
         ) : (
-          <ul className="flex flex-col gap-2 text-sm text-muted-foreground">
-            {reasons.map((reason) => <li key={reason}>{reason}</li>)}
-          </ul>
+          <div className="rounded-xl border bg-background/50 p-4">
+            <ul className="flex flex-col gap-2 text-sm text-muted-foreground">
+              {reasons.map((reason) => <li key={reason}>{reason}</li>)}
+            </ul>
+          </div>
         )}
         <DiagnosticNextStep kind="budgetMove" tone={toneFromVariant(engine.variant)} language={language} />
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
