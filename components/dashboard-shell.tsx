@@ -4028,25 +4028,30 @@ function ExperimentReadinessCard({ report, language }: { report: DashboardReport
   const readiness = assessExperimentReadiness(report);
   const items = readiness.blockers[language].length > 0 ? readiness.blockers[language] : [readiness.nextAction[language]];
   return (
-    <Card data-print-flow className={diagnosticAccentClass(readiness.variant)}>
-      <CardHeader>
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <CardTitle>{copy.readiness}</CardTitle>
-            <CardDescription>{copy.readinessDescription}</CardDescription>
-          </div>
-          <Badge variant={readiness.variant}>{readiness.label[language]}</Badge>
+    <div data-print-flow className={`${diagnosticAccentClass(readiness.variant)} rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="max-w-2xl space-y-1.5">
+          <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+            {language === "vi" ? "Cổng thử nghiệm" : "Experiment Gate"}
+          </p>
+          <h2 className="text-xl font-semibold tracking-tight">{copy.readiness}</h2>
+          <p className="text-sm text-muted-foreground">{copy.readinessDescription}</p>
         </div>
-      </CardHeader>
-      <CardContent>
-        <ul className="flex flex-col gap-2 text-sm text-muted-foreground">
-          {items.map((item) => (
-            <li key={item}>{item}</li>
-          ))}
-        </ul>
+        <Badge variant={readiness.variant}>{readiness.label[language]}</Badge>
+      </div>
+      <div className="mt-5 flex flex-col gap-3">
+        <div className="rounded-xl border bg-background/50 p-4">
+          <ul className="flex flex-col gap-2 text-sm text-muted-foreground">
+            {items.map((item) => (
+              <li key={item} className="rounded-xl border bg-card/70 px-3 py-2">
+                {item}
+              </li>
+            ))}
+          </ul>
+        </div>
         <DiagnosticNextStep kind="experimentReadiness" tone={toneFromVariant(readiness.variant)} language={language} />
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
