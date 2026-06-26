@@ -4219,21 +4219,22 @@ function FunnelLeakageCard({ report, language }: { report: DashboardReport; lang
   const maxStage = Math.max(...stages.map((stage) => stage.value), 1);
 
   return (
-    <Card data-print-flow className={diagnosticAccentClass(leakage.variant)}>
-      <CardHeader>
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <CardTitle>{copy.funnelLeakage}</CardTitle>
-            <CardDescription>{copy.funnelLeakageDescription}</CardDescription>
-          </div>
-          <Badge variant={leakage.variant}>
-            {leakage.status === "clean" ? leakage.label[language] : `${leakage.score}/100`}
-          </Badge>
+    <div data-print-flow className={`${diagnosticAccentClass(leakage.variant)} rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="max-w-2xl space-y-1.5">
+          <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+            {language === "vi" ? "Chẩn đoán phễu" : "Funnel Diagnostics"}
+          </p>
+          <h2 className="text-xl font-semibold tracking-tight">{copy.funnelLeakage}</h2>
+          <p className="text-sm text-muted-foreground">{copy.funnelLeakageDescription}</p>
         </div>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-3">
+        <Badge variant={leakage.variant}>
+          {leakage.status === "clean" ? leakage.label[language] : `${leakage.score}/100`}
+        </Badge>
+      </div>
+      <div className="mt-5 flex flex-col gap-3">
         {leakage.status !== "insufficient_data" ? (
-          <div className="flex flex-col gap-2 border-b pb-3">
+          <div className="flex flex-col gap-2 rounded-xl border bg-background/50 p-4">
             {stages.map((stage, index) => {
               const previous = index > 0 ? stages[index - 1] : null;
               const width = Math.max(8, (stage.value / maxStage) * 100);
@@ -4259,20 +4260,22 @@ function FunnelLeakageCard({ report, language }: { report: DashboardReport; lang
             })}
           </div>
         ) : (
-          <div className="rounded-lg border bg-muted/20 p-3 text-sm text-muted-foreground">{leakage.summary[language]}</div>
+          <div className="rounded-xl border bg-background/50 p-4 text-sm text-muted-foreground">{leakage.summary[language]}</div>
         )}
-        <ul className="flex flex-col gap-2 text-sm text-muted-foreground">
-          {items.map((item) => (
-            <li key={item}>{item}</li>
-          ))}
-        </ul>
+        <div className="rounded-xl border bg-background/50 p-4">
+          <ul className="flex flex-col gap-2 text-sm text-muted-foreground">
+            {items.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </div>
         <DiagnosticNextStep
           kind="funnelLeakage"
           tone={leakage.status === "insufficient_data" ? "insufficient" : toneFromVariant(leakage.variant)}
           language={language}
         />
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
