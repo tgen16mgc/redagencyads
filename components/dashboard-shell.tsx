@@ -4112,24 +4112,25 @@ function CreativeVolumeCard({ report, language }: { report: DashboardReport; lan
   const displayAdsets = visibleAdsets.length > 0 ? visibleAdsets : assessment.adsets.slice(0, 2);
 
   return (
-    <Card data-print-flow className={diagnosticAccentClass(assessment.variant)}>
-      <CardHeader>
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <CardTitle>{isVietnamese ? "Volume creative" : "Creative volume"}</CardTitle>
-            <CardDescription>
-              {isVietnamese ? "Proxy số creative có chạy/chi tiêu trong mỗi ad set; chưa đo similarity hoặc Advantage+." : "Proxy for active/spent creative count per ad set; does not measure similarity or Advantage+ type yet."}
-            </CardDescription>
-          </div>
-          <Badge variant={assessment.variant}>{assessment.label[language]}</Badge>
+    <div data-print-flow className={`${diagnosticAccentClass(assessment.variant)} rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="max-w-2xl space-y-1.5">
+          <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+            {isVietnamese ? "Năng lực creative" : "Creative Capacity"}
+          </p>
+          <h2 className="text-xl font-semibold tracking-tight">{isVietnamese ? "Volume creative" : "Creative volume"}</h2>
+          <p className="text-sm text-muted-foreground">
+            {isVietnamese ? "Proxy số creative có chạy/chi tiêu trong mỗi ad set; chưa đo similarity hoặc Advantage+." : "Proxy for active/spent creative count per ad set; does not measure similarity or Advantage+ type yet."}
+          </p>
         </div>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-3">
-        <p className="text-sm text-muted-foreground">{assessment.summary[language]}</p>
+        <Badge variant={assessment.variant}>{assessment.label[language]}</Badge>
+      </div>
+      <div className="mt-5 flex flex-col gap-3">
+        <p className="rounded-xl border bg-background/50 p-4 text-sm text-muted-foreground">{assessment.summary[language]}</p>
         {displayAdsets.length > 0 ? (
           <div className="flex flex-col gap-2">
             {displayAdsets.map((adset) => (
-              <div key={adset.adsetId} className="rounded-lg border p-2 text-sm">
+              <div key={adset.adsetId} className="rounded-xl border bg-background/50 px-3 py-2.5 text-sm">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 truncate font-medium">{adset.adsetName}</div>
                   <Badge variant={adset.variant} className="shrink-0 tabular-nums">{adset.creativeCount}</Badge>
@@ -4140,8 +4141,8 @@ function CreativeVolumeCard({ report, language }: { report: DashboardReport; lan
           </div>
         ) : null}
         <DiagnosticNextStep kind="creativeVolume" tone={assessment.status === "insufficient_data" ? "insufficient" : toneFromVariant(assessment.variant)} language={language} />
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
