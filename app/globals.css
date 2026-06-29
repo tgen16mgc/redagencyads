@@ -563,7 +563,8 @@
 .client-report-three-col,
 .client-report-chart-grid,
 .client-report-appendix-grid,
-.client-report-creative-grid {
+.client-report-creative-grid,
+.client-report-mini-table-grid {
   display: grid;
   gap: 3mm;
 }
@@ -573,7 +574,8 @@
 }
 
 .client-report-chart-grid,
-.client-report-appendix-grid {
+.client-report-appendix-grid,
+.client-report-mini-table-grid {
   grid-template-columns: repeat(2, 1fr);
 }
 
@@ -618,10 +620,10 @@
 }
 
 .client-report-chart-card {
-  min-height: 48mm;
+  min-height: 52mm;
   border-radius: 4mm;
   padding: 3.5mm;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .client-report-chart-header {

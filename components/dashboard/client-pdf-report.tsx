@@ -100,10 +100,9 @@ function PerformancePage({ model }: { model: ClientReportViewModel }) {
           <BarList rows={model.topCampaigns.slice(0, 5)} currency={model.currency} metric="spend" />
         </ChartCard>
       </div>
-      <div className="client-report-three-col">
+      <div className="client-report-mini-table-grid">
         <MiniTable title={model.language === "vi" ? "Top campaign" : "Top campaigns"} rows={model.topCampaigns.slice(0, 3)} currency={model.currency} />
         <MiniTable title={model.language === "vi" ? "Top ad set" : "Top ad sets"} rows={model.topAdsets.slice(0, 3)} currency={model.currency} />
-        <MiniTable title={model.language === "vi" ? "Khu vực" : "Regions"} rows={model.breakdowns.regions.slice(0, 3)} currency={model.currency} />
       </div>
     </ReportPage>
   );
@@ -178,8 +177,7 @@ function AppendixDiagnosticsPage({ model }: { model: ClientReportViewModel }) {
           {model.creativeDetails.length ? model.creativeDetails.map((creative) => (
             <div className="client-report-creative-card" key={creative.name}>
               <b>{creative.name}</b>
-              <span>{creative.campaignName}</span>
-              <span>{creative.status} · {creative.adCount} ads</span>
+              <span>{creative.summary}</span>
               <ul>
                 {creative.ads.map((ad) => <li key={ad}>{ad}</li>)}
               </ul>

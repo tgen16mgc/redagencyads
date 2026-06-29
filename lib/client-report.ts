@@ -70,6 +70,8 @@ export type ClientReportViewModel = {
     campaignName: string;
     status: string;
     adCount: number;
+    adCountLabel: string;
+    summary: string;
     ads: string[];
   }>;
 };
@@ -171,12 +173,12 @@ export function buildClientReportViewModel(args: {
       spend: row.spend,
       primary: Number(row[primaryKey] || 0),
     })),
-    topCampaigns: report.campaignRows.slice(0, 8),
-    topAdsets: report.adsetRows.slice(0, 8),
+    topCampaigns: report.campaignRows.slice(0, 4),
+    topAdsets: report.adsetRows.slice(0, 4),
     breakdowns: {
-      platforms: report.platformRows.slice(0, 8),
-      regions: (report.regionRows.length ? report.regionRows : report.countryRows || []).slice(0, 8),
-      ageGender: report.ageGenderRows.slice(0, 8),
+      platforms: report.platformRows.slice(0, 4),
+      regions: (report.regionRows.length ? report.regionRows : report.countryRows || []).slice(0, 4),
+      ageGender: report.ageGenderRows.slice(0, 4),
     },
     tables: [
       { title: args.language === "vi" ? "Campaign" : "Campaigns", rows: report.campaignRows },
@@ -185,13 +187,19 @@ export function buildClientReportViewModel(args: {
       { title: args.language === "vi" ? "Theo ngày" : "Daily", rows: report.dailyRows },
     ],
     diagnostics: report.health.checks,
-    creativeDetails: (report.adsetPreviews || []).map((adset) => ({
-      name: adset.name,
-      campaignName: adset.campaignName,
-      status: adset.status,
-      adCount: adset.ads.length,
-      ads: adset.ads.map((ad) => ad.name || ad.id).slice(0, 6),
-    })),
+    creativeDetails: (report.adsetPreviews || []).map((adset) => {
+      const adCount = adset.ads.length;
+      const adCountLabel = `${adCount} ${adCount === 1 ? "ad" : "ads"}`;
+      return {
+        name: adset.name,
+        campaignName: adset.campaignName,
+        status: adset.status,
+        adCount,
+        adCountLabel,
+        summary: `${adset.campaignName} · ${adset.status} · ${adCountLabel}`,
+        ads: adset.ads.map((ad) => ad.name || ad.id).slice(0, 6),
+      };
+    }),
   };
 }
 

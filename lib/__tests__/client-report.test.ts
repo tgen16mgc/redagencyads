@@ -128,7 +128,35 @@ describe("buildClientReportViewModel", () => {
 
     expect(model.tables.map((table) => table.title)).toEqual(["Campaigns", "Ad sets", "Ads", "Daily"]);
     expect(model.tables[0].rows[0].name).toBe("Lead campaign - HCM");
-    expect(model.creativeDetails[0]).toMatchObject({ name: "Consult retargeting", adCount: 1, ads: ["Testimonial ad"] });
+    expect(model.creativeDetails[0]).toMatchObject({
+      name: "Consult retargeting",
+      adCount: 1,
+      adCountLabel: "1 ad",
+      ads: ["Testimonial ad"],
+      summary: "Lead campaign - HCM · ACTIVE · 1 ad",
+    });
+  });
+
+  it("limits dense chart rows so PDF cards have enough vertical space", () => {
+    const denseRows = Array.from({ length: 6 }, (_, index) => row({ id: `dense-${index}`, name: `Dense row ${index + 1}`, spend: 10_000 - index }));
+    const model = buildClientReportViewModel({
+      report: report({
+        campaignRows: denseRows,
+        adsetRows: denseRows.map((item) => ({ ...item, level: "adset" })),
+        platformRows: denseRows.map((item, index) => ({ ...item, level: "breakdown", platform: `Platform ${index + 1}` })),
+        regionRows: denseRows.map((item, index) => ({ ...item, level: "breakdown", region: `Region ${index + 1}` })),
+        ageGenderRows: denseRows.map((item, index) => ({ ...item, level: "breakdown", age: "25-34", gender: `group ${index + 1}` })),
+      }),
+      compareMode: "off",
+      language: "en",
+      kpis,
+    });
+
+    expect(model.topCampaigns).toHaveLength(4);
+    expect(model.topAdsets).toHaveLength(4);
+    expect(model.breakdowns.platforms).toHaveLength(4);
+    expect(model.breakdowns.regions).toHaveLength(4);
+    expect(model.breakdowns.ageGender).toHaveLength(4);
   });
 
   it("uses Vietnamese report copy when requested", () => {
