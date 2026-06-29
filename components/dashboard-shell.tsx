@@ -40,7 +40,9 @@ import {
   SparklesIcon,
 } from "lucide-react";
 import { AppSidebar, type AppSidebarItem, type WorkflowSidebarItem } from "@/components/dashboard/app-sidebar";
-import { buildClientReportPdf, buildClientReportViewModel, downloadClientReportPdf } from "@/lib/client-report";
+import { ClientPdfReport } from "@/components/dashboard/client-pdf-report";
+import { buildClientReportViewModel, downloadRenderedClientReportPdf } from "@/lib/client-report";
+import { renderClientReportElementToPdf } from "@/lib/client-report-renderer";
 import { CustomChartsSection } from "@/components/dashboard/custom-charts-section";
 import type { AdSetWithPreviews, AiInsightTable, CompareMode, CompetitorFetchResult, CompetitorFetchSource, CompetitorPlatform, CompetitorSpyAd, CompetitorSpyResult, DashboardReport, KpiCard, KpiPack, MetaAccount, MetaCampaign, NormalizedRow, Verdict } from "@/lib/types";
 import { buildWorkflowSteps, type DashboardWorkflowStep } from "@/lib/dashboard-workflow";
@@ -620,7 +622,9 @@ export function DashboardShell() {
   const [loading, setLoading] = React.useState("");
   const [scopeExpanded, setScopeExpanded] = React.useState(false);
   const [aiLoading, setAiLoading] = React.useState({ verdict: false, insights: false });
+  const [exportingPdf, setExportingPdf] = React.useState(false);
   const reportStartRef = React.useRef<HTMLDivElement>(null);
+  const clientReportExportRef = React.useRef<HTMLDivElement>(null);
   const verdictProgress = useTimedProgress(aiLoading.verdict);
   const insightProgress = useTimedProgress(aiLoading.insights);
   const [customKpiKeys, setCustomKpiKeys] = React.useState<CustomKpiKey[] | null>(null);
@@ -959,15 +963,23 @@ export function DashboardShell() {
     window.setTimeout(() => setCopiedPrompt(false), 1500);
   }
 
-  function exportPdf() {
-    if (!report) return;
-    const model = buildClientReportViewModel({ report, previousReport, compareMode, verdict, insights, language, kpis: effectiveKpis });
-    const pdf = buildClientReportPdf(model);
-    downloadClientReportPdf(pdf, {
-      createObjectUrl: (blob) => URL.createObjectURL(blob),
-      revokeObjectUrl: (url) => URL.revokeObjectURL(url),
-      createLink: () => document.createElement("a"),
-    });
+  async function exportPdf() {
+    if (!report || !clientReportExportRef.current) return;
+    setExportingPdf(true);
+    try {
+      const model = buildClientReportViewModel({ report, previousReport, compareMode, verdict, insights, language, kpis: effectiveKpis });
+      await downloadRenderedClientReportPdf(
+        { filename: `${slugifyFilename(model.accountName)}-meta-ads-report-${model.dateRange.since}-to-${model.dateRange.until}.pdf`, element: clientReportExportRef.current },
+        {
+          renderElementToPdf: renderClientReportElementToPdf,
+          createObjectUrl: (blob) => URL.createObjectURL(blob),
+          revokeObjectUrl: (url) => URL.revokeObjectURL(url),
+          createLink: () => document.createElement("a"),
+        },
+      );
+    } finally {
+      setExportingPdf(false);
+    }
   }
 
   function withReportLanguage(prompt: string, lang: ReportLanguage, type: "verdict" | "insights" | "competitor") {
@@ -1001,7 +1013,8 @@ export function DashboardShell() {
   }
 
   return (
-    <SidebarProvider>
+    <>
+      <SidebarProvider>
       <AppSidebar
         activeView={activeView}
         aiProviderLabel={providerLabel(provider, language)}
@@ -1047,8 +1060,8 @@ export function DashboardShell() {
                 </Badge>
                 {activeView === "ads" && report ? <Badge variant="outline">{copy.header.pulled} {new Date(report.pulledAt).toLocaleString()}</Badge> : null}
                 {activeView === "ads" ? (
-                  <Button type="button" variant="outline" onClick={exportPdf} disabled={!report} data-print-hidden>
-                    <DownloadIcon data-icon="inline-start" />
+                  <Button type="button" variant="outline" onClick={exportPdf} disabled={!report || exportingPdf} data-print-hidden>
+                    {exportingPdf ? <Spinner data-icon="inline-start" /> : <DownloadIcon data-icon="inline-start" />}
                     {copy.header.exportPdf}
                   </Button>
                 ) : null}
@@ -1467,7 +1480,21 @@ export function DashboardShell() {
           )}
         </main>
       </SidebarInset>
-    </SidebarProvider>
+      </SidebarProvider>
+      {report ? (
+        <div ref={clientReportExportRef} data-client-report-export-host aria-hidden="true">
+          <ClientPdfReport
+            report={report}
+            previousReport={previousReport}
+            compareMode={compareMode}
+            verdict={verdict}
+            insights={insights}
+            language={language}
+            kpis={effectiveKpis}
+          />
+        </div>
+      ) : null}
+    </>
   );
 }
 
@@ -4799,6 +4826,10 @@ function CompactList({ rows, emptyLabel }: { rows: string[]; emptyLabel: string 
       ))}
     </ol>
   );
+}
+
+function slugifyFilename(value: string) {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "client";
 }
 
 function compactText(value: string, maxLength: number) {

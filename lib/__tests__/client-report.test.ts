@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { buildClientReportPdf, buildClientReportViewModel, downloadClientReportPdf } from "../client-report";
+import { buildClientReportPdf, buildClientReportViewModel, downloadClientReportPdf, downloadRenderedClientReportPdf } from "../client-report";
 import type { DashboardReport, KpiCard, NormalizedRow, Verdict } from "../types";
 
 function row(overrides: Partial<NormalizedRow>): NormalizedRow {
@@ -160,11 +160,18 @@ describe("buildClientReportViewModel", () => {
     expect(pdf.filename).toBe("seoul-beauty-clinic-meta-ads-report-2026-06-01-to-2026-06-26.pdf");
     expect(pdf.blob.type).toBe("application/pdf");
     expect(String.fromCharCode(...bytes.slice(0, 8))).toBe("%PDF-1.3");
-    expect(text).toContain("Meta Ads Performance Report");
+    expect(text).toContain("Meta Ads Performance");
+    expect(text).toContain("Report");
     expect(text).toContain("EXECUTIVE SUMMARY");
     expect(text).toContain("Appendix A");
     expect(text).toContain("Appendix B");
     expect(text).toContain("Appendix C");
+    expect(text).toContain("Lead campaign - HCM");
+    expect(text).toContain("Consult retargeting");
+    expect(text).toContain("instagram");
+    expect(text).toContain("Ho Chi Minh");
+    expect(text).toContain("25-34 female");
+    expect(text).toContain(" re");
     expect(text).toContain("%%EOF");
   });
 
@@ -184,5 +191,26 @@ describe("buildClientReportViewModel", () => {
     expect(link.download).toBe("report.pdf");
     expect(link.click).toHaveBeenCalledOnce();
     expect(runtime.revokeObjectUrl).toHaveBeenCalledWith("blob:report-pdf");
+  });
+
+  it("exports rendered report markup so PDF design follows the React report component", async () => {
+    const reportElement = { outerHTML: "<section class=\"client-pdf-report\"><article>Designed report</article></section>" } as HTMLElement;
+    const pdf = new Blob(["%PDF-1.3\n%%EOF"], { type: "application/pdf" });
+    const link = { href: "", download: "", click: vi.fn() };
+    const runtime = {
+      renderElementToPdf: vi.fn(async () => pdf),
+      createObjectUrl: vi.fn(() => "blob:rendered-report"),
+      revokeObjectUrl: vi.fn(),
+      createLink: vi.fn(() => link),
+    };
+
+    await downloadRenderedClientReportPdf({ filename: "report.pdf", element: reportElement }, runtime);
+
+    expect(runtime.renderElementToPdf).toHaveBeenCalledWith(reportElement);
+    expect(runtime.createObjectUrl).toHaveBeenCalledWith(pdf);
+    expect(link.href).toBe("blob:rendered-report");
+    expect(link.download).toBe("report.pdf");
+    expect(link.click).toHaveBeenCalledOnce();
+    expect(runtime.revokeObjectUrl).toHaveBeenCalledWith("blob:rendered-report");
   });
 });
