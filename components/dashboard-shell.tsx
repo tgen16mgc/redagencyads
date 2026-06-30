@@ -40,9 +40,8 @@ import {
   SparklesIcon,
 } from "lucide-react";
 import { AppSidebar, type AppSidebarItem, type WorkflowSidebarItem } from "@/components/dashboard/app-sidebar";
-import { ClientPdfReport } from "@/components/dashboard/client-pdf-report";
-import { buildClientReportViewModel, downloadRenderedClientReportPdf } from "@/lib/client-report";
-import { renderClientReportElementToPdf } from "@/lib/client-report-renderer";
+import { buildClientReportViewModel, downloadClientReportPdf } from "@/lib/client-report";
+import { buildClientReportPdf } from "@/lib/client-report-pdf";
 import { CustomChartsSection } from "@/components/dashboard/custom-charts-section";
 import type { AdSetWithPreviews, AiInsightTable, CompareMode, CompetitorFetchResult, CompetitorFetchSource, CompetitorPlatform, CompetitorSpyAd, CompetitorSpyResult, DashboardReport, KpiCard, KpiPack, MetaAccount, MetaCampaign, NormalizedRow, Verdict } from "@/lib/types";
 import { buildWorkflowSteps, type DashboardWorkflowStep } from "@/lib/dashboard-workflow";
@@ -624,7 +623,6 @@ export function DashboardShell() {
   const [aiLoading, setAiLoading] = React.useState({ verdict: false, insights: false });
   const [exportingPdf, setExportingPdf] = React.useState(false);
   const reportStartRef = React.useRef<HTMLDivElement>(null);
-  const clientReportExportRef = React.useRef<HTMLDivElement>(null);
   const verdictProgress = useTimedProgress(aiLoading.verdict);
   const insightProgress = useTimedProgress(aiLoading.insights);
   const [customKpiKeys, setCustomKpiKeys] = React.useState<CustomKpiKey[] | null>(null);
@@ -964,19 +962,16 @@ export function DashboardShell() {
   }
 
   async function exportPdf() {
-    if (!report || !clientReportExportRef.current) return;
+    if (!report) return;
     setExportingPdf(true);
     try {
+      await new Promise((resolve) => requestAnimationFrame(() => window.setTimeout(resolve, 0)));
       const model = buildClientReportViewModel({ report, previousReport, compareMode, verdict, insights, language, kpis: effectiveKpis });
-      await downloadRenderedClientReportPdf(
-        { filename: `${slugifyFilename(model.accountName)}-meta-ads-report-${model.dateRange.since}-to-${model.dateRange.until}.pdf`, element: clientReportExportRef.current },
-        {
-          renderElementToPdf: renderClientReportElementToPdf,
-          createObjectUrl: (blob) => URL.createObjectURL(blob),
-          revokeObjectUrl: (url) => URL.revokeObjectURL(url),
-          createLink: () => document.createElement("a"),
-        },
-      );
+      downloadClientReportPdf(buildClientReportPdf(model), {
+        createObjectUrl: (blob) => URL.createObjectURL(blob),
+        revokeObjectUrl: (url) => URL.revokeObjectURL(url),
+        createLink: () => document.createElement("a"),
+      });
     } finally {
       setExportingPdf(false);
     }
@@ -1481,19 +1476,6 @@ export function DashboardShell() {
         </main>
       </SidebarInset>
       </SidebarProvider>
-      {report ? (
-        <div ref={clientReportExportRef} data-client-report-export-host aria-hidden="true">
-          <ClientPdfReport
-            report={report}
-            previousReport={previousReport}
-            compareMode={compareMode}
-            verdict={verdict}
-            insights={insights}
-            language={language}
-            kpis={effectiveKpis}
-          />
-        </div>
-      ) : null}
     </>
   );
 }
@@ -4826,10 +4808,6 @@ function CompactList({ rows, emptyLabel }: { rows: string[]; emptyLabel: string 
       ))}
     </ol>
   );
-}
-
-function slugifyFilename(value: string) {
-  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "client";
 }
 
 function compactText(value: string, maxLength: number) {

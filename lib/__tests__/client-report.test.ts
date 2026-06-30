@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { buildClientReportPdf, buildClientReportViewModel, downloadClientReportPdf, downloadRenderedClientReportPdf } from "../client-report";
+import { buildClientReportViewModel, downloadClientReportPdf } from "../client-report";
+import { buildClientReportPdf } from "../client-report-pdf";
 import type { DashboardReport, KpiCard, NormalizedRow, Verdict } from "../types";
 
 function row(overrides: Partial<NormalizedRow>): NormalizedRow {
@@ -219,26 +220,5 @@ describe("buildClientReportViewModel", () => {
     expect(link.download).toBe("report.pdf");
     expect(link.click).toHaveBeenCalledOnce();
     expect(runtime.revokeObjectUrl).toHaveBeenCalledWith("blob:report-pdf");
-  });
-
-  it("exports rendered report markup so PDF design follows the React report component", async () => {
-    const reportElement = { outerHTML: "<section class=\"client-pdf-report\"><article>Designed report</article></section>" } as HTMLElement;
-    const pdf = new Blob(["%PDF-1.3\n%%EOF"], { type: "application/pdf" });
-    const link = { href: "", download: "", click: vi.fn() };
-    const runtime = {
-      renderElementToPdf: vi.fn(async () => pdf),
-      createObjectUrl: vi.fn(() => "blob:rendered-report"),
-      revokeObjectUrl: vi.fn(),
-      createLink: vi.fn(() => link),
-    };
-
-    await downloadRenderedClientReportPdf({ filename: "report.pdf", element: reportElement }, runtime);
-
-    expect(runtime.renderElementToPdf).toHaveBeenCalledWith(reportElement);
-    expect(runtime.createObjectUrl).toHaveBeenCalledWith(pdf);
-    expect(link.href).toBe("blob:rendered-report");
-    expect(link.download).toBe("report.pdf");
-    expect(link.click).toHaveBeenCalledOnce();
-    expect(runtime.revokeObjectUrl).toHaveBeenCalledWith("blob:rendered-report");
   });
 });
