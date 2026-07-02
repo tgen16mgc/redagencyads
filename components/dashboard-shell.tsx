@@ -22,6 +22,7 @@ import {
 import {
   ActivityIcon,
   BarChart3Icon,
+  CalendarClockIcon,
   BrainIcon,
   CheckIcon,
   ChevronDownIcon,
@@ -44,9 +45,10 @@ import { ClientPdfReport } from "@/components/dashboard/client-pdf-report";
 import { buildClientReportViewModel, downloadRenderedClientReportPdf } from "@/lib/client-report";
 import { renderClientReportElementToPdf } from "@/lib/client-report-renderer";
 import { CustomChartsSection } from "@/components/dashboard/custom-charts-section";
+import { PagePublisherPanel } from "@/components/dashboard/page-publisher-panel";
 import type { AdSetWithPreviews, AiInsightTable, CompareMode, CompetitorFetchResult, CompetitorFetchSource, CompetitorPlatform, CompetitorSpyAd, CompetitorSpyResult, DashboardReport, KpiCard, KpiPack, MetaAccount, MetaCampaign, NormalizedRow, Verdict } from "@/lib/types";
 import { buildWorkflowSteps, type DashboardWorkflowStep } from "@/lib/dashboard-workflow";
-import { canOpenDashboardView, initialDashboardViewFromSearch } from "@/lib/dashboard-access";
+import { canOpenDashboardView, initialDashboardViewFromSearch, shouldLoadAdsWorkspaceData } from "@/lib/dashboard-access";
 import { getCompareRange } from "@/lib/report-ranges";
 import { classifyCreativeFatigue, computeCreativeFatigueBaseline } from "@/lib/creative-fatigue";
 import { assessCreativeVolume } from "@/lib/creative-volume";
@@ -156,6 +158,7 @@ const workflowItems: { value: DashboardWorkflowStep; label: string; icon: React.
 const appSections = [
   { label: "Ads analysis", value: "ads", icon: BarChart3Icon },
   { label: "Competitor spy", value: "competitor", icon: SearchIcon },
+  { label: "Page publisher", value: "publisher", icon: CalendarClockIcon },
 ] as const;
 
 type ActiveView = (typeof appSections)[number]["value"];
@@ -212,6 +215,7 @@ const uiCopy = {
       clearSession: "Clear session",
       ads: "Ads analysis",
       competitor: "Competitor spy",
+      publisher: "Page publisher",
       connect: "Connect",
       select: "Select",
       analyze: "Analyze",
@@ -222,8 +226,11 @@ const uiCopy = {
       adsDetail: "campaign-first analysis",
       competitorCrumb: "Public research",
       competitorDetail: "no token required",
+      publisherCrumb: "Meta Pages API",
+      publisherDetail: "server-side Page publishing",
       adsTitle: "Ads analysis dashboard",
       competitorTitle: "Competitor spy",
+      publisherTitle: "Page publisher",
       session: "HttpOnly token session",
       pulled: "Pulled",
       exportPdf: "Export PDF",
@@ -362,6 +369,7 @@ const uiCopy = {
       clearSession: "Xóa session",
       ads: "Phân tích ads",
       competitor: "Theo dõi đối thủ",
+      publisher: "Đăng bài Page",
       connect: "Kết nối",
       select: "Chọn phạm vi",
       analyze: "Phân tích",
@@ -372,8 +380,11 @@ const uiCopy = {
       adsDetail: "phân tích theo campaign",
       competitorCrumb: "Nghiên cứu công khai",
       competitorDetail: "không cần token",
+      publisherCrumb: "Meta Pages API",
+      publisherDetail: "đăng Page qua server",
       adsTitle: "Dashboard phân tích ads",
       competitorTitle: "Theo dõi đối thủ",
+      publisherTitle: "Đăng bài Page",
       session: "Session token HttpOnly",
       pulled: "Đã kéo",
       exportPdf: "Xuất PDF",
@@ -679,15 +690,31 @@ export function DashboardShell() {
     [language, workflowSteps],
   );
   const headerMode = {
-    badge: activeView === "ads" ? copy.header.adsCrumb : "Public research",
-    description: activeView === "ads"
-      ? language === "vi"
+    ads: {
+      badge: copy.header.adsCrumb,
+      detail: copy.header.adsDetail,
+      title: copy.header.adsTitle,
+      description: language === "vi"
         ? "Theo dõi KPI, chẩn đoán tài khoản và tạo Verdict tối ưu."
-        : "Track KPIs, diagnose account health, and generate optimization Verdicts."
-      : language === "vi"
+        : "Track KPIs, diagnose account health, and generate optimization Verdicts.",
+    },
+    competitor: {
+      badge: copy.header.competitorCrumb,
+      detail: copy.header.competitorDetail,
+      title: copy.header.competitorTitle,
+      description: language === "vi"
         ? "Nghiên cứu ads public của đối thủ mà không cần kết nối token."
         : "Research competitors' public ads without connecting a Meta token.",
-  };
+    },
+    publisher: {
+      badge: copy.header.publisherCrumb,
+      detail: copy.header.publisherDetail,
+      title: copy.header.publisherTitle,
+      description: language === "vi"
+        ? "Đăng ngay hoặc lên lịch bài Facebook Page bằng token Meta đang kết nối."
+        : "Publish now or schedule Facebook Page posts with the connected Meta token.",
+    },
+  }[activeView];
 
   React.useEffect(() => {
     window.localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
@@ -724,7 +751,7 @@ export function DashboardShell() {
       .then(async (data) => {
         if (cancelled) return;
         setAuthenticated(data.authenticated);
-        if (data.authenticated) void loadAccounts();
+        if (shouldLoadAdsWorkspaceData({ authenticated: data.authenticated, activeView })) void loadAccounts();
       })
       .catch((err) => {
         if (cancelled) return;
@@ -734,7 +761,7 @@ export function DashboardShell() {
     return () => {
       cancelled = true;
     };
-  }, [loadAccounts]);
+  }, [activeView, loadAccounts]);
 
   React.useEffect(() => {
     if (!accountId) return;
@@ -760,7 +787,7 @@ export function DashboardShell() {
       });
       setAuthenticated(true);
       setToken("");
-      await loadAccounts();
+      if (shouldLoadAdsWorkspaceData({ authenticated: true, activeView })) await loadAccounts();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not validate token.");
     } finally {
@@ -1042,12 +1069,10 @@ export function DashboardShell() {
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                     <Badge variant="secondary" className="shrink-0">{headerMode.badge}</Badge>
-                    <span className="flex items-center gap-1">
-                      {activeView === "ads" ? copy.header.adsDetail : copy.header.competitorDetail}
-                    </span>
+                    <span className="flex items-center gap-1">{headerMode.detail}</span>
                   </div>
                   <h1 className="mt-2 font-heading text-2xl font-semibold tracking-[-0.035em] md:text-3xl">
-                    {activeView === "ads" ? copy.header.adsTitle : copy.header.competitorTitle}
+                    {headerMode.title}
                   </h1>
                   <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">{headerMode.description}</p>
                 </div>
@@ -1445,6 +1470,8 @@ export function DashboardShell() {
             </div>
           ) : null}
             </>
+          ) : activeView === "publisher" ? (
+            <PagePublisherPanel language={language} />
           ) : (
             <CompetitorSpyPanel
               names={competitorNames}
@@ -3148,7 +3175,7 @@ function SpyAdsPanel({
 }
 
 function appSectionLabel(value: ActiveView, language: ReportLanguage) {
-  return value === "ads" ? uiCopy[language].nav.ads : uiCopy[language].nav.competitor;
+  return uiCopy[language].nav[value];
 }
 
 function workflowLabel(value: (typeof workflowItems)[number]["value"], language: ReportLanguage) {

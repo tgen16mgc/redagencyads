@@ -12,6 +12,28 @@ export type MetaAccount = {
   timezone_name?: string;
 };
 
+export type MetaPage = {
+  id: string;
+  name: string;
+  category?: string;
+  tasks?: string[];
+};
+
+export type PagePostMode = "publish_now" | "scheduled";
+export type PagePostStatus = "submitted" | "scheduled" | "published" | "failed";
+
+export type PagePostSubmission = {
+  pageId: string;
+  pageName: string;
+  metaPostId: string;
+  message?: string;
+  link?: string;
+  mode: PagePostMode;
+  status: PagePostStatus;
+  scheduledFor?: string;
+  createdAt: string;
+};
+
 export type MetaCampaign = {
   id: string;
   name: string;
