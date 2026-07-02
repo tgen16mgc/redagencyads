@@ -1,7 +1,8 @@
 import { FACEBOOK_PAGE_PUBLISHING_SETUP_MESSAGE, type MediaAttachment, type MetaPage, type PagePostMode, type PagePostSubmission, type PublishTarget } from "@/lib/types";
 
 const graphVersion = () => process.env.META_GRAPH_VERSION || "v22.0";
-const pagePostPermissions = ["pages_show_list", "pages_read_engagement", "pages_manage_posts"];
+const pagePublishingPermissions = ["pages_read_engagement", "pages_manage_posts"];
+const pageSetupPermissions = ["pages_show_list", ...pagePublishingPermissions];
 const instagramPostPermissions = ["instagram_basic", "instagram_content_publish"];
 
 type MetaPageWithToken = MetaPage & {
@@ -106,7 +107,7 @@ async function getPermissions(token: string) {
 }
 
 function decoratePage(page: MetaPageWithToken, permissions: Set<string>): MetaPageWithToken {
-  const pageMissing = missingPermissions(permissions, pagePostPermissions);
+  const pageMissing = missingPermissions(permissions, pageSetupPermissions);
   const instagramMissing = missingPermissions(permissions, instagramPostPermissions);
   const instagramBusinessAccount = page.instagram_business_account;
   const pageTaskIssues = page.tasks?.includes("CREATE_CONTENT") ? [] : ["Your Page role is missing the CREATE_CONTENT task."];
@@ -176,7 +177,7 @@ function validateSchedule(mode: PagePostMode, scheduledFor?: string) {
 }
 
 function assertFacebookReady(page: MetaPageWithToken, permissions: Set<string>) {
-  const missing = missingPermissions(permissions, pagePostPermissions);
+  const missing = missingPermissions(permissions, pagePublishingPermissions);
   if (missing.length) throw new Error(FACEBOOK_PAGE_PUBLISHING_SETUP_MESSAGE);
   if (!page.tasks?.includes("CREATE_CONTENT")) throw new Error(FACEBOOK_PAGE_PUBLISHING_SETUP_MESSAGE);
 }

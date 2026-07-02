@@ -144,6 +144,36 @@ describe("publishPageFeedPost", () => {
     expect(body.has("scheduled_publish_time")).toBe(false);
   });
 
+  it("publishes when Page discovery succeeded without pages_show_list in granted permissions", async () => {
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValueOnce(permissionsResponse(["pages_read_engagement", "pages_manage_posts"]))
+      .mockResolvedValueOnce(
+        graphResponse({
+          data: [
+            {
+              id: "page_1",
+              name: "Ready Page",
+              tasks: ["CREATE_CONTENT"],
+              access_token: "page-token-1",
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(graphResponse({ id: "page_1_123" }));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await expect(
+      publishPageFeedPost({
+        token: "user-token",
+        pageId: "page_1",
+        message: "Launch post",
+        mode: "publish_now",
+      }),
+    ).resolves.toMatchObject({ metaPostId: "page_1_123" });
+    expect(String(fetchSpy.mock.calls[2][0])).toContain("/v22.0/page_1/feed");
+  });
+
   it("schedules a Page feed post with Meta scheduled_publish_time", async () => {
     const scheduledFor = new Date(Date.now() + 20 * 60 * 1000).toISOString();
     const fetchSpy = vi
