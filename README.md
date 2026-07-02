@@ -226,6 +226,9 @@ Useful:
 
 ```bash
 META_GRAPH_VERSION=v22.0
+META_APP_ID=
+META_APP_SECRET=
+META_OAUTH_REDIRECT_URI=
 NINEROUTER_URL=http://localhost:20128
 NINEROUTER_KEY=
 NINEROUTER_MODEL=mhyc
@@ -237,6 +240,8 @@ APIFY_TOKEN=
 APIFY_META_ADS_ACTOR_ID=
 APIFY_META_ADS_INPUT_TEMPLATE=
 ```
+
+Facebook Login needs a Meta app with Facebook Login enabled, `META_APP_ID`, `META_APP_SECRET`, and a valid OAuth redirect URI matching `META_OAUTH_REDIRECT_URI` or `/api/auth/facebook/callback` on the current origin. Request `pages_show_list`, `pages_read_engagement`, and `pages_manage_posts`; real users outside app admins/testers may require Meta App Review, and the Facebook user still needs `CREATE_CONTENT` Page access.
 
 No 9router key means Verdict and Insights still return local rule-based output. No Apify vars means competitor fetch uses public no-key scraping and keeps Meta Ad Library links as fallback evidence.
 

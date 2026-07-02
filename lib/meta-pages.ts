@@ -1,8 +1,8 @@
 import { FACEBOOK_PAGE_PUBLISHING_SETUP_MESSAGE, type MediaAttachment, type MetaPage, type PagePostMode, type PagePostSubmission, type PublishTarget } from "@/lib/types";
 
 const graphVersion = () => process.env.META_GRAPH_VERSION || "v22.0";
-const pagePublishingPermissions = ["pages_read_engagement", "pages_manage_posts"];
-const pageSetupPermissions = ["pages_show_list", ...pagePublishingPermissions];
+export const pagePublishingPermissions = ["pages_read_engagement", "pages_manage_posts"];
+export const pageSetupPermissions = ["pages_show_list", ...pagePublishingPermissions];
 const instagramPostPermissions = ["instagram_basic", "instagram_content_publish"];
 
 type MetaPageWithToken = MetaPage & {
