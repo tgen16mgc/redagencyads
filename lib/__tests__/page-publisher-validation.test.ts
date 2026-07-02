@@ -46,6 +46,38 @@ describe("validatePagePostDraft", () => {
     ).toBe("Instagram posts require an image, video, or GIF attachment.");
   });
 
+  it("allows ordered multi-image media for Facebook only", () => {
+    const mediaItems = [
+      { type: "image" as const, url: "https://cdn.example.com/first.jpg" },
+      { type: "gif" as const, url: "https://cdn.example.com/second.gif" },
+    ];
+
+    expect(validatePagePostDraft({ pageId: "page_1", message: "Photos", link: "", mode: "publish_now", scheduledFor: "", target: "facebook", mediaItems })).toBeNull();
+    expect(validatePagePostDraft({ pageId: "page_1", message: "Photos", link: "", mode: "publish_now", scheduledFor: "", target: "instagram", mediaItems })).toBe(
+      "Multiple media attachments are only supported for Facebook posts right now.",
+    );
+    expect(validatePagePostDraft({ pageId: "page_1", message: "Photos", link: "", mode: "publish_now", scheduledFor: "", target: "both", mediaItems })).toBe(
+      "Multiple media attachments are only supported for Facebook posts right now.",
+    );
+  });
+
+  it("rejects Facebook multi-media posts containing video", () => {
+    expect(
+      validatePagePostDraft({
+        pageId: "page_1",
+        message: "Mixed",
+        link: "",
+        mode: "publish_now",
+        scheduledFor: "",
+        target: "facebook",
+        mediaItems: [
+          { type: "image", url: "https://cdn.example.com/photo.jpg" },
+          { type: "video", url: "https://cdn.example.com/video.mp4" },
+        ],
+      }),
+    ).toBe("Multiple media Facebook posts can only use images or GIFs.");
+  });
+
   it("rejects scheduled Instagram or both-target posts because the app has no durable scheduler", () => {
     const now = new Date("2026-07-02T12:00").getTime();
 

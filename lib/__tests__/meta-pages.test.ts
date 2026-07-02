@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { FACEBOOK_PAGE_PUBLISHING_SETUP_MESSAGE } from "../types";
 import { getPages, publishPageFeedPost } from "../meta-pages";
 
 function graphResponse(body: unknown, ok = true, status = 200) {
@@ -11,7 +12,7 @@ function permissionsResponse(permissions: string[]) {
   });
 }
 
-const pagePermissions = ["pages_read_engagement", "pages_manage_posts"];
+const pagePermissions = ["pages_show_list", "pages_read_engagement", "pages_manage_posts"];
 const allPermissions = [...pagePermissions, "instagram_basic", "instagram_content_publish"];
 
 describe("getPages", () => {
@@ -207,7 +208,7 @@ describe("publishPageFeedPost", () => {
 
     await expect(
       publishPageFeedPost({ token: "user-token", pageId: "page_1", message: "Hello", mode: "publish_now" }),
-    ).rejects.toThrow("Reconnect Meta with pages_manage_posts to publish Facebook Page posts.");
+    ).rejects.toThrow(FACEBOOK_PAGE_PUBLISHING_SETUP_MESSAGE);
 
     expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
@@ -238,7 +239,7 @@ describe("publishPageFeedPost", () => {
 
     await expect(
       publishPageFeedPost({ token: "user-token", pageId: "page_1", message: "Hello", mode: "publish_now" }),
-    ).rejects.toThrow("Meta rejected the Facebook Page post. Confirm this app has pages_read_engagement and pages_manage_posts approved and that your user is an admin for the selected Page.");
+    ).rejects.toThrow(FACEBOOK_PAGE_PUBLISHING_SETUP_MESSAGE);
   });
 
   it("publishes image and GIF media through the Page photos endpoint", async () => {
@@ -298,6 +299,108 @@ describe("publishPageFeedPost", () => {
     expect(body.get("caption")).toBe("Local photo");
     expect(body.get("source")).toBe(file);
     expect(result.media).toEqual({ type: "image", url: undefined, name: "photo.jpg" });
+  });
+
+  it("publishes ordered multi-photo Facebook posts through unpublished photo attachments", async () => {
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValueOnce(permissionsResponse(pagePermissions))
+      .mockResolvedValueOnce(
+        graphResponse({
+          data: [{ id: "page_1", name: "Ready Page", tasks: ["CREATE_CONTENT"], access_token: "page-token-1" }],
+        }),
+      )
+      .mockResolvedValueOnce(graphResponse({ id: "photo_first" }))
+      .mockResolvedValueOnce(graphResponse({ id: "photo_second" }))
+      .mockResolvedValueOnce(graphResponse({ id: "feed_1" }));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const result = await publishPageFeedPost({
+      token: "user-token",
+      pageId: "page_1",
+      message: "Carousel copy",
+      mode: "publish_now",
+      target: "facebook",
+      mediaItems: [
+        { type: "image", url: "https://cdn.example.com/first.jpg" },
+        { type: "gif", url: "https://cdn.example.com/second.gif" },
+      ],
+    });
+
+    expect(String(fetchSpy.mock.calls[2][0])).toContain("/v22.0/page_1/photos");
+    expect(String(fetchSpy.mock.calls[3][0])).toContain("/v22.0/page_1/photos");
+    expect(String(fetchSpy.mock.calls[4][0])).toContain("/v22.0/page_1/feed");
+    const firstPhotoBody = fetchSpy.mock.calls[2][1]?.body as URLSearchParams;
+    const secondPhotoBody = fetchSpy.mock.calls[3][1]?.body as URLSearchParams;
+    const feedBody = fetchSpy.mock.calls[4][1]?.body as URLSearchParams;
+    expect(firstPhotoBody.get("published")).toBe("false");
+    expect(firstPhotoBody.get("url")).toBe("https://cdn.example.com/first.jpg");
+    expect(secondPhotoBody.get("url")).toBe("https://cdn.example.com/second.gif");
+    expect(feedBody.get("message")).toBe("Carousel copy");
+    expect(feedBody.get("attached_media[0]")).toBe(JSON.stringify({ media_fbid: "photo_first" }));
+    expect(feedBody.get("attached_media[1]")).toBe(JSON.stringify({ media_fbid: "photo_second" }));
+    expect(result.metaPostId).toBe("feed_1");
+    expect(result.mediaItems).toEqual([
+      { type: "image", url: "https://cdn.example.com/first.jpg", name: undefined },
+      { type: "gif", url: "https://cdn.example.com/second.gif", name: undefined },
+    ]);
+  });
+
+  it("adds temporary photo uploads for scheduled multi-photo Facebook posts", async () => {
+    const scheduledFor = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValueOnce(permissionsResponse(pagePermissions))
+      .mockResolvedValueOnce(
+        graphResponse({
+          data: [{ id: "page_1", name: "Ready Page", tasks: ["CREATE_CONTENT"], access_token: "page-token-1" }],
+        }),
+      )
+      .mockResolvedValueOnce(graphResponse({ id: "photo_first" }))
+      .mockResolvedValueOnce(graphResponse({ id: "photo_second" }))
+      .mockResolvedValueOnce(graphResponse({ id: "feed_1" }));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await publishPageFeedPost({
+      token: "user-token",
+      pageId: "page_1",
+      message: "Scheduled carousel",
+      mode: "scheduled",
+      scheduledFor,
+      target: "facebook",
+      mediaItems: [
+        { type: "image", url: "https://cdn.example.com/first.jpg" },
+        { type: "image", url: "https://cdn.example.com/second.jpg" },
+      ],
+    });
+
+    const firstPhotoBody = fetchSpy.mock.calls[2][1]?.body as URLSearchParams;
+    const secondPhotoBody = fetchSpy.mock.calls[3][1]?.body as URLSearchParams;
+    const feedBody = fetchSpy.mock.calls[4][1]?.body as URLSearchParams;
+    expect(firstPhotoBody.get("temporary")).toBe("true");
+    expect(secondPhotoBody.get("temporary")).toBe("true");
+    expect(feedBody.get("published")).toBe("false");
+    expect(feedBody.get("scheduled_publish_time")).toBe(String(Math.floor(new Date(scheduledFor).getTime() / 1000)));
+  });
+
+  it("rejects multiple media with videos before calling Meta", async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await expect(
+      publishPageFeedPost({
+        token: "user-token",
+        pageId: "page_1",
+        message: "Mixed media",
+        mode: "publish_now",
+        target: "facebook",
+        mediaItems: [
+          { type: "image", url: "https://cdn.example.com/photo.jpg" },
+          { type: "video", url: "https://cdn.example.com/video.mp4" },
+        ],
+      }),
+    ).rejects.toThrow("Multiple media Facebook posts can only use images or GIFs.");
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it("rejects scheduled both-target posts before any partial publish", async () => {

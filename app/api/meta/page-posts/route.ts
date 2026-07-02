@@ -15,6 +15,8 @@ const mediaSchema = z.object({
   file: z.instanceof(File).optional(),
 });
 
+const mediaItemsSchema = z.array(mediaSchema).min(1);
+
 const pagePostItemSchema = z
   .object({
     pageId: z.string().min(1),
@@ -30,15 +32,23 @@ const pagePostItemSchema = z
     scheduledFor: z.string().optional(),
     target: z.enum(["facebook", "instagram", "both"]).default("facebook"),
     media: mediaSchema.optional(),
+    mediaItems: mediaItemsSchema.optional(),
   })
   .superRefine((value, ctx) => {
-    if (!value.message && !value.link && !value.media) {
+    const mediaItems = normalizeMediaItems(value.mediaItems, value.media);
+    if (!value.message && !value.link && mediaItems.length === 0) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Message, link, or media is required." });
     }
-    if ((value.target === "instagram" || value.target === "both") && !value.media) {
+    if ((value.target === "instagram" || value.target === "both") && mediaItems.length === 0) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Instagram posts require an image, video, or GIF attachment." });
     }
-    if (value.target === "instagram" && value.mode === "scheduled") {
+    if ((value.target === "instagram" || value.target === "both") && mediaItems.length > 1) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Multiple media attachments are only supported for Facebook posts right now." });
+    }
+    if (value.target === "facebook" && mediaItems.length > 1 && mediaItems.some((item) => item.type === "video")) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Multiple media Facebook posts can only use images or GIFs." });
+    }
+    if ((value.target === "instagram" || value.target === "both") && value.mode === "scheduled") {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Instagram scheduling is not available here yet; use Facebook or publish now." });
     }
   });
@@ -47,8 +57,19 @@ const pagePostSchema = z.union([pagePostItemSchema, z.object({ items: z.array(pa
 
 type PagePostItem = z.infer<typeof pagePostItemSchema>;
 
+type MediaMetadata = z.infer<typeof mediaSchema> & { fileIndex?: number };
+
 function errorMessage(error: unknown, fallback = "Unable to submit Page post.") {
   return error instanceof Error ? error.message : fallback;
+}
+
+function normalizeMediaItems(mediaItems?: Array<z.infer<typeof mediaSchema>>, media?: z.infer<typeof mediaSchema>) {
+  return (mediaItems?.length ? mediaItems : media ? [media] : []).filter((item) => item.url || item.file);
+}
+
+function parseMediaItemsMetadata(value: FormDataEntryValue | null): MediaMetadata[] | undefined {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  return JSON.parse(value) as MediaMetadata[];
 }
 
 async function parseBody(request: Request) {
@@ -56,7 +77,13 @@ async function parseBody(request: Request) {
   if (!contentType.includes("multipart/form-data")) return pagePostSchema.parse(await request.json());
 
   const formData = await request.formData();
+  const mediaFiles = formData.getAll("mediaFiles").filter((file): file is File => file instanceof File);
   const mediaFile = formData.get("mediaFile");
+  const mediaItems = parseMediaItemsMetadata(formData.get("mediaItems"))?.map((item) => {
+    const file = typeof item.fileIndex === "number" ? mediaFiles[item.fileIndex] : undefined;
+    return file ? { type: item.type, name: file.name, file } : { type: item.type, url: item.url, name: item.name };
+  });
+
   return pagePostItemSchema.parse({
     pageId: String(formData.get("pageId") || ""),
     message: String(formData.get("message") || ""),
@@ -64,11 +91,16 @@ async function parseBody(request: Request) {
     mode: String(formData.get("mode") || "publish_now"),
     scheduledFor: String(formData.get("scheduledFor") || "") || undefined,
     target: String(formData.get("target") || "facebook"),
-    media: mediaFile instanceof File ? { type: String(formData.get("mediaType") || "image"), name: mediaFile.name, file: mediaFile } : undefined,
+    media:
+      mediaFile instanceof File
+        ? { type: String(formData.get("mediaType") || "image"), name: mediaFile.name, file: mediaFile }
+        : undefined,
+    mediaItems,
   });
 }
 
 function publishItem(token: string, item: PagePostItem) {
+  const mediaItems = item.mediaItems ? normalizeMediaItems(item.mediaItems, item.media) : undefined;
   return publishPageFeedPost({
     token,
     pageId: item.pageId,
@@ -78,6 +110,7 @@ function publishItem(token: string, item: PagePostItem) {
     scheduledFor: item.scheduledFor,
     target: item.target,
     media: item.media,
+    ...(mediaItems ? { mediaItems } : {}),
   });
 }
 

@@ -1,7 +1,7 @@
-import type { MediaAttachment, MetaPage, PagePostMode, PagePostSubmission, PublishTarget } from "@/lib/types";
+import { FACEBOOK_PAGE_PUBLISHING_SETUP_MESSAGE, type MediaAttachment, type MetaPage, type PagePostMode, type PagePostSubmission, type PublishTarget } from "@/lib/types";
 
 const graphVersion = () => process.env.META_GRAPH_VERSION || "v22.0";
-const pagePostPermissions = ["pages_read_engagement", "pages_manage_posts"];
+const pagePostPermissions = ["pages_show_list", "pages_read_engagement", "pages_manage_posts"];
 const instagramPostPermissions = ["instagram_basic", "instagram_content_publish"];
 
 type MetaPageWithToken = MetaPage & {
@@ -49,6 +49,14 @@ function mediaForClient(media?: MediaAttachment) {
   return { type: media.type, url: media.url, name: media.name };
 }
 
+function normalizeMediaItems(mediaItems?: MediaAttachment[], media?: MediaAttachment) {
+  return (mediaItems?.length ? mediaItems : media ? [media] : []).filter((item) => item.url || item.file);
+}
+
+function mediaItemsForClient(mediaItems: MediaAttachment[]) {
+  return mediaItems.map((item) => ({ type: item.type, url: item.url, name: item.name }));
+}
+
 function appendSchedule(body: URLSearchParams | FormData, mode: PagePostMode, scheduledAt?: number) {
   if (mode === "scheduled" && scheduledAt) {
     body.set("published", "false");
@@ -64,15 +72,14 @@ function missingPermissions(permissions: Set<string>, required: string[]) {
   return required.filter((permission) => !permissions.has(permission));
 }
 
-function formatMissingPagePermission(permission: string) {
-  return `Reconnect Meta with ${permission} to publish Facebook Page posts.`;
-}
-
 function normalizeGraphError(error: MetaGraphError | undefined, context: "facebook" | "instagram") {
   const message = error?.message || "Meta Graph request failed.";
   const lower = message.toLowerCase();
-  if (error?.code === 200 || lower.includes("pages_manage_posts") || lower.includes("pages_read_engagement")) {
-    return "Meta rejected the Facebook Page post. Confirm this app has pages_read_engagement and pages_manage_posts approved and that your user is an admin for the selected Page.";
+  if (
+    context === "facebook" &&
+    (error?.code === 200 || lower.includes("pages_manage_posts") || lower.includes("pages_read_engagement") || lower.includes("pages_show_list") || lower.includes("permission"))
+  ) {
+    return FACEBOOK_PAGE_PUBLISHING_SETUP_MESSAGE;
   }
   if (lower.includes("instagram_basic") || lower.includes("instagram_content_publish") || lower.includes("permission")) {
     return "Meta rejected the Instagram post. Confirm this app has instagram_basic and instagram_content_publish approved and that the selected Page is linked to an Instagram business account.";
@@ -170,8 +177,8 @@ function validateSchedule(mode: PagePostMode, scheduledFor?: string) {
 
 function assertFacebookReady(page: MetaPageWithToken, permissions: Set<string>) {
   const missing = missingPermissions(permissions, pagePostPermissions);
-  if (missing.length) throw new Error(formatMissingPagePermission(missing[0]));
-  if (!page.tasks?.includes("CREATE_CONTENT")) throw new Error("Selected Page is missing the CREATE_CONTENT task for your user.");
+  if (missing.length) throw new Error(FACEBOOK_PAGE_PUBLISHING_SETUP_MESSAGE);
+  if (!page.tasks?.includes("CREATE_CONTENT")) throw new Error(FACEBOOK_PAGE_PUBLISHING_SETUP_MESSAGE);
 }
 
 function assertInstagramReady(page: MetaPageWithToken, permissions: Set<string>, media?: MediaAttachment, mode?: PagePostMode) {
@@ -184,37 +191,78 @@ function assertInstagramReady(page: MetaPageWithToken, permissions: Set<string>,
   }
 }
 
+async function uploadUnpublishedPhoto(
+  page: MetaPageWithToken & Required<Pick<MetaPageWithToken, "access_token">>,
+  media: MediaAttachment,
+  scheduled: boolean,
+) {
+  let body: URLSearchParams | FormData = new URLSearchParams({ access_token: page.access_token, published: "false" });
+  if (media.file) {
+    body = new FormData();
+    body.set("access_token", page.access_token);
+    body.set("published", "false");
+    body.set("source", media.file);
+  } else if (media.url) {
+    body.set("url", media.url);
+  } else {
+    throw new Error("Facebook image and GIF posts require a media URL or file.");
+  }
+  if (scheduled) body.set("temporary", "true");
+
+  const response = await fetch(graphUrl(`/${page.id}/photos`, {}), { method: "POST", body });
+  const json = await graphJson<{ id: string }>(response, "facebook");
+  return json.id;
+}
+
 async function publishFacebook(input: {
   page: MetaPageWithToken & Required<Pick<MetaPageWithToken, "access_token">>;
   message?: string;
   link?: string;
-  media?: MediaAttachment;
+  mediaItems: MediaAttachment[];
   mode: PagePostMode;
   scheduledAt?: number;
 }) {
+  if (input.mediaItems.length > 1) {
+    if (input.mediaItems.some((item) => item.type === "video")) throw new Error("Multiple media Facebook posts can only use images or GIFs.");
+    const photoIds = [];
+    for (const media of input.mediaItems) {
+      photoIds.push(await uploadUnpublishedPhoto(input.page, media, input.mode === "scheduled"));
+    }
+    const body = new URLSearchParams({ access_token: input.page.access_token });
+    if (input.message) body.set("message", input.message);
+    if (input.link) body.set("link", input.link);
+    photoIds.forEach((id, index) => body.set(`attached_media[${index}]`, JSON.stringify({ media_fbid: id })));
+    appendSchedule(body, input.mode, input.scheduledAt);
+
+    const response = await fetch(graphUrl(`/${input.page.id}/feed`, {}), { method: "POST", body });
+    const json = await graphJson<{ id: string }>(response, "facebook");
+    return json.id;
+  }
+
+  const media = input.mediaItems[0];
   let path = `/${input.page.id}/feed`;
   let body: URLSearchParams | FormData = new URLSearchParams({ access_token: input.page.access_token });
 
-  if (input.media?.type === "image" || input.media?.type === "gif") {
+  if (media?.type === "image" || media?.type === "gif") {
     path = `/${input.page.id}/photos`;
-    if (input.media.file) {
+    if (media.file) {
       body = new FormData();
       body.set("access_token", input.page.access_token);
-      body.set("source", input.media.file);
-    } else if (input.media.url) {
-      body.set("url", input.media.url);
+      body.set("source", media.file);
+    } else if (media.url) {
+      body.set("url", media.url);
     } else {
       throw new Error("Facebook image and GIF posts require a media URL or file.");
     }
     if (input.message) body.set("caption", input.message);
-  } else if (input.media?.type === "video") {
+  } else if (media?.type === "video") {
     path = `/${input.page.id}/videos`;
-    if (input.media.file) {
+    if (media.file) {
       body = new FormData();
       body.set("access_token", input.page.access_token);
-      body.set("source", input.media.file);
-    } else if (input.media.url) {
-      body.set("file_url", input.media.url);
+      body.set("source", media.file);
+    } else if (media.url) {
+      body.set("file_url", media.url);
     } else {
       throw new Error("Facebook video posts require a media URL or file.");
     }
@@ -258,12 +306,20 @@ export async function publishPageFeedPost(input: {
   scheduledFor?: string;
   target?: PublishTarget;
   media?: MediaAttachment;
+  mediaItems?: MediaAttachment[];
 }): Promise<PagePostSubmission> {
-  if (!input.message && !input.link && !input.media) {
+  const mediaItems = normalizeMediaItems(input.mediaItems, input.media);
+  if (!input.message && !input.link && mediaItems.length === 0) {
     throw new Error("Message, link, or media is required.");
   }
 
   const target = input.target || "facebook";
+  if ((target === "instagram" || target === "both") && mediaItems.length > 1) {
+    throw new Error("Multiple media attachments are only supported for Facebook posts right now.");
+  }
+  if (target === "facebook" && mediaItems.length > 1 && mediaItems.some((item) => item.type === "video")) {
+    throw new Error("Multiple media Facebook posts can only use images or GIFs.");
+  }
   if ((target === "instagram" || target === "both") && input.mode === "scheduled") {
     throw new Error("Instagram scheduling is not available here yet; use Facebook or publish now.");
   }
@@ -280,7 +336,7 @@ export async function publishPageFeedPost(input: {
       page,
       message: input.message,
       link: input.link,
-      media: input.media,
+      mediaItems,
       mode: input.mode,
       scheduledAt,
     });
@@ -288,8 +344,9 @@ export async function publishPageFeedPost(input: {
   }
 
   if (target === "instagram" || target === "both") {
-    assertInstagramReady(page, permissions, input.media, input.mode);
-    const metaPostId = await publishInstagram({ token: input.token, page, message: input.message, media: input.media as MediaAttachment });
+    const media = mediaItems[0];
+    assertInstagramReady(page, permissions, media, input.mode);
+    const metaPostId = await publishInstagram({ token: input.token, page, message: input.message, media: media as MediaAttachment });
     results.push({ target: "instagram", metaPostId, status: "submitted" });
   }
 
@@ -304,7 +361,8 @@ export async function publishPageFeedPost(input: {
     link: input.link,
     mode: input.mode,
     target,
-    media: mediaForClient(input.media),
+    media: mediaForClient(mediaItems[0]),
+    mediaItems: mediaItemsForClient(mediaItems),
     status: input.mode === "scheduled" ? "scheduled" : "submitted",
     results,
     scheduledFor: input.scheduledFor,

@@ -12,6 +12,9 @@ export type MetaAccount = {
   timezone_name?: string;
 };
 
+export const FACEBOOK_PAGE_PUBLISHING_SETUP_MESSAGE =
+  "Reconnect Meta with pages_show_list, pages_read_engagement, and pages_manage_posts, and make sure your user has CREATE_CONTENT access to the selected Page.";
+
 export type PublishTarget = "facebook" | "instagram" | "both";
 export type MediaAttachmentType = "image" | "video" | "gif";
 
@@ -74,6 +77,7 @@ export type PagePostSubmission = {
   mode: PagePostMode;
   target: PublishTarget;
   media?: Omit<MediaAttachment, "file">;
+  mediaItems?: Array<Omit<MediaAttachment, "file">>;
   status: PagePostStatus;
   results?: PagePostTargetResult[];
   scheduledFor?: string;

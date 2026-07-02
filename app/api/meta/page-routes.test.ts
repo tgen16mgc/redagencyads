@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { FACEBOOK_PAGE_PUBLISHING_SETUP_MESSAGE } from "@/lib/types";
 
 const { requireToken, getPages, publishPageFeedPost } = vi.hoisted(() => ({
   requireToken: vi.fn(),
@@ -68,6 +69,46 @@ describe("Meta Pages API routes", () => {
     });
   });
 
+  it("passes ordered mediaItems payloads to the publisher", async () => {
+    publishPageFeedPost.mockResolvedValue({
+      pageId: "page_1",
+      pageName: "Ready Page",
+      metaPostId: "feed_1",
+      message: "Hello",
+      mode: "publish_now",
+      target: "facebook",
+      status: "submitted",
+      createdAt: "2026-07-02T00:00:00.000Z",
+    });
+    const { POST } = await import("./page-posts/route");
+
+    const response = await POST(
+      new Request("http://localhost/api/meta/page-posts", {
+        method: "POST",
+        body: JSON.stringify({
+          pageId: "page_1",
+          message: "Hello",
+          mode: "publish_now",
+          target: "facebook",
+          mediaItems: [
+            { type: "image", url: "https://cdn.example.com/first.jpg" },
+            { type: "gif", url: "https://cdn.example.com/second.gif" },
+          ],
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(publishPageFeedPost).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mediaItems: [
+          { type: "image", url: "https://cdn.example.com/first.jpg" },
+          { type: "gif", url: "https://cdn.example.com/second.gif" },
+        ],
+      }),
+    );
+  });
+
   it("passes media URL payloads to the publisher", async () => {
     publishPageFeedPost.mockResolvedValue({
       pageId: "page_1",
@@ -133,6 +174,48 @@ describe("Meta Pages API routes", () => {
     );
   });
 
+  it("passes multipart mediaItems files to the publisher in metadata order", async () => {
+    const first = new File(["first"], "first.jpg", { type: "image/jpeg" });
+    const second = new File(["second"], "second.gif", { type: "image/gif" });
+    const formData = new FormData();
+    formData.set("pageId", "page_1");
+    formData.set("message", "Hello");
+    formData.set("mode", "publish_now");
+    formData.set("target", "facebook");
+    formData.append("mediaFiles", first);
+    formData.append("mediaFiles", second);
+    formData.set(
+      "mediaItems",
+      JSON.stringify([
+        { type: "gif", fileIndex: 1 },
+        { type: "image", fileIndex: 0 },
+      ]),
+    );
+    publishPageFeedPost.mockResolvedValue({
+      pageId: "page_1",
+      pageName: "Ready Page",
+      metaPostId: "feed_1",
+      message: "Hello",
+      mode: "publish_now",
+      target: "facebook",
+      status: "submitted",
+      createdAt: "2026-07-02T00:00:00.000Z",
+    });
+    const { POST } = await import("./page-posts/route");
+
+    const response = await POST(new Request("http://localhost/api/meta/page-posts", { method: "POST", body: formData }));
+
+    expect(response.status).toBe(200);
+    expect(publishPageFeedPost).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mediaItems: [
+          { type: "gif", name: "second.gif", file: second },
+          { type: "image", name: "first.jpg", file: first },
+        ],
+      }),
+    );
+  });
+
   it("publishes bulk schedule items with item-level results", async () => {
     publishPageFeedPost
       .mockResolvedValueOnce({
@@ -145,7 +228,7 @@ describe("Meta Pages API routes", () => {
         status: "scheduled",
         createdAt: "2026-07-02T00:00:00.000Z",
       })
-      .mockRejectedValueOnce(new Error("Reconnect Meta with pages_manage_posts to publish Facebook Page posts."));
+      .mockRejectedValueOnce(new Error(FACEBOOK_PAGE_PUBLISHING_SETUP_MESSAGE));
     const scheduledFor = new Date(Date.now() + 60 * 60 * 1000).toISOString();
     const { POST } = await import("./page-posts/route");
 
@@ -165,7 +248,7 @@ describe("Meta Pages API routes", () => {
     expect(response.status).toBe(207);
     expect(body.results).toMatchObject([
       { ok: true, submission: { metaPostId: "post_1" } },
-      { ok: false, error: "Reconnect Meta with pages_manage_posts to publish Facebook Page posts." },
+      { ok: false, error: FACEBOOK_PAGE_PUBLISHING_SETUP_MESSAGE },
     ]);
     expect(publishPageFeedPost).toHaveBeenCalledTimes(2);
   });

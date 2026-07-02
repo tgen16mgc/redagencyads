@@ -8,6 +8,7 @@ export type PagePostDraft = {
   scheduledFor: string;
   target?: PublishTarget;
   media?: MediaAttachment | null;
+  mediaItems?: MediaAttachment[];
 };
 
 export type PagePostValidationMessages = {
@@ -17,6 +18,8 @@ export type PagePostValidationMessages = {
   scheduleTooSoon: string;
   instagramMediaRequired: string;
   instagramScheduleUnsupported: string;
+  multipleMediaInstagramUnsupported: string;
+  multipleVideoUnsupported: string;
 };
 
 const EN_MESSAGES: PagePostValidationMessages = {
@@ -26,6 +29,8 @@ const EN_MESSAGES: PagePostValidationMessages = {
   scheduleTooSoon: "Schedule time must be at least 10 minutes in the future.",
   instagramMediaRequired: "Instagram posts require an image, video, or GIF attachment.",
   instagramScheduleUnsupported: "Instagram scheduling is not available here yet; use Facebook or publish now.",
+  multipleMediaInstagramUnsupported: "Multiple media attachments are only supported for Facebook posts right now.",
+  multipleVideoUnsupported: "Multiple media Facebook posts can only use images or GIFs.",
 };
 
 export function validatePagePostDraft(
@@ -34,11 +39,14 @@ export function validatePagePostDraft(
   messages: PagePostValidationMessages = EN_MESSAGES,
 ) {
   const target = draft.target || "facebook";
-  const hasMedia = Boolean(draft.media?.url || draft.media?.file);
+  const mediaItems = normalizeMediaItems(draft.mediaItems, draft.media);
+  const hasMedia = mediaItems.length > 0;
 
   if (!draft.pageId) return messages.pageRequired;
   if (!draft.message.trim() && !draft.link.trim() && !hasMedia) return messages.contentRequired;
   if ((target === "instagram" || target === "both") && !hasMedia) return messages.instagramMediaRequired;
+  if ((target === "instagram" || target === "both") && mediaItems.length > 1) return messages.multipleMediaInstagramUnsupported;
+  if (target === "facebook" && mediaItems.length > 1 && mediaItems.some((item) => item.type === "video")) return messages.multipleVideoUnsupported;
   if ((target === "instagram" || target === "both") && draft.mode === "scheduled") return messages.instagramScheduleUnsupported;
   if (draft.mode !== "scheduled") return null;
 
@@ -46,6 +54,10 @@ export function validatePagePostDraft(
   if (!Number.isFinite(scheduledAt)) return messages.scheduleRequired;
   if (scheduledAt < now + 10 * 60 * 1000) return messages.scheduleTooSoon;
   return null;
+}
+
+function normalizeMediaItems(mediaItems?: MediaAttachment[], media?: MediaAttachment | null) {
+  return (mediaItems?.length ? mediaItems : media ? [media] : []).filter((item) => item.url || item.file);
 }
 
 export type SchedulePreset = "in_1_hour" | "tomorrow_morning" | "tomorrow_afternoon" | "next_weekday_morning" | "next_weekday_afternoon";

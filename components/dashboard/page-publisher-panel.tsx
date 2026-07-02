@@ -2,6 +2,8 @@
 
 import * as React from "react";
 import {
+  ArrowDownIcon,
+  ArrowUpIcon,
   CalendarClockIcon,
   CheckCircle2Icon,
   Clock3Icon,
@@ -10,11 +12,12 @@ import {
   InstagramIcon,
   LinkIcon,
   ListPlusIcon,
+  PlusIcon,
   RefreshCcwIcon,
   SendIcon,
   Trash2Icon,
 } from "lucide-react";
-import type { InterfaceLanguage, MediaAttachment, MetaPage, PagePostMode, PagePostSubmission, PublishTarget } from "@/lib/types";
+import { FACEBOOK_PAGE_PUBLISHING_SETUP_MESSAGE, type InterfaceLanguage, type MediaAttachment, type MetaPage, type PagePostMode, type PagePostSubmission, type PublishTarget } from "@/lib/types";
 import {
   getSchedulePresetDateTimeLocal,
   validatePagePostDraft,
@@ -43,7 +46,7 @@ type ScheduleQueueItem = {
   link: string;
   scheduledFor: string;
   target: PublishTarget;
-  media?: MediaAttachment;
+  mediaItems: MediaAttachment[];
 };
 
 type Copy = {
@@ -66,6 +69,11 @@ type Copy = {
   mediaType: string;
   mediaUrl: string;
   mediaFile: string;
+  addMedia: string;
+  mediaListEmpty: string;
+  moveUp: string;
+  moveDown: string;
+  removeMedia: string;
   modeLabel: string;
   publishNow: string;
   scheduled: string;
@@ -112,6 +120,7 @@ type Copy = {
   pagesLoadFailed: string;
   publishFailed: string;
   queueValidation: string;
+  queueFileMediaUnsupported: string;
   validation: PagePostValidationMessages;
 };
 
@@ -131,11 +140,16 @@ const COPY: Record<InterfaceLanguage, Copy> = {
     messagePlaceholder: "Write the post copy...",
     linkLabel: "Optional link",
     linkPlaceholder: "https://example.com/landing-page",
-    mediaLabel: "Media attachment",
-    mediaHelp: "Use one image, video, or GIF. Instagram requires media and hosted media URLs work best there.",
+    mediaLabel: "Media attachments",
+    mediaHelp: "Facebook supports multiple images/GIFs. Instagram and Both support one media item here.",
     mediaType: "Media type",
     mediaUrl: "Hosted media URL",
-    mediaFile: "Or upload a file",
+    mediaFile: "Upload media files",
+    addMedia: "Add media",
+    mediaListEmpty: "No media added yet.",
+    moveUp: "Move up",
+    moveDown: "Move down",
+    removeMedia: "Remove media",
     modeLabel: "Publishing mode",
     publishNow: "Publish now",
     scheduled: "Schedule",
@@ -182,6 +196,7 @@ const COPY: Record<InterfaceLanguage, Copy> = {
     pagesLoadFailed: "Unable to load Pages.",
     publishFailed: "Unable to submit post.",
     queueValidation: "Switch to Schedule and choose a time before adding to the queue.",
+    queueFileMediaUnsupported: "Queued scheduled posts can only use hosted media URLs. Submit uploaded files directly instead.",
     validation: {
       pageRequired: "Choose a Page before publishing.",
       contentRequired: "Add a message, link, or media before publishing.",
@@ -189,6 +204,8 @@ const COPY: Record<InterfaceLanguage, Copy> = {
       scheduleTooSoon: "Schedule time must be at least 10 minutes in the future.",
       instagramMediaRequired: "Instagram posts require an image, video, or GIF attachment.",
       instagramScheduleUnsupported: "Instagram scheduling is not available here yet; use Facebook or publish now.",
+      multipleMediaInstagramUnsupported: "Multiple media attachments are only supported for Facebook posts right now.",
+      multipleVideoUnsupported: "Multiple media Facebook posts can only use images or GIFs.",
     },
   },
   vi: {
@@ -207,10 +224,15 @@ const COPY: Record<InterfaceLanguage, Copy> = {
     linkLabel: "Link tùy chọn",
     linkPlaceholder: "https://example.com/landing-page",
     mediaLabel: "Media đính kèm",
-    mediaHelp: "Dùng một ảnh, video hoặc GIF. Instagram cần media và URL media public là ổn định nhất.",
+    mediaHelp: "Facebook hỗ trợ nhiều ảnh/GIF. Instagram và Cả hai hiện chỉ hỗ trợ một media trong tool này.",
     mediaType: "Loại media",
     mediaUrl: "URL media public",
-    mediaFile: "Hoặc tải file lên",
+    mediaFile: "Tải file media lên",
+    addMedia: "Thêm media",
+    mediaListEmpty: "Chưa thêm media nào.",
+    moveUp: "Đưa lên",
+    moveDown: "Đưa xuống",
+    removeMedia: "Xóa media",
     modeLabel: "Chế độ đăng",
     publishNow: "Đăng ngay",
     scheduled: "Lên lịch",
@@ -257,6 +279,7 @@ const COPY: Record<InterfaceLanguage, Copy> = {
     pagesLoadFailed: "Không tải được Page.",
     publishFailed: "Không gửi được bài đăng.",
     queueValidation: "Chuyển sang Lên lịch và chọn thời gian trước khi thêm vào hàng chờ.",
+    queueFileMediaUnsupported: "Bài trong hàng chờ chỉ hỗ trợ URL media public. Hãy gửi trực tiếp nếu dùng file upload.",
     validation: {
       pageRequired: "Chọn Page trước khi đăng.",
       contentRequired: "Thêm nội dung, link hoặc media trước khi đăng.",
@@ -264,6 +287,8 @@ const COPY: Record<InterfaceLanguage, Copy> = {
       scheduleTooSoon: "Thời gian lên lịch phải sau hiện tại ít nhất 10 phút.",
       instagramMediaRequired: "Bài Instagram cần ảnh, video hoặc GIF.",
       instagramScheduleUnsupported: "Chưa hỗ trợ lên lịch Instagram ở đây; hãy dùng Facebook hoặc đăng ngay.",
+      multipleMediaInstagramUnsupported: "Nhiều media hiện chỉ hỗ trợ cho bài Facebook.",
+      multipleVideoUnsupported: "Bài Facebook nhiều media chỉ dùng ảnh hoặc GIF.",
     },
   },
 };
@@ -285,7 +310,7 @@ export function PagePublisherPanel({ language }: { language: InterfaceLanguage }
   const [link, setLink] = React.useState("");
   const [mediaType, setMediaType] = React.useState<MediaAttachment["type"]>("image");
   const [mediaUrl, setMediaUrl] = React.useState("");
-  const [mediaFile, setMediaFile] = React.useState<File | null>(null);
+  const [mediaItems, setMediaItems] = React.useState<MediaAttachment[]>([]);
   const [mode, setMode] = React.useState<PagePostMode>("publish_now");
   const [scheduledFor, setScheduledFor] = React.useState("");
   const [queue, setQueue] = React.useState<ScheduleQueueItem[]>([]);
@@ -296,8 +321,7 @@ export function PagePublisherPanel({ language }: { language: InterfaceLanguage }
   const [submissions, setSubmissions] = React.useState<PagePostSubmission[]>([]);
 
   const selectedPage = pages.find((page) => page.id === pageId);
-  const media = buildMedia(mediaType, mediaUrl, mediaFile);
-  const hasPreview = Boolean(message.trim() || link.trim() || media);
+  const hasPreview = Boolean(message.trim() || link.trim() || mediaItems.length);
 
   const loadPages = React.useCallback(async () => {
     setLoadingPages(true);
@@ -325,7 +349,7 @@ export function PagePublisherPanel({ language }: { language: InterfaceLanguage }
     setError("");
     setSuccess(null);
 
-    const validation = validatePagePostDraft({ pageId, message, link, mode, scheduledFor, target, media }, Date.now(), copy.validation);
+    const validation = validatePagePostDraft({ pageId, message, link, mode, scheduledFor, target, mediaItems }, Date.now(), copy.validation);
     if (validation) {
       setError(validation);
       return;
@@ -335,7 +359,7 @@ export function PagePublisherPanel({ language }: { language: InterfaceLanguage }
     try {
       const response = await fetch("/api/meta/page-posts", {
         method: "POST",
-        body: buildSubmitBody({ pageId, message, link, mode, scheduledFor, target, media }),
+        body: buildSubmitBody({ pageId, message, link, mode, scheduledFor, target, mediaItems }),
       });
       const json = await response.json();
       if (!response.ok) throw new Error(json.error || copy.publishFailed);
@@ -350,6 +374,28 @@ export function PagePublisherPanel({ language }: { language: InterfaceLanguage }
     }
   }
 
+  function addHostedMedia() {
+    const next = buildHostedMedia(mediaType, mediaUrl);
+    if (!next) return;
+    setMediaItems((current) => [...current, next]);
+    setMediaUrl("");
+  }
+
+  function addMediaFiles(files: FileList | null) {
+    if (!files?.length) return;
+    setMediaItems((current) => [...current, ...Array.from(files).map(fileToMedia)]);
+  }
+
+  function moveMedia(index: number, direction: -1 | 1) {
+    setMediaItems((current) => {
+      const nextIndex = index + direction;
+      if (nextIndex < 0 || nextIndex >= current.length) return current;
+      const next = [...current];
+      [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
+      return next;
+    });
+  }
+
   function addToQueue() {
     setError("");
     setSuccess(null);
@@ -357,9 +403,13 @@ export function PagePublisherPanel({ language }: { language: InterfaceLanguage }
       setError(copy.queueValidation);
       return;
     }
-    const validation = validatePagePostDraft({ pageId, message, link, mode, scheduledFor, target, media }, Date.now(), copy.validation);
+    const validation = validatePagePostDraft({ pageId, message, link, mode, scheduledFor, target, mediaItems }, Date.now(), copy.validation);
     if (validation) {
       setError(validation);
+      return;
+    }
+    if (mediaItems.some((item) => item.file)) {
+      setError(copy.queueFileMediaUnsupported);
       return;
     }
     setQueue((current) => [
@@ -372,7 +422,7 @@ export function PagePublisherPanel({ language }: { language: InterfaceLanguage }
         link,
         scheduledFor: new Date(scheduledFor).toISOString(),
         target,
-        media,
+        mediaItems,
       },
     ]);
     resetDraft(true);
@@ -395,7 +445,7 @@ export function PagePublisherPanel({ language }: { language: InterfaceLanguage }
             mode: "scheduled",
             scheduledFor: item.scheduledFor,
             target: item.target,
-            media: item.media && !item.media.file ? item.media : undefined,
+            mediaItems: item.mediaItems.length ? item.mediaItems : undefined,
           })),
         }),
       });
@@ -419,7 +469,7 @@ export function PagePublisherPanel({ language }: { language: InterfaceLanguage }
     setMessage("");
     setLink("");
     setMediaUrl("");
-    setMediaFile(null);
+    setMediaItems([]);
     setScheduledFor("");
     if (!keepScheduleMode) setMode("publish_now");
   }
@@ -546,7 +596,13 @@ export function PagePublisherPanel({ language }: { language: InterfaceLanguage }
 
                 <Field>
                   <FieldLabel>{copy.mediaUrl}</FieldLabel>
-                  <Input type="url" value={mediaUrl} onChange={(event) => setMediaUrl(event.target.value)} placeholder="https://cdn.example.com/media.jpg" />
+                  <div className="flex gap-2">
+                    <Input type="url" value={mediaUrl} onChange={(event) => setMediaUrl(event.target.value)} placeholder="https://cdn.example.com/media.jpg" />
+                    <Button type="button" variant="outline" onClick={addHostedMedia} disabled={!mediaUrl.trim()}>
+                      <PlusIcon data-icon="inline-start" />
+                      {copy.addMedia}
+                    </Button>
+                  </div>
                 </Field>
 
                 <Field className="md:col-span-2">
@@ -554,15 +610,18 @@ export function PagePublisherPanel({ language }: { language: InterfaceLanguage }
                   <Input
                     type="file"
                     accept="image/*,video/*,.gif"
+                    multiple
                     onChange={(event) => {
-                      const file = event.target.files?.[0] || null;
-                      setMediaFile(file);
-                      if (file?.type.startsWith("video/")) setMediaType("video");
-                      else if (file?.type === "image/gif" || file?.name.toLowerCase().endsWith(".gif")) setMediaType("gif");
-                      else if (file) setMediaType("image");
+                      addMediaFiles(event.target.files);
+                      event.target.value = "";
                     }}
                   />
-                  {mediaFile ? <FieldDescription>{mediaFile.name}</FieldDescription> : null}
+                  <FieldDescription>{copy.mediaHelp}</FieldDescription>
+                </Field>
+
+                <Field className="md:col-span-2">
+                  <FieldLabel>{copy.mediaLabel}</FieldLabel>
+                  <MediaList copy={copy} mediaItems={mediaItems} onMove={moveMedia} onRemove={(index) => setMediaItems((current) => current.filter((_, itemIndex) => itemIndex !== index))} />
                 </Field>
 
                 <Field>
@@ -646,7 +705,7 @@ export function PagePublisherPanel({ language }: { language: InterfaceLanguage }
                     <span className="truncate">{link}</span>
                   </div>
                 ) : null}
-                {media ? <MediaPreview copy={copy} media={media} /> : null}
+                {mediaItems.length ? <MediaPreview copy={copy} mediaItems={mediaItems} /> : null}
               </div>
             ) : (
               <Empty className="min-h-48 border">
@@ -693,7 +752,7 @@ export function PagePublisherPanel({ language }: { language: InterfaceLanguage }
                           <p className="truncate font-medium">{item.pageName}</p>
                           <TargetBadges target={item.target} copy={copy} />
                         </div>
-                        <p className="truncate text-sm text-muted-foreground">{item.message || item.link || item.media?.name || item.media?.url}</p>
+                        <p className="truncate text-sm text-muted-foreground">{item.message || item.link || item.mediaItems[0]?.name || item.mediaItems[0]?.url}</p>
                         <p className="text-xs text-muted-foreground">{formatDate(item.scheduledFor, language)}</p>
                       </div>
                       <Button type="button" variant="ghost" size="icon" onClick={() => setQueue((current) => current.filter((queued) => queued.id !== item.id))}>
@@ -763,10 +822,23 @@ export function PagePublisherPanel({ language }: { language: InterfaceLanguage }
   );
 }
 
-function buildMedia(type: MediaAttachment["type"], url: string, file: File | null): MediaAttachment | undefined {
-  if (file) return { type, name: file.name, file };
+function buildHostedMedia(type: MediaAttachment["type"], url: string): MediaAttachment | undefined {
   if (url.trim()) return { type, url: url.trim() };
   return undefined;
+}
+
+function fileToMedia(file: File): MediaAttachment {
+  if (file.type.startsWith("video/")) return { type: "video", name: file.name, file };
+  if (file.type === "image/gif" || file.name.toLowerCase().endsWith(".gif")) return { type: "gif", name: file.name, file };
+  return { type: "image", name: file.name, file };
+}
+
+function mediaLabel(media: MediaAttachment) {
+  return media.name || media.url || media.type;
+}
+
+function clientMedia(mediaItems: MediaAttachment[]) {
+  return mediaItems.map((item) => ({ type: item.type, url: item.url, name: item.name }));
 }
 
 function buildSubmitBody(input: {
@@ -776,18 +848,28 @@ function buildSubmitBody(input: {
   mode: PagePostMode;
   scheduledFor: string;
   target: PublishTarget;
-  media?: MediaAttachment;
+  mediaItems: MediaAttachment[];
 }) {
-  if (input.media?.file) {
+  if (input.mediaItems.some((item) => item.file)) {
     const formData = new FormData();
+    const metadata = [];
+    let fileIndex = 0;
     formData.set("pageId", input.pageId);
     formData.set("message", input.message.trim());
     formData.set("link", input.link.trim());
     formData.set("mode", input.mode);
     formData.set("target", input.target);
-    formData.set("mediaType", input.media.type);
-    formData.set("mediaFile", input.media.file);
     if (input.mode === "scheduled") formData.set("scheduledFor", new Date(input.scheduledFor).toISOString());
+    for (const item of input.mediaItems) {
+      if (item.file) {
+        formData.append("mediaFiles", item.file);
+        metadata.push({ type: item.type, name: item.name, fileIndex });
+        fileIndex += 1;
+      } else {
+        metadata.push({ type: item.type, url: item.url, name: item.name });
+      }
+    }
+    formData.set("mediaItems", JSON.stringify(metadata));
     return formData;
   }
 
@@ -798,7 +880,7 @@ function buildSubmitBody(input: {
     mode: input.mode,
     scheduledFor: input.mode === "scheduled" ? new Date(input.scheduledFor).toISOString() : undefined,
     target: input.target,
-    media: input.media,
+    mediaItems: input.mediaItems.length ? clientMedia(input.mediaItems) : undefined,
   });
 }
 
@@ -822,6 +904,7 @@ function CapabilitySummary({ page, copy }: { page?: MetaPage; copy: Copy }) {
         <Badge variant={facebook?.canPublish ? "success" : "destructive"}>{facebook?.canPublish ? copy.ready : copy.needsSetup}</Badge>
       </div>
       {facebook?.missingPermissions?.length ? <p className="text-xs text-muted-foreground">{copy.missing}: {facebook.missingPermissions.join(", ")}</p> : null}
+      {!facebook?.canPublish ? <p className="text-xs text-muted-foreground">{FACEBOOK_PAGE_PUBLISHING_SETUP_MESSAGE}</p> : null}
       {facebook?.issues?.length ? <p className="text-xs text-muted-foreground">{facebook.issues.join(" ")}</p> : null}
       <Separator />
       <div className="flex items-center justify-between gap-3">
@@ -834,17 +917,59 @@ function CapabilitySummary({ page, copy }: { page?: MetaPage; copy: Copy }) {
   );
 }
 
-function MediaPreview({ copy, media }: { copy: Copy; media: MediaAttachment }) {
+function MediaList({
+  copy,
+  mediaItems,
+  onMove,
+  onRemove,
+}: {
+  copy: Copy;
+  mediaItems: MediaAttachment[];
+  onMove: (index: number, direction: -1 | 1) => void;
+  onRemove: (index: number) => void;
+}) {
+  if (!mediaItems.length) return <p className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">{copy.mediaListEmpty}</p>;
   return (
-    <div className="mt-3 overflow-hidden rounded-lg border bg-muted/40">
-      {media.url && (media.type === "image" || media.type === "gif") ? (
-        <img src={media.url} alt={copy.mediaPreview} className="max-h-64 w-full object-cover" />
-      ) : (
-        <div className="flex items-center gap-2 p-3 text-sm text-muted-foreground">
-          <ImageIcon className="size-4" />
-          <span className="truncate">{media.name || media.url || media.type}</span>
+    <div className="space-y-2 rounded-lg border p-2">
+      {mediaItems.map((media, index) => (
+        <div key={`${mediaLabel(media)}-${index}`} className="flex items-center gap-2 rounded-md bg-muted/40 p-2">
+          <Badge variant="outline">#{index + 1}</Badge>
+          <ImageIcon className="size-4 text-muted-foreground" />
+          <span className="min-w-0 flex-1 truncate text-sm">{mediaLabel(media)}</span>
+          <Button type="button" variant="ghost" size="icon" disabled={index === 0} onClick={() => onMove(index, -1)}>
+            <ArrowUpIcon className="size-4" />
+            <span className="sr-only">{copy.moveUp}</span>
+          </Button>
+          <Button type="button" variant="ghost" size="icon" disabled={index === mediaItems.length - 1} onClick={() => onMove(index, 1)}>
+            <ArrowDownIcon className="size-4" />
+            <span className="sr-only">{copy.moveDown}</span>
+          </Button>
+          <Button type="button" variant="ghost" size="icon" onClick={() => onRemove(index)}>
+            <Trash2Icon className="size-4" />
+            <span className="sr-only">{copy.removeMedia}</span>
+          </Button>
         </div>
-      )}
+      ))}
+    </div>
+  );
+}
+
+function MediaPreview({ copy, mediaItems }: { copy: Copy; mediaItems: MediaAttachment[] }) {
+  return (
+    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+      {mediaItems.map((media, index) => (
+        <div key={`${mediaLabel(media)}-${index}`} className="overflow-hidden rounded-lg border bg-muted/40">
+          {media.url && (media.type === "image" || media.type === "gif") ? (
+            <img src={media.url} alt={`${copy.mediaPreview} ${index + 1}`} className="max-h-64 w-full object-cover" />
+          ) : (
+            <div className="flex items-center gap-2 p-3 text-sm text-muted-foreground">
+              <Badge variant="outline">#{index + 1}</Badge>
+              <ImageIcon className="size-4" />
+              <span className="truncate">{mediaLabel(media)}</span>
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   );
 }
