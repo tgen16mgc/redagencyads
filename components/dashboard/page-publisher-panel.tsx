@@ -1,9 +1,26 @@
 "use client";
 
 import * as React from "react";
-import { CalendarClockIcon, CheckCircle2Icon, FileTextIcon, RefreshCcwIcon, SendIcon } from "lucide-react";
-import type { InterfaceLanguage, MetaPage, PagePostMode, PagePostSubmission } from "@/lib/types";
-import { validatePagePostDraft, type PagePostValidationMessages } from "@/lib/page-publisher-validation";
+import {
+  CalendarClockIcon,
+  CheckCircle2Icon,
+  Clock3Icon,
+  FileTextIcon,
+  ImageIcon,
+  InstagramIcon,
+  LinkIcon,
+  ListPlusIcon,
+  RefreshCcwIcon,
+  SendIcon,
+  Trash2Icon,
+} from "lucide-react";
+import type { InterfaceLanguage, MediaAttachment, MetaPage, PagePostMode, PagePostSubmission, PublishTarget } from "@/lib/types";
+import {
+  getSchedulePresetDateTimeLocal,
+  validatePagePostDraft,
+  type PagePostValidationMessages,
+  type SchedulePreset,
+} from "@/lib/page-publisher-validation";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,10 +29,22 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+
+type ScheduleQueueItem = {
+  id: string;
+  pageId: string;
+  pageName: string;
+  message: string;
+  link: string;
+  scheduledFor: string;
+  target: PublishTarget;
+  media?: MediaAttachment;
+};
 
 type Copy = {
   title: string;
@@ -24,16 +53,30 @@ type Copy = {
   pagePlaceholder: string;
   pageHelp: string;
   refreshPages: string;
+  targetLabel: string;
+  facebook: string;
+  instagram: string;
+  both: string;
   messageLabel: string;
   messagePlaceholder: string;
   linkLabel: string;
   linkPlaceholder: string;
+  mediaLabel: string;
+  mediaHelp: string;
+  mediaType: string;
+  mediaUrl: string;
+  mediaFile: string;
   modeLabel: string;
   publishNow: string;
   scheduled: string;
   scheduleLabel: string;
   scheduleHelp: string;
+  addToQueue: string;
+  queueTitle: string;
+  queueDescription: string;
+  queueEmpty: string;
   submit: string;
+  submitQueue: string;
   submitting: string;
   loadingPages: string;
   noPagesTitle: string;
@@ -45,36 +88,65 @@ type Copy = {
   recentEmptyTitle: string;
   recentEmptyDescription: string;
   pageColumn: string;
-  postColumn: string;
+  targetColumn: string;
   statusColumn: string;
   timeColumn: string;
-  safetyTitle: string;
-  safetyDescription: string;
+  previewTitle: string;
+  previewDescription: string;
+  previewEmpty: string;
+  capabilityTitle: string;
+  capabilityDescription: string;
+  ready: string;
+  needsSetup: string;
+  missing: string;
+  linked: string;
+  notLinked: string;
+  mediaPreview: string;
   textPost: string;
   linkPost: string;
+  presetIn1Hour: string;
+  presetTomorrowMorning: string;
+  presetTomorrowAfternoon: string;
+  presetNextWeekdayMorning: string;
+  presetNextWeekdayAfternoon: string;
   pagesLoadFailed: string;
   publishFailed: string;
+  queueValidation: string;
   validation: PagePostValidationMessages;
 };
 
 const COPY: Record<InterfaceLanguage, Copy> = {
   en: {
     title: "Page publisher",
-    description: "Publish or schedule text/link posts for connected Facebook Pages using Meta-native scheduling.",
+    description: "Preview, publish, or queue Facebook and Instagram posts with Meta permissions checked on the server.",
     pageLabel: "Facebook Page",
     pagePlaceholder: "Choose a Page",
     pageHelp: "Only Pages where your token has content creation permissions are shown.",
     refreshPages: "Refresh Pages",
+    targetLabel: "Publish to",
+    facebook: "Facebook",
+    instagram: "Instagram",
+    both: "Both",
     messageLabel: "Post message",
-    messagePlaceholder: "Write the Page post copy...",
+    messagePlaceholder: "Write the post copy...",
     linkLabel: "Optional link",
     linkPlaceholder: "https://example.com/landing-page",
+    mediaLabel: "Media attachment",
+    mediaHelp: "Use one image, video, or GIF. Instagram requires media and hosted media URLs work best there.",
+    mediaType: "Media type",
+    mediaUrl: "Hosted media URL",
+    mediaFile: "Or upload a file",
     modeLabel: "Publishing mode",
     publishNow: "Publish now",
     scheduled: "Schedule",
     scheduleLabel: "Schedule time",
     scheduleHelp: "Meta requires scheduled posts to be at least 10 minutes in the future.",
-    submit: "Submit Page post",
+    addToQueue: "Add to schedule queue",
+    queueTitle: "Schedule queue",
+    queueDescription: "Build a small batch with preset times, then submit all rows together.",
+    queueEmpty: "No scheduled posts queued yet.",
+    submit: "Submit post",
+    submitQueue: "Submit queued posts",
     submitting: "Submitting",
     loadingPages: "Loading Pages",
     noPagesTitle: "No content-ready Pages",
@@ -83,42 +155,73 @@ const COPY: Record<InterfaceLanguage, Copy> = {
     successDescription: "Meta post ID",
     recentTitle: "Recent submissions",
     recentDescription: "This list is kept in this browser session only.",
-    recentEmptyTitle: "No Page posts submitted yet",
+    recentEmptyTitle: "No posts submitted yet",
     recentEmptyDescription: "Published and scheduled submissions will appear here after Meta accepts them.",
     pageColumn: "Page",
-    postColumn: "Post",
+    targetColumn: "Target",
     statusColumn: "Status",
     timeColumn: "Time",
-    safetyTitle: "Server-side publishing",
-    safetyDescription: "Page permissions are checked server-side. Page tokens are not returned to this panel.",
+    previewTitle: "Post preview",
+    previewDescription: "What the selected Page and media will look like before submitting.",
+    previewEmpty: "Write copy or add media to preview the post.",
+    capabilityTitle: "Selected Page readiness",
+    capabilityDescription: "Tokens stay server-side; this shows what the server can verify for the chosen Page.",
+    ready: "Ready",
+    needsSetup: "Needs setup",
+    missing: "Missing",
+    linked: "Linked",
+    notLinked: "Not linked",
+    mediaPreview: "Media preview",
     textPost: "Text",
     linkPost: "Link",
+    presetIn1Hour: "In 1 hour",
+    presetTomorrowMorning: "Tomorrow 9:00",
+    presetTomorrowAfternoon: "Tomorrow 14:00",
+    presetNextWeekdayMorning: "Next weekday 9:00",
+    presetNextWeekdayAfternoon: "Next weekday 14:00",
     pagesLoadFailed: "Unable to load Pages.",
-    publishFailed: "Unable to submit Page post.",
+    publishFailed: "Unable to submit post.",
+    queueValidation: "Switch to Schedule and choose a time before adding to the queue.",
     validation: {
       pageRequired: "Choose a Page before publishing.",
-      contentRequired: "Add a message or link before publishing.",
+      contentRequired: "Add a message, link, or media before publishing.",
       scheduleRequired: "Choose a schedule time.",
       scheduleTooSoon: "Schedule time must be at least 10 minutes in the future.",
+      instagramMediaRequired: "Instagram posts require an image, video, or GIF attachment.",
+      instagramScheduleUnsupported: "Instagram scheduling is not available here yet; use Facebook or publish now.",
     },
   },
   vi: {
     title: "Đăng bài Page",
-    description: "Đăng ngay hoặc lên lịch bài text/link cho Facebook Page bằng lịch native của Meta.",
+    description: "Xem trước, đăng ngay hoặc lên lịch bài Facebook và Instagram với quyền Meta được kiểm tra trên server.",
     pageLabel: "Facebook Page",
     pagePlaceholder: "Chọn Page",
     pageHelp: "Chỉ hiển thị Page mà token hiện tại có quyền tạo nội dung.",
     refreshPages: "Tải lại Page",
+    targetLabel: "Đăng lên",
+    facebook: "Facebook",
+    instagram: "Instagram",
+    both: "Cả hai",
     messageLabel: "Nội dung bài đăng",
-    messagePlaceholder: "Viết copy cho bài Page...",
+    messagePlaceholder: "Viết copy cho bài đăng...",
     linkLabel: "Link tùy chọn",
     linkPlaceholder: "https://example.com/landing-page",
+    mediaLabel: "Media đính kèm",
+    mediaHelp: "Dùng một ảnh, video hoặc GIF. Instagram cần media và URL media public là ổn định nhất.",
+    mediaType: "Loại media",
+    mediaUrl: "URL media public",
+    mediaFile: "Hoặc tải file lên",
     modeLabel: "Chế độ đăng",
     publishNow: "Đăng ngay",
     scheduled: "Lên lịch",
     scheduleLabel: "Thời gian lên lịch",
     scheduleHelp: "Meta yêu cầu bài lên lịch phải cách hiện tại ít nhất 10 phút.",
-    submit: "Gửi bài Page",
+    addToQueue: "Thêm vào hàng chờ",
+    queueTitle: "Hàng chờ lên lịch",
+    queueDescription: "Tạo một batch nhỏ bằng preset thời gian rồi gửi toàn bộ cùng lúc.",
+    queueEmpty: "Chưa có bài lên lịch nào trong hàng chờ.",
+    submit: "Gửi bài đăng",
+    submitQueue: "Gửi hàng chờ",
     submitting: "Đang gửi",
     loadingPages: "Đang tải Page",
     noPagesTitle: "Không có Page đủ quyền đăng",
@@ -127,40 +230,74 @@ const COPY: Record<InterfaceLanguage, Copy> = {
     successDescription: "Meta post ID",
     recentTitle: "Lần gửi gần đây",
     recentDescription: "Danh sách này chỉ giữ trong phiên trình duyệt hiện tại.",
-    recentEmptyTitle: "Chưa gửi bài Page nào",
+    recentEmptyTitle: "Chưa gửi bài nào",
     recentEmptyDescription: "Bài đăng ngay và bài lên lịch sẽ xuất hiện ở đây sau khi Meta chấp nhận.",
     pageColumn: "Page",
-    postColumn: "Bài đăng",
+    targetColumn: "Kênh",
     statusColumn: "Trạng thái",
     timeColumn: "Thời gian",
-    safetyTitle: "Đăng qua server",
-    safetyDescription: "Quyền Page được kiểm tra trên server. Token Page không được trả về panel này.",
+    previewTitle: "Xem trước bài đăng",
+    previewDescription: "Kiểm tra Page, nội dung và media trước khi gửi.",
+    previewEmpty: "Viết nội dung hoặc thêm media để xem preview.",
+    capabilityTitle: "Mức sẵn sàng của Page",
+    capabilityDescription: "Token vẫn ở server; phần này hiển thị những gì server xác minh được.",
+    ready: "Sẵn sàng",
+    needsSetup: "Cần thiết lập",
+    missing: "Thiếu",
+    linked: "Đã liên kết",
+    notLinked: "Chưa liên kết",
+    mediaPreview: "Xem trước media",
     textPost: "Text",
     linkPost: "Link",
+    presetIn1Hour: "Sau 1 giờ",
+    presetTomorrowMorning: "Mai 9:00",
+    presetTomorrowAfternoon: "Mai 14:00",
+    presetNextWeekdayMorning: "Ngày làm việc kế 9:00",
+    presetNextWeekdayAfternoon: "Ngày làm việc kế 14:00",
     pagesLoadFailed: "Không tải được Page.",
-    publishFailed: "Không gửi được bài Page.",
+    publishFailed: "Không gửi được bài đăng.",
+    queueValidation: "Chuyển sang Lên lịch và chọn thời gian trước khi thêm vào hàng chờ.",
     validation: {
       pageRequired: "Chọn Page trước khi đăng.",
-      contentRequired: "Thêm nội dung hoặc link trước khi đăng.",
+      contentRequired: "Thêm nội dung, link hoặc media trước khi đăng.",
       scheduleRequired: "Chọn thời gian lên lịch.",
       scheduleTooSoon: "Thời gian lên lịch phải sau hiện tại ít nhất 10 phút.",
+      instagramMediaRequired: "Bài Instagram cần ảnh, video hoặc GIF.",
+      instagramScheduleUnsupported: "Chưa hỗ trợ lên lịch Instagram ở đây; hãy dùng Facebook hoặc đăng ngay.",
     },
   },
 };
+
+const SCHEDULE_PRESETS: Array<{ key: SchedulePreset; copyKey: keyof Pick<Copy, "presetIn1Hour" | "presetTomorrowMorning" | "presetTomorrowAfternoon" | "presetNextWeekdayMorning" | "presetNextWeekdayAfternoon"> }> = [
+  { key: "in_1_hour", copyKey: "presetIn1Hour" },
+  { key: "tomorrow_morning", copyKey: "presetTomorrowMorning" },
+  { key: "tomorrow_afternoon", copyKey: "presetTomorrowAfternoon" },
+  { key: "next_weekday_morning", copyKey: "presetNextWeekdayMorning" },
+  { key: "next_weekday_afternoon", copyKey: "presetNextWeekdayAfternoon" },
+];
 
 export function PagePublisherPanel({ language }: { language: InterfaceLanguage }) {
   const copy = COPY[language];
   const [pages, setPages] = React.useState<MetaPage[]>([]);
   const [pageId, setPageId] = React.useState("");
+  const [target, setTarget] = React.useState<PublishTarget>("facebook");
   const [message, setMessage] = React.useState("");
   const [link, setLink] = React.useState("");
+  const [mediaType, setMediaType] = React.useState<MediaAttachment["type"]>("image");
+  const [mediaUrl, setMediaUrl] = React.useState("");
+  const [mediaFile, setMediaFile] = React.useState<File | null>(null);
   const [mode, setMode] = React.useState<PagePostMode>("publish_now");
   const [scheduledFor, setScheduledFor] = React.useState("");
+  const [queue, setQueue] = React.useState<ScheduleQueueItem[]>([]);
   const [loadingPages, setLoadingPages] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
   const [error, setError] = React.useState("");
   const [success, setSuccess] = React.useState<PagePostSubmission | null>(null);
   const [submissions, setSubmissions] = React.useState<PagePostSubmission[]>([]);
+
+  const selectedPage = pages.find((page) => page.id === pageId);
+  const media = buildMedia(mediaType, mediaUrl, mediaFile);
+  const hasPreview = Boolean(message.trim() || link.trim() || media);
 
   const loadPages = React.useCallback(async () => {
     setLoadingPages(true);
@@ -188,7 +325,7 @@ export function PagePublisherPanel({ language }: { language: InterfaceLanguage }
     setError("");
     setSuccess(null);
 
-    const validation = validatePagePostDraft({ pageId, message, link, mode, scheduledFor }, Date.now(), copy.validation);
+    const validation = validatePagePostDraft({ pageId, message, link, mode, scheduledFor, target, media }, Date.now(), copy.validation);
     if (validation) {
       setError(validation);
       return;
@@ -198,23 +335,14 @@ export function PagePublisherPanel({ language }: { language: InterfaceLanguage }
     try {
       const response = await fetch("/api/meta/page-posts", {
         method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          pageId,
-          message: message.trim() || undefined,
-          link: link.trim() || undefined,
-          mode,
-          scheduledFor: mode === "scheduled" ? new Date(scheduledFor).toISOString() : undefined,
-        }),
+        body: buildSubmitBody({ pageId, message, link, mode, scheduledFor, target, media }),
       });
       const json = await response.json();
       if (!response.ok) throw new Error(json.error || copy.publishFailed);
       const submission = json.submission as PagePostSubmission;
       setSuccess(submission);
-      setSubmissions((current) => [submission, ...current].slice(0, 6));
-      setMessage("");
-      setLink("");
-      if (mode === "scheduled") setScheduledFor("");
+      setSubmissions((current) => [submission, ...current].slice(0, 8));
+      resetDraft(mode === "scheduled");
     } catch (err) {
       setError(err instanceof Error ? err.message : copy.publishFailed);
     } finally {
@@ -222,8 +350,82 @@ export function PagePublisherPanel({ language }: { language: InterfaceLanguage }
     }
   }
 
+  function addToQueue() {
+    setError("");
+    setSuccess(null);
+    if (mode !== "scheduled") {
+      setError(copy.queueValidation);
+      return;
+    }
+    const validation = validatePagePostDraft({ pageId, message, link, mode, scheduledFor, target, media }, Date.now(), copy.validation);
+    if (validation) {
+      setError(validation);
+      return;
+    }
+    setQueue((current) => [
+      ...current,
+      {
+        id: `${Date.now()}-${current.length}`,
+        pageId,
+        pageName: selectedPage?.name || pageId,
+        message,
+        link,
+        scheduledFor: new Date(scheduledFor).toISOString(),
+        target,
+        media,
+      },
+    ]);
+    resetDraft(true);
+  }
+
+  async function submitQueue() {
+    if (!queue.length) return;
+    setError("");
+    setSuccess(null);
+    setSubmitting(true);
+    try {
+      const response = await fetch("/api/meta/page-posts", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          items: queue.map((item) => ({
+            pageId: item.pageId,
+            message: item.message.trim() || undefined,
+            link: item.link.trim() || undefined,
+            mode: "scheduled",
+            scheduledFor: item.scheduledFor,
+            target: item.target,
+            media: item.media && !item.media.file ? item.media : undefined,
+          })),
+        }),
+      });
+      const json = await response.json();
+      const results = (json.results || []) as Array<{ ok: boolean; submission?: PagePostSubmission; error?: string }>;
+      if (!response.ok && !results.length) throw new Error(json.error || copy.publishFailed);
+      const accepted = results.flatMap((result) => (result.submission ? [result.submission] : []));
+      if (accepted.length) setSubmissions((current) => [...accepted, ...current].slice(0, 8));
+      const failed = results.filter((result) => !result.ok).map((result) => result.error).filter(Boolean);
+      setQueue((current) => current.filter((_, index) => !results[index]?.ok));
+      if (failed.length) setError(failed.join(" "));
+      else setSuccess(accepted[0] || null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : copy.publishFailed);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function resetDraft(keepScheduleMode = false) {
+    setMessage("");
+    setLink("");
+    setMediaUrl("");
+    setMediaFile(null);
+    setScheduledFor("");
+    if (!keepScheduleMode) setMode("publish_now");
+  }
+
   return (
-    <section className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+    <section className="grid gap-4 xl:grid-cols-[1.08fr_0.92fr]">
       <Card className="ra-fade-up overflow-hidden">
         <CardHeader>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -268,7 +470,7 @@ export function PagePublisherPanel({ language }: { language: InterfaceLanguage }
           ) : (
             <form onSubmit={submitPost} className="flex flex-col gap-4">
               <FieldGroup className="grid gap-4 md:grid-cols-2">
-                <Field className="md:col-span-2">
+                <Field>
                   <FieldLabel>{copy.pageLabel}</FieldLabel>
                   <Select
                     items={pages.map((page) => ({ label: page.name, value: page.id }))}
@@ -296,19 +498,71 @@ export function PagePublisherPanel({ language }: { language: InterfaceLanguage }
                   <FieldDescription>{copy.pageHelp}</FieldDescription>
                 </Field>
 
+                <Field>
+                  <FieldLabel>{copy.targetLabel}</FieldLabel>
+                  <ToggleGroup
+                    aria-label={copy.targetLabel}
+                    value={[target]}
+                    onValueChange={(values) => {
+                      const next = values.find((value): value is PublishTarget => value === "facebook" || value === "instagram" || value === "both");
+                      if (next) setTarget(next);
+                    }}
+                    variant="outline"
+                    size="sm"
+                    spacing={0}
+                  >
+                    <ToggleGroupItem value="facebook">{copy.facebook}</ToggleGroupItem>
+                    <ToggleGroupItem value="instagram">{copy.instagram}</ToggleGroupItem>
+                    <ToggleGroupItem value="both">{copy.both}</ToggleGroupItem>
+                  </ToggleGroup>
+                </Field>
+
                 <Field className="md:col-span-2">
                   <FieldLabel>{copy.messageLabel}</FieldLabel>
-                  <Textarea
-                    value={message}
-                    onChange={(event) => setMessage(event.target.value)}
-                    placeholder={copy.messagePlaceholder}
-                    rows={6}
-                  />
+                  <Textarea value={message} onChange={(event) => setMessage(event.target.value)} placeholder={copy.messagePlaceholder} rows={6} />
                 </Field>
 
                 <Field className="md:col-span-2">
                   <FieldLabel>{copy.linkLabel}</FieldLabel>
                   <Input type="url" value={link} onChange={(event) => setLink(event.target.value)} placeholder={copy.linkPlaceholder} />
+                </Field>
+
+                <Field>
+                  <FieldLabel>{copy.mediaType}</FieldLabel>
+                  <Select value={mediaType} onValueChange={(value) => setMediaType(value as MediaAttachment["type"])}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        <SelectItem value="image">Image</SelectItem>
+                        <SelectItem value="video">Video</SelectItem>
+                        <SelectItem value="gif">GIF</SelectItem>
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                  <FieldDescription>{copy.mediaHelp}</FieldDescription>
+                </Field>
+
+                <Field>
+                  <FieldLabel>{copy.mediaUrl}</FieldLabel>
+                  <Input type="url" value={mediaUrl} onChange={(event) => setMediaUrl(event.target.value)} placeholder="https://cdn.example.com/media.jpg" />
+                </Field>
+
+                <Field className="md:col-span-2">
+                  <FieldLabel>{copy.mediaFile}</FieldLabel>
+                  <Input
+                    type="file"
+                    accept="image/*,video/*,.gif"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0] || null;
+                      setMediaFile(file);
+                      if (file?.type.startsWith("video/")) setMediaType("video");
+                      else if (file?.type === "image/gif" || file?.name.toLowerCase().endsWith(".gif")) setMediaType("gif");
+                      else if (file) setMediaType("image");
+                    }}
+                  />
+                  {mediaFile ? <FieldDescription>{mediaFile.name}</FieldDescription> : null}
                 </Field>
 
                 <Field>
@@ -338,10 +592,29 @@ export function PagePublisherPanel({ language }: { language: InterfaceLanguage }
                 ) : null}
               </FieldGroup>
 
-              <Button type="submit" disabled={submitting || loadingPages || pages.length === 0} className="w-full sm:w-fit">
-                {submitting ? <Spinner data-icon="inline-start" /> : <SendIcon data-icon="inline-start" />}
-                {submitting ? copy.submitting : copy.submit}
-              </Button>
+              {mode === "scheduled" ? (
+                <div className="flex flex-wrap gap-2">
+                  {SCHEDULE_PRESETS.map((preset) => (
+                    <Button key={preset.key} type="button" variant="outline" size="sm" onClick={() => setScheduledFor(getSchedulePresetDateTimeLocal(preset.key))}>
+                      <Clock3Icon data-icon="inline-start" />
+                      {copy[preset.copyKey]}
+                    </Button>
+                  ))}
+                </div>
+              ) : null}
+
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Button type="submit" disabled={submitting || loadingPages || pages.length === 0} className="w-full sm:w-fit">
+                  {submitting ? <Spinner data-icon="inline-start" /> : <SendIcon data-icon="inline-start" />}
+                  {submitting ? copy.submitting : copy.submit}
+                </Button>
+                {mode === "scheduled" ? (
+                  <Button type="button" variant="outline" disabled={submitting || loadingPages || pages.length === 0} onClick={addToQueue}>
+                    <ListPlusIcon data-icon="inline-start" />
+                    {copy.addToQueue}
+                  </Button>
+                ) : null}
+              </div>
             </form>
           )}
         </CardContent>
@@ -351,16 +624,93 @@ export function PagePublisherPanel({ language }: { language: InterfaceLanguage }
         <Card className="border-border bg-card/80">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
-              <CalendarClockIcon className="size-4 text-muted-foreground" />
-              {copy.safetyTitle}
+              <FileTextIcon className="size-4 text-muted-foreground" />
+              {copy.previewTitle}
             </CardTitle>
-            <CardDescription>{copy.safetyDescription}</CardDescription>
+            <CardDescription>{copy.previewDescription}</CardDescription>
           </CardHeader>
-          <CardContent className="flex flex-wrap gap-2">
-            <Badge variant="secondary">{copy.publishNow}</Badge>
-            <Badge variant="outline">{copy.scheduled}</Badge>
-            <Badge variant="outline">{copy.textPost}</Badge>
-            <Badge variant="outline">{copy.linkPost}</Badge>
+          <CardContent>
+            {hasPreview ? (
+              <div className="rounded-xl border bg-background p-4 shadow-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate font-semibold">{selectedPage?.name || copy.pagePlaceholder}</p>
+                    <p className="text-xs text-muted-foreground">{targetLabel(target, copy)}</p>
+                  </div>
+                  <TargetBadges target={target} copy={copy} />
+                </div>
+                {message.trim() ? <p className="mt-4 whitespace-pre-wrap text-sm leading-6">{message}</p> : null}
+                {link.trim() ? (
+                  <div className="mt-3 flex items-center gap-2 rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">
+                    <LinkIcon className="size-4" />
+                    <span className="truncate">{link}</span>
+                  </div>
+                ) : null}
+                {media ? <MediaPreview copy={copy} media={media} /> : null}
+              </div>
+            ) : (
+              <Empty className="min-h-48 border">
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <ImageIcon />
+                  </EmptyMedia>
+                  <EmptyDescription>{copy.previewEmpty}</EmptyDescription>
+                </EmptyHeader>
+              </Empty>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <InstagramIcon className="size-4 text-muted-foreground" />
+              {copy.capabilityTitle}
+            </CardTitle>
+            <CardDescription>{copy.capabilityDescription}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <CapabilitySummary page={selectedPage} copy={copy} />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <CalendarClockIcon className="size-4 text-muted-foreground" />
+              {copy.queueTitle}
+            </CardTitle>
+            <CardDescription>{copy.queueDescription}</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            {queue.length ? (
+              <>
+                <div className="space-y-2">
+                  {queue.map((item) => (
+                    <div key={item.id} className="flex items-center justify-between gap-3 rounded-lg border p-3">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="truncate font-medium">{item.pageName}</p>
+                          <TargetBadges target={item.target} copy={copy} />
+                        </div>
+                        <p className="truncate text-sm text-muted-foreground">{item.message || item.link || item.media?.name || item.media?.url}</p>
+                        <p className="text-xs text-muted-foreground">{formatDate(item.scheduledFor, language)}</p>
+                      </div>
+                      <Button type="button" variant="ghost" size="icon" onClick={() => setQueue((current) => current.filter((queued) => queued.id !== item.id))}>
+                        <Trash2Icon className="size-4" />
+                        <span className="sr-only">Remove</span>
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+                <Button type="button" onClick={submitQueue} disabled={submitting}>
+                  {submitting ? <Spinner data-icon="inline-start" /> : <SendIcon data-icon="inline-start" />}
+                  {copy.submitQueue}
+                </Button>
+              </>
+            ) : (
+              <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">{copy.queueEmpty}</p>
+            )}
           </CardContent>
         </Card>
 
@@ -375,6 +725,7 @@ export function PagePublisherPanel({ language }: { language: InterfaceLanguage }
                 <TableHeader>
                   <TableRow>
                     <TableHead>{copy.pageColumn}</TableHead>
+                    <TableHead>{copy.targetColumn}</TableHead>
                     <TableHead>{copy.statusColumn}</TableHead>
                     <TableHead>{copy.timeColumn}</TableHead>
                   </TableRow>
@@ -382,19 +733,20 @@ export function PagePublisherPanel({ language }: { language: InterfaceLanguage }
                 <TableBody>
                   {submissions.map((submission) => (
                     <TableRow key={`${submission.metaPostId}-${submission.createdAt}`}>
-                      <TableCell className="max-w-44 truncate font-medium">{submission.pageName}</TableCell>
+                      <TableCell className="max-w-40 truncate font-medium">{submission.pageName}</TableCell>
+                      <TableCell>
+                        <TargetBadges target={submission.target || "facebook"} copy={copy} />
+                      </TableCell>
                       <TableCell>
                         <Badge variant={submission.status === "scheduled" ? "secondary" : "success"}>{submission.status}</Badge>
                       </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {formatSubmissionTime(submission, language)}
-                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{formatSubmissionTime(submission, language)}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
             ) : (
-              <Empty className="min-h-56 border">
+              <Empty className="min-h-44 border">
                 <EmptyHeader>
                   <EmptyMedia variant="icon">
                     <SendIcon />
@@ -411,7 +763,103 @@ export function PagePublisherPanel({ language }: { language: InterfaceLanguage }
   );
 }
 
+function buildMedia(type: MediaAttachment["type"], url: string, file: File | null): MediaAttachment | undefined {
+  if (file) return { type, name: file.name, file };
+  if (url.trim()) return { type, url: url.trim() };
+  return undefined;
+}
+
+function buildSubmitBody(input: {
+  pageId: string;
+  message: string;
+  link: string;
+  mode: PagePostMode;
+  scheduledFor: string;
+  target: PublishTarget;
+  media?: MediaAttachment;
+}) {
+  if (input.media?.file) {
+    const formData = new FormData();
+    formData.set("pageId", input.pageId);
+    formData.set("message", input.message.trim());
+    formData.set("link", input.link.trim());
+    formData.set("mode", input.mode);
+    formData.set("target", input.target);
+    formData.set("mediaType", input.media.type);
+    formData.set("mediaFile", input.media.file);
+    if (input.mode === "scheduled") formData.set("scheduledFor", new Date(input.scheduledFor).toISOString());
+    return formData;
+  }
+
+  return JSON.stringify({
+    pageId: input.pageId,
+    message: input.message.trim() || undefined,
+    link: input.link.trim() || undefined,
+    mode: input.mode,
+    scheduledFor: input.mode === "scheduled" ? new Date(input.scheduledFor).toISOString() : undefined,
+    target: input.target,
+    media: input.media,
+  });
+}
+
+function TargetBadges({ target, copy }: { target: PublishTarget; copy: Copy }) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {(target === "facebook" || target === "both") ? <Badge variant="secondary">{copy.facebook}</Badge> : null}
+      {(target === "instagram" || target === "both") ? <Badge variant="outline">{copy.instagram}</Badge> : null}
+    </div>
+  );
+}
+
+function CapabilitySummary({ page, copy }: { page?: MetaPage; copy: Copy }) {
+  if (!page) return <p className="text-sm text-muted-foreground">{copy.pagePlaceholder}</p>;
+  const facebook = page.capabilities?.facebook;
+  const instagram = page.capabilities?.instagram;
+  return (
+    <div className="space-y-3 text-sm">
+      <div className="flex items-center justify-between gap-3">
+        <span>{copy.facebook}</span>
+        <Badge variant={facebook?.canPublish ? "success" : "destructive"}>{facebook?.canPublish ? copy.ready : copy.needsSetup}</Badge>
+      </div>
+      {facebook?.missingPermissions?.length ? <p className="text-xs text-muted-foreground">{copy.missing}: {facebook.missingPermissions.join(", ")}</p> : null}
+      {facebook?.issues?.length ? <p className="text-xs text-muted-foreground">{facebook.issues.join(" ")}</p> : null}
+      <Separator />
+      <div className="flex items-center justify-between gap-3">
+        <span>{copy.instagram}</span>
+        <Badge variant={instagram?.canPublish ? "success" : "outline"}>{instagram?.canPublish ? copy.ready : copy.needsSetup}</Badge>
+      </div>
+      <p className="text-xs text-muted-foreground">{instagram?.accountId ? `${copy.linked}: ${instagram.username || instagram.accountId}` : copy.notLinked}</p>
+      {instagram?.missingPermissions?.length ? <p className="text-xs text-muted-foreground">{copy.missing}: {instagram.missingPermissions.join(", ")}</p> : null}
+    </div>
+  );
+}
+
+function MediaPreview({ copy, media }: { copy: Copy; media: MediaAttachment }) {
+  return (
+    <div className="mt-3 overflow-hidden rounded-lg border bg-muted/40">
+      {media.url && (media.type === "image" || media.type === "gif") ? (
+        <img src={media.url} alt={copy.mediaPreview} className="max-h-64 w-full object-cover" />
+      ) : (
+        <div className="flex items-center gap-2 p-3 text-sm text-muted-foreground">
+          <ImageIcon className="size-4" />
+          <span className="truncate">{media.name || media.url || media.type}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function targetLabel(target: PublishTarget, copy: Copy) {
+  if (target === "both") return copy.both;
+  if (target === "instagram") return copy.instagram;
+  return copy.facebook;
+}
+
 function formatSubmissionTime(submission: PagePostSubmission, language: InterfaceLanguage) {
   const value = submission.scheduledFor || submission.createdAt;
+  return formatDate(value, language);
+}
+
+function formatDate(value: string, language: InterfaceLanguage) {
   return new Date(value).toLocaleString(language === "vi" ? "vi-VN" : "en-US");
 }

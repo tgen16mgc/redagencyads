@@ -12,15 +12,58 @@ export type MetaAccount = {
   timezone_name?: string;
 };
 
+export type PublishTarget = "facebook" | "instagram" | "both";
+export type MediaAttachmentType = "image" | "video" | "gif";
+
+export type MediaAttachment = {
+  type: MediaAttachmentType;
+  url?: string;
+  name?: string;
+  file?: File;
+};
+
+export type PageCapability = {
+  canPublish: boolean;
+  canSchedule: boolean;
+  missingPermissions: string[];
+  issues: string[];
+};
+
+export type InstagramPageCapability = PageCapability & {
+  accountId?: string;
+  username?: string;
+};
+
 export type MetaPage = {
   id: string;
   name: string;
   category?: string;
   tasks?: string[];
+  instagramBusinessAccount?: {
+    id: string;
+    username?: string;
+  };
+  capabilities?: {
+    facebook: PageCapability;
+    instagram: InstagramPageCapability;
+  };
 };
 
 export type PagePostMode = "publish_now" | "scheduled";
 export type PagePostStatus = "submitted" | "scheduled" | "published" | "failed";
+
+export type PagePostTargetResult = {
+  target: Exclude<PublishTarget, "both">;
+  metaPostId?: string;
+  status: PagePostStatus;
+  error?: string;
+};
+
+export type BulkPagePostResult = {
+  ok: boolean;
+  submission?: PagePostSubmission;
+  error?: string;
+};
 
 export type PagePostSubmission = {
   pageId: string;
@@ -29,7 +72,10 @@ export type PagePostSubmission = {
   message?: string;
   link?: string;
   mode: PagePostMode;
+  target: PublishTarget;
+  media?: Omit<MediaAttachment, "file">;
   status: PagePostStatus;
+  results?: PagePostTargetResult[];
   scheduledFor?: string;
   createdAt: string;
 };
