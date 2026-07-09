@@ -196,12 +196,15 @@ const uiCopy = {
   en: {
     token: {
       title: "Red Agency Ads Tool",
-      description: "Connect Meta access token.",
-      storage: "Token is validated server-side, encrypted, and stored only in an HttpOnly session cookie.",
-      rejected: "Token rejected",
+      description: "Connect Meta account.",
+      storage: "Facebook Login and pasted tokens are validated server-side, encrypted, and stored only in an HttpOnly session cookie.",
+      rejected: "Connection rejected",
+      facebookLogin: "Login with Facebook",
+      facebookHelp: "Requests pages_show_list, pages_read_engagement, and pages_manage_posts for Page publishing.",
+      manualToken: "Manual token fallback",
       field: "Access token",
       placeholder: "Paste Meta access token",
-      help: "Do not use shared tokens for hosted public deployments. Rotate any token pasted into chat.",
+      help: "Use a token only when Facebook Login is unavailable. Do not use shared tokens for hosted public deployments.",
       submit: "Validate token",
     },
     loading: {
@@ -354,12 +357,15 @@ const uiCopy = {
   vi: {
     token: {
       title: "Red Agency Ads Tool",
-      description: "Kết nối Meta access token.",
-      storage: "Token được kiểm tra trên server, mã hóa và chỉ lưu trong HttpOnly session cookie.",
-      rejected: "Token bị từ chối",
+      description: "Kết nối tài khoản Meta.",
+      storage: "Facebook Login và token dán thủ công đều được kiểm tra trên server, mã hóa và chỉ lưu trong HttpOnly session cookie.",
+      rejected: "Kết nối bị từ chối",
+      facebookLogin: "Đăng nhập bằng Facebook",
+      facebookHelp: "Yêu cầu pages_show_list, pages_read_engagement và pages_manage_posts để đăng Page.",
+      manualToken: "Dùng token thủ công khi cần",
       field: "Access token",
       placeholder: "Dán Meta access token",
-      help: "Không dùng token dùng chung cho bản public. Hãy rotate mọi token từng dán vào chat.",
+      help: "Chỉ dùng token khi Facebook Login chưa khả dụng. Không dùng token dùng chung cho bản public.",
       submit: "Xác thực token",
     },
     loading: {
@@ -735,6 +741,15 @@ export function DashboardShell() {
     window.localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
     document.documentElement.lang = language;
   }, [language]);
+
+  React.useEffect(() => {
+    const url = new URL(window.location.href);
+    const authError = url.searchParams.get("auth_error");
+    if (!authError) return;
+    setError(authError);
+    url.searchParams.delete("auth_error");
+    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  }, []);
 
   React.useEffect(() => {
     if (!report) return;
@@ -1719,6 +1734,20 @@ function TokenScreen(props: {
               </Alert>
             ) : null}
 
+            <div className="flex min-w-0 flex-col gap-3">
+              <Button type="button" className="w-full" onClick={() => { window.location.href = "/api/auth/facebook/start"; }}>
+                <ShieldCheckIcon data-icon="inline-start" />
+                {copy.facebookLogin}
+              </Button>
+              <FieldDescription className="break-words">{copy.facebookHelp}</FieldDescription>
+            </div>
+
+            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+              <Separator className="flex-1" />
+              {copy.manualToken}
+              <Separator className="flex-1" />
+            </div>
+
             <form onSubmit={props.onSubmit} className="flex min-w-0 flex-col gap-4">
               <FieldGroup>
                 <Field>
@@ -1734,12 +1763,12 @@ function TokenScreen(props: {
                   />
                   <FieldDescription className="break-words">
                     {props.language === "vi"
-                      ? "Token chỉ cần cho phân tích tài khoản ads của bạn (KPI, verdict, drilldown)."
-                      : "A token is only needed to analyze your own ad account (KPIs, verdict, drilldown)."}
+                      ? "Token vẫn dùng được khi Facebook Login chưa khả dụng hoặc cần debug nhanh."
+                      : "Tokens still work when Facebook Login is unavailable or you need a quick debug path."}
                   </FieldDescription>
                 </Field>
               </FieldGroup>
-              <Button type="submit" disabled={props.loading} className="w-full">
+              <Button type="submit" disabled={props.loading} className="w-full" variant="outline">
                 {props.loading ? <Spinner data-icon="inline-start" /> : <KeyRoundIcon data-icon="inline-start" />}
                 {copy.submit}
               </Button>
