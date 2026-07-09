@@ -60,6 +60,14 @@ _Avoid_: ad-hoc chart, freeform chart, new-data chart
 A display-only selection of top KPI cards from the KPI-card metric catalog. It changes which cards are visible, but never changes the Selected KPI Pack, Primary Result, Verdict, diagnosis logic, or comparison logic.
 _Avoid_: custom metric, metric formula, KPI pack override, custom chart
 
+**TikTok Profile Result**:
+A set of TikTok profile and video metadata fetched through Apify, used for creator or competitor context rather than owned ads reporting.
+_Avoid_: TikTok account report, TikTok campaign report
+
+**TikTok Library Report**:
+A public TikTok Ad Library intelligence payload fetched through Apify. It may include public range fields, creative details, and targeting context, but it is not owned TikTok Ads Manager performance.
+_Avoid_: TikTok performance report, TikTok campaign analytics, TikTok Ads Manager data
+
 **Chart Series**:
 One metric drawn on a Custom Chart, bound to a left or right axis. A series is pure data (`key` + `axis`); how it is drawn is decided at render time.
 _Avoid_: line, dataset, render function
@@ -95,6 +103,8 @@ _Avoid_: schema check, lint, sanitize
 - A **Verdict** uses the current **Interface Language**.
 - A **Language Toggle** controls the **Interface Language**.
 - A **Custom Chart** uses only metrics from the **Metric Catalog**.
+- A **TikTok Profile Result** supports context and creative research, not owned report scoring.
+- A **TikTok Library Report** stays separate from Meta **DashboardReport** and cannot produce **Budget Moves** unless a verified owned TikTok Ads Manager source is added.
 - A **Custom KPI Set** uses the KPI-card metric catalog, including card-only metrics such as reply rate and lead/message rate.
 - A **Custom KPI Set** affects visible top cards only and does not override the **Selected KPI Pack** or **Primary Result**.
 - A **Custom Chart** is built from one or more **Chart Series**.

@@ -285,3 +285,71 @@ export type CompetitorSpyResult = {
   assumptions: string[];
   provider: AiProvider;
 };
+
+export type TikTokProfile = {
+  id?: string;
+  username: string;
+  displayName?: string;
+  bio?: string;
+  verified?: boolean;
+  followerCount?: number;
+  followingCount?: number;
+  likesCount?: number;
+  videoCount?: number;
+  avatarUrl?: string;
+  profileUrl?: string;
+  raw?: unknown;
+};
+
+export type TikTokVideo = {
+  id: string;
+  username?: string;
+  text?: string;
+  videoUrl?: string;
+  coverUrl?: string;
+  createdAt?: string;
+  likeCount?: number;
+  shareCount?: number;
+  playCount?: number;
+  commentCount?: number;
+  raw?: unknown;
+};
+
+export type TikTokProfileResult = {
+  profiles: TikTokProfile[];
+  videos: TikTokVideo[];
+  warnings: string[];
+  pulledAt: string;
+};
+
+export type TikTokAdLibraryRow = {
+  id: string;
+  advertiserName?: string;
+  adTitle?: string;
+  caption?: string;
+  cta?: string;
+  landingUrl?: string;
+  previewUrl?: string;
+  imageUrl?: string;
+  videoUrl?: string;
+  firstSeen?: string;
+  lastSeen?: string;
+  impressionsLower?: number;
+  impressionsUpper?: number;
+  reachLower?: number;
+  reachUpper?: number;
+  spendLower?: number;
+  spendUpper?: number;
+  audienceMin?: number;
+  audienceMax?: number;
+  regions?: string[];
+  targeting?: unknown;
+  raw?: unknown;
+};
+
+export type TikTokLibraryReport = {
+  rows: TikTokAdLibraryRow[];
+  warnings: string[];
+  actorId: string;
+  pulledAt: string;
+};

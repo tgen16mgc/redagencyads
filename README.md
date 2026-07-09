@@ -8,6 +8,7 @@ User sees one app with two work areas:
 
 - `Ads analysis`: connect Meta token, choose ad account, choose campaign scope, pull Meta insights, inspect KPI cards/charts/tables, generate Verdict + insight table, export print/PDF report.
 - `Competitor spy`: enter competitor names or Meta Ad Library URLs, fetch competitor ads via Apify or Meta official API, generate competitive readout + original test briefs.
+- `TikTok intelligence`: fetch TikTok profile/video metadata and public TikTok Ad Library rows through Apify actors for creative and competitor analysis.
 - Global `EN / VI` toggle: one persisted language control for app chrome, report panels, controls, and generated report text. Raw Meta account/campaign names and fetched competitor ad copy are not translated.
 
 Core domain words:
@@ -26,6 +27,8 @@ Core domain words:
 - `AI insights`: JSON table-ready analysis, optionally with comparison deltas.
 - `CompetitorSpyAd`: normalized ad-library row from Apify or Meta official API.
 - `CompetitorSpyResult`: JSON competitive intelligence output.
+- `TikTokProfileResult`: TikTok profile and video metadata from Apify.
+- `TikTokLibraryReport`: public TikTok Ad Library intelligence from Apify. It is not owned TikTok Ads Manager performance.
 
 ## shadcn/ui Context
 
@@ -65,6 +68,8 @@ app/page.tsx
       -> app/api/ai/verdict
       -> app/api/ai/insights
       -> app/api/spy/meta
+      -> app/api/tiktok/profiles
+      -> app/api/tiktok/ads
       -> app/api/ai/competitor
 
 app/api/*
@@ -73,6 +78,8 @@ app/api/*
   -> lib/metrics.ts
   -> lib/ai.ts
   -> lib/competitor-spy.ts
+  -> lib/tiktok.ts
+  -> lib/apify.ts
   -> lib/types.ts
 ```
 
@@ -192,6 +199,28 @@ Generate spy report
 
 Public scrape is default and works without an API key on a machine with Chrome installed. It attempts to extract public Meta Ad Library payloads, then keeps the library links as fallback evidence when Meta blocks or returns sparse data. Apify remains optional for external commercial scraping. Meta official source needs session token and may return sparse data.
 
+### 6. TikTok Intelligence
+
+TikTok data is fetched through Apify actors and stays separate from the owned Meta report contract.
+
+```text
+Fetch TikTok profiles
+  -> POST /api/tiktok/profiles
+    -> lib/tiktok.fetchTikTokProfiles()
+      -> lib/apify.runApifyActor()
+      -> clockworks/tiktok-profile-scraper
+      -> normalize into TikTokProfileResult
+
+Fetch TikTok ad library rows
+  -> POST /api/tiktok/ads
+    -> lib/tiktok.fetchTikTokAdLibrary()
+      -> lib/apify.runApifyActor()
+      -> data_xplorer/tiktok-ads-library-fast by default
+      -> normalize into TikTokLibraryReport
+```
+
+TikTok Ad Library rows are public creative/intelligence data. They may include public ranges such as spend, reach, impressions, audience, targeting, or sponsor fields depending on the actor, but they are not treated as owned TikTok Ads Manager performance.
+
 ## Module Ownership
 
 - `app/page.tsx`: single-page entry. Renders `DashboardShell`.
@@ -202,12 +231,15 @@ Public scrape is default and works without an API key on a machine with Chrome i
 - `app/api/meta/*/route.ts`: authenticated Meta data endpoints.
 - `app/api/ai/*/route.ts`: AI JSON generation endpoints.
 - `app/api/spy/meta/route.ts`: competitor ad fetch endpoint.
+- `app/api/tiktok/*/route.ts`: TikTok profile and public Ad Library fetch endpoints.
 - `lib/types.ts`: shared contracts between API and UI. Update this first when payload shape changes.
 - `lib/session.ts`: encrypted HttpOnly Meta token session.
 - `lib/meta.ts`: Graph API client, pagination, account/campaign/insight fetch, `DashboardReport` assembly.
 - `lib/metrics.ts`: row normalization, KPI pack detection, health scoring, formatting, AI prompt builders, comparison deltas.
 - `lib/ai.ts`: 9router gateway calls, retry/fallback logic, strict JSON parsing.
 - `lib/competitor-spy.ts`: Apify/Meta official ad fetch + ad normalization.
+- `lib/apify.ts`: shared Apify actor runner.
+- `lib/tiktok.ts`: TikTok Apify input building and output normalization.
 - `lib/utils.ts`: `cn()` helper for class merge.
 - `app/globals.css`: Tailwind v4 tokens, theme vars, print rules.
 - `public/red-agency-logo.png`: app logo used in token screen and sidebar/header.
@@ -236,9 +268,13 @@ META_PUBLIC_SCRAPE_WAIT_MS=12000
 APIFY_TOKEN=
 APIFY_META_ADS_ACTOR_ID=
 APIFY_META_ADS_INPUT_TEMPLATE=
+APIFY_TIKTOK_PROFILE_ACTOR_ID=clockworks/tiktok-profile-scraper
+APIFY_TIKTOK_ADS_ACTOR_ID=data_xplorer/tiktok-ads-library-fast
+APIFY_TIKTOK_PROFILE_INPUT_TEMPLATE=
+APIFY_TIKTOK_ADS_INPUT_TEMPLATE=
 ```
 
-No 9router key means Verdict and Insights still return local rule-based output. No Apify vars means competitor fetch uses public no-key scraping and keeps Meta Ad Library links as fallback evidence.
+No 9router key means Verdict and Insights still return local rule-based output. No Apify vars means competitor fetch uses public no-key scraping and keeps Meta Ad Library links as fallback evidence. TikTok endpoints require `APIFY_TOKEN` plus the selected TikTok actor IDs.
 
 ## Dev Commands
 
@@ -300,10 +336,11 @@ Notes:
 - Keep API routes thin. Put business rules in `lib/*`.
 - Keep `DashboardReport` as server-to-client contract. Avoid ad hoc response shapes.
 - Do not send Meta token to client after session creation. Use `requireToken()` server-side.
-- Do not invent revenue, CRM, CAPI, MER, Pixel data, or conversion data in prompts/fallbacks.
+- Do not invent revenue, CRM, CAPI, MER, Pixel data, TikTok Ads Manager metrics, or conversion data in prompts/fallbacks.
 - Keep Verdict reliable first. Local Verdict must work without provider keys; providers enhance or explicitly override only through guarded JSON.
 - Keep AI output strict JSON. Parse and fallback instead of rendering raw model text.
 - Keep the single global language toggle as the source for interface/report language. Do not add per-panel language selectors.
 - Keep competitor output original. Use competitor ads for patterns, not copied claims/copy/visual designs.
+- Keep TikTok Ad Library rows separate from owned Meta report data unless a verified owned TikTok Ads Manager source is added.
 - Keep print export intact: preserve `data-print-*` attrs and print CSS.
 - When changing UI, check desktop/mobile and print layout. `dashboard-shell.tsx` is dense; text overflow can break reports.
