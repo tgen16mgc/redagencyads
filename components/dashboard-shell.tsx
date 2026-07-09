@@ -45,7 +45,7 @@ import { buildClientReportViewModel, downloadClientReportPdf } from "@/lib/clien
 import { buildClientReportPdf } from "@/lib/client-report-pdf";
 import { CustomChartsSection } from "@/components/dashboard/custom-charts-section";
 import { PagePublisherPanel } from "@/components/dashboard/page-publisher-panel";
-import type { AdSetWithPreviews, AiInsightTable, CompareMode, CompetitorFetchResult, CompetitorFetchSource, CompetitorPlatform, CompetitorSpyAd, CompetitorSpyResult, DashboardReport, KpiCard, KpiPack, MetaAccount, MetaCampaign, NormalizedRow, Verdict } from "@/lib/types";
+import type { AdSetWithPreviews, AiInsightTable, CompareMode, CompetitorFetchResult, CompetitorFetchSource, CompetitorPlatform, CompetitorSpyAd, CompetitorSpyResult, DashboardReport, KpiCard, KpiPack, MetaAccount, MetaCampaign, NormalizedRow, TikTokAdLibraryRow, TikTokLibraryReport, TikTokProfileResult, Verdict } from "@/lib/types";
 import { buildWorkflowSteps, type DashboardWorkflowStep } from "@/lib/dashboard-workflow";
 import { canOpenDashboardView, initialDashboardViewFromSearch, shouldLoadAdsWorkspaceData } from "@/lib/dashboard-access";
 import { getCompareRange } from "@/lib/report-ranges";
@@ -157,6 +157,7 @@ const workflowItems: { value: DashboardWorkflowStep; label: string; icon: React.
 const appSections = [
   { label: "Ads analysis", value: "ads", icon: BarChart3Icon },
   { label: "Competitor spy", value: "competitor", icon: SearchIcon },
+  { label: "TikTok intelligence", value: "tiktok", icon: ActivityIcon },
   { label: "Page publisher", value: "publisher", icon: CalendarClockIcon },
 ] as const;
 
@@ -217,6 +218,7 @@ const uiCopy = {
       clearSession: "Clear session",
       ads: "Ads analysis",
       competitor: "Competitor spy",
+      tiktok: "TikTok intelligence",
       publisher: "Page publisher",
       connect: "Connect",
       select: "Select",
@@ -228,10 +230,13 @@ const uiCopy = {
       adsDetail: "campaign-first analysis",
       competitorCrumb: "Public research",
       competitorDetail: "no token required",
+      tiktokCrumb: "TikTok public intelligence",
+      tiktokDetail: "Apify profile and ad library pulls",
       publisherCrumb: "Meta Pages API",
       publisherDetail: "server-side Page publishing",
       adsTitle: "Ads analysis dashboard",
       competitorTitle: "Competitor spy",
+      tiktokTitle: "TikTok intelligence",
       publisherTitle: "Page publisher",
       session: "HttpOnly token session",
       pulled: "Pulled",
@@ -374,6 +379,7 @@ const uiCopy = {
       clearSession: "Xóa session",
       ads: "Phân tích ads",
       competitor: "Theo dõi đối thủ",
+      tiktok: "Tình báo TikTok",
       publisher: "Đăng bài Page",
       connect: "Kết nối",
       select: "Chọn phạm vi",
@@ -385,10 +391,13 @@ const uiCopy = {
       adsDetail: "phân tích theo campaign",
       competitorCrumb: "Nghiên cứu công khai",
       competitorDetail: "không cần token",
+      tiktokCrumb: "Tình báo public TikTok",
+      tiktokDetail: "kéo profile và ad library qua Apify",
       publisherCrumb: "Meta Pages API",
       publisherDetail: "đăng Page qua server",
       adsTitle: "Dashboard phân tích ads",
       competitorTitle: "Theo dõi đối thủ",
+      tiktokTitle: "Tình báo TikTok",
       publisherTitle: "Đăng bài Page",
       session: "Session token HttpOnly",
       pulled: "Đã kéo",
@@ -709,6 +718,14 @@ export function DashboardShell() {
       description: language === "vi"
         ? "Nghiên cứu ads public của đối thủ mà không cần kết nối token."
         : "Research competitors' public ads without connecting a Meta token.",
+    },
+    tiktok: {
+      badge: copy.header.tiktokCrumb,
+      detail: copy.header.tiktokDetail,
+      title: copy.header.tiktokTitle,
+      description: language === "vi"
+        ? "Kéo profile, video và TikTok Ad Library public để nghiên cứu creative và đối thủ."
+        : "Pull public profile, video, and TikTok Ad Library intelligence for creative and competitor research.",
     },
     publisher: {
       badge: copy.header.publisherCrumb,
@@ -1091,7 +1108,7 @@ export function DashboardShell() {
                 <LanguageToggle language={language} onChange={setLanguage} />
                 <Badge variant="secondary">
                   <ShieldCheckIcon />
-                  {authenticated ? copy.header.session : activeView === "competitor" ? (language === "vi" ? "Không cần token" : "No token needed") : copy.header.session}
+                  {authenticated ? copy.header.session : activeView === "competitor" || activeView === "tiktok" ? (language === "vi" ? "Không cần token" : "No token needed") : copy.header.session}
                 </Badge>
                 {activeView === "ads" && report ? <Badge variant="outline">{copy.header.pulled} {new Date(report.pulledAt).toLocaleString()}</Badge> : null}
                 {activeView === "ads" ? (
@@ -1480,6 +1497,8 @@ export function DashboardShell() {
             </div>
           ) : null}
             </>
+          ) : activeView === "tiktok" ? (
+            <TikTokIntelligencePanel language={language} />
           ) : activeView === "publisher" ? (
             <PagePublisherPanel language={language} />
           ) : (
@@ -3066,6 +3085,429 @@ function CompetitorSpyPanel({
       </div>
     </div>
   );
+}
+
+function TikTokIntelligencePanel({ language }: { language: ReportLanguage }) {
+  const isVietnamese = language === "vi";
+  const id = React.useId();
+  const [profilesInput, setProfilesInput] = React.useState("");
+  const [profileLimit, setProfileLimit] = React.useState(8);
+  const [profileResult, setProfileResult] = React.useState<TikTokProfileResult | null>(null);
+  const [profileError, setProfileError] = React.useState("");
+  const [profileLoading, setProfileLoading] = React.useState(false);
+  const [region, setRegion] = React.useState("VN");
+  const [queryType, setQueryType] = React.useState<"1" | "2" | "url">("1");
+  const [query, setQuery] = React.useState("");
+  const dates = React.useMemo(defaultDates, []);
+  const [startDate, setStartDate] = React.useState(dates.since);
+  const [endDate, setEndDate] = React.useState(dates.until);
+  const [maxAds, setMaxAds] = React.useState(20);
+  const [fetchDetails, setFetchDetails] = React.useState(true);
+  const [libraryReport, setLibraryReport] = React.useState<TikTokLibraryReport | null>(null);
+  const [libraryError, setLibraryError] = React.useState("");
+  const [libraryLoading, setLibraryLoading] = React.useState(false);
+  const profiles = profilesInput
+    .split(/[\n,]/)
+    .map((profile) => profile.trim().replace(/^@/, ""))
+    .filter(Boolean)
+    .slice(0, 10);
+  const profileCount = profileResult?.profiles.length || 0;
+  const videoCount = profileResult?.videos.length || 0;
+  const libraryRows = libraryReport?.rows || [];
+  const topProfile = profileResult?.profiles[0];
+  const topAd = libraryRows[0];
+  const queryTypeItems = [
+    { label: isVietnamese ? "Từ khóa" : "Keyword", value: "1" },
+    { label: isVietnamese ? "Nhà quảng cáo" : "Advertiser", value: "2" },
+    { label: "URL", value: "url" },
+  ];
+
+  async function fetchProfiles(event: React.FormEvent) {
+    event.preventDefault();
+    if (!profiles.length) {
+      setProfileError(isVietnamese ? "Nhập ít nhất một username TikTok." : "Add at least one TikTok username.");
+      return;
+    }
+    setProfileError("");
+    setProfileLoading(true);
+    try {
+      const data = await jsonFetch<{ result: TikTokProfileResult }>("/api/tiktok/profiles", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ profiles, resultsPerPage: clampWholeNumber(profileLimit, 1, 100) }),
+        timeoutMs: 300000,
+      });
+      setProfileResult(data.result);
+    } catch (error) {
+      setProfileError(error instanceof Error ? error.message : isVietnamese ? "Không kéo được TikTok profile." : "Could not fetch TikTok profiles.");
+    } finally {
+      setProfileLoading(false);
+    }
+  }
+
+  async function fetchLibrary(event: React.FormEvent) {
+    event.preventDefault();
+    if (!query.trim()) {
+      setLibraryError(isVietnamese ? "Nhập từ khóa, advertiser hoặc URL TikTok Ad Library." : "Add a keyword, advertiser, or TikTok Ad Library URL.");
+      return;
+    }
+    setLibraryError("");
+    setLibraryLoading(true);
+    try {
+      const data = await jsonFetch<{ report: TikTokLibraryReport }>("/api/tiktok/ads", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          region,
+          queryType,
+          query: query.trim(),
+          startDate: startDate || undefined,
+          endDate: endDate || undefined,
+          maxAds: clampWholeNumber(maxAds, 1, 100),
+          fetchDetails,
+        }),
+        timeoutMs: 300000,
+      });
+      setLibraryReport(data.report);
+    } catch (error) {
+      setLibraryError(error instanceof Error ? error.message : isVietnamese ? "Không kéo được TikTok Ad Library." : "Could not fetch TikTok Ad Library rows.");
+    } finally {
+      setLibraryLoading(false);
+    }
+  }
+
+  return (
+    <div className="grid gap-4 xl:grid-cols-[380px_1fr]">
+      <div className="flex flex-col gap-4" data-print-hidden>
+        <Card>
+          <CardHeader>
+            <CardTitle>{isVietnamese ? "Profile & video context" : "Profile and video context"}</CardTitle>
+            <CardDescription>
+              {isVietnamese
+                ? "Kéo profile/video TikTok public qua Apify để xem creator hoặc đối thủ."
+                : "Pull public TikTok profile and video context through Apify for creator or competitor research."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={fetchProfiles} className="flex flex-col gap-4">
+              <Field>
+                <FieldLabel htmlFor={`${id}-profiles`}>{isVietnamese ? "Username TikTok" : "TikTok usernames"}</FieldLabel>
+                <Textarea
+                  id={`${id}-profiles`}
+                  value={profilesInput}
+                  onChange={(event) => setProfilesInput(event.target.value)}
+                  placeholder={isVietnamese ? "VD:\nredagency\nbrandvn" : "Example:\nredagency\nbrandname"}
+                  className="min-h-24 resize-none"
+                />
+                <FieldDescription>
+                  {isVietnamese ? "Mỗi dòng một username, có hoặc không có @. Tối đa 10 profile." : "One username per line, with or without @. Up to 10 profiles."}
+                </FieldDescription>
+              </Field>
+              <Field>
+                <FieldLabel htmlFor={`${id}-profile-limit`}>{isVietnamese ? "Video/profile" : "Videos per profile"}</FieldLabel>
+                <Input
+                  id={`${id}-profile-limit`}
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={profileLimit}
+                  onChange={(event) => setProfileLimit(clampWholeNumber(Number(event.target.value), 1, 100))}
+                />
+              </Field>
+              {profileError ? <Alert variant="destructive"><AlertTitle>{isVietnamese ? "Không kéo được profile" : "Profile fetch failed"}</AlertTitle><AlertDescription>{profileError}</AlertDescription></Alert> : null}
+              <Button type="submit" disabled={profileLoading || !profiles.length} aria-busy={profileLoading}>
+                {profileLoading ? <Spinner data-icon="inline-start" /> : <RefreshCcwIcon data-icon="inline-start" />}
+                {profileLoading ? (isVietnamese ? "Đang kéo profile..." : "Fetching profiles...") : isVietnamese ? "Kéo profile" : "Fetch profiles"}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>{isVietnamese ? "TikTok Ad Library" : "TikTok Ad Library"}</CardTitle>
+            <CardDescription>
+              {isVietnamese
+                ? "Kéo ads public để nghiên cứu creative, range impression/reach/spend và targeting context."
+                : "Pull public ads for creative research, range metrics, and targeting context."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={fetchLibrary} className="flex flex-col gap-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field>
+                  <FieldLabel htmlFor={`${id}-region`}>{isVietnamese ? "Quốc gia" : "Region"}</FieldLabel>
+                  <Input
+                    id={`${id}-region`}
+                    value={region}
+                    onChange={(event) => setRegion(event.target.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 8))}
+                    placeholder="VN"
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel id={`${id}-query-type-label`}>{isVietnamese ? "Kiểu tìm" : "Query type"}</FieldLabel>
+                  <Select
+                    items={queryTypeItems}
+                    value={queryType}
+                    onValueChange={(value) => {
+                      if (value === "1" || value === "2" || value === "url") setQueryType(value);
+                    }}
+                  >
+                    <SelectTrigger className="w-full" aria-labelledby={`${id}-query-type-label`}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        {queryTypeItems.map((item) => (
+                          <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </Field>
+              </div>
+              <Field>
+                <FieldLabel htmlFor={`${id}-query`}>{isVietnamese ? "Từ khóa / advertiser / URL" : "Keyword / advertiser / URL"}</FieldLabel>
+                <Input
+                  id={`${id}-query`}
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder={isVietnamese ? "VD: spa, skincare, brand" : "Example: spa, skincare, brand"}
+                />
+              </Field>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field>
+                  <FieldLabel htmlFor={`${id}-start`}>{isVietnamese ? "Từ ngày" : "Start date"}</FieldLabel>
+                  <Input id={`${id}-start`} type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor={`${id}-end`}>{isVietnamese ? "Đến ngày" : "End date"}</FieldLabel>
+                  <Input id={`${id}-end`} type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} />
+                </Field>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field>
+                  <FieldLabel htmlFor={`${id}-max-ads`}>{isVietnamese ? "Số ads tối đa" : "Max ads"}</FieldLabel>
+                  <Input
+                    id={`${id}-max-ads`}
+                    type="number"
+                    min={1}
+                    max={100}
+                    value={maxAds}
+                    onChange={(event) => setMaxAds(clampWholeNumber(Number(event.target.value), 1, 100))}
+                  />
+                </Field>
+                <label className="flex min-h-16 items-center gap-3 rounded-lg border bg-background px-3 py-2 text-sm">
+                  <input type="checkbox" checked={fetchDetails} onChange={(event) => setFetchDetails(event.target.checked)} />
+                  <span>{isVietnamese ? "Lấy chi tiết ads" : "Fetch ad details"}</span>
+                </label>
+              </div>
+              {libraryError ? <Alert variant="destructive"><AlertTitle>{isVietnamese ? "Không kéo được Ad Library" : "Ad Library fetch failed"}</AlertTitle><AlertDescription>{libraryError}</AlertDescription></Alert> : null}
+              <Button type="submit" disabled={libraryLoading || !query.trim()} aria-busy={libraryLoading}>
+                {libraryLoading ? <Spinner data-icon="inline-start" /> : <SearchIcon data-icon="inline-start" />}
+                {libraryLoading ? (isVietnamese ? "Đang kéo ads..." : "Fetching ads...") : isVietnamese ? "Kéo TikTok ads" : "Fetch TikTok ads"}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="flex flex-col gap-4">
+        <section className="grid gap-3 md:grid-cols-4">
+          <TikTokStatCard label={isVietnamese ? "Profiles" : "Profiles"} value={formatCompactNumber(profileCount)} />
+          <TikTokStatCard label={isVietnamese ? "Videos" : "Videos"} value={formatCompactNumber(videoCount)} />
+          <TikTokStatCard label={isVietnamese ? "Public ads" : "Public ads"} value={formatCompactNumber(libraryRows.length)} />
+          <TikTokStatCard label={isVietnamese ? "Actor" : "Actor"} value={libraryReport?.actorId || "Apify"} />
+        </section>
+
+        <Alert>
+          <AlertTitle>{isVietnamese ? "Dữ liệu TikTok là intelligence public" : "TikTok data is public intelligence"}</AlertTitle>
+          <AlertDescription>
+            {isVietnamese
+              ? "Profile/video và Ad Library không phải TikTok Ads Manager owned performance, nên không dùng cho Budget Moves."
+              : "Profile/video data and Ad Library rows are not owned TikTok Ads Manager performance, so they do not drive Budget Moves."}
+          </AlertDescription>
+        </Alert>
+
+        {!profileResult && !libraryReport ? (
+          <Empty className="min-h-80 rounded-2xl border bg-background/50">
+            <EmptyHeader>
+              <EmptyMedia variant="icon"><ActivityIcon /></EmptyMedia>
+              <EmptyTitle>{isVietnamese ? "Bắt đầu bằng profile hoặc Ad Library" : "Start with profiles or Ad Library"}</EmptyTitle>
+              <EmptyDescription>
+                {isVietnamese
+                  ? "Nhập username TikTok hoặc query Ad Library để tạo evidence cho nghiên cứu creative."
+                  : "Add TikTok usernames or an Ad Library query to build evidence for creative research."}
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        ) : null}
+
+        {topProfile ? (
+          <Card>
+            <CardHeader>
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <CardTitle>@{topProfile.username}</CardTitle>
+                  <CardDescription>{topProfile.displayName || (isVietnamese ? "Profile TikTok" : "TikTok profile")}</CardDescription>
+                </div>
+                {topProfile.profileUrl ? <Button type="button" variant="outline" size="sm" onClick={() => window.open(topProfile.profileUrl, "_blank", "noopener,noreferrer")}>{isVietnamese ? "Mở profile" : "Open profile"}</Button> : null}
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-3 sm:grid-cols-4">
+                <TikTokStatCard label={isVietnamese ? "Follower" : "Followers"} value={formatMaybeNumber(topProfile.followerCount)} />
+                <TikTokStatCard label={isVietnamese ? "Following" : "Following"} value={formatMaybeNumber(topProfile.followingCount)} />
+                <TikTokStatCard label={isVietnamese ? "Likes" : "Likes"} value={formatMaybeNumber(topProfile.likesCount)} />
+                <TikTokStatCard label={isVietnamese ? "Videos" : "Videos"} value={formatMaybeNumber(topProfile.videoCount)} />
+              </div>
+              {topProfile.bio ? <p className="mt-4 text-sm leading-6 text-muted-foreground">{topProfile.bio}</p> : null}
+            </CardContent>
+          </Card>
+        ) : null}
+
+        {profileResult?.warnings.length ? (
+          <div className="flex flex-col gap-2">
+            {profileResult.warnings.slice(0, 3).map((warning, index) => (
+              <Alert key={`${warning}-${index}`} variant="destructive">
+                <AlertTitle>{isVietnamese ? "Cảnh báo profile" : "Profile warning"}</AlertTitle>
+                <AlertDescription>{warning}</AlertDescription>
+              </Alert>
+            ))}
+          </div>
+        ) : null}
+
+        {profileResult?.videos.length ? (
+          <Card>
+            <CardHeader>
+              <CardTitle>{isVietnamese ? "Video mới" : "Recent videos"}</CardTitle>
+              <CardDescription>{isVietnamese ? "Creative signals từ video public." : "Creative signals from public videos."}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {profileResult.videos.slice(0, 6).map((video) => (
+                  <div key={video.id} className="rounded-xl border bg-card/70 p-3 shadow-sm">
+                    {video.coverUrl ? <img src={video.coverUrl} alt={video.text || video.id} className="mb-3 aspect-video w-full rounded-lg border object-cover" loading="lazy" /> : null}
+                    <p className="line-clamp-3 text-sm font-medium leading-5">{compactText(video.text || (isVietnamese ? "Không có caption" : "No caption"), 180)}</p>
+                    <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                      <span>{isVietnamese ? "View" : "Views"}: {formatMaybeNumber(video.playCount)}</span>
+                      <span>{isVietnamese ? "Like" : "Likes"}: {formatMaybeNumber(video.likeCount)}</span>
+                      <span>{isVietnamese ? "Share" : "Shares"}: {formatMaybeNumber(video.shareCount)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
+
+        {libraryReport ? <TikTokLibraryPanel report={libraryReport} rows={libraryRows} topAd={topAd} language={language} /> : null}
+      </div>
+    </div>
+  );
+}
+
+function TikTokLibraryPanel({ report, rows, topAd, language }: { report: TikTokLibraryReport; rows: TikTokAdLibraryRow[]; topAd?: TikTokAdLibraryRow; language: ReportLanguage }) {
+  const isVietnamese = language === "vi";
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <CardTitle>{isVietnamese ? "TikTok Ad Library rows" : "TikTok Ad Library rows"}</CardTitle>
+            <CardDescription>
+              {isVietnamese ? `Cập nhật ${new Date(report.pulledAt).toLocaleString()}` : `Synced ${new Date(report.pulledAt).toLocaleString()}`}
+            </CardDescription>
+          </div>
+          <Badge variant="secondary">{rows.length} ads</Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        {report.warnings.map((warning) => (
+          <Alert key={warning}>
+            <AlertTitle>{isVietnamese ? "Lưu ý nguồn dữ liệu" : "Data source note"}</AlertTitle>
+            <AlertDescription>{warning}</AlertDescription>
+          </Alert>
+        ))}
+        {topAd ? (
+          <div className="rounded-2xl border bg-background/50 p-4">
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div className="min-w-0">
+                <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{isVietnamese ? "Creative nổi bật" : "Featured creative"}</div>
+                <h3 className="mt-2 text-lg font-semibold">{topAd.adTitle || topAd.advertiserName || topAd.id}</h3>
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{compactText(topAd.caption || (isVietnamese ? "Không có caption." : "No caption."), 260)}</p>
+              </div>
+              {topAd.previewUrl ? <Button type="button" variant="outline" size="sm" onClick={() => window.open(topAd.previewUrl, "_blank", "noopener,noreferrer")}>{isVietnamese ? "Xem ads" : "View ad"}</Button> : null}
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-4">
+              <TikTokStatCard label="Impressions" value={formatRange(topAd.impressionsLower, topAd.impressionsUpper)} />
+              <TikTokStatCard label="Reach" value={formatRange(topAd.reachLower, topAd.reachUpper)} />
+              <TikTokStatCard label="Spend" value={formatRange(topAd.spendLower, topAd.spendUpper)} />
+              <TikTokStatCard label={isVietnamese ? "Audience" : "Audience"} value={formatRange(topAd.audienceMin, topAd.audienceMax)} />
+            </div>
+          </div>
+        ) : null}
+        <div className="overflow-hidden rounded-xl border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{isVietnamese ? "Advertiser" : "Advertiser"}</TableHead>
+                <TableHead>{isVietnamese ? "Creative" : "Creative"}</TableHead>
+                <TableHead>Impressions</TableHead>
+                <TableHead>{isVietnamese ? "Thời gian" : "Flight"}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.slice(0, 12).map((row) => (
+                <TableRow key={row.id}>
+                  <TableCell className="font-medium">{row.advertiserName || row.id}</TableCell>
+                  <TableCell>
+                    <div className="max-w-md">
+                      <div className="line-clamp-1 font-medium">{row.adTitle || row.cta || (isVietnamese ? "Không có title" : "No title")}</div>
+                      <div className="line-clamp-2 text-xs text-muted-foreground">{row.caption || row.landingUrl || "-"}</div>
+                    </div>
+                  </TableCell>
+                  <TableCell className="font-mono text-xs tabular-nums">{formatRange(row.impressionsLower, row.impressionsUpper)}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{[row.firstSeen, row.lastSeen].filter(Boolean).join(" - ") || "-"}</TableCell>
+                </TableRow>
+              ))}
+              {!rows.length ? (
+                <TableRow>
+                  <TableCell colSpan={4} className="h-24 text-center text-muted-foreground">
+                    {isVietnamese ? "Không có ads public cho query này." : "No public ads returned for this query."}
+                  </TableCell>
+                </TableRow>
+              ) : null}
+            </TableBody>
+          </Table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function TikTokStatCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border bg-card/70 p-3 shadow-sm">
+      <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</div>
+      <div className="mt-1 truncate font-mono text-sm font-semibold tabular-nums text-foreground">{value}</div>
+    </div>
+  );
+}
+
+function formatMaybeNumber(value?: number) {
+  return value === undefined ? "-" : formatCompactNumber(value);
+}
+
+function formatRange(lower?: number, upper?: number) {
+  if (lower === undefined && upper === undefined) return "-";
+  if (lower !== undefined && upper !== undefined) return `${formatCompactNumber(lower)}-${formatCompactNumber(upper)}`;
+  return formatCompactNumber(lower ?? upper ?? 0);
+}
+
+function clampWholeNumber(value: number, min: number, max: number) {
+  if (!Number.isFinite(value)) return min;
+  return Math.min(max, Math.max(min, Math.round(value)));
 }
 
 function platformLabel(platform: CompetitorPlatform) {
