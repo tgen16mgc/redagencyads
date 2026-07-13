@@ -17,7 +17,6 @@ import {
   type LucideIcon,
 } from "lucide-react"
 
-import BorderGlow from "@/components/BorderGlow"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
@@ -122,7 +121,7 @@ export function StickyActionDock({
   glowColors = [
     "var(--action-glow-primary)",
     "var(--action-glow-secondary)",
-    "var(--action-glow-success)",
+    "var(--action-glow-primary)",
   ],
 }: StickyActionDockProps) {
   const actionsId = useId()
@@ -227,151 +226,161 @@ export function StickyActionDock({
             {resolvedStatusLabel}
           </span>
 
-          {hasSecondaryActions && isExpanded ? (
-            <div
-              id={actionsId}
-              role="group"
-              aria-label={actionsLabel}
-              className="action-dock-tray flex max-w-[calc(100vw-1.5rem)] flex-wrap justify-end gap-1.5"
-            >
-              {secondaryActions.map((action, index) => {
-                const Icon = action.icon
-
-                return (
-                  <Tooltip key={action.id}>
-                    <TooltipTrigger
-                      render={
-                        <Button
-                          ref={index === 0 ? firstSecondaryActionRef : undefined}
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          disabled={action.disabled || action.loading}
-                          aria-label={action.label}
-                          title={action.disabledReason}
-                          onClick={() => void action.onSelect()}
-                          className="action-dock-secondary-action"
-                          style={{ "--action-index": index } as CSSProperties}
-                        >
-                          {action.loading ? (
-                            <Spinner data-icon="inline-start" />
-                          ) : (
-                            <Icon data-icon="inline-start" />
-                          )}
-                          <span className="hidden truncate sm:inline">{action.label}</span>
-                          {action.badge !== undefined ? (
-                            <Badge variant="secondary">{action.badge}</Badge>
-                          ) : null}
-                        </Button>
-                      }
-                    />
-                    <TooltipContent>{actionDescription(action)}</TooltipContent>
-                  </Tooltip>
-                )
-              })}
-            </div>
-          ) : null}
-
           <div
             ref={dockSurfaceRef}
             onPointerMove={handlePointerMove}
-            className="action-dock-surface flex max-w-full items-center gap-1"
+            data-expanded={isExpanded ? "true" : "false"}
+            className="action-dock-island max-w-full"
           >
-            <div className="action-dock-context hidden min-w-0 items-center gap-2 pl-2 sm:flex">
-              <span className="max-w-40 truncate text-sm font-medium text-foreground">
-                {contextLabel}
-              </span>
-              <Badge
-                variant={STATUS_VARIANTS[status]}
-                className="action-dock-status"
-              >
-                <span className="action-dock-status-signal" aria-hidden="true" />
-                {resolvedStatusLabel}
-              </Badge>
-            </div>
-
-            <span className="action-dock-mobile-status inline-flex sm:hidden" aria-hidden="true">
-              <span className="action-dock-status-signal" />
-            </span>
-
-            <Separator orientation="vertical" className="mx-1 hidden h-6 sm:block" />
-
             {hasSecondaryActions ? (
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Button
-                      ref={toggleRef}
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      aria-expanded={isExpanded}
-                      aria-controls={actionsId}
-                      aria-label={isExpanded ? `Hide ${actionsLabel}` : actionsLabel}
-                      onClick={handleToggle}
-                      className="action-dock-toggle"
-                    >
-                      <EllipsisIcon data-icon="inline-start" />
-                      <span className="hidden sm:inline">{actionsLabel}</span>
-                      <ChevronUpIcon
-                        data-icon="inline-end"
-                        className="action-dock-toggle-chevron"
-                      />
-                    </Button>
-                  }
-                />
-                <TooltipContent>
-                  {isExpanded ? `Hide ${actionsLabel}` : actionsLabel}
-                </TooltipContent>
-              </Tooltip>
+              <div className="action-dock-tray-shell" aria-hidden={!isExpanded}>
+                <div
+                  id={actionsId}
+                  role="group"
+                  aria-label={actionsLabel}
+                  className="action-dock-tray flex max-w-[calc(100vw-1.5rem)] flex-wrap items-center justify-between gap-1.5"
+                >
+                  <div className="action-dock-tray-meta flex min-w-0 items-center gap-2">
+                    <span className="truncate text-xs font-medium text-muted-foreground">
+                      {actionsLabel}
+                    </span>
+                    {primaryAction.shortcut === "mod+enter" ? (
+                      <kbd className="action-dock-shortcut hidden sm:inline-flex">Cmd/Ctrl + Enter</kbd>
+                    ) : null}
+                  </div>
+                  {secondaryActions.map((action, index) => {
+                    const Icon = action.icon
+
+                    return (
+                      <Tooltip key={action.id}>
+                        <TooltipTrigger
+                          render={
+                            <Button
+                              ref={index === 0 ? firstSecondaryActionRef : undefined}
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              disabled={action.disabled || action.loading}
+                              tabIndex={isExpanded ? undefined : -1}
+                              aria-label={action.label}
+                              title={action.disabledReason}
+                              onClick={() => void action.onSelect()}
+                              className="action-dock-secondary-action"
+                              style={{ "--action-index": index } as CSSProperties}
+                            >
+                              {action.loading ? (
+                                <Spinner data-icon="inline-start" />
+                              ) : (
+                                <Icon data-icon="inline-start" />
+                              )}
+                              <span className="hidden truncate sm:inline">{action.label}</span>
+                              {action.badge !== undefined ? (
+                                <Badge variant="secondary">{action.badge}</Badge>
+                              ) : null}
+                            </Button>
+                          }
+                        />
+                        <TooltipContent>{actionDescription(action)}</TooltipContent>
+                      </Tooltip>
+                    )
+                  })}
+                </div>
+              </div>
             ) : null}
 
-            <BorderGlow
-              active={status === "ready" && !primaryIsDisabled}
-              interactive={!primaryIsDisabled}
-              showShadow={false}
-              borderRadius={999}
-              borderWidth={2}
-              coneSpread={18}
-              glowRadius={18}
-              glowIntensity={1.15}
-              colors={glowColors}
-              backgroundColor="transparent"
-              className="action-dock-primary-frame min-w-0 shrink-0"
-            >
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Button
-                      type="button"
-                      disabled={primaryIsDisabled}
-                      aria-keyshortcuts={
-                        primaryAction.shortcut === "mod+enter"
-                          ? "Meta+Enter Control+Enter"
-                          : undefined
-                      }
-                      title={primaryAction.disabledReason}
-                      onClick={runPrimaryAction}
-                      data-working={primaryIsWorking ? "true" : undefined}
-                      className="action-dock-primary max-w-64 sm:max-w-none"
-                    >
-                      {primaryIsWorking ? (
-                        <Spinner data-icon="inline-start" />
-                      ) : (
-                        <span className="action-dock-primary-glyph">
-                          <primaryAction.icon data-icon="inline-start" />
-                        </span>
-                      )}
-                      <ActionLabel action={primaryAction} />
-                      {primaryAction.badge !== undefined ? (
-                        <Badge variant="secondary">{primaryAction.badge}</Badge>
-                      ) : null}
-                    </Button>
-                  }
-                />
-                <TooltipContent>{actionDescription(primaryAction)}</TooltipContent>
-              </Tooltip>
-            </BorderGlow>
+            <div className="action-dock-surface flex max-w-full items-center gap-1">
+              <div className="action-dock-context hidden min-w-0 items-center gap-2 pl-2 sm:flex">
+                <span className="max-w-40 truncate text-sm font-medium text-foreground">
+                  {contextLabel}
+                </span>
+                <Badge
+                  variant={STATUS_VARIANTS[status]}
+                  className="action-dock-status"
+                >
+                  <span className="action-dock-status-signal" aria-hidden="true" />
+                  {resolvedStatusLabel}
+                </Badge>
+              </div>
+
+              <span className="action-dock-mobile-status inline-flex sm:hidden" aria-hidden="true">
+                <span className="action-dock-status-signal" />
+              </span>
+
+              <Separator orientation="vertical" className="mx-1 hidden h-6 sm:block" />
+
+              {hasSecondaryActions ? (
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        ref={toggleRef}
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        aria-expanded={isExpanded}
+                        aria-controls={actionsId}
+                        aria-label={isExpanded ? `Hide ${actionsLabel}` : actionsLabel}
+                        onClick={handleToggle}
+                        className="action-dock-toggle"
+                      >
+                        <EllipsisIcon data-icon="inline-start" />
+                        <span className="hidden sm:inline">{actionsLabel}</span>
+                        <ChevronUpIcon
+                          data-icon="inline-end"
+                          className="action-dock-toggle-chevron"
+                        />
+                      </Button>
+                    }
+                  />
+                  <TooltipContent>
+                    {isExpanded ? `Hide ${actionsLabel}` : actionsLabel}
+                  </TooltipContent>
+                </Tooltip>
+              ) : null}
+
+              <div
+                data-active={status === "ready" && !primaryIsDisabled ? "true" : "false"}
+                className="action-dock-primary-frame min-w-0 shrink-0"
+                style={{
+                  "--dock-glow-primary": glowColors[0],
+                  "--dock-glow-secondary": glowColors[1] ?? glowColors[0],
+                  "--dock-glow-tertiary": glowColors[2] ?? glowColors[0],
+                } as CSSProperties}
+              >
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        type="button"
+                        disabled={primaryIsDisabled}
+                        aria-keyshortcuts={
+                          primaryAction.shortcut === "mod+enter"
+                            ? "Meta+Enter Control+Enter"
+                            : undefined
+                        }
+                        title={primaryAction.disabledReason}
+                        onClick={runPrimaryAction}
+                        data-working={primaryIsWorking ? "true" : undefined}
+                        className="action-dock-primary max-w-64 sm:max-w-none"
+                      >
+                        {primaryIsWorking ? (
+                          <Spinner data-icon="inline-start" />
+                        ) : (
+                          <span className="action-dock-primary-glyph">
+                            <primaryAction.icon data-icon="inline-start" />
+                          </span>
+                        )}
+                        <ActionLabel action={primaryAction} />
+                        {primaryAction.badge !== undefined ? (
+                          <Badge variant="secondary">{primaryAction.badge}</Badge>
+                        ) : null}
+                      </Button>
+                    }
+                  />
+                  <TooltipContent>{actionDescription(primaryAction)}</TooltipContent>
+                </Tooltip>
+              </div>
+            </div>
           </div>
         </div>
       </div>
