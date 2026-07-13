@@ -28,7 +28,7 @@ describe("fetchTikTokProfiles", () => {
         authorMeta: {
           id: "user-1",
           name: "redagency",
-          nickName: "Red Agency",
+          nickName: "Demo Studio",
           signature: "Ads team",
           verified: true,
           fans: 12000,
@@ -63,7 +63,7 @@ describe("fetchTikTokProfiles", () => {
     expect(result.profiles[0]).toMatchObject({
       id: "user-1",
       username: "redagency",
-      displayName: "Red Agency",
+      displayName: "Demo Studio",
       bio: "Ads team",
       verified: true,
       followerCount: 12000,

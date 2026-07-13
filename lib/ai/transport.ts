@@ -240,7 +240,7 @@ async function fetchOpenRouterCompletion(args: {
         "content-type": "application/json",
         authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
         "http-referer": process.env.OPENROUTER_SITE_URL || "https://meta-ads-dashboard.vercel.app",
-        "x-title": "Red Agency Ads Tool",
+        "x-title": "Decision Operations Workspace",
       },
       body: JSON.stringify(body),
     });

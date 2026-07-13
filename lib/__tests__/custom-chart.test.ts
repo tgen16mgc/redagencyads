@@ -349,6 +349,6 @@ describe("persistence", () => {
   });
 
   it("exposes a stable storage key", () => {
-    expect(CUSTOM_CHARTS_STORAGE_KEY).toBe("redagencyads-custom-charts");
+    expect(CUSTOM_CHARTS_STORAGE_KEY).toBe("decision-workspace-custom-charts");
   });
 });

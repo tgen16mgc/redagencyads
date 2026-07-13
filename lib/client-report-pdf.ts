@@ -138,7 +138,7 @@ export function buildClientReportPdfLayout(model: ClientReportViewModel): Client
   addBarList(model.language === "vi" ? "Top campaign" : "Top campaigns", model.topCampaigns, model.copy.performanceStory);
   addBarList(model.language === "vi" ? "Top ad set" : "Top ad sets", model.topAdsets, model.copy.performanceStory);
 
-  startSection(model.copy.recommendations, model.copy.recommendations.toUpperCase(), model.language === "vi" ? "Red Agency khuyến nghị gì tiếp theo" : "What Red Agency recommends next", model.copy.footnoteRecommendations);
+  startSection(model.copy.recommendations, model.copy.recommendations.toUpperCase(), model.language === "vi" ? "Hành động được khuyến nghị tiếp theo" : "Recommended next actions", model.copy.footnoteRecommendations);
   model.actions.forEach((action) => {
     const height = actionHeight(action, contentWidth);
     ensureSpace(height, model.copy.recommendations, model.copy.footnoteRecommendations);
@@ -257,7 +257,7 @@ function drawBlock(doc: jsPDF, model: ClientReportViewModel, block: ClientReport
     doc.line(block.x, block.y - 8, block.x + block.width, block.y - 8);
     setFont(doc, "bold", 8);
     textColor(doc, block.section === "Cover" ? [212, 212, 216] : colors.muted);
-    doc.text("Red Agency", block.x, block.y + 8);
+    doc.text("Decision Workspace", block.x, block.y + 8);
     doc.text(pdfText(block.title || "Report"), block.x + block.width / 2, block.y + 8, { align: "center" });
     doc.text(pdfText(model.accountName), block.x + block.width, block.y + 8, { align: "right" });
     if (block.footnote) {

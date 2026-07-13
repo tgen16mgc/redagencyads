@@ -1,6 +1,6 @@
-# Red Agency Ads Tool Context
+# Decision Operations Workspace Context
 
-This context defines language for paid ads reporting and strategy readouts in the Red Agency Ads Tool.
+This context defines language for paid ads reporting and strategy readouts in the Decision Operations Workspace.
 
 ## Language
 

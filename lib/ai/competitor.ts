@@ -12,10 +12,16 @@ function competitorFallback(prompt: string): CompetitorSpyResult {
   const competitors = Array.isArray(payload?.competitors) ? payload.competitors.filter((item): item is string => typeof item === "string" && Boolean(item.trim())) : [];
   const extractedAds = Array.isArray(payload?.extracted_ads) ? payload.extracted_ads : [];
   const notes = typeof payload?.pasted_ad_library_notes === "string" ? payload.pasted_ad_library_notes : "";
-  const evidenceCount = extractedAds.length + (notes && !notes.includes("No pasted") ? 1 : 0);
+  const hasNotes = Boolean(notes && !notes.includes("No pasted"));
+  const hasExtractedAds = extractedAds.length > 0;
+  const evidenceCount = extractedAds.length + (hasNotes ? 1 : 0);
   const competitorRows = competitors.map((name) => ({
     name,
-    likely_positioning: evidenceCount ? "Public ad-library evidence and notes available; inspect live ads before final creative decisions." : "Hypothesis only; no live ad evidence loaded yet.",
+    likely_positioning: hasExtractedAds
+      ? "Extracted ad evidence and notes are available; inspect live ads before final creative decisions."
+      : hasNotes
+        ? "Positioning inferred from the verified ad-library notes supplied for this analysis."
+        : "Hypothesis only; no live ad evidence loaded yet.",
     observed_or_expected_patterns: evidenceCount
       ? ["Offer-led Meta ads", "Proof or consultation hook", "DM/contact CTA"]
       : ["Open public ad-library links to confirm active hooks, offers, and CTAs."],
@@ -31,7 +37,11 @@ function competitorFallback(prompt: string): CompetitorSpyResult {
       themes: [
         {
           theme: evidenceCount ? "Offer and proof-led Meta positioning" : "Unverified competitor hypotheses",
-          evidence: evidenceCount ? "Public links, extracted ad cards, or pasted ad-library notes are present in the prompt." : "Competitor names were provided without fetched ad evidence.",
+          evidence: hasExtractedAds
+            ? "Extracted ad cards and pasted ad-library notes are present in the prompt."
+            : hasNotes
+              ? "Verified ad-library notes are present in the prompt."
+              : "Competitor names were provided without ad evidence.",
           opportunity: "Turn observed hooks into original Meta tests, not copied competitor claims.",
           confidence: evidenceCount ? "medium" : "low",
         },
@@ -46,7 +56,9 @@ function competitorFallback(prompt: string): CompetitorSpyResult {
           guardrail: "Do not scale until cost per primary result and lead quality beat current account baseline.",
         },
       ],
-      next_actions: ["Open Meta Ad Library links from fetched cards.", "Paste notable hooks/offers into notes if live scraping is thin.", "Generate again with 9router when provider key is available for deeper synthesis."],
+      next_actions: hasExtractedAds
+        ? ["Open Meta Ad Library links from fetched cards.", "Paste notable hooks/offers into notes if live scraping is thin.", "Generate again with 9router when provider key is available for deeper synthesis."]
+        : ["Recheck the pasted evidence against the live Meta Ad Library before using it in a brief.", "Add landing-page or CTA details that materially change the offer interpretation.", "Generate again with 9router when provider key is available for deeper synthesis."],
       assumptions: ["Local deterministic brief used because no live 9router key was available.", evidenceCount ? "Evidence links or notes need human review before final claims." : "No live competitor ad evidence was available."],
     };
   }

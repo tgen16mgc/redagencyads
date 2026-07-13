@@ -3,6 +3,7 @@ import { canOpenDashboardView, initialDashboardViewFromSearch, shouldLoadAdsWork
 
 describe("canOpenDashboardView", () => {
   it("allows competitor spy without a Meta token but keeps authenticated workspaces gated", () => {
+    expect(canOpenDashboardView({ authenticated: false, activeView: "overview" })).toBe(true);
     expect(canOpenDashboardView({ authenticated: false, activeView: "competitor" })).toBe(true);
     expect(canOpenDashboardView({ authenticated: false, activeView: "tiktok" })).toBe(true);
     expect(canOpenDashboardView({ authenticated: false, activeView: "ads" })).toBe(false);
@@ -17,10 +18,11 @@ describe("canOpenDashboardView", () => {
     expect(initialDashboardViewFromSearch("?view=publisher")).toBe("publisher");
     expect(initialDashboardViewFromSearch("?view=tiktok")).toBe("tiktok");
     expect(initialDashboardViewFromSearch("?view=ads")).toBe("ads");
-    expect(initialDashboardViewFromSearch("")).toBe("ads");
+    expect(initialDashboardViewFromSearch("")).toBe("overview");
   });
 
-  it("loads ad workspace data only for the ads view", () => {
+  it("loads account context for overview and performance only", () => {
+    expect(shouldLoadAdsWorkspaceData({ authenticated: true, activeView: "overview" })).toBe(true);
     expect(shouldLoadAdsWorkspaceData({ authenticated: true, activeView: "ads" })).toBe(true);
     expect(shouldLoadAdsWorkspaceData({ authenticated: true, activeView: "publisher" })).toBe(false);
     expect(shouldLoadAdsWorkspaceData({ authenticated: true, activeView: "competitor" })).toBe(false);

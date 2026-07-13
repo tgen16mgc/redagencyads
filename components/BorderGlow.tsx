@@ -1,10 +1,22 @@
 'use client';
 
-import { useRef, useCallback, useState, useEffect, type ReactNode } from 'react';
+import {
+  useRef,
+  useCallback,
+  useState,
+  useEffect,
+  type FocusEvent,
+  type PointerEvent,
+  type ReactNode,
+} from 'react';
 
-interface BorderGlowProps {
+import { cn } from '@/lib/utils';
+
+export interface BorderGlowProps {
   children?: ReactNode;
   className?: string;
+  active?: boolean;
+  interactive?: boolean;
   edgeSensitivity?: number;
   glowColor?: string;
   backgroundColor?: string;
@@ -28,8 +40,12 @@ function parseHSL(hslStr: string): { h: number; s: number; l: number } {
 }
 
 function buildBoxShadow(glowColor: string, intensity: number): string {
-  const { h, s, l } = parseHSL(glowColor);
-  const base = `${h}deg ${s}% ${l}%`;
+  const base = glowColor.trim().startsWith('var(')
+    ? glowColor
+    : (() => {
+        const { h, s, l } = parseHSL(glowColor);
+        return `${h}deg ${s}% ${l}%`;
+      })();
   const layers: [number, number, number, number, number, boolean][] = [
     [0, 0, 0, 1, 100, true], [0, 0, 1, 0, 60, true], [0, 0, 3, 0, 50, true],
     [0, 0, 6, 0, 40, true], [0, 0, 15, 0, 30, true], [0, 0, 25, 2, 20, true],
@@ -53,14 +69,25 @@ interface AnimateOpts {
 
 function animateValue({ start = 0, end = 100, duration = 1000, delay = 0, ease = easeOutCubic, onUpdate, onEnd }: AnimateOpts) {
   const t0 = performance.now() + delay;
+  let cancelled = false;
+  let frame = 0;
   function tick() {
+    if (cancelled) return;
     const elapsed = performance.now() - t0;
     const t = Math.min(elapsed / duration, 1);
     onUpdate(start + (end - start) * ease(t));
-    if (t < 1) requestAnimationFrame(tick);
+    if (t < 1) frame = requestAnimationFrame(tick);
     else if (onEnd) onEnd();
   }
-  setTimeout(() => requestAnimationFrame(tick), delay);
+  const timer = window.setTimeout(() => {
+    frame = requestAnimationFrame(tick);
+  }, delay);
+
+  return () => {
+    cancelled = true;
+    window.clearTimeout(timer);
+    cancelAnimationFrame(frame);
+  };
 }
 
 const GRADIENT_POSITIONS = ['80% 55%', '69% 34%', '8% 6%', '41% 38%', '86% 85%', '82% 18%', '51% 4%'];
@@ -79,15 +106,17 @@ function buildMeshGradients(colors: string[]): string[] {
 const BorderGlow: React.FC<BorderGlowProps> = ({
   children,
   className = '',
+  active = false,
+  interactive = true,
   edgeSensitivity = 30,
-  glowColor = '40 80 80',
-  backgroundColor = '#141414',
+  glowColor = 'var(--action-glow-hsl)',
+  backgroundColor = 'var(--card)',
   borderRadius = 28,
   glowRadius = 40,
   glowIntensity = 1.0,
   coneSpread = 25,
   animated = false,
-  colors = ['#6a4cf5', '#d44df0', '#ff5577'],
+  colors = ['var(--action-glow-primary)', 'var(--action-glow-secondary)', 'var(--action-glow-success)'],
   fillOpacity = 0.5,
   spin = false,
   spinDuration = 3000,
@@ -96,6 +125,7 @@ const BorderGlow: React.FC<BorderGlowProps> = ({
 }) => {
   const cardRef = useRef<HTMLDivElement>(null);
   const [isHovered, setIsHovered] = useState(false);
+  const [isFocusedWithin, setIsFocusedWithin] = useState(false);
   const [cursorAngle, setCursorAngle] = useState(45);
   const [edgeProximity, setEdgeProximity] = useState(0);
   const [sweepActive, setSweepActive] = useState(false);
@@ -138,8 +168,8 @@ const BorderGlow: React.FC<BorderGlowProps> = ({
     return degrees;
   }, [getCenterOfElement]);
 
-  const handlePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    if (reduceMotion) return;
+  const handlePointerMove = useCallback((e: PointerEvent<HTMLDivElement>) => {
+    if (reduceMotion || !interactive) return;
     const card = cardRef.current;
     if (!card) return;
     const rect = card.getBoundingClientRect();
@@ -147,7 +177,13 @@ const BorderGlow: React.FC<BorderGlowProps> = ({
     const y = e.clientY - rect.top;
     setEdgeProximity(getEdgeProximity(card, x, y));
     setCursorAngle(getCursorAngle(card, x, y));
-  }, [getEdgeProximity, getCursorAngle, reduceMotion]);
+  }, [getEdgeProximity, getCursorAngle, interactive, reduceMotion]);
+
+  const handleBlurCapture = useCallback((event: FocusEvent<HTMLDivElement>) => {
+    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+      setIsFocusedWithin(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (!animated || reduceMotion) return;
@@ -156,18 +192,42 @@ const BorderGlow: React.FC<BorderGlowProps> = ({
     setSweepActive(true);
     setCursorAngle(angleStart);
 
-    animateValue({ duration: 500, onUpdate: v => setEdgeProximity(v / 100) });
-    animateValue({ ease: easeInCubic, duration: 1500, end: 50, onUpdate: v => {
-      setCursorAngle((angleEnd - angleStart) * (v / 100) + angleStart);
-    }});
-    animateValue({ ease: easeOutCubic, delay: 1500, duration: 2250, start: 50, end: 100, onUpdate: v => {
-      setCursorAngle((angleEnd - angleStart) * (v / 100) + angleStart);
-    }});
-    animateValue({ ease: easeInCubic, delay: 2500, duration: 1500, start: 100, end: 0,
-      onUpdate: v => setEdgeProximity(v / 100),
-      onEnd: () => setSweepActive(false),
-    });
-  }, [animated]);
+    const cancelAnimations = [
+      animateValue({ duration: 500, onUpdate: v => setEdgeProximity(v / 100) }),
+      animateValue({
+        ease: easeInCubic,
+        duration: 1500,
+        end: 50,
+        onUpdate: v => {
+          setCursorAngle((angleEnd - angleStart) * (v / 100) + angleStart);
+        },
+      }),
+      animateValue({
+        ease: easeOutCubic,
+        delay: 1500,
+        duration: 2250,
+        start: 50,
+        end: 100,
+        onUpdate: v => {
+          setCursorAngle((angleEnd - angleStart) * (v / 100) + angleStart);
+        },
+      }),
+      animateValue({
+        ease: easeInCubic,
+        delay: 2500,
+        duration: 1500,
+        start: 100,
+        end: 0,
+        onUpdate: v => setEdgeProximity(v / 100),
+        onEnd: () => setSweepActive(false),
+      }),
+    ];
+
+    return () => {
+      cancelAnimations.forEach(cancel => cancel());
+      setSweepActive(false);
+    };
+  }, [animated, reduceMotion]);
 
   useEffect(() => {
     if (!spin || reduceMotion) {
@@ -189,12 +249,17 @@ const BorderGlow: React.FC<BorderGlowProps> = ({
   }, [spin, spinDuration, reduceMotion]);
 
   const colorSensitivity = edgeSensitivity + 20;
-  const isVisible = isHovered || sweepActive || spinning;
+  const isVisible = active || isHovered || isFocusedWithin || sweepActive || spinning;
+  const effectiveEdgeProximity = active
+    ? Math.max(edgeProximity, 0.74)
+    : isFocusedWithin
+      ? 1
+      : edgeProximity;
   const borderOpacity = isVisible
-    ? Math.max(0, (edgeProximity * 100 - colorSensitivity) / (100 - colorSensitivity))
+    ? Math.max(0, (effectiveEdgeProximity * 100 - colorSensitivity) / (100 - colorSensitivity))
     : 0;
   const glowOpacity = isVisible
-    ? Math.max(0, (edgeProximity * 100 - edgeSensitivity) / (100 - edgeSensitivity))
+    ? Math.max(0, (effectiveEdgeProximity * 100 - edgeSensitivity) / (100 - edgeSensitivity))
     : 0;
 
   const meshGradients = buildMeshGradients(colors);
@@ -206,37 +271,44 @@ const BorderGlow: React.FC<BorderGlowProps> = ({
     <div
       ref={cardRef}
       onPointerMove={handlePointerMove}
-      onPointerEnter={() => setIsHovered(true)}
+      onPointerEnter={() => interactive && setIsHovered(true)}
       onPointerLeave={() => setIsHovered(false)}
-      className={`relative grid isolate ${className}`}
+      onFocusCapture={() => setIsFocusedWithin(true)}
+      onBlurCapture={handleBlurCapture}
+      data-glow-state={spinning ? 'working' : active ? 'active' : isVisible ? 'interactive' : 'idle'}
+      className={cn('relative isolate grid', className)}
       style={{
         background: backgroundColor,
         borderRadius: `${borderRadius}px`,
         transform: 'translate3d(0, 0, 0.01px)',
-        boxShadow: showShadow
-          ? 'rgba(0,0,0,0.1) 0 1px 2px, rgba(0,0,0,0.1) 0 2px 4px, rgba(0,0,0,0.1) 0 4px 8px, rgba(0,0,0,0.1) 0 8px 16px, rgba(0,0,0,0.1) 0 16px 32px, rgba(0,0,0,0.1) 0 32px 64px'
-          : undefined,
+        boxShadow: showShadow ? 'var(--shadow-glow-surface)' : undefined,
       }}
     >
       {/* mesh gradient border */}
       <div
+        aria-hidden="true"
         className="absolute inset-0 rounded-[inherit] -z-[1]"
         style={{
           border: `${borderWidth}px solid transparent`,
           background: [
             `linear-gradient(${backgroundColor} 0 100%) padding-box`,
-            'linear-gradient(rgb(255 255 255 / 0%) 0% 100%) border-box',
+            'linear-gradient(var(--glow-transparent) 0% 100%) border-box',
             ...borderBg,
           ].join(', '),
           opacity: borderOpacity,
           maskImage: `conic-gradient(from ${angleDeg} at center, black ${coneSpread}%, transparent ${coneSpread + 15}%, transparent ${100 - coneSpread - 15}%, black ${100 - coneSpread}%)`,
           WebkitMaskImage: `conic-gradient(from ${angleDeg} at center, black ${coneSpread}%, transparent ${coneSpread + 15}%, transparent ${100 - coneSpread - 15}%, black ${100 - coneSpread}%)`,
-          transition: isVisible ? 'opacity 0.25s ease-out' : 'opacity 0.75s ease-in-out',
+          transition: reduceMotion
+            ? 'none'
+            : isVisible
+              ? 'opacity var(--duration-medium) var(--ease-out-workbench)'
+              : 'opacity var(--duration-slow) var(--ease-in-out-workbench)',
         }}
       />
 
       {/* mesh gradient fill near edges */}
       <div
+        aria-hidden="true"
         className="absolute inset-0 rounded-[inherit] -z-[1]"
         style={{
           border: `${borderWidth}px solid transparent`,
@@ -263,12 +335,17 @@ const BorderGlow: React.FC<BorderGlowProps> = ({
           WebkitMaskComposite: 'source-out, source-over, source-over, source-over, source-over, source-over',
           opacity: borderOpacity * fillOpacity,
           mixBlendMode: 'soft-light',
-          transition: isVisible ? 'opacity 0.25s ease-out' : 'opacity 0.75s ease-in-out',
+          transition: reduceMotion
+            ? 'none'
+            : isVisible
+              ? 'opacity var(--duration-medium) var(--ease-out-workbench)'
+              : 'opacity var(--duration-slow) var(--ease-in-out-workbench)',
         } as React.CSSProperties}
       />
 
       {/* outer glow */}
       <span
+        aria-hidden="true"
         className="absolute pointer-events-none z-[1] rounded-[inherit]"
         style={{
           inset: `${-glowRadius}px`,
@@ -276,7 +353,11 @@ const BorderGlow: React.FC<BorderGlowProps> = ({
           WebkitMaskImage: `conic-gradient(from ${angleDeg} at center, black 2.5%, transparent 10%, transparent 90%, black 97.5%)`,
           opacity: glowOpacity,
           mixBlendMode: 'plus-lighter',
-          transition: isVisible ? 'opacity 0.25s ease-out' : 'opacity 0.75s ease-in-out',
+          transition: reduceMotion
+            ? 'none'
+            : isVisible
+              ? 'opacity var(--duration-medium) var(--ease-out-workbench)'
+              : 'opacity var(--duration-slow) var(--ease-in-out-workbench)',
         } as React.CSSProperties}
       >
         <span

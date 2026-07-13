@@ -57,6 +57,23 @@ describe("generateCompetitorSpy", () => {
     expect(result.next_actions.join(" ")).toContain("Open Meta Ad Library");
   });
 
+  it("does not refer to fetched cards when analysis uses verified notes only", async () => {
+    vi.stubEnv("NINEROUTER_KEY", "");
+
+    const prompt = buildCompetitorSpyPrompt({
+      competitors: ["The Body Work"],
+      market: "fitness studio Vietnam",
+      platform: "meta",
+      notes: "Verified Meta Ad Library note: trainer-led proof, Learn More CTA, direct consultation offer.",
+      extractedAds: [],
+    });
+
+    const result = await generateCompetitorSpy(prompt, "auto");
+
+    expect(result.next_actions.join(" ")).not.toContain("fetched cards");
+    expect(result.next_actions.join(" ")).toContain("pasted evidence");
+  });
+
   it("recovers competitor JSON wrapped in a code fence and prose from 9router", async () => {
     vi.stubEnv("NINEROUTER_KEY", "test-key");
     const wrapped = `Here is the competitor brief:\n\`\`\`json\n${JSON.stringify(spyPayload)}\n\`\`\`\nLet me know if you need more.`;

@@ -21,6 +21,7 @@ import {
 } from "recharts";
 import {
   ActivityIcon,
+  ArrowLeftIcon,
   BarChart3Icon,
   CalendarClockIcon,
   BrainIcon,
@@ -32,6 +33,7 @@ import {
   DatabaseIcon,
   DownloadIcon,
   FileTextIcon,
+  HomeIcon,
   KeyRoundIcon,
   LanguagesIcon,
   RefreshCcwIcon,
@@ -39,15 +41,20 @@ import {
   ShieldCheckIcon,
   SlidersHorizontalIcon,
   SparklesIcon,
+  WaypointsIcon,
 } from "lucide-react";
 import { AppSidebar, type AppSidebarItem, type WorkflowSidebarItem } from "@/components/dashboard/app-sidebar";
+import { WorkspaceOverview } from "@/components/dashboard/workspace-overview";
+import { StickyActionDock } from "@/components/dashboard/sticky-action-dock";
 import { buildClientReportViewModel, downloadClientReportPdf } from "@/lib/client-report";
 import { buildClientReportPdf } from "@/lib/client-report-pdf";
 import { CustomChartsSection } from "@/components/dashboard/custom-charts-section";
 import { PagePublisherPanel } from "@/components/dashboard/page-publisher-panel";
-import type { AdSetWithPreviews, AiInsightTable, CompareMode, CompetitorFetchResult, CompetitorFetchSource, CompetitorPlatform, CompetitorSpyAd, CompetitorSpyResult, DashboardReport, KpiCard, KpiPack, MetaAccount, MetaCampaign, NormalizedRow, TikTokAdLibraryRow, TikTokLibraryReport, TikTokProfileResult, Verdict } from "@/lib/types";
+import type { AdSetWithPreviews, AiInsightTable, CompareMode, CompetitorPlatform, CompetitorSpyResult, DashboardReport, KpiCard, KpiPack, MetaAccount, MetaCampaign, NormalizedRow, TikTokProfile, TikTokProfileResult, TikTokVideo, Verdict } from "@/lib/types";
 import { buildWorkflowSteps, type DashboardWorkflowStep } from "@/lib/dashboard-workflow";
-import { canOpenDashboardView, initialDashboardViewFromSearch, shouldLoadAdsWorkspaceData } from "@/lib/dashboard-access";
+import { canOpenDashboardView, initialDashboardViewFromSearch, shouldLoadAdsWorkspaceData, type DashboardView } from "@/lib/dashboard-access";
+import { buildUnknownCapabilitySnapshot, type CapabilityStatus } from "@/lib/capabilities";
+import { hasReportSignal } from "@/lib/data-sufficiency";
 import { getCompareRange } from "@/lib/report-ranges";
 import { classifyCreativeFatigue, computeCreativeFatigueBaseline } from "@/lib/creative-fatigue";
 import { assessCreativeVolume } from "@/lib/creative-volume";
@@ -69,13 +76,8 @@ import { assessCostCapDelivery } from "@/lib/cost-cap-delivery";
 import { assessSpendPacing } from "@/lib/spend-pacing";
 import { assessDecisionConfidence, type DecisionTargets } from "@/lib/decision-confidence";
 import { rowDecision } from "@/lib/row-decision";
-import {
-  normalizeCompetitorCountry,
-  normalizeCompetitorLimit,
-  normalizeCompetitorNames,
-  normalizeCompetitorUrls,
-} from "@/lib/competitor-input";
-import { shouldFetchBeforeCompetitorAnalysis } from "@/lib/competitor-workflow";
+import { normalizeCompetitorNames } from "@/lib/competitor-input";
+import { advertiserLinkedEvidenceText, reviewCompetitorEvidence } from "@/lib/competitor-evidence";
 import { detectBaselineAnomalies, anomalyBadgeText } from "@/lib/baseline-anomaly";
 import { diagnosticNextStep, type DiagnosticKind, type DiagnosticTone } from "@/lib/diagnostic-next-step";
 import { performanceChartConfig } from "@/lib/chart-palette";
@@ -103,6 +105,7 @@ import { buildBreakdownChartAnnotations, type BreakdownChartAnnotations } from "
 import {
   buildCustomKpiCards,
   CUSTOM_KPI_SET_STORAGE_KEY,
+  LEGACY_CUSTOM_KPI_SET_STORAGE_KEY,
   type CustomKpiKey,
   deserializeCustomKpiSet,
   getCustomKpiCatalogGroups,
@@ -115,6 +118,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -155,13 +159,22 @@ const workflowItems: { value: DashboardWorkflowStep; label: string; icon: React.
 ];
 
 const appSections = [
-  { label: "Ads analysis", value: "ads", icon: BarChart3Icon },
-  { label: "Competitor spy", value: "competitor", icon: SearchIcon },
-  { label: "TikTok intelligence", value: "tiktok", icon: ActivityIcon },
-  { label: "Page publisher", value: "publisher", icon: CalendarClockIcon },
+  { label: "Overview", value: "overview", icon: HomeIcon },
+  { label: "Performance", value: "ads", icon: BarChart3Icon },
+  { label: "Competitor evidence", value: "competitor", icon: SearchIcon },
+  { label: "TikTok tracker", value: "tiktok", icon: ActivityIcon },
+  { label: "Publishing", value: "publisher", icon: CalendarClockIcon },
 ] as const;
 
-type ActiveView = (typeof appSections)[number]["value"];
+type ActiveView = DashboardView;
+
+type TikTokWorkspaceState = {
+  profilesInput: string;
+  profileLimit: number;
+  profileResult: TikTokProfileResult | null;
+  profileError: string;
+  profileLoading: boolean;
+};
 
 const packItems: { label: string; value: KpiPack }[] = [
   { label: "Auto: lead/message", value: "lead_gen" },
@@ -172,7 +185,7 @@ const packItems: { label: string; value: KpiPack }[] = [
 ];
 
 const providerItems = [
-  { label: "Auto: 9router", value: "auto" },
+  { label: "Auto: best available", value: "auto" },
   { label: "9router", value: "9router" },
   { label: "Local rules only", value: "prompt" },
 ] as const;
@@ -183,7 +196,7 @@ const languageValues = ["en", "vi"] as const;
 
 type ReportLanguage = (typeof languageValues)[number];
 const COMPETITOR_SPY_TIMEOUT_MS = 5 * 60 * 1000;
-const LANGUAGE_STORAGE_KEY = "redagencyads-language";
+const LANGUAGE_STORAGE_KEY = "decision-workspace-language";
 
 const compareItems: { label: string; value: CompareMode }[] = [
   { label: "No compare", value: "off" },
@@ -195,7 +208,7 @@ const compareItems: { label: string; value: CompareMode }[] = [
 const uiCopy = {
   en: {
     token: {
-      title: "Red Agency Ads Tool",
+      title: "Decision Operations Workspace",
       description: "Connect Meta account.",
       storage: "Facebook Login and pasted tokens are validated server-side, encrypted, and stored only in an HttpOnly session cookie.",
       rejected: "Connection rejected",
@@ -212,32 +225,36 @@ const uiCopy = {
       description: "Checking encrypted cookie state.",
     },
     nav: {
-      functions: "Functions",
+      functions: "Workspaces",
       workflow: "Workflow",
-      aiSetup: "AI setup",
+      aiSetup: "Enhancement",
       clearSession: "Clear session",
-      ads: "Ads analysis",
-      competitor: "Competitor spy",
-      tiktok: "TikTok intelligence",
-      publisher: "Page publisher",
+      overview: "Overview",
+      ads: "Performance",
+      competitor: "Competitor evidence",
+      tiktok: "TikTok tracker",
+      publisher: "Publishing",
       connect: "Connect",
       select: "Select",
       analyze: "Analyze",
       verdict: "Verdict",
     },
     header: {
+      overviewCrumb: "Decision operations",
+      overviewDetail: "evidence to action",
       adsCrumb: "Meta Graph API",
       adsDetail: "campaign-first analysis",
-      competitorCrumb: "Public research",
-      competitorDetail: "no token required",
+      competitorCrumb: "Verified research",
+      competitorDetail: "manual evidence only",
       tiktokCrumb: "TikTok public intelligence",
-      tiktokDetail: "Apify profile and ad library pulls",
+      tiktokDetail: "Apify profile and video pulls",
       publisherCrumb: "Meta Pages API",
       publisherDetail: "server-side Page publishing",
-      adsTitle: "Ads analysis dashboard",
-      competitorTitle: "Competitor spy",
-      tiktokTitle: "TikTok intelligence",
-      publisherTitle: "Page publisher",
+      overviewTitle: "Workspace overview",
+      adsTitle: "Performance diagnosis",
+      competitorTitle: "Competitor evidence",
+      tiktokTitle: "TikTok tracker",
+      publisherTitle: "Publishing operations",
       session: "HttpOnly token session",
       pulled: "Pulled",
       exportPdf: "Export PDF",
@@ -356,7 +373,7 @@ const uiCopy = {
   },
   vi: {
     token: {
-      title: "Red Agency Ads Tool",
+      title: "Decision Operations Workspace",
       description: "Kết nối tài khoản Meta.",
       storage: "Facebook Login và token dán thủ công đều được kiểm tra trên server, mã hóa và chỉ lưu trong HttpOnly session cookie.",
       rejected: "Kết nối bị từ chối",
@@ -373,32 +390,36 @@ const uiCopy = {
       description: "Đang kiểm tra cookie đã mã hóa.",
     },
     nav: {
-      functions: "Chức năng",
+      functions: "Workspace",
       workflow: "Quy trình",
-      aiSetup: "Thiết lập AI",
+      aiSetup: "Tăng cường",
       clearSession: "Xóa session",
-      ads: "Phân tích ads",
-      competitor: "Theo dõi đối thủ",
-      tiktok: "Tình báo TikTok",
-      publisher: "Đăng bài Page",
+      overview: "Tổng quan",
+      ads: "Hiệu quả",
+      competitor: "Evidence đối thủ",
+      tiktok: "Theo dõi TikTok",
+      publisher: "Vận hành đăng bài",
       connect: "Kết nối",
       select: "Chọn phạm vi",
       analyze: "Phân tích",
       verdict: "Verdict",
     },
     header: {
+      overviewCrumb: "Vận hành quyết định",
+      overviewDetail: "từ evidence đến hành động",
       adsCrumb: "Meta Graph API",
       adsDetail: "phân tích theo campaign",
       competitorCrumb: "Nghiên cứu công khai",
       competitorDetail: "không cần token",
       tiktokCrumb: "Tình báo public TikTok",
-      tiktokDetail: "kéo profile và ad library qua Apify",
+      tiktokDetail: "kéo profile và video qua Apify",
       publisherCrumb: "Meta Pages API",
       publisherDetail: "đăng Page qua server",
-      adsTitle: "Dashboard phân tích ads",
-      competitorTitle: "Theo dõi đối thủ",
-      tiktokTitle: "Tình báo TikTok",
-      publisherTitle: "Đăng bài Page",
+      overviewTitle: "Tổng quan workspace",
+      adsTitle: "Chẩn đoán hiệu quả",
+      competitorTitle: "Evidence đối thủ",
+      tiktokTitle: "Theo dõi TikTok",
+      publisherTitle: "Vận hành đăng bài",
       session: "Session token HttpOnly",
       pulled: "Đã kéo",
       exportPdf: "Xuất PDF",
@@ -559,12 +580,6 @@ const competitorPlatformItems: { label: string; value: CompetitorPlatform }[] = 
   { label: "Mixed", value: "mixed" },
 ];
 
-const competitorFetchItems: { label: string; value: CompetitorFetchSource }[] = [
-  { label: "Public scrape (no key)", value: "public" },
-  { label: "Apify scraper", value: "apify" },
-  { label: "Meta official API", value: "meta_official" },
-];
-
 function defaultDates() {
   const until = new Date();
   until.setDate(until.getDate() - 1);
@@ -616,13 +631,14 @@ export function DashboardShell() {
   const [targetCpa, setTargetCpa] = React.useState("");
   const [targetRoas, setTargetRoas] = React.useState("");
   const [provider, setProvider] = React.useState<Provider>("auto");
+  const [capabilities, setCapabilities] = React.useState<CapabilityStatus[]>(buildUnknownCapabilitySnapshot);
   const [language, setLanguage] = React.useState<ReportLanguage>(() => {
     if (typeof window === "undefined") return "en";
     const stored = window.localStorage.getItem(LANGUAGE_STORAGE_KEY);
     return stored === "vi" || stored === "en" ? stored : "en";
   });
   const [activeView, setActiveView] = React.useState<ActiveView>(() =>
-    typeof window === "undefined" ? "ads" : initialDashboardViewFromSearch(window.location.search),
+    typeof window === "undefined" ? "overview" : initialDashboardViewFromSearch(window.location.search),
   );
   const [report, setReport] = React.useState<DashboardReport | null>(null);
   const [previousReport, setPreviousReport] = React.useState<DashboardReport | null>(null);
@@ -633,22 +649,24 @@ export function DashboardShell() {
   const [competitorPlatform, setCompetitorPlatform] = React.useState<CompetitorPlatform>("meta");
   const [competitorNotes, setCompetitorNotes] = React.useState("");
   const [competitorResult, setCompetitorResult] = React.useState<CompetitorSpyResult | null>(null);
-  const [competitorFetchSource, setCompetitorFetchSource] = React.useState<CompetitorFetchSource>("public");
-  const [competitorCountry, setCompetitorCountry] = React.useState("VN");
-  const [competitorLimit, setCompetitorLimit] = React.useState(20);
-  const [competitorLibraryUrls, setCompetitorLibraryUrls] = React.useState("");
-  const [competitorAds, setCompetitorAds] = React.useState<CompetitorSpyAd[]>([]);
-  const [competitorFetchWarnings, setCompetitorFetchWarnings] = React.useState<string[]>([]);
-  const [competitorFetchedAt, setCompetitorFetchedAt] = React.useState("");
+  const [tiktokWorkspace, setTikTokWorkspace] = React.useState<TikTokWorkspaceState>({
+    profilesInput: "",
+    profileLimit: 8,
+    profileResult: null,
+    profileError: "",
+    profileLoading: false,
+  });
   const [copiedPrompt, setCopiedPrompt] = React.useState(false);
   const [copiedCompetitorPrompt, setCopiedCompetitorPrompt] = React.useState(false);
   const [token, setToken] = React.useState("");
   const [error, setError] = React.useState("");
   const [loading, setLoading] = React.useState("");
   const [scopeExpanded, setScopeExpanded] = React.useState(false);
+  const [diagnosticsOpen, setDiagnosticsOpen] = React.useState(false);
   const [aiLoading, setAiLoading] = React.useState({ verdict: false, insights: false });
   const [exportingPdf, setExportingPdf] = React.useState(false);
   const reportStartRef = React.useRef<HTMLDivElement>(null);
+  const historyInitializedRef = React.useRef(false);
   const verdictProgress = useTimedProgress(aiLoading.verdict);
   const insightProgress = useTimedProgress(aiLoading.insights);
   const [customKpiKeys, setCustomKpiKeys] = React.useState<CustomKpiKey[] | null>(null);
@@ -660,6 +678,7 @@ export function DashboardShell() {
     if (!report) return null;
     return { ...report, kpis: effectiveKpis };
   }, [effectiveKpis, report]);
+  const reportHasData = report ? hasReportSignal(report.totals) : false;
   const kpiComparisons = React.useMemo(() => {
     if (!comparisonReport || !previousReport || compareMode === "off") return null;
     const arr = buildKpiComparisons({ report: comparisonReport, previousReport, compareMode, language });
@@ -676,8 +695,8 @@ export function DashboardShell() {
   }, [targetCpa, targetRoas]);
   const copy = uiCopy[language];
   const workflowSteps = React.useMemo(
-    () => buildWorkflowSteps({ hasAccount: Boolean(accountId), hasReport: Boolean(report), hasVerdict: Boolean(verdict) }),
-    [accountId, report, verdict],
+    () => buildWorkflowSteps({ hasAccount: Boolean(accountId), hasReport: reportHasData, hasVerdict: Boolean(verdict) }),
+    [accountId, reportHasData, verdict],
   );
   const appNavItems = React.useMemo<AppSidebarItem<ActiveView>[]>(
     () =>
@@ -703,6 +722,14 @@ export function DashboardShell() {
     [language, workflowSteps],
   );
   const headerMode = {
+    overview: {
+      badge: copy.header.overviewCrumb,
+      detail: copy.header.overviewDetail,
+      title: copy.header.overviewTitle,
+      description: language === "vi"
+        ? "Chọn một công việc, kiểm tra capability thật và đưa evidence đến hành động."
+        : "Choose a job, verify the real capability state, and move evidence toward action.",
+    },
     ads: {
       badge: copy.header.adsCrumb,
       detail: copy.header.adsDetail,
@@ -716,16 +743,16 @@ export function DashboardShell() {
       detail: copy.header.competitorDetail,
       title: copy.header.competitorTitle,
       description: language === "vi"
-        ? "Nghiên cứu ads public của đối thủ mà không cần kết nối token."
-        : "Research competitors' public ads without connecting a Meta token.",
+        ? "Phân tích ghi chú ads đối thủ đã xác minh mà không cần kết nối token."
+        : "Analyze verified competitor ad notes without connecting a Meta token.",
     },
     tiktok: {
       badge: copy.header.tiktokCrumb,
       detail: copy.header.tiktokDetail,
       title: copy.header.tiktokTitle,
       description: language === "vi"
-        ? "Kéo profile, video và TikTok Ad Library public để nghiên cứu creative và đối thủ."
-        : "Pull public profile, video, and TikTok Ad Library intelligence for creative and competitor research.",
+        ? "Kéo profile và video TikTok public để nghiên cứu creative và đối thủ."
+        : "Pull public TikTok profile and video intelligence for creative and competitor research.",
     },
     publisher: {
       badge: copy.header.publisherCrumb,
@@ -752,8 +779,39 @@ export function DashboardShell() {
   }, []);
 
   React.useEffect(() => {
+    const url = new URL(window.location.href);
+    if (activeView === "overview") url.searchParams.delete("view");
+    else url.searchParams.set("view", activeView);
+    const nextUrl = `${url.pathname}${url.search}${url.hash}`;
+    const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+
+    if (!historyInitializedRef.current) {
+      historyInitializedRef.current = true;
+      window.history.replaceState({ view: activeView }, "", nextUrl);
+    } else if (nextUrl !== currentUrl) {
+      window.history.pushState({ view: activeView }, "", nextUrl);
+    }
+  }, [activeView]);
+
+  React.useEffect(() => {
+    const handlePopState = () => {
+      setActiveView(initialDashboardViewFromSearch(window.location.search));
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
+  React.useEffect(() => {
     if (!report) return;
-    const keys = deserializeCustomKpiSet(window.localStorage.getItem(CUSTOM_KPI_SET_STORAGE_KEY), report.kpis);
+    const currentValue = window.localStorage.getItem(CUSTOM_KPI_SET_STORAGE_KEY);
+    const legacyValue = currentValue === null
+      ? window.localStorage.getItem(LEGACY_CUSTOM_KPI_SET_STORAGE_KEY)
+      : null;
+    const keys = deserializeCustomKpiSet(currentValue ?? legacyValue, report.kpis);
+    if (legacyValue !== null) {
+      window.localStorage.setItem(CUSTOM_KPI_SET_STORAGE_KEY, legacyValue);
+      window.localStorage.removeItem(LEGACY_CUSTOM_KPI_SET_STORAGE_KEY);
+    }
     setCustomKpiKeys(keys);
   }, [report]);
 
@@ -775,12 +833,22 @@ export function DashboardShell() {
     }
   }, []);
 
+  const loadCapabilities = React.useCallback(async () => {
+    try {
+      const data = await jsonFetch<{ capabilities: CapabilityStatus[] }>("/api/capabilities", { timeoutMs: 8000 });
+      setCapabilities(data.capabilities);
+    } catch {
+      setCapabilities(buildUnknownCapabilitySnapshot());
+    }
+  }, []);
+
   React.useEffect(() => {
     let cancelled = false;
     jsonFetch<{ authenticated: boolean }>("/api/session", { timeoutMs: 8000 })
       .then(async (data) => {
         if (cancelled) return;
         setAuthenticated(data.authenticated);
+        void loadCapabilities();
         if (shouldLoadAdsWorkspaceData({ authenticated: data.authenticated, activeView })) void loadAccounts();
       })
       .catch((err) => {
@@ -791,7 +859,7 @@ export function DashboardShell() {
     return () => {
       cancelled = true;
     };
-  }, [activeView, loadAccounts]);
+  }, [activeView, loadAccounts, loadCapabilities]);
 
   React.useEffect(() => {
     if (!accountId) return;
@@ -817,6 +885,7 @@ export function DashboardShell() {
       });
       setAuthenticated(true);
       setToken("");
+      await loadCapabilities();
       if (shouldLoadAdsWorkspaceData({ authenticated: true, activeView })) await loadAccounts();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not validate token.");
@@ -828,6 +897,8 @@ export function DashboardShell() {
   async function logout() {
     await fetch("/api/session", { method: "DELETE" });
     setAuthenticated(false);
+    setActiveView("overview");
+    void loadCapabilities();
     setAccounts([]);
     setCampaigns([]);
     setReport(null);
@@ -874,7 +945,7 @@ export function DashboardShell() {
   }
 
   async function runAi() {
-    if (!report || aiLoading.verdict) return;
+    if (!report || !reportHasData || aiLoading.verdict) return;
     setError("");
     setAiLoading((current) => ({ ...current, verdict: true }));
     try {
@@ -893,7 +964,7 @@ export function DashboardShell() {
   }
 
   async function runInsights() {
-    if (!report || aiLoading.insights) return;
+    if (!report || !reportHasData || aiLoading.insights) return;
     setError("");
     setAiLoading((current) => ({ ...current, insights: true }));
     try {
@@ -916,18 +987,15 @@ export function DashboardShell() {
     return normalizeCompetitorNames(competitorNames);
   }
 
-  function competitorUrlList() {
-    return normalizeCompetitorUrls(competitorLibraryUrls);
-  }
-
-  function competitorPrompt(adsOverride = competitorAds) {
+  function competitorPrompt() {
+    const competitors = competitorList();
     return withReportLanguage(
       buildCompetitorSpyPrompt({
-        competitors: competitorList(),
+        competitors,
         market: competitorMarket,
         platform: competitorPlatform,
-        notes: competitorNotes,
-        extractedAds: adsOverride,
+        notes: advertiserLinkedEvidenceText(competitorNotes, competitors),
+        extractedAds: [],
         report,
       }),
       language,
@@ -935,63 +1003,20 @@ export function DashboardShell() {
     );
   }
 
-  async function loadSpyAds(competitors: string[], libraryUrls: string[]) {
-    const data = await jsonFetch<{ result: CompetitorFetchResult }>("/api/spy/meta", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        source: competitorFetchSource,
-        competitors,
-        country: normalizeCompetitorCountry(competitorCountry),
-        limit: normalizeCompetitorLimit(competitorLimit),
-        libraryUrls,
-      }),
-      timeoutMs: COMPETITOR_SPY_TIMEOUT_MS,
-    });
-    setCompetitorAds(data.result.ads);
-    setCompetitorFetchWarnings(data.result.warnings);
-    setCompetitorFetchedAt(data.result.fetchedAt);
-    return data.result;
-  }
-
-  async function fetchSpyAds() {
-    const competitors = competitorList();
-    const libraryUrls = competitorUrlList();
-    if (!competitors.length && !libraryUrls.length) {
-      setError("Add competitor names or Meta Ad Library URLs before fetching ads.");
-      return;
-    }
-    setError("");
-    setLoading("spy-fetch");
-    try {
-      const result = await loadSpyAds(competitors, libraryUrls);
-      if (!result.ads.length) setError(result.warnings[0] || "No competitor ads returned.");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not fetch competitor ads.");
-    } finally {
-      setLoading("");
-    }
-  }
-
   async function runCompetitorSpy() {
     const competitors = competitorList();
-    const libraryUrls = competitorUrlList();
-    if (!competitors.length && !libraryUrls.length && !competitorAds.length) {
-      setError("Add competitors or fetch ads first.");
+    const reviewedEvidence = reviewCompetitorEvidence(competitorNotes, competitors);
+    if (!competitors.length || !reviewedEvidence.some((row) => row.status === "advertiser_linked")) {
+      setError("Add competitor names and at least one evidence line that names the advertiser before analyzing.");
       return;
     }
     setError("");
     setLoading("competitor");
     try {
-      let adsForPrompt = competitorAds;
-      if (shouldFetchBeforeCompetitorAnalysis({ competitors, libraryUrls, fetchedAdCount: competitorAds.length })) {
-        const result = await loadSpyAds(competitors, libraryUrls);
-        adsForPrompt = result.ads;
-      }
       const data = await jsonFetch<{ competitor: CompetitorSpyResult }>("/api/ai/competitor", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ prompt: competitorPrompt(adsForPrompt), provider }),
+        body: JSON.stringify({ prompt: competitorPrompt(), provider }),
         timeoutMs: COMPETITOR_SPY_TIMEOUT_MS,
       });
       setCompetitorResult(data.competitor);
@@ -1004,8 +1029,9 @@ export function DashboardShell() {
 
   async function copyCompetitorPrompt() {
     const competitors = competitorList();
-    if (!competitors.length && !competitorAds.length) {
-      setError("Add competitors or fetch ads before copying the prompt.");
+    const reviewedEvidence = reviewCompetitorEvidence(competitorNotes, competitors);
+    if (!competitors.length || !reviewedEvidence.some((row) => row.status === "advertiser_linked")) {
+      setError("Add competitor names and at least one advertiser-linked evidence line before copying the prompt.");
       return;
     }
     await navigator.clipboard.writeText(competitorPrompt());
@@ -1014,14 +1040,14 @@ export function DashboardShell() {
   }
 
   async function copyPrompt() {
-    if (!report) return;
+    if (!report || !reportHasData) return;
     await navigator.clipboard.writeText(report.prompt);
     setCopiedPrompt(true);
     window.setTimeout(() => setCopiedPrompt(false), 1500);
   }
 
   async function exportPdf() {
-    if (!report) return;
+    if (!report || !reportHasData) return;
     setExportingPdf(true);
     try {
       await new Promise((resolve) => requestAnimationFrame(() => window.setTimeout(resolve, 0)));
@@ -1058,7 +1084,9 @@ export function DashboardShell() {
         token={token}
         loading={loading === "session"}
         language={language}
+        intendedView={activeView}
         onLanguageChange={setLanguage}
+        onBack={() => setActiveView("overview")}
         onTokenChange={setToken}
         onUseCompetitor={() => setActiveView("competitor")}
         onSubmit={connectToken}
@@ -1071,7 +1099,7 @@ export function DashboardShell() {
       <SidebarProvider>
       <AppSidebar
         activeView={activeView}
-        aiProviderLabel={providerLabel(provider, language)}
+        aiProviderLabel={providerLabel(provider, language, capabilities)}
         appItems={appNavItems}
         clearSessionLabel={copy.nav.clearSession}
         functionsLabel={copy.nav.functions}
@@ -1084,35 +1112,38 @@ export function DashboardShell() {
         onLogout={logout}
       />
       <SidebarInset>
-        <main className="flex min-h-svh flex-col gap-4 p-4 md:p-6" data-print-page>
-          <header className="relative overflow-hidden rounded-3xl border bg-card/80 p-4 shadow-xl shadow-black/10 md:p-5">
-            <div className="pointer-events-none absolute -right-16 -top-20 size-48 rounded-full bg-[radial-gradient(circle,_rgba(0,153,255,0.13),_transparent_68%)]" />
-            <div className="relative flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <main className="flex min-h-svh flex-col gap-4 p-4 pb-28 md:p-6 md:pb-28" data-print-page>
+          <header className="rounded-2xl border bg-card p-3 sm:p-4 md:p-5">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex min-w-0 items-start gap-3">
-                <SidebarTrigger className="mt-1" data-print-hidden />
-                <span className="flex size-12 shrink-0 items-center justify-center rounded-2xl border bg-background/70">
-                  <img src="/red-agency-logo.png" alt="Red Agency" className="size-8 rounded-lg object-contain" />
+                <SidebarTrigger className="mt-0.5" data-print-hidden />
+                <span className="hidden size-11 shrink-0 items-center justify-center rounded-xl border bg-background text-muted-foreground sm:flex">
+                  <WaypointsIcon className="size-5" aria-hidden="true" />
                 </span>
                 <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground sm:text-sm">
                     <Badge variant="secondary" className="shrink-0">{headerMode.badge}</Badge>
                     <span className="flex items-center gap-1">{headerMode.detail}</span>
                   </div>
-                  <h1 className="mt-2 font-heading text-2xl font-semibold tracking-[-0.035em] md:text-3xl">
+                  <h1 className="mt-1 font-heading text-xl font-semibold tracking-[-0.035em] sm:mt-2 sm:text-2xl md:text-3xl">
                     {headerMode.title}
                   </h1>
-                  <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">{headerMode.description}</p>
+                  <p className="mt-1 hidden max-w-2xl text-sm leading-6 text-muted-foreground sm:block">{headerMode.description}</p>
                 </div>
               </div>
-              <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+              <div className="flex w-full flex-wrap items-center justify-between gap-2 sm:w-auto sm:justify-start lg:justify-end">
                 <LanguageToggle language={language} onChange={setLanguage} />
                 <Badge variant="secondary">
                   <ShieldCheckIcon />
-                  {authenticated ? copy.header.session : activeView === "competitor" || activeView === "tiktok" ? (language === "vi" ? "Không cần token" : "No token needed") : copy.header.session}
+                  {authenticated
+                    ? copy.header.session
+                    : activeView === "competitor" || activeView === "tiktok" || activeView === "overview"
+                      ? language === "vi" ? "Không yêu cầu Meta" : "Meta optional"
+                      : copy.header.session}
                 </Badge>
                 {activeView === "ads" && report ? <Badge variant="outline">{copy.header.pulled} {new Date(report.pulledAt).toLocaleString()}</Badge> : null}
                 {activeView === "ads" ? (
-                  <Button type="button" variant="outline" onClick={exportPdf} disabled={!report || exportingPdf} data-print-hidden>
+                  <Button type="button" variant="outline" onClick={exportPdf} disabled={!reportHasData || exportingPdf} data-print-hidden>
                     {exportingPdf ? <Spinner data-icon="inline-start" /> : <DownloadIcon data-icon="inline-start" />}
                     {copy.header.exportPdf}
                   </Button>
@@ -1128,10 +1159,18 @@ export function DashboardShell() {
             </Alert>
           ) : null}
 
-          {activeView === "ads" ? (
+          {activeView === "overview" ? (
+            <WorkspaceOverview
+              authenticated={authenticated}
+              capabilities={capabilities}
+              language={language}
+              workspaceLabel={accounts.find((account) => account.id === accountId)?.name}
+              onOpen={setActiveView}
+            />
+          ) : activeView === "ads" ? (
             <>
           {report && !scopeExpanded ? (
-            <Card className="ra-fade-up">
+            <Card className="workbench-fade-up">
               <CardContent className="flex flex-col gap-3 py-4 md:flex-row md:items-center md:justify-between">
                 <div className="min-w-0">
                   <div className="text-sm font-medium">{accounts.find((account) => account.id === accountId)?.name || copy.scope.account}</div>
@@ -1154,7 +1193,7 @@ export function DashboardShell() {
               </CardContent>
             </Card>
           ) : (
-            <Card className="ra-fade-up">
+            <Card className="workbench-fade-up">
               <CardHeader>
                 <CardTitle>{copy.scope.title}</CardTitle>
                 <CardDescription>{copy.scope.description}</CardDescription>
@@ -1295,8 +1334,27 @@ export function DashboardShell() {
           ) : null}
           {loading === "report" ? <ReportSkeleton language={language} /> : null}
           {!report && loading !== "report" ? <EmptyState language={language} /> : null}
-          {report ? (
-            <div ref={reportStartRef} className="ra-fade-up flex flex-col gap-4 scroll-mt-4">
+          {report && !reportHasData ? (
+            <Card className="border-border bg-card">
+              <CardContent>
+                <Empty className="min-h-72">
+                  <EmptyHeader>
+                    <EmptyMedia variant="icon">
+                      <DatabaseIcon />
+                    </EmptyMedia>
+                    <EmptyTitle>{language === "vi" ? "Phạm vi này chưa có dữ liệu phân tích" : "No analyzable data in this scope"}</EmptyTitle>
+                    <EmptyDescription>
+                      {language === "vi"
+                        ? "Meta trả về 0 spend, impression và kết quả. Verdict, insight và export được tạm khóa để tránh tạo báo cáo gây hiểu nhầm."
+                        : "Meta returned zero spend, impressions, and results. Verdict, insights, and export stay locked to avoid a misleading report."}
+                    </EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
+              </CardContent>
+            </Card>
+          ) : null}
+          {report && reportHasData ? (
+            <div ref={reportStartRef} className="workbench-fade-up flex flex-col gap-4 scroll-mt-4">
               <section className="flex flex-col gap-3">
                 <div className="flex flex-wrap items-center justify-between gap-2" data-print-hidden>
                   <div>
@@ -1431,74 +1489,92 @@ export function DashboardShell() {
                 <DailyDiagnosisCard report={report} language={language} />
               </section>
 
-              <section className="flex flex-col gap-3" data-print-flow>
-                <div className="flex flex-col gap-1">
-                  <h2 className="font-heading text-lg font-semibold tracking-tight">
-                    {language === "vi" ? "Chẩn đoán tài khoản" : "Account diagnostics"}
-                  </h2>
-                  <p className="text-sm text-muted-foreground">
-                    {language === "vi"
-                      ? "Các kiểm tra ads-skill chuyên sâu. Mỗi thẻ là một góc nhìn độc lập về sức khỏe tài khoản."
-                      : "In-depth ads-skill checks. Each card is an independent lens on account health."}
-                  </p>
+              <Collapsible open={diagnosticsOpen} onOpenChange={setDiagnosticsOpen} className="rounded-2xl border bg-card" data-print-flow>
+                <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+                  <div className="min-w-0">
+                    <h2 className="font-heading text-lg font-semibold tracking-tight">
+                      {language === "vi" ? "Evidence chẩn đoán chi tiết" : "Detailed diagnostic evidence"}
+                    </h2>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {language === "vi"
+                        ? "13 kiểm tra chuyên sâu được ẩn mặc định để ưu tiên health score, nguyên nhân và hành động."
+                        : "Thirteen deep checks stay collapsed so health, causes, and actions remain primary."}
+                    </p>
+                  </div>
+                  <CollapsibleTrigger render={<Button type="button" variant="outline" className="shrink-0" />}>
+                    {diagnosticsOpen
+                      ? language === "vi" ? "Ẩn evidence" : "Hide evidence"
+                      : language === "vi" ? "Mở 13 kiểm tra" : "Open 13 checks"}
+                    <ChevronDownIcon data-icon="inline-end" className={diagnosticsOpen ? "rotate-180" : undefined} />
+                  </CollapsibleTrigger>
                 </div>
-                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                  <ExperimentReadinessCard report={report} language={language} />
-                  <DecisionConfidenceCard report={report} language={language} targets={decisionTargets} />
-                  <SpendPacingCard report={report} language={language} />
-                  <ConsolidationPressureCard report={report} language={language} />
-                  <CostCapDeliveryCard report={report} language={language} />
-                  <CreativeVolumeCard report={report} language={language} />
-                  <CreativeStarvationCard report={report} language={language} />
-                  <BudgetMoveEngineCard report={report} language={language} />
-                  <ResultConcentrationCard report={report} language={language} />
-                  <FunnelLeakageCard report={report} language={language} />
-                  <AudienceOverlapCard report={report} language={language} />
-                  <TargetingExclusionsCard report={report} language={language} />
-                  <MeasurementQualityCard report={report} language={language} />
-                </div>
-              </section>
+                <CollapsibleContent className="border-t p-4 sm:p-5">
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                    <ExperimentReadinessCard report={report} language={language} />
+                    <DecisionConfidenceCard report={report} language={language} targets={decisionTargets} />
+                    <SpendPacingCard report={report} language={language} />
+                    <ConsolidationPressureCard report={report} language={language} />
+                    <CostCapDeliveryCard report={report} language={language} />
+                    <CreativeVolumeCard report={report} language={language} />
+                    <CreativeStarvationCard report={report} language={language} />
+                    <BudgetMoveEngineCard report={report} language={language} />
+                    <ResultConcentrationCard report={report} language={language} />
+                    <FunnelLeakageCard report={report} language={language} />
+                    <AudienceOverlapCard report={report} language={language} />
+                    <TargetingExclusionsCard report={report} language={language} />
+                    <MeasurementQualityCard report={report} language={language} />
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
 
             </div>
           ) : null}
-          {activeView === "ads" && report && !verdict ? (
-            <div className="sticky bottom-4 z-10 flex justify-center" data-print-hidden>
-              <div className="flex w-full max-w-xl flex-col gap-3 rounded-xl border border-border bg-card/95 p-3 backdrop-blur sm:flex-row sm:items-center sm:justify-between">
-                <div className="min-w-0">
-                  <div className="text-sm font-medium">{language === "vi" ? "Báo cáo đã sẵn sàng" : "Report is ready"}</div>
-                  <div className="text-xs text-muted-foreground">{language === "vi" ? "Bước tiếp theo: tạo Verdict để có khuyến nghị tối ưu." : "Next step: generate the Verdict for optimization recommendations."}</div>
-                </div>
-                {aiLoading.verdict ? (
-                  <Button type="button" onClick={runAi} disabled className="sm:shrink-0">
-                    <Spinner data-icon="inline-start" />
-                    {language === "vi" ? "Tạo Verdict" : "Generate Verdict"}
-                  </Button>
-                ) : (
-                  <BorderGlow
-                    spin
-                    showShadow={false}
-                    borderRadius={999}
-                    borderWidth={2.5}
-                    coneSpread={18}
-                    glowRadius={22}
-                    glowIntensity={1.5}
-                    glowColor="245 90 65"
-                    colors={["#6a4cf5", "#d44df0", "#ff5577"]}
-                    backgroundColor="transparent"
-                    className="sm:shrink-0"
-                  >
-                    <Button type="button" onClick={runAi} className="w-full sm:w-auto">
-                      <SparklesIcon data-icon="inline-start" />
-                      {language === "vi" ? "Tạo Verdict" : "Generate Verdict"}
-                    </Button>
-                  </BorderGlow>
-                )}
-              </div>
-            </div>
+          {activeView === "ads" && report && reportHasData ? (
+            <StickyActionDock
+              contextLabel={language === "vi" ? "Hiệu quả" : "Performance"}
+              status={aiLoading.verdict ? "working" : "ready"}
+              statusLabel={aiLoading.verdict
+                ? language === "vi" ? "Đang tạo Verdict" : "Generating Verdict"
+                : verdict
+                  ? language === "vi" ? "Verdict đã sẵn sàng" : "Verdict ready"
+                  : language === "vi" ? "Báo cáo đã sẵn sàng" : "Report ready"}
+              primaryAction={{
+                id: "verdict",
+                label: verdict
+                  ? language === "vi" ? "Làm mới Verdict" : "Refresh Verdict"
+                  : language === "vi" ? "Tạo Verdict" : "Generate Verdict",
+                shortLabel: "Verdict",
+                icon: SparklesIcon,
+                onSelect: runAi,
+                loading: aiLoading.verdict,
+                shortcut: "mod+enter",
+              }}
+              secondaryActions={[
+                {
+                  id: "export",
+                  label: language === "vi" ? "Xuất báo cáo" : "Export report",
+                  icon: DownloadIcon,
+                  onSelect: exportPdf,
+                  loading: exportingPdf,
+                },
+                {
+                  id: "copy-prompt",
+                  label: copiedPrompt
+                    ? language === "vi" ? "Đã copy prompt" : "Prompt copied"
+                    : language === "vi" ? "Copy prompt phân tích" : "Copy analyst prompt",
+                  icon: ClipboardIcon,
+                  onSelect: copyPrompt,
+                },
+              ]}
+            />
           ) : null}
             </>
           ) : activeView === "tiktok" ? (
-            <TikTokIntelligencePanel language={language} />
+            <TikTokIntelligencePanel
+              language={language}
+              state={tiktokWorkspace}
+              onStateChange={setTikTokWorkspace}
+            />
           ) : activeView === "publisher" ? (
             <PagePublisherPanel language={language} />
           ) : (
@@ -1508,15 +1584,7 @@ export function DashboardShell() {
               platform={competitorPlatform}
               result={competitorResult}
               notes={competitorNotes}
-              fetchSource={competitorFetchSource}
-              country={competitorCountry}
-              limit={competitorLimit}
-              libraryUrls={competitorLibraryUrls}
-              ads={competitorAds}
-              fetchWarnings={competitorFetchWarnings}
-              fetchedAt={competitorFetchedAt}
               loading={loading === "competitor"}
-              fetchLoading={loading === "spy-fetch"}
               language={language}
               provider={provider}
               copiedPrompt={copiedCompetitorPrompt}
@@ -1524,12 +1592,7 @@ export function DashboardShell() {
               onMarketChange={setCompetitorMarket}
               onPlatformChange={setCompetitorPlatform}
               onNotesChange={setCompetitorNotes}
-              onFetchSourceChange={setCompetitorFetchSource}
-              onCountryChange={setCompetitorCountry}
-              onLimitChange={setCompetitorLimit}
-              onLibraryUrlsChange={setCompetitorLibraryUrls}
               onProviderChange={setProvider}
-              onFetchAds={fetchSpyAds}
               onGenerate={runCompetitorSpy}
               onCopyPrompt={copyCompetitorPrompt}
             />
@@ -1657,76 +1720,55 @@ function TokenScreen(props: {
   error: string;
   loading: boolean;
   language: ReportLanguage;
+  intendedView: ActiveView;
   onLanguageChange: (value: ReportLanguage) => void;
+  onBack: () => void;
   onTokenChange: (value: string) => void;
   onUseCompetitor: () => void;
   onSubmit: (event: React.FormEvent) => void;
 }) {
   const copy = uiCopy[props.language].token;
   const isVietnamese = props.language === "vi";
-  const hero = {
-    eyebrow: "Meta Ads intelligence",
-    title: isVietnamese ? "Dashboard vận hành cho account ads tăng trưởng." : "The operating dashboard for growing Meta ad accounts.",
-    description: isVietnamese
-      ? "Kết nối token để đọc KPI, chẩn đoán campaign, tạo Verdict và xuất báo cáo. Hoặc nghiên cứu ads public của đối thủ mà không cần token."
-      : "Connect a token to read KPIs, diagnose campaigns, generate a Verdict, and export reports. Or research competitors' public ads without a token.",
-    secure: isVietnamese ? "Token lưu trong cookie HttpOnly đã mã hóa" : "Encrypted HttpOnly token session",
-    diagnostics: isVietnamese ? "Chẩn đoán campaign-first, KPI-first" : "Campaign-first, KPI-first diagnostics",
-    competitor: isVietnamese ? "Competitor spy không cần token" : "No-token competitor spy",
-    formTitle: isVietnamese ? "Kết nối tài khoản Meta" : "Connect your Meta account",
-    formDescription: isVietnamese
-      ? "Dùng token để phân tích tài khoản ads của bạn. Bạn có thể chuyển sang nghiên cứu đối thủ nếu chưa muốn kết nối."
-      : "Use a token to analyze your own ad account. You can switch to competitor research if you are not ready to connect.",
-  };
+  const tokenInputId = React.useId();
+  const publishing = props.intendedView === "publisher";
+  const destination = publishing
+    ? isVietnamese ? "Vận hành đăng bài" : "Publishing operations"
+    : isVietnamese ? "Chẩn đoán hiệu quả" : "Performance diagnosis";
 
   return (
-    <main className="relative min-h-svh w-full bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-muted/30 via-background to-background p-4 md:p-6">
-      <div className="absolute right-4 top-4 md:right-8 md:top-8 z-50">
-        <LanguageToggle language={props.language} onChange={props.onLanguageChange} />
-      </div>
+    <main className="min-h-svh bg-background p-4 md:p-8">
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-4">
+        <div className="flex items-center justify-between gap-3">
+          <Button type="button" variant="ghost" onClick={props.onBack}>
+            <ArrowLeftIcon data-icon="inline-start" />
+            {isVietnamese ? "Về tổng quan" : "Back to overview"}
+          </Button>
+          <LanguageToggle language={props.language} onChange={props.onLanguageChange} />
+        </div>
 
-      <div className="mx-auto grid min-h-[calc(100svh-2rem)] w-full max-w-6xl items-center gap-8 py-4 md:min-h-[calc(100svh-3rem)] lg:grid-cols-[1.1fr_0.9fr] lg:gap-12">
-        <section className="relative overflow-hidden rounded-[2rem] border bg-card/60 p-6 shadow-2xl shadow-black/30 md:p-8 lg:min-h-[640px]">
-          <div className="pointer-events-none absolute -right-24 -top-24 size-72 rounded-full bg-[radial-gradient(circle,_rgba(0,153,255,0.24),_transparent_68%)]" />
-          <div className="pointer-events-none absolute -bottom-32 left-10 size-80 rounded-full bg-[radial-gradient(circle,_rgba(212,77,240,0.18),_transparent_70%)]" />
-          <div className="relative flex h-full flex-col justify-between gap-10">
-            <div className="flex items-center gap-3">
-              <img src="/red-agency-logo.png" alt="Red Agency" className="size-12 rounded-xl object-contain" />
-              <div>
-                <div className="text-sm font-medium text-foreground">Red Agency Ads Tool</div>
-                <div className="text-xs text-muted-foreground">{hero.eyebrow}</div>
+        <Card className="overflow-hidden">
+          <CardHeader className="border-b">
+            <div className="flex items-start gap-3">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-xl border bg-background text-muted-foreground">
+                <KeyRoundIcon className="size-5" />
+              </span>
+              <div className="min-w-0">
+                <CardDescription>{destination}</CardDescription>
+                <CardTitle className="text-2xl">{isVietnamese ? "Kết nối Meta để tiếp tục" : "Connect Meta to continue"}</CardTitle>
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+                  {publishing
+                    ? isVietnamese
+                      ? "Workspace cần kiểm tra Page và quyền tạo nội dung trước khi preview hoặc gửi bài. Sau khi xác thực, bạn sẽ quay lại đúng luồng đăng bài."
+                      : "This workspace must verify Page access and content permissions before previewing or submitting. After validation, you return directly to publishing."
+                    : isVietnamese
+                      ? "Workspace cần đọc account, campaign và insight để tạo chẩn đoán có evidence. Sau khi xác thực, bạn sẽ quay lại đúng luồng phân tích."
+                      : "This workspace needs account, campaign, and insight access to produce an evidence-backed diagnosis. After validation, you return directly to performance."}
+                </p>
               </div>
             </div>
-
-            <div className="max-w-xl">
-              <Badge variant="secondary" className="mb-4 w-fit">{hero.eyebrow}</Badge>
-              <h1 className="text-balance font-heading text-4xl font-semibold tracking-[-0.05em] text-foreground md:text-6xl md:leading-[0.92]">
-                {hero.title}
-              </h1>
-              <p className="mt-5 max-w-lg text-pretty text-base leading-7 text-muted-foreground md:text-lg">
-                {hero.description}
-              </p>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-3">
-              {[hero.secure, hero.diagnostics, hero.competitor].map((item) => (
-                <div key={item} className="rounded-2xl border border-white/10 bg-background/50 p-3 text-sm font-medium leading-5 text-foreground/90 shadow-sm backdrop-blur-sm">
-                  <CheckIcon className="mb-3 size-4 text-ring" />
-                  {item}
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        <div className="min-w-0 w-full rounded-[2rem] border border-border/60 bg-card/90 p-6 shadow-2xl shadow-black/10 backdrop-blur-xl sm:p-8">
-          <div className="mb-6 flex flex-col gap-1.5">
-            <h2 className="text-xl font-semibold leading-none tracking-tight text-foreground">{hero.formTitle}</h2>
-            <p className="text-sm text-muted-foreground">{hero.formDescription}</p>
-            <p className="mt-1 text-sm text-muted-foreground break-words">{copy.storage}</p>
-          </div>
-
-          <div className="flex min-w-0 flex-col gap-6">
+          </CardHeader>
+          <CardContent className="grid gap-6 p-5 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.7fr)] lg:p-6">
+            <div className="flex min-w-0 flex-col gap-5">
             {props.error ? (
               <Alert variant="destructive">
                 <AlertTitle>{copy.rejected}</AlertTitle>
@@ -1751,59 +1793,54 @@ function TokenScreen(props: {
             <form onSubmit={props.onSubmit} className="flex min-w-0 flex-col gap-4">
               <FieldGroup>
                 <Field>
-                  <FieldLabel>{copy.field}</FieldLabel>
+                  <FieldLabel htmlFor={tokenInputId}>{copy.field}</FieldLabel>
                   <Input
+                    id={tokenInputId}
                     value={props.token}
                     onChange={(event) => props.onTokenChange(event.target.value)}
                     type="password"
                     autoComplete="off"
+                    minLength={20}
                     placeholder={copy.placeholder}
                     className="w-full"
                     required
                   />
                   <FieldDescription className="break-words">
-                    {props.language === "vi"
-                      ? "Token vẫn dùng được khi Facebook Login chưa khả dụng hoặc cần debug nhanh."
-                      : "Tokens still work when Facebook Login is unavailable or you need a quick debug path."}
+                    {publishing
+                      ? isVietnamese
+                        ? "Token dùng để kiểm tra Page và quyền CREATE_CONTENT của tài khoản Meta trước khi preview hoặc gửi bài."
+                        : "The token verifies available Pages and CREATE_CONTENT permissions before previewing or submitting."
+                      : isVietnamese
+                        ? "Token dùng để đọc account, campaign và insight cho KPI, verdict và drilldown."
+                        : "The token reads account, campaign, and insight data for KPIs, verdict, and drilldown."}
                   </FieldDescription>
                 </Field>
               </FieldGroup>
-              <Button type="submit" disabled={props.loading} className="w-full" variant="outline">
+              <Button type="submit" disabled={props.loading || props.token.trim().length < 20} className="w-full" variant="outline">
                 {props.loading ? <Spinner data-icon="inline-start" /> : <KeyRoundIcon data-icon="inline-start" />}
                 {copy.submit}
               </Button>
-              <FieldDescription className="break-words">{copy.help}</FieldDescription>
-            </form>
-
-            <div className="flex items-center gap-3 text-xs text-muted-foreground">
-              <Separator className="flex-1" />
-              {props.language === "vi" ? "hoặc nghiên cứu đối thủ" : "or research competitors"}
-              <Separator className="flex-1" />
+                <FieldDescription className="break-words">{copy.help}</FieldDescription>
+              </form>
             </div>
 
-            <button
-              type="button"
-              onClick={props.onUseCompetitor}
-              aria-label={props.language === "vi" ? "Mở theo dõi đối thủ, không cần token" : "Open competitor spy, no token needed"}
-              className="group flex items-start gap-3 rounded-2xl border border-border/60 bg-muted/30 p-5 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-muted/60 hover:shadow-md focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none active:translate-y-0"
-            >
-              <span className="mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground transition-colors group-hover:bg-background group-hover:text-foreground">
-                <SearchIcon className="size-4.5" />
-              </span>
-              <span className="min-w-0">
-                <span className="block text-sm font-medium">
-                  {props.language === "vi" ? "Theo dõi đối thủ — không cần token" : "Competitor spy — no token needed"}
-                </span>
-                <span className="mt-1 block text-xs leading-5 text-muted-foreground">
-                  {props.language === "vi"
-                    ? "Phân tích quảng cáo public của đối thủ. Bắt đầu ngay, không cần kết nối tài khoản."
-                    : "Research competitors' public ads. Start now, no account connection required."}
-                </span>
-              </span>
-              <ChevronRightIcon className="mt-1 size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
-            </button>
-          </div>
-        </div>
+            <div className="flex flex-col gap-4 border-t pt-5 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
+              <div>
+                <h2 className="text-sm font-semibold">{isVietnamese ? "Ranh giới truy cập" : "Access boundary"}</h2>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">{copy.storage}</p>
+              </div>
+              <Separator />
+              <div className="flex flex-col gap-3 text-sm">
+                <span className="flex items-start gap-2"><CheckIcon className="mt-0.5 size-4 shrink-0 text-success" />{isVietnamese ? "Token không được trả về client sau khi xác thực." : "The token is not returned to the client after validation."}</span>
+                <span className="flex items-start gap-2"><CheckIcon className="mt-0.5 size-4 shrink-0 text-success" />{isVietnamese ? "Chỉ workspace cần Meta mới yêu cầu kết nối." : "Only Meta-dependent workspaces require this connection."}</span>
+              </div>
+              <Button type="button" variant="outline" onClick={props.onUseCompetitor} className="mt-auto w-full">
+                <SearchIcon data-icon="inline-start" />
+                {isVietnamese ? "Mở evidence đối thủ" : "Open competitor evidence"}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </main>
   );
@@ -1814,17 +1851,19 @@ function LoadingScreen({ language }: { language: ReportLanguage }) {
   const isVietnamese = language === "vi";
 
   return (
-    <main className="grid min-h-svh place-items-center bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-muted/30 via-background to-background p-4">
+    <main className="grid min-h-svh place-items-center bg-background p-4">
       <div
-        className="w-full max-w-md rounded-[2rem] border border-border/60 bg-card/90 p-6 shadow-2xl shadow-black/10 backdrop-blur-xl sm:p-8"
+        className="w-full max-w-md rounded-2xl border bg-card p-6 sm:p-8"
         role="status"
         aria-live="polite"
       >
         <div className="mb-6 flex items-center gap-3">
-          <img src="/red-agency-logo.png" alt="Red Agency" className="size-11 rounded-xl object-contain" />
+          <span className="flex size-10 items-center justify-center rounded-xl border bg-background text-muted-foreground">
+            <WaypointsIcon className="size-5" aria-hidden="true" />
+          </span>
           <div>
-            <div className="text-sm font-medium text-foreground">Red Agency Ads Tool</div>
-            <div className="text-xs text-muted-foreground">Meta Ads intelligence</div>
+            <div className="text-sm font-medium text-foreground">Decision Operations Workspace</div>
+            <div className="text-xs text-muted-foreground">Evidence to action</div>
           </div>
         </div>
 
@@ -1837,7 +1876,7 @@ function LoadingScreen({ language }: { language: ReportLanguage }) {
           <Spinner className="size-4" />
           {isVietnamese ? "Đang chuẩn bị dashboard..." : "Preparing your dashboard..."}
         </div>
-        <div className="space-y-3">
+        <div className="flex flex-col gap-3">
           <Skeleton className="h-12 rounded-2xl" />
           <Skeleton className="h-20 rounded-2xl" />
           <div className="grid grid-cols-3 gap-3">
@@ -1911,7 +1950,7 @@ function ReportSkeleton({ language }: { language: ReportLanguage }) {
               <div key={step} className="flex items-center gap-1.5 text-xs">
                 <span
                   className={`flex size-4 items-center justify-center rounded-full ${
-                    done ? "bg-primary text-primary-foreground" : active ? "ra-step-active bg-primary" : "border bg-muted"
+                    done ? "bg-primary text-primary-foreground" : active ? "workbench-step-active bg-primary" : "border bg-muted"
                   }`}
                 >
                   {done ? <CheckIcon className="size-3" /> : null}
@@ -1922,7 +1961,10 @@ function ReportSkeleton({ language }: { language: ReportLanguage }) {
           })}
         </div>
         <div className="mb-4 h-1.5 overflow-hidden rounded-full bg-muted">
-          <div className="h-full rounded-full bg-primary transition-all duration-500" style={{ width: `${percent}%` }} />
+          <div
+            className="h-full w-full origin-left rounded-full bg-primary transition-transform duration-500"
+            style={{ transform: `scaleX(${percent / 100})` }}
+          />
         </div>
         <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
           {Array.from({ length: 6 }).map((_, index) => (
@@ -2130,7 +2172,7 @@ function RunningAdSetsPanel({
                   <button
                     key={adset.id}
                     onClick={() => setSelectedAdSetId(adset.id)}
-                    className={`group flex w-full flex-col items-start gap-1 rounded-xl px-4 py-3 text-left transition-all ${
+                    className={`group flex w-full flex-col items-start gap-1 rounded-xl px-4 py-3 text-left transition-colors ${
                       isSelected
                         ? "border border-border/50 bg-background font-medium text-foreground shadow-sm"
                         : "border border-transparent bg-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground"
@@ -2369,7 +2411,10 @@ function AiProgressStatus({
         </Badge>
       </div>
       <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-background">
-        <div className="h-full rounded-full bg-primary transition-all duration-500" style={{ width: `${progress.percent}%` }} />
+        <div
+          className="h-full w-full origin-left rounded-full bg-primary transition-transform duration-500"
+          style={{ transform: `scaleX(${progress.percent / 100})` }}
+        />
       </div>
     </div>
   );
@@ -2401,7 +2446,7 @@ function VerdictPanel({
   return (
     <div className="rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5" data-print-break data-print-flow>
       <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-        <div className="max-w-2xl space-y-1.5">
+        <div className="flex max-w-2xl flex-col gap-1.5">
           <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
             {isVietnamese ? "Bộ máy quyết định" : "Decision Engine"}
           </p>
@@ -2438,15 +2483,14 @@ function VerdictPanel({
           </Field>
           {!verdict && !loading ? (
             <BorderGlow
-              spin
+              active
+              interactive
               showShadow={false}
               borderRadius={999}
               borderWidth={2.5}
               coneSpread={18}
               glowRadius={22}
               glowIntensity={1.5}
-              glowColor="245 90 65"
-              colors={["#6a4cf5", "#d44df0", "#ff5577"]}
               backgroundColor="transparent"
             >
               <Button onClick={onGenerate} className="w-full">
@@ -2466,7 +2510,7 @@ function VerdictPanel({
           </Button>
         </div>
       </div>
-      <div className="mt-5 space-y-4">
+      <div className="mt-5 flex flex-col gap-4">
         {loading ? <AiProgressStatus kind="verdict" provider={provider} progress={progress} language={language} /> : null}
         {verdict ? (
           <VerdictCard verdict={verdict} language={language} />
@@ -2507,7 +2551,7 @@ function InsightPanel({
   return (
     <div className="rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5" data-print-flow>
       <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-        <div className="max-w-2xl space-y-1.5">
+        <div className="flex max-w-2xl flex-col gap-1.5">
           <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
             {isVietnamese ? "Chuyên gia AI" : "AI Analyst"}
           </p>
@@ -2529,7 +2573,7 @@ function InsightPanel({
           </Button>
         </div>
       </div>
-      <div className="mt-5 space-y-4">
+      <div className="mt-5 flex flex-col gap-4">
         {loading ? <AiProgressStatus kind="insights" provider={provider} progress={progress} language={language} /> : null}
         {insights ? (
           <div className="flex flex-col gap-3">
@@ -2590,16 +2634,8 @@ function CompetitorSpyPanel({
   market,
   platform,
   notes,
-  fetchSource,
-  country,
-  limit,
-  libraryUrls,
-  ads,
-  fetchWarnings,
-  fetchedAt,
   result,
   loading,
-  fetchLoading,
   language,
   provider,
   copiedPrompt,
@@ -2607,12 +2643,7 @@ function CompetitorSpyPanel({
   onMarketChange,
   onPlatformChange,
   onNotesChange,
-  onFetchSourceChange,
-  onCountryChange,
-  onLimitChange,
-  onLibraryUrlsChange,
   onProviderChange,
-  onFetchAds,
   onGenerate,
   onCopyPrompt,
 }: {
@@ -2620,16 +2651,8 @@ function CompetitorSpyPanel({
   market: string;
   platform: CompetitorPlatform;
   notes: string;
-  fetchSource: CompetitorFetchSource;
-  country: string;
-  limit: number;
-  libraryUrls: string;
-  ads: CompetitorSpyAd[];
-  fetchWarnings: string[];
-  fetchedAt: string;
   result: CompetitorSpyResult | null;
   loading: boolean;
-  fetchLoading: boolean;
   language: ReportLanguage;
   provider: Provider;
   copiedPrompt: boolean;
@@ -2637,12 +2660,7 @@ function CompetitorSpyPanel({
   onMarketChange: (value: string) => void;
   onPlatformChange: (value: CompetitorPlatform) => void;
   onNotesChange: (value: string) => void;
-  onFetchSourceChange: (value: CompetitorFetchSource) => void;
-  onCountryChange: (value: string) => void;
-  onLimitChange: (value: number) => void;
-  onLibraryUrlsChange: (value: string) => void;
   onProviderChange: (value: Provider) => void;
-  onFetchAds: () => void;
   onGenerate: () => void;
   onCopyPrompt: () => void;
 }) {
@@ -2652,84 +2670,43 @@ function CompetitorSpyPanel({
     .split(/[\n,]/)
     .map((name) => name.trim())
     .filter(Boolean).length > 0;
-  const hasLibraryUrls = libraryUrls
-    .split(/[\n,]/)
-    .map((url) => url.trim())
-    .filter(Boolean).length > 0;
-  const hasNotes = notes.trim().length > 0;
-  const canFetch = hasCompetitors || hasLibraryUrls;
-  const canAnalyze = canFetch || ads.length > 0;
+  const competitorNames = normalizeCompetitorNames(names);
+  const evidenceRows = reviewCompetitorEvidence(notes, competitorNames);
+  const linkedEvidence = evidenceRows.filter((row) => row.status === "advertiser_linked");
+  const unlinkedEvidence = evidenceRows.filter((row) => row.status === "needs_review");
+  const hasNotes = evidenceRows.length > 0;
+  const canAnalyze = hasCompetitors && linkedEvidence.length > 0;
   const themeRows = result?.themes.slice(0, 4) || [];
   const briefs = result?.test_briefs.slice(0, 4) || [];
   const competitors = result?.competitors.slice(0, 4) || [];
   const verdictCopy = uiCopy[language].verdict;
   const spyCopy = uiCopy[language].spy;
-  const firstRun = {
-    title: isVietnamese ? "Bắt đầu research đối thủ trong 3 bước" : "Start competitor research in 3 steps",
-    description: isVietnamese
-      ? "Dùng dữ liệu public để biến ads đối thủ thành angle, gap sáng tạo và brief test mới mà không cần token Meta."
-      : "Use public data to turn competitor ads into angles, creative gaps, and new test briefs without a Meta token.",
-    steps: isVietnamese
-      ? ["Thêm tên đối thủ hoặc URL Meta Ad Library.", "Lấy ads public hoặc paste ghi chú thật.", "Tạo theme, gap, brief test và hành động tiếp theo."]
-      : ["Add competitor names or Meta Ad Library URLs.", "Fetch public ads or paste real ad notes.", "Generate themes, gaps, test briefs, and next actions."],
-    cues: isVietnamese
-      ? ["Không cần token", "Ghi chú thật tăng confidence", "Output sẵn để brief creative"]
-      : ["No token required", "Real notes improve confidence", "Outputs are ready for creative briefs"],
-  };
   const researchBrief = {
     title: isVietnamese ? "Research brief" : "Research brief",
     description: isVietnamese
-      ? "Nhập đối thủ, thị trường và dữ liệu public để tạo brief phân tích có ngữ cảnh."
-      : "Add competitors, market context, and public data to create a grounded research brief.",
+      ? "Nhập đối thủ, thị trường và ghi chú ads đã kiểm tra để tạo brief có ngữ cảnh."
+      : "Add competitors, market context, and verified ad notes to create a grounded research brief.",
     ready: isVietnamese ? "Sẵn sàng" : "Ready",
     next: isVietnamese ? "Cần thêm" : "Needed",
+    optional: isVietnamese ? "Tùy chọn" : "Optional",
     inputs: isVietnamese
       ? [
-          { label: "Đối thủ hoặc URL", done: canFetch },
-          { label: "Thị trường / offer", done: Boolean(market.trim()) },
-          { label: "Ghi chú ads thật", done: hasNotes },
+          { label: "Tên đối thủ", done: hasCompetitors },
+          { label: "Thị trường / offer", done: Boolean(market.trim()), optional: true },
+          { label: "Ghi chú ads thật", done: linkedEvidence.length > 0 },
         ]
       : [
-          { label: "Competitor or URL", done: canFetch },
-          { label: "Market / offer", done: Boolean(market.trim()) },
-          { label: "Real ad notes", done: hasNotes },
+          { label: "Competitor name", done: hasCompetitors },
+          { label: "Market / offer", done: Boolean(market.trim()), optional: true },
+          { label: "Real ad notes", done: linkedEvidence.length > 0 },
         ],
   };
 
   return (
-    <div className="rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5" data-print-flow>
-      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-        <div className="max-w-2xl space-y-1.5">
-          <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-            {isVietnamese ? "Tình báo cạnh tranh" : "Competitive Intelligence"}
-          </p>
-          <h2 className="text-xl font-semibold tracking-tight">{isVietnamese ? "Theo dõi đối thủ" : "Competitor spy"}</h2>
-          <p className="text-sm text-muted-foreground">
-            {isVietnamese
-              ? "Biến tên đối thủ hoặc ghi chú từ thư viện quảng cáo thành theme, gap và brief test mới."
-              : "Turn competitor names or ad-library notes into themes, gaps, and original test briefs."}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2" data-print-hidden>
-          <Button type="button" onClick={onGenerate} disabled={loading || !canAnalyze} aria-busy={loading}>
-            {loading ? <Spinner data-icon="inline-start" /> : <SearchIcon data-icon="inline-start" />}
-            {loading
-              ? isVietnamese ? "Đang phân tích sâu..." : "Deep scan running..."
-              : isVietnamese ? "Tìm & phân tích ads" : "Find and analyze ads"}
-          </Button>
-          {result ? (
-            <Button type="button" variant="outline" onClick={onCopyPrompt} disabled={!canAnalyze}>
-              <ClipboardIcon data-icon="inline-start" />
-              {copiedPrompt ? verdictCopy.copied : spyCopy.copyPrompt}
-            </Button>
-          ) : null}
-        </div>
-      </div>
-      <div className="mt-5 grid gap-4 xl:grid-cols-[380px_1fr]">
-        <div className="relative overflow-hidden rounded-2xl border bg-background/50 p-4 shadow-sm" data-print-hidden>
-          <div className="pointer-events-none absolute -right-16 -top-20 size-44 rounded-full bg-[radial-gradient(circle,_rgba(0,153,255,0.14),_transparent_68%)]" />
-          <div className="relative flex flex-col gap-4">
-            <div className="space-y-3">
+    <div className="grid gap-4 xl:grid-cols-[380px_minmax(0,1fr)]" data-print-flow>
+        <div className="rounded-2xl border bg-card p-4" data-print-hidden>
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-3">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{researchBrief.title}</div>
@@ -2742,8 +2719,8 @@ function CompetitorSpyPanel({
                   <div key={item.label} className="flex items-center justify-between gap-3 rounded-xl border bg-background/60 px-3 py-2 text-xs">
                     <span className="font-medium text-foreground">{item.label}</span>
                     <span className={`flex items-center gap-1.5 ${item.done ? "text-ring" : "text-muted-foreground"}`}>
-                      {item.done ? <CheckIcon className="size-3.5" /> : <ChevronRightIcon className="size-3.5" />}
-                      {item.done ? researchBrief.ready : researchBrief.next}
+                      {item.done ? <CheckIcon className="size-3.5" /> : item.optional ? null : <ChevronRightIcon className="size-3.5" />}
+                      {item.done ? researchBrief.ready : item.optional ? researchBrief.optional : researchBrief.next}
                     </span>
                   </div>
                 ))}
@@ -2778,9 +2755,58 @@ function CompetitorSpyPanel({
             </FieldDescription>
           </Field>
 
+          <Alert>
+            <AlertTitle>{isVietnamese ? "Tự động lấy ads đang tạm dừng" : "Automatic ad fetching is paused"}</AlertTitle>
+            <AlertDescription>
+              {isVietnamese
+                ? "Kiểm thử cho thấy public scrape trộn ads của advertiser không liên quan. Chỉ paste evidence đã tự kiểm tra bên dưới."
+                : "Testing showed the public scrape mixed ads from unrelated advertisers. Paste only evidence you verified below."}
+            </AlertDescription>
+          </Alert>
+
+          <Field>
+            <FieldLabel htmlFor={`${id}-notes`}>{isVietnamese ? "Ghi chú ads đã kiểm tra" : "Verified ad-library notes"}</FieldLabel>
+            <Textarea
+              id={`${id}-notes`}
+              value={notes}
+              onChange={(event) => onNotesChange(event.target.value)}
+              placeholder={
+                isVietnamese
+                  ? "VD: Kangnam - video before/after, CTA Nhắn tin, offer soi da miễn phí, hook trị nám 7 ngày..."
+                  : "Example: Competitor A - UGC video, Send Message CTA, free audit offer, proof-led hook..."
+              }
+              className="min-h-32 resize-none"
+              aria-describedby={`${id}-notes-help`}
+            />
+            <FieldDescription id={`${id}-notes-help`}>
+              {isVietnamese
+                ? "Bắt đầu mỗi dòng bằng tên advertiser và dấu - hoặc :, sau đó thêm copy, CTA, format, offer và link đã xác minh."
+                : "Start each line with the advertiser name and a dash or colon, then add the verified copy, CTA, format, offer, and link."}
+            </FieldDescription>
+          </Field>
+
+          {hasNotes ? (
+            <Alert>
+              <AlertTitle>
+                {isVietnamese
+                  ? `${linkedEvidence.length}/${evidenceRows.length} dòng đã gắn advertiser`
+                  : `${linkedEvidence.length}/${evidenceRows.length} evidence lines linked to an advertiser`}
+              </AlertTitle>
+              <AlertDescription>
+                {unlinkedEvidence.length > 0
+                  ? isVietnamese
+                    ? "Các dòng chưa gắn advertiser sẽ không được phân tích. Bắt đầu mỗi dòng bằng đúng tên đối thủ, sau đó là dấu - hoặc :."
+                    : "Unlinked lines stay out of analysis. Start each line with the exact advertiser name followed by a dash or colon."
+                  : isVietnamese
+                    ? "Tất cả evidence sẽ được đưa vào bước phân tích."
+                    : "All evidence lines are ready for analysis."}
+              </AlertDescription>
+            </Alert>
+          ) : null}
+
           <details className="group/adv rounded-xl border bg-background/50 p-3">
             <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-sm font-medium">
-              <span>{isVietnamese ? "Tùy chọn nâng cao" : "Advanced options"}</span>
+              <span>{isVietnamese ? "Tùy chọn phân tích" : "Analysis options"}</span>
               <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground transition-transform group-open/adv:rotate-180" />
             </summary>
             <div className="mt-3 flex flex-col gap-3">
@@ -2807,79 +2833,7 @@ function CompetitorSpyPanel({
                   </SelectContent>
                 </Select>
                 <FieldDescription id={`${id}-platform-help`}>
-                  {isVietnamese ? "Chọn nền tảng muốn phân tích." : "Choose the platform to analyze."}
-                </FieldDescription>
-              </Field>
-              <Field>
-                <FieldLabel id={`${id}-source-label`}>{isVietnamese ? "Công cụ lấy ads" : "Ads spy tool"}</FieldLabel>
-                <Select
-                  items={competitorFetchItems}
-                  value={fetchSource}
-                  onValueChange={(value) => {
-                    if (value) onFetchSourceChange(value as CompetitorFetchSource);
-                  }}
-                >
-                  <SelectTrigger className="w-full" aria-labelledby={`${id}-source-label`} aria-describedby={`${id}-source-help`}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      {competitorFetchItems.map((item) => (
-                        <SelectItem key={item.value} value={item.value}>
-                          {item.label}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-                <FieldDescription id={`${id}-source-help`}>
-                  {isVietnamese
-                    ? "Public scrape chạy không cần key, thử Chrome local rồi giữ link dự phòng. Apify/API chỉ dùng khi đã cấu hình token."
-                    : "Public scrape works without keys, tries local Chrome, then keeps links as fallback. Use Apify/API only after tokens are configured."}
-                </FieldDescription>
-              </Field>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <Field>
-                  <FieldLabel htmlFor={`${id}-country`}>{isVietnamese ? "Quốc gia" : "Country"}</FieldLabel>
-                  <Input
-                    id={`${id}-country`}
-                    value={country}
-                    onChange={(event) => onCountryChange(event.target.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 2))}
-                    placeholder="VN"
-                    aria-describedby={`${id}-country-help`}
-                  />
-                  <FieldDescription id={`${id}-country-help`}>
-                    {isVietnamese ? "Mã 2 chữ cái. VD: VN, US, SG." : "Two-letter code. Example: VN, US, SG."}
-                  </FieldDescription>
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor={`${id}-limit`}>{isVietnamese ? "Số ads tối đa" : "Max ads"}</FieldLabel>
-                  <Input
-                    id={`${id}-limit`}
-                    type="number"
-                    min={1}
-                    max={80}
-                    value={limit}
-                    onChange={(event) => onLimitChange(normalizeCompetitorLimit(Number(event.target.value)))}
-                    aria-describedby={`${id}-limit-help`}
-                  />
-                  <FieldDescription id={`${id}-limit-help`}>
-                    {isVietnamese ? "Khuyên dùng 20-40 để không timeout." : "Use 20-40 to avoid timeout."}
-                  </FieldDescription>
-                </Field>
-              </div>
-              <Field>
-                <FieldLabel htmlFor={`${id}-urls`}>{isVietnamese ? "Meta Ad Library URLs" : "Meta Ad Library URLs"}</FieldLabel>
-                <Textarea
-                  id={`${id}-urls`}
-                  value={libraryUrls}
-                  onChange={(event) => onLibraryUrlsChange(event.target.value)}
-                  placeholder="https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=VN&view_all_page_id=..."
-                  className="min-h-20 resize-none"
-                  aria-describedby={`${id}-urls-help`}
-                />
-                <FieldDescription id={`${id}-urls-help`}>
-                  {isVietnamese ? "Paste URL page/search từ Meta Ad Library khi scrape lỗi, mỗi dòng 1 URL." : "Paste page/search URLs from Meta Ad Library as a fallback when scraping fails, one per line."}
+                  {isVietnamese ? "Chọn nền tảng của evidence đã paste." : "Choose the platform for the evidence you pasted."}
                 </FieldDescription>
               </Field>
               <Field>
@@ -2905,30 +2859,6 @@ function CompetitorSpyPanel({
                   </SelectContent>
                 </Select>
               </Field>
-              <Field>
-                <FieldLabel htmlFor={`${id}-notes`}>{isVietnamese ? "Ghi chú ads library" : "Ad-library notes"}</FieldLabel>
-                <Textarea
-                  id={`${id}-notes`}
-                  value={notes}
-                  onChange={(event) => onNotesChange(event.target.value)}
-                  placeholder={
-                    isVietnamese
-                      ? "VD: Kangnam - video before/after, CTA Nhắn tin, offer soi da miễn phí, hook trị nám 7 ngày..."
-                      : "Example: Competitor A - UGC video, Send Message CTA, free audit offer, proof-led hook..."
-                  }
-                  className="min-h-28 resize-none"
-                  aria-describedby={`${id}-notes-help`}
-                />
-                <FieldDescription id={`${id}-notes-help`}>
-                  {isVietnamese
-                    ? "Paste copy, CTA, format, offer, link. Có dữ liệu thật -> confidence cao hơn. Vercel Hobby tối đa khoảng 5 phút."
-                    : "Paste copy, CTA, format, offer, link. Real data -> higher confidence. Vercel Hobby max roughly 5 minutes."}
-                </FieldDescription>
-              </Field>
-              <Button type="button" variant="outline" size="sm" onClick={onFetchAds} disabled={fetchLoading || !canFetch} aria-busy={fetchLoading} className="w-full">
-                {fetchLoading ? <Spinner data-icon="inline-start" /> : <RefreshCcwIcon data-icon="inline-start" />}
-                {fetchLoading ? (isVietnamese ? "Đang lấy ads..." : "Fetching ads...") : isVietnamese ? "Chỉ lấy ads (không phân tích)" : "Fetch ads only (no analysis)"}
-              </Button>
             </div>
           </details>
           </div>
@@ -2936,10 +2866,8 @@ function CompetitorSpyPanel({
 
         {result ? (
           <div className="flex flex-col gap-3" data-print-expand>
-            <SpyAdsPanel ads={ads} warnings={fetchWarnings} fetchedAt={fetchedAt} language={language} />
-            <div className="relative overflow-hidden rounded-2xl border bg-background/50 p-4 md:p-5">
-              <div className="pointer-events-none absolute -right-14 -top-20 size-40 rounded-full bg-[radial-gradient(circle,_rgba(0,153,255,0.12),_transparent_68%)]" />
-              <div className="relative flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div className="rounded-2xl border bg-card p-4 md:p-5">
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                 <div className="min-w-0">
                   <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     {isVietnamese ? "Tóm tắt phân tích" : "Analysis summary"}
@@ -2964,7 +2892,7 @@ function CompetitorSpyPanel({
                   {competitors.map((competitor) => (
                     <div key={competitor.name} className="rounded-2xl border bg-card/70 p-4 shadow-sm">
                       <div className="text-sm font-semibold text-foreground">{competitor.name}</div>
-                      <div className="mt-2 space-y-1.5">
+                      <div className="mt-2 flex flex-col gap-1.5">
                         <div>
                           <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{isVietnamese ? "Định vị" : "Positioning"}</div>
                           <p className="mt-0.5 text-sm leading-5 text-muted-foreground">{compactText(competitor.likely_positioning, 150)}</p>
@@ -2985,9 +2913,9 @@ function CompetitorSpyPanel({
                 <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                   {isVietnamese ? "Theme đối thủ" : "Competitor themes"}
                 </div>
-                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                <div className="mt-3 flex flex-col divide-y">
                   {themeRows.map((theme, index) => (
-                    <div key={`${theme.theme}-${index}`} className="rounded-xl border bg-card/70 p-3 shadow-sm">
+                    <div key={`${theme.theme}-${index}`} className="py-3 first:pt-0 last:pb-0">
                       <div className="flex items-center justify-between gap-2">
                         <div className="truncate text-sm font-medium">{theme.theme}</div>
                         <Badge variant="outline">{theme.confidence}</Badge>
@@ -3017,9 +2945,9 @@ function CompetitorSpyPanel({
               <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 {isVietnamese ? "Brief test mới" : "Original test briefs"}
               </div>
-              <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <div className="mt-3 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                 {briefs.map((brief, index) => (
-                  <div key={`${brief.angle}-${index}`} className="rounded-xl border bg-card/70 p-3 shadow-sm">
+                  <div key={`${brief.angle}-${index}`} className="border-t pt-3">
                     <div className="text-sm font-semibold">{brief.angle}</div>
                     <p className="mt-2 line-clamp-2 text-sm" data-print-expand>
                       {brief.hook}
@@ -3043,69 +2971,70 @@ function CompetitorSpyPanel({
             </div>
           </div>
         ) : (
-          <div className="flex flex-col gap-3">
-            <SpyAdsPanel ads={ads} warnings={fetchWarnings} fetchedAt={fetchedAt} language={language} />
-            <div className="relative overflow-hidden rounded-2xl border bg-background/50 p-4 md:p-5">
-              <div className="pointer-events-none absolute -right-16 -top-20 size-48 rounded-full bg-[radial-gradient(circle,_rgba(0,153,255,0.16),_transparent_68%)]" />
-              <div className="relative">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="secondary">{isVietnamese ? "Public research" : "Public research"}</Badge>
-                  <Badge variant="outline">{isVietnamese ? "No-token" : "No-token"}</Badge>
-                </div>
-                <h2 className="mt-4 font-heading text-2xl font-semibold tracking-[-0.035em] text-foreground md:text-3xl">
-                  {firstRun.title}
-                </h2>
-                <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground md:text-base">
-                  {firstRun.description}
-                </p>
-
-                <ol className="mt-5 grid gap-3 md:grid-cols-3">
-                  {firstRun.steps.map((step, index) => (
-                    <li key={step} className="rounded-xl border bg-muted/20 p-3">
-                      <div className="mb-3 flex size-7 items-center justify-center rounded-lg bg-ring/15 font-mono text-xs font-semibold text-ring">
-                        {index + 1}
-                      </div>
-                      <p className="text-sm font-medium leading-5 text-foreground">{step}</p>
-                    </li>
-                  ))}
-                </ol>
-
-                <div className="mt-5 grid gap-2 sm:grid-cols-3">
-                  {firstRun.cues.map((cue) => (
-                    <div key={cue} className="flex items-center gap-2 rounded-xl border bg-card/70 px-3 py-2 text-xs font-medium text-muted-foreground">
-                      <CheckIcon className="size-3.5 shrink-0 text-ring" />
-                      {cue}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
+          <Empty className="min-h-72 rounded-2xl border bg-card">
+            <EmptyHeader>
+              <EmptyMedia variant="icon"><SearchIcon /></EmptyMedia>
+              <EmptyTitle>{isVietnamese ? "Evidence đang chờ phân tích" : "Evidence is waiting for analysis"}</EmptyTitle>
+              <EmptyDescription>
+                {isVietnamese
+                  ? "Thêm advertiser và ghi chú ads đã tự xác minh. Workspace sẽ tạo pattern, gap và brief test mà không gọi scraper đang tạm dừng."
+                  : "Add advertisers and ad notes you verified yourself. The workspace will create patterns, gaps, and test briefs without calling the paused scraper."}
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
         )}
-      </div>
+        <StickyActionDock
+          contextLabel={isVietnamese ? "Evidence đối thủ" : "Competitor evidence"}
+          status={loading ? "working" : canAnalyze ? "ready" : "blocked"}
+          statusLabel={loading
+            ? isVietnamese ? "Đang phân tích" : "Analyzing"
+            : canAnalyze
+              ? isVietnamese ? `${linkedEvidence.length} dòng sẵn sàng` : `${linkedEvidence.length} lines ready`
+              : isVietnamese ? "Cần evidence đã gắn advertiser" : "Add linked evidence"}
+          primaryAction={{
+            id: "analyze-competitor-evidence",
+            label: isVietnamese ? "Phân tích evidence" : "Analyze evidence",
+            shortLabel: isVietnamese ? "Phân tích" : "Analyze",
+            icon: SearchIcon,
+            onSelect: onGenerate,
+            disabled: !canAnalyze,
+            disabledReason: isVietnamese
+              ? "Thêm tên đối thủ và ít nhất một dòng evidence bắt đầu bằng tên advertiser."
+              : "Add competitors and at least one evidence line that starts with the advertiser name.",
+            loading,
+            shortcut: "mod+enter",
+          }}
+          secondaryActions={result ? [{
+            id: "copy-competitor-prompt",
+            label: copiedPrompt ? verdictCopy.copied : spyCopy.copyPrompt,
+            icon: ClipboardIcon,
+            onSelect: onCopyPrompt,
+            disabled: !canAnalyze,
+          }] : []}
+          actionsLabel={isVietnamese ? "Hành động khác" : "More actions"}
+        />
     </div>
   );
 }
 
-function TikTokIntelligencePanel({ language }: { language: ReportLanguage }) {
+function TikTokIntelligencePanel({
+  language,
+  state,
+  onStateChange,
+}: {
+  language: ReportLanguage;
+  state: TikTokWorkspaceState;
+  onStateChange: React.Dispatch<React.SetStateAction<TikTokWorkspaceState>>;
+}) {
   const isVietnamese = language === "vi";
   const id = React.useId();
-  const [profilesInput, setProfilesInput] = React.useState("");
-  const [profileLimit, setProfileLimit] = React.useState(8);
-  const [profileResult, setProfileResult] = React.useState<TikTokProfileResult | null>(null);
-  const [profileError, setProfileError] = React.useState("");
-  const [profileLoading, setProfileLoading] = React.useState(false);
-  const [region, setRegion] = React.useState("VN");
-  const [queryType, setQueryType] = React.useState<"1" | "2" | "url">("1");
-  const [query, setQuery] = React.useState("");
-  const dates = React.useMemo(defaultDates, []);
-  const [startDate, setStartDate] = React.useState(dates.since);
-  const [endDate, setEndDate] = React.useState(dates.until);
-  const [maxAds, setMaxAds] = React.useState(20);
-  const [fetchDetails, setFetchDetails] = React.useState(true);
-  const [libraryReport, setLibraryReport] = React.useState<TikTokLibraryReport | null>(null);
-  const [libraryError, setLibraryError] = React.useState("");
-  const [libraryLoading, setLibraryLoading] = React.useState(false);
+  const { profilesInput, profileLimit, profileResult, profileError, profileLoading } = state;
+  const updateState = React.useCallback(
+    (patch: Partial<TikTokWorkspaceState>) => {
+      onStateChange((current) => ({ ...current, ...patch }));
+    },
+    [onStateChange],
+  );
   const profiles = profilesInput
     .split(/[\n,]/)
     .map((profile) => profile.trim().replace(/^@/, ""))
@@ -3113,23 +3042,23 @@ function TikTokIntelligencePanel({ language }: { language: ReportLanguage }) {
     .slice(0, 10);
   const profileCount = profileResult?.profiles.length || 0;
   const videoCount = profileResult?.videos.length || 0;
-  const libraryRows = libraryReport?.rows || [];
-  const topProfile = profileResult?.profiles[0];
-  const topAd = libraryRows[0];
-  const queryTypeItems = [
-    { label: isVietnamese ? "Từ khóa" : "Keyword", value: "1" },
-    { label: isVietnamese ? "Nhà quảng cáo" : "Advertiser", value: "2" },
-    { label: "URL", value: "url" },
-  ];
+  const profileVideoGroups = (profileResult?.profiles || []).map((profile) => ({
+    profile,
+    videos: (profileResult?.videos || []).filter(
+      (video) => video.username?.toLocaleLowerCase() === profile.username.toLocaleLowerCase(),
+    ),
+  }));
+  const knownProfileNames = new Set((profileResult?.profiles || []).map((profile) => profile.username.toLocaleLowerCase()));
+  const unattributedVideos = (profileResult?.videos || []).filter(
+    (video) => !video.username || !knownProfileNames.has(video.username.toLocaleLowerCase()),
+  );
 
-  async function fetchProfiles(event: React.FormEvent) {
-    event.preventDefault();
+  async function fetchProfiles() {
     if (!profiles.length) {
-      setProfileError(isVietnamese ? "Nhập ít nhất một username TikTok." : "Add at least one TikTok username.");
+      updateState({ profileError: isVietnamese ? "Nhập ít nhất một username TikTok." : "Add at least one TikTok username." });
       return;
     }
-    setProfileError("");
-    setProfileLoading(true);
+    updateState({ profileError: "", profileLoading: true });
     try {
       const data = await jsonFetch<{ result: TikTokProfileResult }>("/api/tiktok/profiles", {
         method: "POST",
@@ -3137,42 +3066,17 @@ function TikTokIntelligencePanel({ language }: { language: ReportLanguage }) {
         body: JSON.stringify({ profiles, resultsPerPage: clampWholeNumber(profileLimit, 1, 100) }),
         timeoutMs: 300000,
       });
-      setProfileResult(data.result);
+      updateState({ profileResult: data.result });
     } catch (error) {
-      setProfileError(error instanceof Error ? error.message : isVietnamese ? "Không kéo được TikTok profile." : "Could not fetch TikTok profiles.");
-    } finally {
-      setProfileLoading(false);
-    }
-  }
-
-  async function fetchLibrary(event: React.FormEvent) {
-    event.preventDefault();
-    if (!query.trim()) {
-      setLibraryError(isVietnamese ? "Nhập từ khóa, advertiser hoặc URL TikTok Ad Library." : "Add a keyword, advertiser, or TikTok Ad Library URL.");
-      return;
-    }
-    setLibraryError("");
-    setLibraryLoading(true);
-    try {
-      const data = await jsonFetch<{ report: TikTokLibraryReport }>("/api/tiktok/ads", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          region,
-          queryType,
-          query: query.trim(),
-          startDate: startDate || undefined,
-          endDate: endDate || undefined,
-          maxAds: clampWholeNumber(maxAds, 1, 100),
-          fetchDetails,
-        }),
-        timeoutMs: 300000,
+      updateState({
+        profileError: error instanceof Error
+          ? error.message
+          : isVietnamese
+            ? "Không kéo được TikTok profile."
+            : "Could not fetch TikTok profiles.",
       });
-      setLibraryReport(data.report);
-    } catch (error) {
-      setLibraryError(error instanceof Error ? error.message : isVietnamese ? "Không kéo được TikTok Ad Library." : "Could not fetch TikTok Ad Library rows.");
     } finally {
-      setLibraryLoading(false);
+      updateState({ profileLoading: false });
     }
   }
 
@@ -3189,14 +3093,20 @@ function TikTokIntelligencePanel({ language }: { language: ReportLanguage }) {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={fetchProfiles} className="flex flex-col gap-4">
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                void fetchProfiles();
+              }}
+              className="flex flex-col gap-4"
+            >
               <Field>
                 <FieldLabel htmlFor={`${id}-profiles`}>{isVietnamese ? "Username TikTok" : "TikTok usernames"}</FieldLabel>
                 <Textarea
                   id={`${id}-profiles`}
                   value={profilesInput}
-                  onChange={(event) => setProfilesInput(event.target.value)}
-                  placeholder={isVietnamese ? "VD:\nredagency\nbrandvn" : "Example:\nredagency\nbrandname"}
+                  onChange={(event) => updateState({ profilesInput: event.target.value })}
+                  placeholder={isVietnamese ? "VD:\ncreatorvn\nbrandvn" : "Example:\ncreatorhandle\nbrandhandle"}
                   className="min-h-24 resize-none"
                 />
                 <FieldDescription>
@@ -3211,159 +3121,75 @@ function TikTokIntelligencePanel({ language }: { language: ReportLanguage }) {
                   min={1}
                   max={100}
                   value={profileLimit}
-                  onChange={(event) => setProfileLimit(clampWholeNumber(Number(event.target.value), 1, 100))}
+                  onChange={(event) => updateState({ profileLimit: clampWholeNumber(Number(event.target.value), 1, 100) })}
                 />
               </Field>
               {profileError ? <Alert variant="destructive"><AlertTitle>{isVietnamese ? "Không kéo được profile" : "Profile fetch failed"}</AlertTitle><AlertDescription>{profileError}</AlertDescription></Alert> : null}
-              <Button type="submit" disabled={profileLoading || !profiles.length} aria-busy={profileLoading}>
-                {profileLoading ? <Spinner data-icon="inline-start" /> : <RefreshCcwIcon data-icon="inline-start" />}
-                {profileLoading ? (isVietnamese ? "Đang kéo profile..." : "Fetching profiles...") : isVietnamese ? "Kéo profile" : "Fetch profiles"}
-              </Button>
             </form>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>{isVietnamese ? "TikTok Ad Library" : "TikTok Ad Library"}</CardTitle>
-            <CardDescription>
-              {isVietnamese
-                ? "Kéo ads public để nghiên cứu creative, range impression/reach/spend và targeting context."
-                : "Pull public ads for creative research, range metrics, and targeting context."}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={fetchLibrary} className="flex flex-col gap-4">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <Field>
-                  <FieldLabel htmlFor={`${id}-region`}>{isVietnamese ? "Quốc gia" : "Region"}</FieldLabel>
-                  <Input
-                    id={`${id}-region`}
-                    value={region}
-                    onChange={(event) => setRegion(event.target.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 8))}
-                    placeholder="VN"
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel id={`${id}-query-type-label`}>{isVietnamese ? "Kiểu tìm" : "Query type"}</FieldLabel>
-                  <Select
-                    items={queryTypeItems}
-                    value={queryType}
-                    onValueChange={(value) => {
-                      if (value === "1" || value === "2" || value === "url") setQueryType(value);
-                    }}
-                  >
-                    <SelectTrigger className="w-full" aria-labelledby={`${id}-query-type-label`}>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        {queryTypeItems.map((item) => (
-                          <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                </Field>
-              </div>
-              <Field>
-                <FieldLabel htmlFor={`${id}-query`}>{isVietnamese ? "Từ khóa / advertiser / URL" : "Keyword / advertiser / URL"}</FieldLabel>
-                <Input
-                  id={`${id}-query`}
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder={isVietnamese ? "VD: spa, skincare, brand" : "Example: spa, skincare, brand"}
-                />
-              </Field>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <Field>
-                  <FieldLabel htmlFor={`${id}-start`}>{isVietnamese ? "Từ ngày" : "Start date"}</FieldLabel>
-                  <Input id={`${id}-start`} type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor={`${id}-end`}>{isVietnamese ? "Đến ngày" : "End date"}</FieldLabel>
-                  <Input id={`${id}-end`} type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} />
-                </Field>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <Field>
-                  <FieldLabel htmlFor={`${id}-max-ads`}>{isVietnamese ? "Số ads tối đa" : "Max ads"}</FieldLabel>
-                  <Input
-                    id={`${id}-max-ads`}
-                    type="number"
-                    min={1}
-                    max={100}
-                    value={maxAds}
-                    onChange={(event) => setMaxAds(clampWholeNumber(Number(event.target.value), 1, 100))}
-                  />
-                </Field>
-                <label className="flex min-h-16 items-center gap-3 rounded-lg border bg-background px-3 py-2 text-sm">
-                  <input type="checkbox" checked={fetchDetails} onChange={(event) => setFetchDetails(event.target.checked)} />
-                  <span>{isVietnamese ? "Lấy chi tiết ads" : "Fetch ad details"}</span>
-                </label>
-              </div>
-              {libraryError ? <Alert variant="destructive"><AlertTitle>{isVietnamese ? "Không kéo được Ad Library" : "Ad Library fetch failed"}</AlertTitle><AlertDescription>{libraryError}</AlertDescription></Alert> : null}
-              <Button type="submit" disabled={libraryLoading || !query.trim()} aria-busy={libraryLoading}>
-                {libraryLoading ? <Spinner data-icon="inline-start" /> : <SearchIcon data-icon="inline-start" />}
-                {libraryLoading ? (isVietnamese ? "Đang kéo ads..." : "Fetching ads...") : isVietnamese ? "Kéo TikTok ads" : "Fetch TikTok ads"}
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
+        <Alert>
+          <AlertTitle>{isVietnamese ? "TikTok Ad Library đang tạm dừng" : "TikTok Ad Library is paused"}</AlertTitle>
+          <AlertDescription>
+            {isVietnamese
+              ? "Chỉ profile và video tracker đang hoạt động. Ad Library sẽ mở lại khi actor và danh sách region hỗ trợ dùng chung một contract."
+              : "Only profile and video tracking is active. Ad Library returns when the actor and supported-region list share one validated contract."}
+          </AlertDescription>
+        </Alert>
       </div>
 
       <div className="flex flex-col gap-4">
-        <section className="grid gap-3 md:grid-cols-4">
-          <TikTokStatCard label={isVietnamese ? "Profiles" : "Profiles"} value={formatCompactNumber(profileCount)} />
-          <TikTokStatCard label={isVietnamese ? "Videos" : "Videos"} value={formatCompactNumber(videoCount)} />
-          <TikTokStatCard label={isVietnamese ? "Public ads" : "Public ads"} value={formatCompactNumber(libraryRows.length)} />
-          <TikTokStatCard label={isVietnamese ? "Actor" : "Actor"} value={libraryReport?.actorId || "Apify"} />
-        </section>
+        {profileResult ? (
+          <>
+            <section className="grid gap-3 sm:grid-cols-2">
+              <TikTokStatCard label={isVietnamese ? "Profiles" : "Profiles"} value={formatCompactNumber(profileCount)} />
+              <TikTokStatCard label={isVietnamese ? "Videos" : "Videos"} value={formatCompactNumber(videoCount)} />
+            </section>
 
-        <Alert>
-          <AlertTitle>{isVietnamese ? "Dữ liệu TikTok là intelligence public" : "TikTok data is public intelligence"}</AlertTitle>
-          <AlertDescription>
-            {isVietnamese
-              ? "Profile/video và Ad Library không phải TikTok Ads Manager owned performance, nên không dùng cho Budget Moves."
-              : "Profile/video data and Ad Library rows are not owned TikTok Ads Manager performance, so they do not drive Budget Moves."}
-          </AlertDescription>
-        </Alert>
+            <Alert>
+              <AlertTitle>{isVietnamese ? "Public intelligence, không phải Ads Manager" : "Public intelligence, not Ads Manager"}</AlertTitle>
+              <AlertDescription>
+                {isVietnamese
+                  ? "Tín hiệu profile/video hỗ trợ nghiên cứu creative và không được đưa vào Budget Moves."
+                  : "Profile and video signals support creative research and never feed Budget Moves."}
+              </AlertDescription>
+            </Alert>
+          </>
+        ) : null}
 
-        {!profileResult && !libraryReport ? (
-          <Empty className="min-h-80 rounded-2xl border bg-background/50">
+        {!profileResult ? (
+          <Empty className="min-h-72 rounded-2xl border bg-card">
             <EmptyHeader>
               <EmptyMedia variant="icon"><ActivityIcon /></EmptyMedia>
-              <EmptyTitle>{isVietnamese ? "Bắt đầu bằng profile hoặc Ad Library" : "Start with profiles or Ad Library"}</EmptyTitle>
+              <EmptyTitle>{isVietnamese ? "Bắt đầu bằng TikTok profile" : "Start with TikTok profiles"}</EmptyTitle>
               <EmptyDescription>
                 {isVietnamese
-                  ? "Nhập username TikTok hoặc query Ad Library để tạo evidence cho nghiên cứu creative."
-                  : "Add TikTok usernames or an Ad Library query to build evidence for creative research."}
+                  ? "Nhập username TikTok để tạo evidence cho nghiên cứu creative."
+                  : "Add TikTok usernames to build evidence for creative research."}
               </EmptyDescription>
             </EmptyHeader>
           </Empty>
         ) : null}
 
-        {topProfile ? (
-          <Card>
-            <CardHeader>
-              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                <div>
-                  <CardTitle>@{topProfile.username}</CardTitle>
-                  <CardDescription>{topProfile.displayName || (isVietnamese ? "Profile TikTok" : "TikTok profile")}</CardDescription>
-                </div>
-                {topProfile.profileUrl ? <Button type="button" variant="outline" size="sm" onClick={() => window.open(topProfile.profileUrl, "_blank", "noopener,noreferrer")}>{isVietnamese ? "Mở profile" : "Open profile"}</Button> : null}
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="grid gap-3 sm:grid-cols-4">
-                <TikTokStatCard label={isVietnamese ? "Follower" : "Followers"} value={formatMaybeNumber(topProfile.followerCount)} />
-                <TikTokStatCard label={isVietnamese ? "Following" : "Following"} value={formatMaybeNumber(topProfile.followingCount)} />
-                <TikTokStatCard label={isVietnamese ? "Likes" : "Likes"} value={formatMaybeNumber(topProfile.likesCount)} />
-                <TikTokStatCard label={isVietnamese ? "Videos" : "Videos"} value={formatMaybeNumber(topProfile.videoCount)} />
-              </div>
-              {topProfile.bio ? <p className="mt-4 text-sm leading-6 text-muted-foreground">{topProfile.bio}</p> : null}
-            </CardContent>
-          </Card>
+        {profileResult?.profiles.length ? (
+          <section className="flex flex-col gap-3">
+            <div>
+              <h2 className="font-heading text-base font-semibold">
+                {isVietnamese ? "So sánh profile" : "Profile comparison"}
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {isVietnamese
+                  ? "Mỗi profile giữ riêng follower, likes và quy mô video."
+                  : "Each profile keeps its own audience, likes, and video scale."}
+              </p>
+            </div>
+            <div className="grid gap-3 lg:grid-cols-2">
+              {profileResult.profiles.map((profile) => (
+                <TikTokProfileCard key={profile.id || profile.username} profile={profile} language={language} />
+              ))}
+            </div>
+          </section>
         ) : null}
 
         {profileResult?.warnings.length ? (
@@ -3378,108 +3204,179 @@ function TikTokIntelligencePanel({ language }: { language: ReportLanguage }) {
         ) : null}
 
         {profileResult?.videos.length ? (
-          <Card>
-            <CardHeader>
-              <CardTitle>{isVietnamese ? "Video mới" : "Recent videos"}</CardTitle>
-              <CardDescription>{isVietnamese ? "Creative signals từ video public." : "Creative signals from public videos."}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {profileResult.videos.slice(0, 6).map((video) => (
-                  <div key={video.id} className="rounded-xl border bg-card/70 p-3 shadow-sm">
-                    {video.coverUrl ? <img src={video.coverUrl} alt={video.text || video.id} className="mb-3 aspect-video w-full rounded-lg border object-cover" loading="lazy" /> : null}
-                    <p className="line-clamp-3 text-sm font-medium leading-5">{compactText(video.text || (isVietnamese ? "Không có caption" : "No caption"), 180)}</p>
-                    <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                      <span>{isVietnamese ? "View" : "Views"}: {formatMaybeNumber(video.playCount)}</span>
-                      <span>{isVietnamese ? "Like" : "Likes"}: {formatMaybeNumber(video.likeCount)}</span>
-                      <span>{isVietnamese ? "Share" : "Shares"}: {formatMaybeNumber(video.shareCount)}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+          <section className="flex flex-col gap-3">
+            <div>
+              <h2 className="font-heading text-base font-semibold">
+                {isVietnamese ? "Video theo profile" : "Videos by profile"}
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {isVietnamese
+                  ? "Video được nhóm theo creator để không trộn tín hiệu creative."
+                  : "Videos stay grouped by creator so creative signals are never mixed."}
+              </p>
+            </div>
+            {profileVideoGroups.map(({ profile, videos }) => (
+              videos.length ? (
+                <TikTokVideoGroup
+                  key={profile.id || profile.username}
+                  username={profile.username}
+                  videos={videos}
+                  language={language}
+                />
+              ) : null
+            ))}
+            {unattributedVideos.length ? (
+              <TikTokVideoGroup
+                username={isVietnamese ? "Chưa xác định profile" : "Unattributed"}
+                videos={unattributedVideos}
+                language={language}
+                unattributed
+              />
+            ) : null}
+          </section>
         ) : null}
 
-        {libraryReport ? <TikTokLibraryPanel report={libraryReport} rows={libraryRows} topAd={topAd} language={language} /> : null}
       </div>
+
+      <StickyActionDock
+        contextLabel={isVietnamese ? "TikTok tracker" : "TikTok tracker"}
+        status={profileLoading ? "working" : profiles.length ? "ready" : "blocked"}
+        statusLabel={profileLoading
+          ? isVietnamese ? "Đang kéo profile" : "Fetching profiles"
+          : profiles.length
+            ? isVietnamese ? `${profiles.length} profile sẵn sàng` : `${profiles.length} profiles ready`
+            : isVietnamese ? "Cần username" : "Add usernames"}
+        primaryAction={{
+          id: "fetch-tiktok-profiles",
+          label: profileResult
+            ? isVietnamese ? "Làm mới profile" : "Refresh profiles"
+            : isVietnamese ? "Kéo profile" : "Fetch profiles",
+          shortLabel: isVietnamese ? "Kéo profile" : "Fetch profiles",
+          icon: RefreshCcwIcon,
+          onSelect: fetchProfiles,
+          disabled: !profiles.length,
+          disabledReason: isVietnamese ? "Nhập ít nhất một username TikTok." : "Add at least one TikTok username.",
+          loading: profileLoading,
+          shortcut: "mod+enter",
+        }}
+      />
     </div>
   );
 }
 
-function TikTokLibraryPanel({ report, rows, topAd, language }: { report: TikTokLibraryReport; rows: TikTokAdLibraryRow[]; topAd?: TikTokAdLibraryRow; language: ReportLanguage }) {
+function TikTokProfileCard({
+  profile,
+  language,
+}: {
+  profile: TikTokProfile;
+  language: ReportLanguage;
+}) {
   const isVietnamese = language === "vi";
   return (
     <Card>
       <CardHeader>
-        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div>
-            <CardTitle>{isVietnamese ? "TikTok Ad Library rows" : "TikTok Ad Library rows"}</CardTitle>
-            <CardDescription>
-              {isVietnamese ? `Cập nhật ${new Date(report.pulledAt).toLocaleString()}` : `Synced ${new Date(report.pulledAt).toLocaleString()}`}
-            </CardDescription>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <CardTitle className="truncate">@{profile.username}</CardTitle>
+            <CardDescription>{profile.displayName || (isVietnamese ? "Profile TikTok" : "TikTok profile")}</CardDescription>
           </div>
-          <Badge variant="secondary">{rows.length} ads</Badge>
+          {profile.profileUrl ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => window.open(profile.profileUrl, "_blank", "noopener,noreferrer")}
+            >
+              {isVietnamese ? "Mở profile" : "Open profile"}
+            </Button>
+          ) : null}
         </div>
       </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        {report.warnings.map((warning) => (
-          <Alert key={warning}>
-            <AlertTitle>{isVietnamese ? "Lưu ý nguồn dữ liệu" : "Data source note"}</AlertTitle>
-            <AlertDescription>{warning}</AlertDescription>
-          </Alert>
-        ))}
-        {topAd ? (
-          <div className="rounded-2xl border bg-background/50 p-4">
-            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-              <div className="min-w-0">
-                <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{isVietnamese ? "Creative nổi bật" : "Featured creative"}</div>
-                <h3 className="mt-2 text-lg font-semibold">{topAd.adTitle || topAd.advertiserName || topAd.id}</h3>
-                <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{compactText(topAd.caption || (isVietnamese ? "Không có caption." : "No caption."), 260)}</p>
-              </div>
-              {topAd.previewUrl ? <Button type="button" variant="outline" size="sm" onClick={() => window.open(topAd.previewUrl, "_blank", "noopener,noreferrer")}>{isVietnamese ? "Xem ads" : "View ad"}</Button> : null}
-            </div>
-            <div className="mt-4 grid gap-3 sm:grid-cols-4">
-              <TikTokStatCard label="Impressions" value={formatRange(topAd.impressionsLower, topAd.impressionsUpper)} />
-              <TikTokStatCard label="Reach" value={formatRange(topAd.reachLower, topAd.reachUpper)} />
-              <TikTokStatCard label="Spend" value={formatRange(topAd.spendLower, topAd.spendUpper)} />
-              <TikTokStatCard label={isVietnamese ? "Audience" : "Audience"} value={formatRange(topAd.audienceMin, topAd.audienceMax)} />
-            </div>
+      <CardContent>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <TikTokInlineStat label={isVietnamese ? "Follower" : "Followers"} value={formatMaybeNumber(profile.followerCount)} />
+          <TikTokInlineStat label={isVietnamese ? "Following" : "Following"} value={formatMaybeNumber(profile.followingCount)} />
+          <TikTokInlineStat label={isVietnamese ? "Likes" : "Likes"} value={formatMaybeNumber(profile.likesCount)} />
+          <TikTokInlineStat label={isVietnamese ? "Videos" : "Videos"} value={formatMaybeNumber(profile.videoCount)} />
+        </div>
+        {profile.bio ? <p className="mt-4 text-sm leading-6 text-muted-foreground">{profile.bio}</p> : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function TikTokVideoGroup({
+  username,
+  videos,
+  language,
+  unattributed = false,
+}: {
+  username: string;
+  videos: TikTokVideo[];
+  language: ReportLanguage;
+  unattributed?: boolean;
+}) {
+  const isVietnamese = language === "vi";
+  const visibleVideos = videos.slice(0, 6);
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <CardTitle className="truncate">{unattributed ? username : `@${username}`}</CardTitle>
+            <CardDescription>
+              {videos.length > visibleVideos.length
+                ? isVietnamese
+                  ? `Hiển thị ${visibleVideos.length}/${videos.length} video mới nhất.`
+                  : `Showing ${visibleVideos.length} of ${videos.length} recent videos.`
+                : isVietnamese
+                  ? `${videos.length} video public.`
+                  : `${videos.length} public ${videos.length === 1 ? "video" : "videos"}.`}
+            </CardDescription>
           </div>
-        ) : null}
-        <div className="overflow-hidden rounded-xl border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{isVietnamese ? "Advertiser" : "Advertiser"}</TableHead>
-                <TableHead>{isVietnamese ? "Creative" : "Creative"}</TableHead>
-                <TableHead>Impressions</TableHead>
-                <TableHead>{isVietnamese ? "Thời gian" : "Flight"}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.slice(0, 12).map((row) => (
-                <TableRow key={row.id}>
-                  <TableCell className="font-medium">{row.advertiserName || row.id}</TableCell>
-                  <TableCell>
-                    <div className="max-w-md">
-                      <div className="line-clamp-1 font-medium">{row.adTitle || row.cta || (isVietnamese ? "Không có title" : "No title")}</div>
-                      <div className="line-clamp-2 text-xs text-muted-foreground">{row.caption || row.landingUrl || "-"}</div>
-                    </div>
-                  </TableCell>
-                  <TableCell className="font-mono text-xs tabular-nums">{formatRange(row.impressionsLower, row.impressionsUpper)}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{[row.firstSeen, row.lastSeen].filter(Boolean).join(" - ") || "-"}</TableCell>
-                </TableRow>
-              ))}
-              {!rows.length ? (
-                <TableRow>
-                  <TableCell colSpan={4} className="h-24 text-center text-muted-foreground">
-                    {isVietnamese ? "Không có ads public cho query này." : "No public ads returned for this query."}
-                  </TableCell>
-                </TableRow>
+          <Badge variant={unattributed ? "outline" : "secondary"} className="shrink-0">
+            {unattributed ? (isVietnamese ? "Cần kiểm tra" : "Review") : `@${username}`}
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {visibleVideos.map((video) => (
+            <article key={video.id} className="min-w-0 border-t pt-3">
+              {video.coverUrl ? (
+                <img
+                  src={video.coverUrl}
+                  alt={video.text || `${username} TikTok video`}
+                  className="mb-3 aspect-video w-full rounded-lg border object-cover"
+                  loading="lazy"
+                />
               ) : null}
-            </TableBody>
-          </Table>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <Badge variant="outline" className="max-w-full truncate">
+                  {video.username ? `@${video.username}` : isVietnamese ? "Chưa rõ profile" : "Unknown profile"}
+                </Badge>
+              </div>
+              <p className="line-clamp-3 text-sm font-medium leading-5">
+                {compactText(video.text || (isVietnamese ? "Không có caption" : "No caption"), 180)}
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                <span>{isVietnamese ? "View" : "Views"}: {formatMaybeNumber(video.playCount)}</span>
+                <span>{isVietnamese ? "Like" : "Likes"}: {formatMaybeNumber(video.likeCount)}</span>
+                <span>{isVietnamese ? "Share" : "Shares"}: {formatMaybeNumber(video.shareCount)}</span>
+              </div>
+              {video.videoUrl ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="mt-3 w-full"
+                  onClick={() => window.open(video.videoUrl, "_blank", "noopener,noreferrer")}
+                >
+                  {isVietnamese ? "Mở video" : "Open video"}
+                </Button>
+              ) : null}
+            </article>
+          ))}
         </div>
       </CardContent>
     </Card>
@@ -3495,14 +3392,17 @@ function TikTokStatCard({ label, value }: { label: string; value: string }) {
   );
 }
 
-function formatMaybeNumber(value?: number) {
-  return value === undefined ? "-" : formatCompactNumber(value);
+function TikTokInlineStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0 border-t pt-2">
+      <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</div>
+      <div className="mt-1 truncate font-mono text-sm font-semibold tabular-nums text-foreground">{value}</div>
+    </div>
+  );
 }
 
-function formatRange(lower?: number, upper?: number) {
-  if (lower === undefined && upper === undefined) return "-";
-  if (lower !== undefined && upper !== undefined) return `${formatCompactNumber(lower)}-${formatCompactNumber(upper)}`;
-  return formatCompactNumber(lower ?? upper ?? 0);
+function formatMaybeNumber(value?: number) {
+  return value === undefined ? "-" : formatCompactNumber(value);
 }
 
 function clampWholeNumber(value: number, min: number, max: number) {
@@ -3512,119 +3412,6 @@ function clampWholeNumber(value: number, min: number, max: number) {
 
 function platformLabel(platform: CompetitorPlatform) {
   return competitorPlatformItems.find((item) => item.value === platform)?.label || platform;
-}
-
-function SpyAdsPanel({
-  ads,
-  warnings,
-  fetchedAt,
-  language,
-}: {
-  ads: CompetitorSpyAd[];
-  warnings: string[];
-  fetchedAt: string;
-  language: ReportLanguage;
-}) {
-  const isVietnamese = language === "vi";
-  const copy = uiCopy[language].spy;
-  const fetchedAtLabel = fetchedAt ? new Date(fetchedAt).toLocaleString() : null;
-  const dataSourcePanel = {
-    eyebrow: isVietnamese ? "Ads đã lấy" : "Fetched ads",
-    source: isVietnamese ? "Nguồn public" : "Public data source",
-    count: isVietnamese ? `${ads.length} ads đã lưu` : `${ads.length} ads captured`,
-    sync: fetchedAtLabel ? (isVietnamese ? `Cập nhật ${fetchedAtLabel}` : `Synced ${fetchedAtLabel}`) : (isVietnamese ? "Chưa đồng bộ" : "Not synced yet"),
-    status: ads.length
-      ? isVietnamese
-        ? `${ads.length} ads trong session${fetchedAtLabel ? ` - ${fetchedAtLabel}` : ""}.`
-        : `${ads.length} ads in session${fetchedAtLabel ? ` - ${fetchedAtLabel}` : ""}.`
-      : isVietnamese
-        ? "Chưa lấy ads. Lấy dữ liệu public để có bằng chứng creative trước khi phân tích."
-        : "No ads fetched yet. Pull public data to ground the analysis in real creative evidence.",
-  };
-
-  return (
-    <div className="relative overflow-hidden rounded-2xl border bg-background p-4 md:p-5">
-      <div className="pointer-events-none absolute -right-16 -top-20 size-44 rounded-full bg-[radial-gradient(circle,_rgba(0,153,255,0.12),_transparent_68%)]" />
-      <div className="relative flex flex-col gap-4">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="secondary">{dataSourcePanel.source}</Badge>
-              {ads.length ? <Badge variant="outline">{ads.length} ads</Badge> : null}
-            </div>
-            <div className="mt-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              {dataSourcePanel.eyebrow}
-            </div>
-            <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
-              {dataSourcePanel.status}
-            </p>
-          </div>
-          <div className="grid gap-2 sm:grid-cols-2 lg:min-w-64">
-            <div className="rounded-xl border bg-card/70 px-3 py-2">
-              <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                {isVietnamese ? "Bằng chứng" : "Evidence"}
-              </div>
-              <div className="mt-1 text-sm font-semibold tabular-nums text-foreground">{dataSourcePanel.count}</div>
-            </div>
-            <div className="rounded-xl border bg-card/70 px-3 py-2">
-              <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                {isVietnamese ? "Sync" : "Sync"}
-              </div>
-              <div className="mt-1 text-sm font-semibold text-foreground">{dataSourcePanel.sync}</div>
-            </div>
-          </div>
-        </div>
-        {warnings.length ? (
-          <div className="flex flex-col gap-2">
-            {warnings.slice(0, 3).map((warning, index) => (
-              <Alert key={`${warning}-${index}`}>
-                <AlertTitle>{isVietnamese ? "Lưu ý nguồn dữ liệu" : "Data source note"}</AlertTitle>
-                <AlertDescription>{warning}</AlertDescription>
-              </Alert>
-            ))}
-          </div>
-        ) : null}
-        {ads.length ? (
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {ads.slice(0, 12).map((ad, index) => (
-              <div key={`${ad.source}-${ad.id}-${index}`} className="rounded-xl border bg-card/70 p-3 shadow-sm">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="truncate text-sm font-semibold">{ad.pageName || ad.competitorName || copy.unknownAdvertiser}</div>
-                    <div className="mt-1 flex flex-wrap gap-1">
-                      <Badge variant="outline">{ad.source}</Badge>
-                      {ad.platform ? <Badge variant="secondary">{compactText(ad.platform, 24)}</Badge> : null}
-                      {ad.format ? <Badge variant="outline">{compactText(ad.format, 18)}</Badge> : null}
-                    </div>
-                  </div>
-                  {ad.snapshotUrl ? (
-                    <Button type="button" variant="ghost" size="sm" onClick={() => window.open(ad.snapshotUrl, "_blank", "noopener,noreferrer")}>
-                      {copy.view}
-                    </Button>
-                  ) : null}
-                </div>
-                {ad.imageUrl ? (
-                  <img src={ad.imageUrl} alt={`${copy.adCreativeAlt} ${ad.pageName || ad.competitorName || copy.unknownAdvertiser}`} className="mt-3 aspect-video w-full rounded-lg border object-cover" loading="lazy" />
-                ) : null}
-                <p className="mt-3 line-clamp-2 text-sm font-medium leading-5" data-print-expand>
-                  {compactText(ad.headline || ad.body || copy.noCopy, 160)}
-                </p>
-                {ad.description || ad.body ? (
-                  <p className="mt-2 line-clamp-3 text-xs leading-5 text-muted-foreground" data-print-expand>
-                    {compactText(ad.description || ad.body || "", 220)}
-                  </p>
-                ) : null}
-                <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                  {ad.cta ? <span>CTA: {compactText(ad.cta, 28)}</span> : null}
-                  {ad.startDate ? <span>{copy.start}: {ad.startDate.slice(0, 10)}</span> : null}
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : null}
-      </div>
-    </div>
-  );
 }
 
 function appSectionLabel(value: ActiveView, language: ReportLanguage) {
@@ -3645,10 +3432,13 @@ function workflowStateLabel(state: "complete" | "current" | "pending", language:
   return language === "vi" ? "Sau" : "Next";
 }
 
-function providerLabel(provider: Provider, language: ReportLanguage) {
+function providerLabel(provider: Provider, language: ReportLanguage, capabilities?: CapabilityStatus[]) {
   if (provider === "9router") return "9router";
   if (provider === "prompt") return language === "vi" ? "Luật local" : "Local rules only";
-  return language === "vi" ? "Auto 9router" : "Auto 9router";
+  const enhancement = capabilities?.find((capability) => capability.key === "ai_enhancement");
+  if (enhancement?.state === "available") return language === "vi" ? "9router sẵn sàng" : "9router ready";
+  if (enhancement?.state === "degraded") return language === "vi" ? "Fallback local đang bật" : "Local fallback active";
+  return language === "vi" ? "Tự chọn nguồn tốt nhất" : "Auto: best available";
 }
 
 function packLabel(pack: KpiPack, language: ReportLanguage) {
@@ -3748,7 +3538,7 @@ function BreakdownAnalysisSection({ report, language }: { report: DashboardRepor
   return (
     <section className="grid items-start gap-4 xl:grid-cols-[1.6fr_1fr]" data-print-flow>
       <div className="rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5">
-        <div className="max-w-2xl space-y-1.5">
+        <div className="flex max-w-2xl flex-col gap-1.5">
           <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
             {language === "vi" ? "Chẩn đoán phân khúc" : "Segment Diagnostics"}
           </p>
@@ -4110,7 +3900,7 @@ function PerformanceCharts({ report, language }: { report: DashboardReport; lang
   if (!dailyData.length && !adsetData.length) {
     return (
       <div className="rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5" data-print-flow>
-        <div className="max-w-2xl space-y-1.5">
+        <div className="flex max-w-2xl flex-col gap-1.5">
           <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
             {language === "vi" ? "Không gian phân tích" : "Analytics Workspace"}
           </p>
@@ -4130,7 +3920,7 @@ function PerformanceCharts({ report, language }: { report: DashboardReport; lang
     <section className="grid gap-4 xl:grid-cols-3">
       <div className="rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5 xl:col-span-2">
         <div className="flex items-start justify-between gap-3">
-          <div className="max-w-2xl space-y-1.5">
+          <div className="flex max-w-2xl flex-col gap-1.5">
             <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
               {language === "vi" ? "Theo dõi xu hướng" : "Trend Monitor"}
             </p>
@@ -4181,7 +3971,7 @@ function PerformanceCharts({ report, language }: { report: DashboardReport; lang
       </div>
 
       <div className="rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5">
-        <div className="max-w-2xl space-y-1.5">
+        <div className="flex max-w-2xl flex-col gap-1.5">
           <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
             {language === "vi" ? "Đường hiệu quả" : "Efficiency Curve"}
           </p>
@@ -4219,7 +4009,7 @@ function PerformanceCharts({ report, language }: { report: DashboardReport; lang
       </div>
 
       <div className="rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5">
-        <div className="max-w-2xl space-y-1.5">
+        <div className="flex max-w-2xl flex-col gap-1.5">
           <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
             {language === "vi" ? "Tín hiệu chẩn đoán" : "Diagnostic Signal"}
           </p>
@@ -4258,7 +4048,7 @@ function PerformanceCharts({ report, language }: { report: DashboardReport; lang
       </div>
 
       <div className="rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5 xl:col-span-2">
-        <div className="max-w-2xl space-y-1.5">
+        <div className="flex max-w-2xl flex-col gap-1.5">
           <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
             {language === "vi" ? "Phân rã nhóm quảng cáo" : "Ad Set Drilldown"}
           </p>
@@ -4412,7 +4202,7 @@ function HealthTriageCard({ report, language }: { report: DashboardReport; langu
   return (
     <div data-print-flow className={`${summary.severity === "danger" ? "border-l-4 border-l-destructive" : ""} rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5`}>
       <div className="flex items-start justify-between gap-3">
-        <div className="max-w-2xl space-y-1.5">
+        <div className="flex max-w-2xl flex-col gap-1.5">
           <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
             {language === "vi" ? "Phân loại sức khỏe" : "Health Triage"}
           </p>
@@ -4497,7 +4287,7 @@ function DailyDiagnosisCard({ report, language }: { report: DashboardReport; lan
   return (
     <div data-print-flow className={`${hasDanger ? "border-l-4 border-l-destructive" : ""} rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5`}>
       <div className="flex items-start justify-between gap-3">
-        <div className="max-w-2xl space-y-1.5">
+        <div className="flex max-w-2xl flex-col gap-1.5">
           <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
             {language === "vi" ? "Nguyên nhân gốc" : "Root Cause"}
           </p>
@@ -4545,7 +4335,7 @@ function ExperimentReadinessCard({ report, language }: { report: DashboardReport
   return (
     <div data-print-flow className={`${diagnosticAccentClass(readiness.variant)} rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5`}>
       <div className="flex items-start justify-between gap-3">
-        <div className="max-w-2xl space-y-1.5">
+        <div className="flex max-w-2xl flex-col gap-1.5">
           <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
             {language === "vi" ? "Cổng thử nghiệm" : "Experiment Gate"}
           </p>
@@ -4582,7 +4372,7 @@ function DecisionConfidenceCard({ report, language, targets }: { report: Dashboa
   return (
     <div data-print-flow className={`${diagnosticAccentClass(variant)} rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5`}>
       <div className="flex items-start justify-between gap-3">
-        <div className="max-w-2xl space-y-1.5">
+        <div className="flex max-w-2xl flex-col gap-1.5">
           <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
             {isVietnamese ? "Cổng bằng chứng" : "Evidence Gate"}
           </p>
@@ -4629,7 +4419,7 @@ function CreativeVolumeCard({ report, language }: { report: DashboardReport; lan
   return (
     <div data-print-flow className={`${diagnosticAccentClass(assessment.variant)} rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5`}>
       <div className="flex items-start justify-between gap-3">
-        <div className="max-w-2xl space-y-1.5">
+        <div className="flex max-w-2xl flex-col gap-1.5">
           <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
             {isVietnamese ? "Năng lực creative" : "Creative Capacity"}
           </p>
@@ -4668,7 +4458,7 @@ function BudgetMoveEngineCard({ report, language }: { report: DashboardReport; l
   return (
     <div data-print-flow className={`${diagnosticAccentClass(engine.variant)} rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5`}>
       <div className="flex items-start justify-between gap-3">
-        <div className="max-w-2xl space-y-1.5">
+        <div className="flex max-w-2xl flex-col gap-1.5">
           <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
             {language === "vi" ? "Động cơ ngân sách" : "Budget Engine"}
           </p>
@@ -4736,7 +4526,7 @@ function FunnelLeakageCard({ report, language }: { report: DashboardReport; lang
   return (
     <div data-print-flow className={`${diagnosticAccentClass(leakage.variant)} rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5`}>
       <div className="flex items-start justify-between gap-3">
-        <div className="max-w-2xl space-y-1.5">
+        <div className="flex max-w-2xl flex-col gap-1.5">
           <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
             {language === "vi" ? "Chẩn đoán phễu" : "Funnel Diagnostics"}
           </p>
@@ -4801,7 +4591,7 @@ function AudienceOverlapCard({ report, language }: { report: DashboardReport; la
   return (
     <div data-print-flow className={`${diagnosticAccentClass(overlap.variant)} rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5`}>
       <div className="flex items-start justify-between gap-3">
-        <div className="max-w-2xl space-y-1.5">
+        <div className="flex max-w-2xl flex-col gap-1.5">
           <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
             {language === "vi" ? "Bản đồ đối tượng" : "Audience Map"}
           </p>
@@ -4937,7 +4727,7 @@ function BreakdownWasteCard({
   return (
     <div data-print-flow className={`${diagnosticAccentClass(waste.variant)} self-start rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5`}>
       <div className="flex items-start justify-between gap-3">
-        <div className="space-y-1.5">
+        <div className="flex flex-col gap-1.5">
           <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
             {language === "vi" ? "Rủi ro phân bổ" : "Allocation Risk"}
           </p>
@@ -5199,7 +4989,10 @@ function BarList({ rows, metric, currency, language }: { rows: NormalizedRow[]; 
           <div key={`${label}-${value}`} className="grid grid-cols-[minmax(80px,150px)_1fr_auto] items-center gap-3 text-sm">
             <div className="truncate font-medium">{label}</div>
             <div className="h-2.5 overflow-hidden rounded-full bg-muted/60">
-              <div className="h-full rounded-full bg-primary/70 transition-all" style={{ width: `${pct}%` }} />
+              <div
+                className="h-full w-full origin-left rounded-full bg-primary/70"
+                style={{ transform: `scaleX(${pct / 100})` }}
+              />
             </div>
             <div className="min-w-[4.5rem] text-right tabular-nums text-muted-foreground">
               {metric === "spend" ? formatMetric(value, "currency", currency) : formatMetric(value, "number")}

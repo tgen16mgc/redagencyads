@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   SUFFICIENCY,
+  hasReportSignal,
   hasRowDelivery,
   hasFunnelClickVolume,
   hasDatedHistory,
@@ -57,6 +58,14 @@ describe("hasRowDelivery", () => {
   });
 });
 
+describe("hasReportSignal", () => {
+  it("blocks analysis when Meta returns an all-zero report", () => {
+    expect(hasReportSignal(row({}))).toBe(false);
+    expect(hasReportSignal(row({ impressions: 1 }))).toBe(true);
+    expect(hasReportSignal(row({ messages: 1 }))).toBe(true);
+  });
+});
+
 describe("hasFunnelClickVolume", () => {
   it("requires at least the click floor and a downstream event", () => {
     expect(hasFunnelClickVolume({ linkClicks: 100, addToCart: 1, initiateCheckout: 0, purchases: 0 })).toBe(true);
@@ -78,4 +87,3 @@ describe("hasBaselineHistory", () => {
     expect(hasBaselineHistory(20, 7)).toBe(false);
   });
 });
-

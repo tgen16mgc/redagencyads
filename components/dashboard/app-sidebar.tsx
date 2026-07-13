@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { CheckIcon, LogOutIcon, SparklesIcon } from "lucide-react";
+import { CheckIcon, LogOutIcon, SparklesIcon, WaypointsIcon } from "lucide-react";
 import type { DashboardWorkflowState, DashboardWorkflowStep } from "@/lib/dashboard-workflow";
 import { cn } from "@/lib/utils";
 import {
@@ -15,6 +15,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  useSidebar,
 } from "@/components/ui/sidebar";
 
 type SidebarIcon = React.ComponentType<React.SVGProps<SVGSVGElement>>;
@@ -59,22 +60,33 @@ export function AppSidebar<T extends string>({
   onActiveViewChange,
   onLogout,
 }: AppSidebarProps<T>) {
+  const { isMobile, setOpenMobile } = useSidebar();
+
+  const handleActiveViewChange = React.useCallback(
+    (value: T) => {
+      onActiveViewChange(value);
+      if (isMobile) setOpenMobile(false);
+    },
+    [isMobile, onActiveViewChange, setOpenMobile],
+  );
+
   return (
     <Sidebar collapsible="icon" data-print-hidden>
       <SidebarHeader className="p-3">
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
+              render={<div />}
               size="lg"
-              tooltip="Meta Ads Console"
+              tooltip="Decision Workspace"
               className="h-auto border border-sidebar-border/80 bg-sidebar-accent/35 p-3 group-data-[collapsible=icon]:border-0 group-data-[collapsible=icon]:bg-transparent"
             >
               <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-background/70 ring-1 ring-sidebar-border group-data-[collapsible=icon]:size-8">
-                <img src="/red-agency-logo.png" alt="Red Agency" className="size-6 rounded-md object-contain" />
+                <WaypointsIcon aria-hidden="true" />
               </span>
               <span className="min-w-0 group-data-[collapsible=icon]:hidden">
-                <span className="block truncate text-sm font-semibold leading-5">Red Agency</span>
-                <span className="block truncate text-xs font-normal text-sidebar-foreground/65">Ads intelligence</span>
+                <span className="block truncate text-sm font-semibold leading-5">Decision Workspace</span>
+                <span className="block truncate text-xs font-normal text-sidebar-foreground/65">Evidence to action</span>
               </span>
             </SidebarMenuButton>
           </SidebarMenuItem>
@@ -90,7 +102,7 @@ export function AppSidebar<T extends string>({
                   <SidebarMenuButton
                     size="lg"
                     isActive={activeView === value}
-                    onClick={() => onActiveViewChange(value)}
+                    onClick={() => handleActiveViewChange(value)}
                     aria-current={activeView === value ? "page" : undefined}
                     tooltip={label}
                   >
@@ -112,8 +124,8 @@ export function AppSidebar<T extends string>({
                   return (
                     <SidebarMenuItem key={value}>
                       <SidebarMenuButton
+                        render={<div />}
                         isActive={state === "current"}
-                        disabled={state === "pending"}
                         aria-current={state === "current" ? "step" : undefined}
                         tooltip={label}
                         className={cn(state === "complete" && "text-muted-foreground")}
@@ -137,6 +149,7 @@ export function AppSidebar<T extends string>({
             <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton
+                  render={<div />}
                   tooltip={aiProviderLabel}
                   className="h-auto items-start border border-sidebar-border/70 bg-background/35 p-3 group-data-[collapsible=icon]:h-8 group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:border-0 group-data-[collapsible=icon]:bg-transparent group-data-[collapsible=icon]:p-2"
                 >

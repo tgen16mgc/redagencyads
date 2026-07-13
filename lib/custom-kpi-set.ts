@@ -1,6 +1,7 @@
 import type { InterfaceLanguage, KpiCard, NormalizedRow } from "@/lib/types";
 
-export const CUSTOM_KPI_SET_STORAGE_KEY = "redagencyads-custom-kpi-set";
+export const CUSTOM_KPI_SET_STORAGE_KEY = "decision-workspace-custom-kpi-set";
+export const LEGACY_CUSTOM_KPI_SET_STORAGE_KEY = "redagencyads-custom-kpi-set";
 
 export type CustomKpiKey = Exclude<KpiCard["key"], "healthScore">;
 

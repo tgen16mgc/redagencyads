@@ -344,7 +344,7 @@ export function buildInsightPrompt(args: {
     health: args.report.health,
     comparison,
   };
-  return `You are a senior Meta Ads analyst. Return an insight table for a Red Agency ads dashboard.
+  return `You are a senior Meta Ads analyst. Return an insight table for an evidence-led ads workspace.
 
 Rules:
 - Return strict JSON only.
@@ -417,7 +417,7 @@ export function buildCompetitorSpyPrompt(args: {
         }
       : null,
   };
-  return `You are a senior paid-social competitive intelligence strategist for Red Agency.
+  return `You are a senior paid-social competitive intelligence strategist working from verified evidence.
 
 Use the competitor ads framework:
 - Identify likely positioning, repeated messaging themes, offers, CTA patterns, creative formats, and platform gaps.
@@ -444,7 +444,7 @@ Output schema:
     {
       "theme": "theme name",
       "evidence": "what was observed or inferred",
-      "opportunity": "how Red Agency should respond",
+      "opportunity": "how the team should respond",
       "confidence": "low|medium|high"
     }
   ],

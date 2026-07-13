@@ -7,13 +7,13 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
 
 export const metadata: Metadata = {
-  title: "Red Agency Ads Tool",
-  description: "Campaign-first Meta Ads dashboard with comparison insights and report export.",
+  title: "Decision Operations Workspace",
+  description: "Evidence-led performance analysis, competitive intelligence, and publishing operations.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={cn("font-sans", geist.variable)}>
+    <html lang="en" className={cn("dark font-sans", geist.variable)}>
       <body>
         <TooltipProvider>{children}</TooltipProvider>
       </body>

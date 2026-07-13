@@ -11,6 +11,7 @@ import {
   type CustomChartType,
   CHART_PRESETS,
   CUSTOM_CHARTS_STORAGE_KEY,
+  LEGACY_CUSTOM_CHARTS_STORAGE_KEY,
   addSeries,
   canAddSeries,
   deserializeCharts,
@@ -157,7 +158,15 @@ export function CustomChartsSection({
   const [dropAxis, setDropAxis] = React.useState<CustomAxis | null>(null);
   const [saved, setSaved] = React.useState<CustomChartSpec[]>(() => {
     if (typeof window === "undefined") return [];
-    return deserializeCharts(window.localStorage.getItem(CUSTOM_CHARTS_STORAGE_KEY));
+    const currentValue = window.localStorage.getItem(CUSTOM_CHARTS_STORAGE_KEY);
+    const legacyValue = currentValue === null
+      ? window.localStorage.getItem(LEGACY_CUSTOM_CHARTS_STORAGE_KEY)
+      : null;
+    if (legacyValue !== null) {
+      window.localStorage.setItem(CUSTOM_CHARTS_STORAGE_KEY, legacyValue);
+      window.localStorage.removeItem(LEGACY_CUSTOM_CHARTS_STORAGE_KEY);
+    }
+    return deserializeCharts(currentValue ?? legacyValue);
   });
 
   React.useEffect(() => {

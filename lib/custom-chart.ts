@@ -53,7 +53,8 @@ export type ValidationIssue = { code: ValidationCode; message: string };
 export type ValidationResult = { ok: boolean; issues: ValidationIssue[] };
 
 export const MAX_SERIES = 5;
-export const CUSTOM_CHARTS_STORAGE_KEY = "redagencyads-custom-charts";
+export const CUSTOM_CHARTS_STORAGE_KEY = "decision-workspace-custom-charts";
+export const LEGACY_CUSTOM_CHARTS_STORAGE_KEY = "redagencyads-custom-charts";
 
 const CHART_TYPES: readonly CustomChartType[] = ["line", "bar", "area", "composed"];
 const AXES: readonly CustomAxis[] = ["left", "right"];

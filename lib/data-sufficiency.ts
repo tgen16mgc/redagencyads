@@ -13,6 +13,18 @@ export function hasRowDelivery(row: NormalizedRow): boolean {
   return row.impressions >= SUFFICIENCY.minRowImpressions && row.spend >= SUFFICIENCY.minRowSpend;
 }
 
+export function hasReportSignal(totals: NormalizedRow): boolean {
+  return [
+    totals.spend,
+    totals.impressions,
+    totals.reach,
+    totals.linkClicks,
+    totals.messages,
+    totals.leads,
+    totals.purchases,
+  ].some((value) => value > 0);
+}
+
 export function hasFunnelClickVolume(totals: { linkClicks: number; addToCart: number; initiateCheckout: number; purchases: number }): boolean {
   return totals.linkClicks >= SUFFICIENCY.minFunnelClicks && (totals.addToCart > 0 || totals.initiateCheckout > 0 || totals.purchases > 0);
 }

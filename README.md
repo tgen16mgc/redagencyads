@@ -1,4 +1,4 @@
-# Red Agency Ads Tool
+# Decision Operations Workspace
 
 Next.js dashboard for campaign-first Meta Ads analysis, deterministic Verdicts, optional AI enhancement, PDF export, bilingual UI, and competitor ad-library spy work.
 
@@ -7,8 +7,8 @@ Next.js dashboard for campaign-first Meta Ads analysis, deterministic Verdicts, 
 User sees one app with two work areas:
 
 - `Ads analysis`: connect Meta token, choose ad account, choose campaign scope, pull Meta insights, inspect KPI cards/charts/tables, generate Verdict + insight table, export print/PDF report.
-- `Competitor spy`: enter competitor names or Meta Ad Library URLs, fetch competitor ads via Apify or Meta official API, generate competitive readout + original test briefs.
-- `TikTok intelligence`: fetch TikTok profile/video metadata and public TikTok Ad Library rows through Apify actors for creative and competitor analysis.
+- `Competitor analysis`: enter competitor names plus ad-library notes you verified, then generate a competitive readout and original test briefs. Automatic fetching is temporarily paused after relevance testing failed.
+- `TikTok intelligence`: fetch TikTok profile/video metadata through Apify for creative and competitor analysis. TikTok Ad Library fetching is temporarily paused while actor regions are corrected.
 - Global `EN / VI` toggle: one persisted language control for app chrome, report panels, controls, and generated report text. Raw Meta account/campaign names and fetched competitor ad copy are not translated.
 
 Core domain words:
@@ -179,29 +179,20 @@ Provider behavior:
 
 ### 5. Competitor Spy
 
-Competitor side has two phases: fetch ads, then interpret ads.
+The current UI analyzes manually verified ad-library notes. Automatic fetching is temporarily removed because the public scrape mixed unrelated advertisers into results.
 
 ```text
-Fetch ads
-  -> POST /api/spy/meta
-    -> lib/competitor-spy.fetchCompetitorAds()
-      -> public no-key Meta Ad Library scrape with local Chrome
-      -> fallback public Meta Ad Library links
-      -> Apify actor via APIFY_TOKEN + APIFY_META_ADS_ACTOR_ID
-      -> or Meta official ads_archive using session token
-      -> normalize into CompetitorSpyAd[]
-
-Generate spy report
+Generate competitor report
   -> POST /api/ai/competitor
     -> lib/metrics.buildCompetitorSpyPrompt()
     -> lib/ai.generateCompetitorSpy()
 ```
 
-Public scrape is default and works without an API key on a machine with Chrome installed. It attempts to extract public Meta Ad Library payloads, then keeps the library links as fallback evidence when Meta blocks or returns sparse data. Apify remains optional for external commercial scraping. Meta official source needs session token and may return sparse data.
+The `/api/spy/meta` route remains available for repair work but is not exposed in the product lifecycle until advertiser relevance and provenance checks pass.
 
 ### 6. TikTok Intelligence
 
-TikTok data is fetched through Apify actors and stays separate from the owned Meta report contract.
+TikTok profile/video data is fetched through Apify and stays separate from the owned Meta report contract. The Ad Library route remains available for repair work but is not exposed until its supported-region contract matches the UI.
 
 ```text
 Fetch TikTok profiles
@@ -242,7 +233,6 @@ TikTok Ad Library rows are public creative/intelligence data. They may include p
 - `lib/tiktok.ts`: TikTok Apify input building and output normalization.
 - `lib/utils.ts`: `cn()` helper for class merge.
 - `app/globals.css`: Tailwind v4 tokens, theme vars, print rules.
-- `public/red-agency-logo.png`: app logo used in token screen and sidebar/header.
 
 ## Environment
 

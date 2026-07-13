@@ -24,7 +24,18 @@ import {
   type PagePostValidationMessages,
   type SchedulePreset,
 } from "@/lib/page-publisher-validation";
+import { StickyActionDock } from "@/components/dashboard/sticky-action-dock";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -85,6 +96,12 @@ type Copy = {
   queueEmpty: string;
   submit: string;
   submitQueue: string;
+  review: string;
+  confirm: string;
+  cancel: string;
+  confirmTitle: string;
+  confirmDescription: string;
+  permissionSummary: string;
   submitting: string;
   loadingPages: string;
   noPagesTitle: string;
@@ -161,6 +178,12 @@ const COPY: Record<InterfaceLanguage, Copy> = {
     queueEmpty: "No scheduled posts queued yet.",
     submit: "Submit post",
     submitQueue: "Submit queued posts",
+    review: "Review Page post",
+    confirm: "Confirm and submit",
+    cancel: "Keep editing",
+    confirmTitle: "Review before sending",
+    confirmDescription: "Confirm the destination, publishing mode, and visible post content.",
+    permissionSummary: "This Page came from the server-filtered list of Pages available to the current Meta session.",
     submitting: "Submitting",
     loadingPages: "Loading Pages",
     noPagesTitle: "No content-ready Pages",
@@ -168,8 +191,8 @@ const COPY: Record<InterfaceLanguage, Copy> = {
     successTitle: "Submitted to Meta",
     successDescription: "Meta post ID",
     recentTitle: "Recent submissions",
-    recentDescription: "This list is kept in this browser session only.",
-    recentEmptyTitle: "No posts submitted yet",
+    recentDescription: "This list is stored in this browser. Server audit history remains a future backend step.",
+    recentEmptyTitle: "No Page posts submitted yet",
     recentEmptyDescription: "Published and scheduled submissions will appear here after Meta accepts them.",
     pageColumn: "Page",
     targetColumn: "Target",
@@ -244,6 +267,12 @@ const COPY: Record<InterfaceLanguage, Copy> = {
     queueEmpty: "Chưa có bài lên lịch nào trong hàng chờ.",
     submit: "Gửi bài đăng",
     submitQueue: "Gửi hàng chờ",
+    review: "Xem lại bài Page",
+    confirm: "Xác nhận và gửi",
+    cancel: "Tiếp tục chỉnh sửa",
+    confirmTitle: "Xem lại trước khi gửi",
+    confirmDescription: "Xác nhận Page đích, chế độ đăng và nội dung hiển thị.",
+    permissionSummary: "Page này nằm trong danh sách đã được server lọc theo Meta session hiện tại.",
     submitting: "Đang gửi",
     loadingPages: "Đang tải Page",
     noPagesTitle: "Không có Page đủ quyền đăng",
@@ -251,8 +280,8 @@ const COPY: Record<InterfaceLanguage, Copy> = {
     successTitle: "Đã gửi lên Meta",
     successDescription: "Meta post ID",
     recentTitle: "Lần gửi gần đây",
-    recentDescription: "Danh sách này chỉ giữ trong phiên trình duyệt hiện tại.",
-    recentEmptyTitle: "Chưa gửi bài nào",
+    recentDescription: "Danh sách được lưu trong trình duyệt này. Audit history trên server vẫn là bước backend tiếp theo.",
+    recentEmptyTitle: "Chưa gửi bài Page nào",
     recentEmptyDescription: "Bài đăng ngay và bài lên lịch sẽ xuất hiện ở đây sau khi Meta chấp nhận.",
     pageColumn: "Page",
     targetColumn: "Kênh",
@@ -301,26 +330,76 @@ const SCHEDULE_PRESETS: Array<{ key: SchedulePreset; copyKey: keyof Pick<Copy, "
   { key: "next_weekday_afternoon", copyKey: "presetNextWeekdayAfternoon" },
 ];
 
+const SUBMISSION_STORAGE_KEY = "decision-workspace-page-submissions";
+const DRAFT_STORAGE_KEY = "decision-workspace-page-draft";
+
+type PublisherDraft = {
+  pageId: string;
+  message: string;
+  link: string;
+  mode: PagePostMode;
+  scheduledFor: string;
+};
+
+function readPublisherDraft(): PublisherDraft {
+  const fallback: PublisherDraft = { pageId: "", message: "", link: "", mode: "publish_now", scheduledFor: "" };
+  if (typeof window === "undefined") return fallback;
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(DRAFT_STORAGE_KEY) || "null") as Partial<PublisherDraft> | null;
+    if (!parsed) return fallback;
+    return {
+      pageId: typeof parsed.pageId === "string" ? parsed.pageId : "",
+      message: typeof parsed.message === "string" ? parsed.message : "",
+      link: typeof parsed.link === "string" ? parsed.link : "",
+      mode: parsed.mode === "scheduled" ? "scheduled" : "publish_now",
+      scheduledFor: typeof parsed.scheduledFor === "string" ? parsed.scheduledFor : "",
+    };
+  } catch {
+    window.localStorage.removeItem(DRAFT_STORAGE_KEY);
+    return fallback;
+  }
+}
+
 export function PagePublisherPanel({ language }: { language: InterfaceLanguage }) {
   const copy = COPY[language];
+  const id = React.useId();
+  const initialDraft = React.useMemo(readPublisherDraft, []);
   const [pages, setPages] = React.useState<MetaPage[]>([]);
-  const [pageId, setPageId] = React.useState("");
+  const [pageId, setPageId] = React.useState(initialDraft.pageId);
   const [target, setTarget] = React.useState<PublishTarget>("facebook");
-  const [message, setMessage] = React.useState("");
-  const [link, setLink] = React.useState("");
+  const [message, setMessage] = React.useState(initialDraft.message);
+  const [link, setLink] = React.useState(initialDraft.link);
   const [mediaType, setMediaType] = React.useState<MediaAttachment["type"]>("image");
   const [mediaUrl, setMediaUrl] = React.useState("");
   const [mediaItems, setMediaItems] = React.useState<MediaAttachment[]>([]);
-  const [mode, setMode] = React.useState<PagePostMode>("publish_now");
-  const [scheduledFor, setScheduledFor] = React.useState("");
+  const [mode, setMode] = React.useState<PagePostMode>(initialDraft.mode);
+  const [scheduledFor, setScheduledFor] = React.useState(initialDraft.scheduledFor);
   const [queue, setQueue] = React.useState<ScheduleQueueItem[]>([]);
   const [loadingPages, setLoadingPages] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
   const [error, setError] = React.useState("");
   const [success, setSuccess] = React.useState<PagePostSubmission | null>(null);
   const [submissions, setSubmissions] = React.useState<PagePostSubmission[]>([]);
-
+  const [confirmOpen, setConfirmOpen] = React.useState(false);
   const selectedPage = pages.find((page) => page.id === pageId);
+  const draftValidation = validatePagePostDraft({ pageId, message, link, mode, scheduledFor, target, mediaItems }, Date.now(), copy.validation);
+  const canReview = pages.length > 0 && !loadingPages && !submitting && !draftValidation;
+
+  React.useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(SUBMISSION_STORAGE_KEY);
+      if (!stored) return;
+      const parsed = JSON.parse(stored);
+      if (Array.isArray(parsed)) setSubmissions(parsed.slice(0, 6) as PagePostSubmission[]);
+    } catch {
+      window.localStorage.removeItem(SUBMISSION_STORAGE_KEY);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    window.localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify({ pageId, message, link, mode, scheduledFor }));
+  }, [link, message, mode, pageId, scheduledFor]);
+
   const hasPreview = Boolean(message.trim() || link.trim() || mediaItems.length);
 
   const loadPages = React.useCallback(async () => {
@@ -332,7 +411,7 @@ export function PagePublisherPanel({ language }: { language: InterfaceLanguage }
       if (!response.ok) throw new Error(json.error || copy.pagesLoadFailed);
       const nextPages = (json.pages || []) as MetaPage[];
       setPages(nextPages);
-      setPageId((current) => current || nextPages[0]?.id || "");
+      setPageId((current) => nextPages.some((page) => page.id === current) ? current : nextPages[0]?.id || "");
     } catch (err) {
       setError(err instanceof Error ? err.message : copy.pagesLoadFailed);
     } finally {
@@ -344,8 +423,7 @@ export function PagePublisherPanel({ language }: { language: InterfaceLanguage }
     void loadPages();
   }, [loadPages]);
 
-  async function submitPost(event: React.FormEvent) {
-    event.preventDefault();
+  function reviewPost() {
     setError("");
     setSuccess(null);
 
@@ -354,6 +432,12 @@ export function PagePublisherPanel({ language }: { language: InterfaceLanguage }
       setError(validation);
       return;
     }
+
+    setConfirmOpen(true);
+  }
+
+  async function submitPost() {
+    setConfirmOpen(false);
 
     setSubmitting(true);
     try {
@@ -365,7 +449,11 @@ export function PagePublisherPanel({ language }: { language: InterfaceLanguage }
       if (!response.ok) throw new Error(json.error || copy.publishFailed);
       const submission = json.submission as PagePostSubmission;
       setSuccess(submission);
-      setSubmissions((current) => [submission, ...current].slice(0, 8));
+      setSubmissions((current) => {
+        const next = [submission, ...current].slice(0, 8);
+        window.localStorage.setItem(SUBMISSION_STORAGE_KEY, JSON.stringify(next));
+        return next;
+      });
       resetDraft(mode === "scheduled");
     } catch (err) {
       setError(err instanceof Error ? err.message : copy.publishFailed);
@@ -476,7 +564,7 @@ export function PagePublisherPanel({ language }: { language: InterfaceLanguage }
 
   return (
     <section className="grid gap-4 xl:grid-cols-[1.08fr_0.92fr]">
-      <Card className="ra-fade-up overflow-hidden">
+      <Card className="workbench-fade-up overflow-hidden">
         <CardHeader>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
@@ -518,10 +606,16 @@ export function PagePublisherPanel({ language }: { language: InterfaceLanguage }
               </EmptyHeader>
             </Empty>
           ) : (
-            <form onSubmit={submitPost} className="flex flex-col gap-4">
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                reviewPost();
+              }}
+              className="flex flex-col gap-4"
+            >
               <FieldGroup className="grid gap-4 md:grid-cols-2">
                 <Field>
-                  <FieldLabel>{copy.pageLabel}</FieldLabel>
+                  <FieldLabel id={`${id}-page-label`}>{copy.pageLabel}</FieldLabel>
                   <Select
                     items={pages.map((page) => ({ label: page.name, value: page.id }))}
                     value={pageId}
@@ -529,7 +623,7 @@ export function PagePublisherPanel({ language }: { language: InterfaceLanguage }
                       if (value) setPageId(value);
                     }}
                   >
-                    <SelectTrigger className="w-full" disabled={loadingPages}>
+                    <SelectTrigger className="w-full" disabled={loadingPages} aria-labelledby={`${id}-page-label`}>
                       <SelectValue placeholder={loadingPages ? copy.loadingPages : copy.pagePlaceholder} />
                     </SelectTrigger>
                     <SelectContent>
@@ -568,13 +662,19 @@ export function PagePublisherPanel({ language }: { language: InterfaceLanguage }
                 </Field>
 
                 <Field className="md:col-span-2">
-                  <FieldLabel>{copy.messageLabel}</FieldLabel>
-                  <Textarea value={message} onChange={(event) => setMessage(event.target.value)} placeholder={copy.messagePlaceholder} rows={6} />
+                  <FieldLabel htmlFor={`${id}-message`}>{copy.messageLabel}</FieldLabel>
+                  <Textarea
+                    id={`${id}-message`}
+                    value={message}
+                    onChange={(event) => setMessage(event.target.value)}
+                    placeholder={copy.messagePlaceholder}
+                    rows={6}
+                  />
                 </Field>
 
                 <Field className="md:col-span-2">
-                  <FieldLabel>{copy.linkLabel}</FieldLabel>
-                  <Input type="url" value={link} onChange={(event) => setLink(event.target.value)} placeholder={copy.linkPlaceholder} />
+                  <FieldLabel htmlFor={`${id}-link`}>{copy.linkLabel}</FieldLabel>
+                  <Input id={`${id}-link`} type="url" value={link} onChange={(event) => setLink(event.target.value)} placeholder={copy.linkPlaceholder} />
                 </Field>
 
                 <Field>
@@ -644,8 +744,8 @@ export function PagePublisherPanel({ language }: { language: InterfaceLanguage }
 
                 {mode === "scheduled" ? (
                   <Field>
-                    <FieldLabel>{copy.scheduleLabel}</FieldLabel>
-                    <Input type="datetime-local" value={scheduledFor} onChange={(event) => setScheduledFor(event.target.value)} />
+                    <FieldLabel htmlFor={`${id}-schedule`}>{copy.scheduleLabel}</FieldLabel>
+                    <Input id={`${id}-schedule`} type="datetime-local" value={scheduledFor} onChange={(event) => setScheduledFor(event.target.value)} />
                     <FieldDescription>{copy.scheduleHelp}</FieldDescription>
                   </Field>
                 ) : null}
@@ -663,9 +763,9 @@ export function PagePublisherPanel({ language }: { language: InterfaceLanguage }
               ) : null}
 
               <div className="flex flex-col gap-2 sm:flex-row">
-                <Button type="submit" disabled={submitting || loadingPages || pages.length === 0} className="w-full sm:w-fit">
+                <Button type="submit" disabled={!canReview} className="w-full sm:w-fit">
                   {submitting ? <Spinner data-icon="inline-start" /> : <SendIcon data-icon="inline-start" />}
-                  {submitting ? copy.submitting : copy.submit}
+                  {submitting ? copy.submitting : copy.review}
                 </Button>
                 {mode === "scheduled" ? (
                   <Button type="button" variant="outline" disabled={submitting || loadingPages || pages.length === 0} onClick={addToQueue}>
@@ -818,6 +918,75 @@ export function PagePublisherPanel({ language }: { language: InterfaceLanguage }
           </CardContent>
         </Card>
       </div>
+
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{copy.confirmTitle}</AlertDialogTitle>
+            <AlertDialogDescription>{copy.confirmDescription}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="flex flex-col gap-3 rounded-xl border bg-muted/25 p-3 text-sm">
+            <div className="flex items-start justify-between gap-3">
+              <span className="text-muted-foreground">{copy.pageLabel}</span>
+              <span className="text-right font-medium">{selectedPage?.name || copy.pagePlaceholder}</span>
+            </div>
+            <div className="flex items-start justify-between gap-3">
+              <span className="text-muted-foreground">{copy.modeLabel}</span>
+              <span className="text-right font-medium">{mode === "scheduled" ? copy.scheduled : copy.publishNow}</span>
+            </div>
+            {mode === "scheduled" ? (
+              <div className="flex items-start justify-between gap-3">
+                <span className="text-muted-foreground">{copy.scheduleLabel}</span>
+                <span className="text-right font-medium">{scheduledFor ? new Date(scheduledFor).toLocaleString(language === "vi" ? "vi-VN" : "en-US") : "—"}</span>
+              </div>
+            ) : null}
+            <div className="rounded-lg border bg-background p-3 leading-6">
+              {message.trim() || <span className="text-muted-foreground">{copy.textPost}: —</span>}
+              {link.trim() ? <div className="mt-2 break-all text-primary">{link.trim()}</div> : null}
+            </div>
+            <p className="text-xs leading-5 text-muted-foreground">{copy.permissionSummary}</p>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{copy.cancel}</AlertDialogCancel>
+            <AlertDialogAction onClick={() => void submitPost()} disabled={submitting}>
+              {submitting ? <Spinner data-icon="inline-start" /> : <SendIcon data-icon="inline-start" />}
+              {submitting ? copy.submitting : copy.confirm}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <StickyActionDock
+        contextLabel={copy.title}
+        status={loadingPages || submitting ? "working" : canReview ? "ready" : "blocked"}
+        statusLabel={loadingPages
+          ? copy.loadingPages
+          : submitting
+            ? copy.submitting
+            : canReview
+              ? copy.review
+              : draftValidation || copy.noPagesTitle}
+        primaryAction={{
+          id: "review-page-post",
+          label: copy.review,
+          shortLabel: copy.review,
+          icon: SendIcon,
+          onSelect: reviewPost,
+          disabled: !canReview,
+          disabledReason: draftValidation || (pages.length ? undefined : copy.noPagesDescription),
+          loading: loadingPages || submitting,
+          shortcut: "mod+enter",
+        }}
+        secondaryActions={[{
+          id: "refresh-pages",
+          label: copy.refreshPages,
+          icon: RefreshCcwIcon,
+          onSelect: loadPages,
+          disabled: loadingPages || submitting,
+          loading: loadingPages,
+        }]}
+        actionsLabel={language === "vi" ? "Hành động khác" : "More actions"}
+      />
     </section>
   );
 }

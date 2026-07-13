@@ -78,8 +78,8 @@ export type ClientReportViewModel = {
 const copy = {
   en: {
     title: "Meta Ads Performance Report",
-    subtitle: "A client-ready readout of what happened, what drove performance, and where Red Agency recommends moving budget next.",
-    preparedBy: "Prepared by Red Agency",
+    subtitle: "A client-ready readout of what happened, what drove performance, and where the evidence supports moving budget next.",
+    preparedBy: "Prepared in Decision Workspace",
     source: "Meta Ads API",
     verdictLabel: "Performance verdict",
     executiveSummary: "Executive summary",
@@ -98,8 +98,8 @@ const copy = {
   },
   vi: {
     title: "Báo cáo hiệu quả Meta Ads",
-    subtitle: "Bản báo cáo dành cho khách hàng: chuyện gì đã xảy ra, điều gì tạo ra hiệu quả, và Red Agency khuyến nghị chuyển ngân sách ra sao.",
-    preparedBy: "Chuẩn bị bởi Red Agency",
+    subtitle: "Bản báo cáo dành cho khách hàng: chuyện gì đã xảy ra, điều gì tạo ra hiệu quả và evidence hỗ trợ chuyển ngân sách ra sao.",
+    preparedBy: "Chuẩn bị trong Decision Workspace",
     source: "Meta Ads API",
     verdictLabel: "Kết luận hiệu quả",
     executiveSummary: "Tóm tắt điều hành",
