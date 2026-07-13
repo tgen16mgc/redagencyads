@@ -6,11 +6,12 @@ import {
   useId,
   useRef,
   useState,
+  type CSSProperties,
   type KeyboardEvent,
   type MouseEvent,
+  type PointerEvent as ReactPointerEvent,
 } from "react"
 import {
-  ChevronDownIcon,
   ChevronUpIcon,
   EllipsisIcon,
   type LucideIcon,
@@ -127,6 +128,9 @@ export function StickyActionDock({
   const actionsId = useId()
   const toggleRef = useRef<HTMLButtonElement>(null)
   const firstSecondaryActionRef = useRef<HTMLButtonElement>(null)
+  const dockSurfaceRef = useRef<HTMLDivElement>(null)
+  const pointerFrameRef = useRef<number | null>(null)
+  const pointerPositionRef = useRef({ x: 0, y: 0 })
   const [uncontrolledExpanded, setUncontrolledExpanded] = useState(defaultExpanded)
   const isExpanded = controlledExpanded ?? uncontrolledExpanded
   const hasSecondaryActions = secondaryActions.length > 0
@@ -162,6 +166,33 @@ export function StickyActionDock({
     document.addEventListener("keydown", handleShortcut)
     return () => document.removeEventListener("keydown", handleShortcut)
   }, [primaryAction.shortcut, runPrimaryAction])
+
+  useEffect(() => {
+    return () => {
+      if (pointerFrameRef.current !== null) {
+        cancelAnimationFrame(pointerFrameRef.current)
+      }
+    }
+  }, [])
+
+  const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === "touch") return
+
+    const bounds = event.currentTarget.getBoundingClientRect()
+    pointerPositionRef.current = {
+      x: event.clientX - bounds.left,
+      y: event.clientY - bounds.top,
+    }
+
+    if (pointerFrameRef.current !== null) return
+    pointerFrameRef.current = requestAnimationFrame(() => {
+      pointerFrameRef.current = null
+      const surface = dockSurfaceRef.current
+      if (!surface) return
+      surface.style.setProperty("--dock-x", `${pointerPositionRef.current.x}px`)
+      surface.style.setProperty("--dock-y", `${pointerPositionRef.current.y}px`)
+    })
+  }
 
   const handleToggle = (event: MouseEvent<HTMLButtonElement>) => {
     const nextExpanded = !isExpanded
@@ -201,7 +232,7 @@ export function StickyActionDock({
               id={actionsId}
               role="group"
               aria-label={actionsLabel}
-              className="flex max-w-[calc(100vw-1.5rem)] flex-wrap justify-end gap-1.5 rounded-2xl border border-border bg-background/90 p-1.5 shadow-lg backdrop-blur-xl motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-bottom-2"
+              className="action-dock-tray flex max-w-[calc(100vw-1.5rem)] flex-wrap justify-end gap-1.5"
             >
               {secondaryActions.map((action, index) => {
                 const Icon = action.icon
@@ -219,6 +250,8 @@ export function StickyActionDock({
                           aria-label={action.label}
                           title={action.disabledReason}
                           onClick={() => void action.onSelect()}
+                          className="action-dock-secondary-action"
+                          style={{ "--action-index": index } as CSSProperties}
                         >
                           {action.loading ? (
                             <Spinner data-icon="inline-start" />
@@ -239,13 +272,27 @@ export function StickyActionDock({
             </div>
           ) : null}
 
-          <div className="flex max-w-full items-center gap-1 rounded-full border border-border bg-background/90 p-1.5 shadow-xl backdrop-blur-xl supports-[backdrop-filter]:bg-background/80">
-            <div className="hidden min-w-0 items-center gap-2 pl-2 sm:flex">
+          <div
+            ref={dockSurfaceRef}
+            onPointerMove={handlePointerMove}
+            className="action-dock-surface flex max-w-full items-center gap-1"
+          >
+            <div className="action-dock-context hidden min-w-0 items-center gap-2 pl-2 sm:flex">
               <span className="max-w-40 truncate text-sm font-medium text-foreground">
                 {contextLabel}
               </span>
-              <Badge variant={STATUS_VARIANTS[status]}>{resolvedStatusLabel}</Badge>
+              <Badge
+                variant={STATUS_VARIANTS[status]}
+                className="action-dock-status"
+              >
+                <span className="action-dock-status-signal" aria-hidden="true" />
+                {resolvedStatusLabel}
+              </Badge>
             </div>
+
+            <span className="action-dock-mobile-status inline-flex sm:hidden" aria-hidden="true">
+              <span className="action-dock-status-signal" />
+            </span>
 
             <Separator orientation="vertical" className="mx-1 hidden h-6 sm:block" />
 
@@ -262,14 +309,14 @@ export function StickyActionDock({
                       aria-controls={actionsId}
                       aria-label={isExpanded ? `Hide ${actionsLabel}` : actionsLabel}
                       onClick={handleToggle}
+                      className="action-dock-toggle"
                     >
                       <EllipsisIcon data-icon="inline-start" />
                       <span className="hidden sm:inline">{actionsLabel}</span>
-                      {isExpanded ? (
-                        <ChevronDownIcon data-icon="inline-end" />
-                      ) : (
-                        <ChevronUpIcon data-icon="inline-end" />
-                      )}
+                      <ChevronUpIcon
+                        data-icon="inline-end"
+                        className="action-dock-toggle-chevron"
+                      />
                     </Button>
                   }
                 />
@@ -290,7 +337,7 @@ export function StickyActionDock({
               glowIntensity={1.15}
               colors={glowColors}
               backgroundColor="transparent"
-              className="min-w-0 shrink-0"
+              className="action-dock-primary-frame min-w-0 shrink-0"
             >
               <Tooltip>
                 <TooltipTrigger
@@ -305,12 +352,15 @@ export function StickyActionDock({
                       }
                       title={primaryAction.disabledReason}
                       onClick={runPrimaryAction}
-                      className="max-w-64 sm:max-w-none"
+                      data-working={primaryIsWorking ? "true" : undefined}
+                      className="action-dock-primary max-w-64 sm:max-w-none"
                     >
                       {primaryIsWorking ? (
                         <Spinner data-icon="inline-start" />
                       ) : (
-                        <primaryAction.icon data-icon="inline-start" />
+                        <span className="action-dock-primary-glyph">
+                          <primaryAction.icon data-icon="inline-start" />
+                        </span>
                       )}
                       <ActionLabel action={primaryAction} />
                       {primaryAction.badge !== undefined ? (
