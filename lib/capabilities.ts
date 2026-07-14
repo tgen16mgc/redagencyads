@@ -29,6 +29,7 @@ export function buildUnknownCapabilitySnapshot(): CapabilityStatus[] {
 export function buildCapabilitySnapshot(input: {
   authenticated: boolean;
   apifyConfigured: boolean;
+  competitorActorConfigured: boolean;
   nineRouterConfigured: boolean;
 }): CapabilityStatus[] {
   return [
@@ -38,7 +39,7 @@ export function buildCapabilitySnapshot(input: {
     },
     {
       key: "competitor_evidence",
-      state: "available",
+      state: input.apifyConfigured && input.competitorActorConfigured ? "available" : "needs_setup",
     },
     {
       key: "tiktok_profiles",

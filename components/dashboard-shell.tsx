@@ -50,7 +50,7 @@ import { buildClientReportViewModel, downloadClientReportPdf } from "@/lib/clien
 import { buildClientReportPdf } from "@/lib/client-report-pdf";
 import { CustomChartsSection } from "@/components/dashboard/custom-charts-section";
 import { PagePublisherPanel } from "@/components/dashboard/page-publisher-panel";
-import type { AdSetWithPreviews, AiInsightTable, CompareMode, CompetitorPlatform, CompetitorSpyResult, DashboardReport, KpiCard, KpiPack, MetaAccount, MetaCampaign, NormalizedRow, TikTokProfile, TikTokProfileResult, TikTokVideo, Verdict } from "@/lib/types";
+import type { AdSetWithPreviews, AiInsightTable, CompareMode, CompetitorEvidenceStatus, CompetitorFetchResult, CompetitorPlatform, CompetitorSpyResult, DashboardReport, KpiCard, KpiPack, MetaAccount, MetaCampaign, NormalizedRow, TikTokProfile, TikTokProfileResult, TikTokVideo, Verdict } from "@/lib/types";
 import { buildWorkflowSteps, type DashboardWorkflowStep } from "@/lib/dashboard-workflow";
 import { canOpenDashboardView, initialDashboardViewFromSearch, shouldLoadAdsWorkspaceData, type DashboardView } from "@/lib/dashboard-access";
 import { buildUnknownCapabilitySnapshot, type CapabilityStatus } from "@/lib/capabilities";
@@ -77,7 +77,7 @@ import { assessSpendPacing } from "@/lib/spend-pacing";
 import { assessDecisionConfidence, type DecisionTargets } from "@/lib/decision-confidence";
 import { rowDecision } from "@/lib/row-decision";
 import { normalizeCompetitorNames } from "@/lib/competitor-input";
-import { advertiserLinkedEvidenceText, reviewCompetitorEvidence } from "@/lib/competitor-evidence";
+import { acceptedManualEvidenceText, reviewCompetitorEvidence } from "@/lib/competitor-evidence";
 import { detectBaselineAnomalies, anomalyBadgeText } from "@/lib/baseline-anomaly";
 import { diagnosticNextStep, type DiagnosticKind, type DiagnosticTone } from "@/lib/diagnostic-next-step";
 import { performanceChartConfig } from "@/lib/chart-palette";
@@ -245,7 +245,7 @@ const uiCopy = {
       adsCrumb: "Meta Graph API",
       adsDetail: "campaign-first analysis",
       competitorCrumb: "Verified research",
-      competitorDetail: "manual evidence only",
+      competitorDetail: "Apify evidence review",
       tiktokCrumb: "TikTok public intelligence",
       tiktokDetail: "Apify profile and video pulls",
       publisherCrumb: "Meta Pages API",
@@ -410,7 +410,7 @@ const uiCopy = {
       adsCrumb: "Meta Graph API",
       adsDetail: "phân tích theo campaign",
       competitorCrumb: "Nghiên cứu công khai",
-      competitorDetail: "không cần token",
+      competitorDetail: "duyệt evidence Apify",
       tiktokCrumb: "Tình báo public TikTok",
       tiktokDetail: "kéo profile và video qua Apify",
       publisherCrumb: "Meta Pages API",
@@ -648,7 +648,11 @@ export function DashboardShell() {
   const [competitorMarket, setCompetitorMarket] = React.useState("");
   const [competitorPlatform, setCompetitorPlatform] = React.useState<CompetitorPlatform>("meta");
   const [competitorNotes, setCompetitorNotes] = React.useState("");
+  const [competitorEvidence, setCompetitorEvidence] = React.useState<CompetitorFetchResult | null>(null);
   const [competitorResult, setCompetitorResult] = React.useState<CompetitorSpyResult | null>(null);
+  const [competitorCollecting, setCompetitorCollecting] = React.useState(false);
+  const [competitorAnalyzing, setCompetitorAnalyzing] = React.useState(false);
+  const [competitorError, setCompetitorError] = React.useState("");
   const [tiktokWorkspace, setTikTokWorkspace] = React.useState<TikTokWorkspaceState>({
     profilesInput: "",
     profileLimit: 8,
@@ -743,8 +747,8 @@ export function DashboardShell() {
       detail: copy.header.competitorDetail,
       title: copy.header.competitorTitle,
       description: language === "vi"
-        ? "Phân tích ghi chú ads đối thủ đã xác minh mà không cần kết nối token."
-        : "Analyze verified competitor ad notes without connecting a Meta token.",
+        ? "Thu thập ads qua Apify, xác minh advertiser và phân tích chỉ evidence đã chấp nhận."
+        : "Collect ads through Apify, verify advertiser provenance, and analyze only accepted evidence.",
     },
     tiktok: {
       badge: copy.header.tiktokCrumb,
@@ -994,8 +998,8 @@ export function DashboardShell() {
         competitors,
         market: competitorMarket,
         platform: competitorPlatform,
-        notes: advertiserLinkedEvidenceText(competitorNotes, competitors),
-        extractedAds: [],
+        notes: acceptedManualEvidenceText(competitorNotes, competitors),
+        extractedAds: competitorEvidence?.ads || [],
         report,
       }),
       language,
@@ -1003,15 +1007,56 @@ export function DashboardShell() {
     );
   }
 
-  async function runCompetitorSpy() {
+  function hasAcceptedCompetitorEvidence() {
+    const manualAccepted = reviewCompetitorEvidence(competitorNotes, competitorList())
+      .some((row) => row.status === "accepted");
+    const collectedAccepted = competitorEvidence?.ads
+      .some((ad) => ad.evidence?.status === "accepted");
+    return manualAccepted || collectedAccepted;
+  }
+
+  async function collectCompetitorEvidence() {
     const competitors = competitorList();
-    const reviewedEvidence = reviewCompetitorEvidence(competitorNotes, competitors);
-    if (!competitors.length || !reviewedEvidence.some((row) => row.status === "advertiser_linked")) {
-      setError("Add competitor names and at least one evidence line that names the advertiser before analyzing.");
+    if (!competitors.length) {
+      setCompetitorError("Add at least one competitor before collecting evidence.");
       return;
     }
-    setError("");
-    setLoading("competitor");
+
+    setCompetitorError("");
+    setCompetitorCollecting(true);
+    try {
+      const data = await jsonFetch<{ result: CompetitorFetchResult }>("/api/spy/meta", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ source: "apify", competitors, country: "VN", limit: 40 }),
+        timeoutMs: COMPETITOR_SPY_TIMEOUT_MS,
+      });
+      setCompetitorEvidence(data.result);
+      setCompetitorResult(null);
+    } catch (err) {
+      setCompetitorError(err instanceof Error ? err.message : "Could not collect competitor evidence.");
+    } finally {
+      setCompetitorCollecting(false);
+    }
+  }
+
+  function updateCompetitorEvidenceStatus(id: string, status: CompetitorEvidenceStatus) {
+    setCompetitorEvidence((current) => current ? {
+      ...current,
+      ads: current.ads.map((ad) => ad.id === id && ad.evidence
+        ? { ...ad, evidence: { ...ad.evidence, status } }
+        : ad),
+    } : current);
+    setCompetitorResult(null);
+  }
+
+  async function runCompetitorSpy() {
+    if (!competitorList().length || !hasAcceptedCompetitorEvidence()) {
+      setCompetitorError("Collect and accept at least one advertiser-linked ad before analyzing.");
+      return;
+    }
+    setCompetitorError("");
+    setCompetitorAnalyzing(true);
     try {
       const data = await jsonFetch<{ competitor: CompetitorSpyResult }>("/api/ai/competitor", {
         method: "POST",
@@ -1021,17 +1066,15 @@ export function DashboardShell() {
       });
       setCompetitorResult(data.competitor);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not generate competitor spy report.");
+      setCompetitorError(err instanceof Error ? err.message : "Could not generate competitor spy report.");
     } finally {
-      setLoading("");
+      setCompetitorAnalyzing(false);
     }
   }
 
   async function copyCompetitorPrompt() {
-    const competitors = competitorList();
-    const reviewedEvidence = reviewCompetitorEvidence(competitorNotes, competitors);
-    if (!competitors.length || !reviewedEvidence.some((row) => row.status === "advertiser_linked")) {
-      setError("Add competitor names and at least one advertiser-linked evidence line before copying the prompt.");
+    if (!competitorList().length || !hasAcceptedCompetitorEvidence()) {
+      setCompetitorError("Accept at least one advertiser-linked ad before copying the prompt.");
       return;
     }
     await navigator.clipboard.writeText(competitorPrompt());
@@ -1582,17 +1625,27 @@ export function DashboardShell() {
               names={competitorNames}
               market={competitorMarket}
               platform={competitorPlatform}
+              evidence={competitorEvidence}
               result={competitorResult}
               notes={competitorNotes}
-              loading={loading === "competitor"}
+              collecting={competitorCollecting}
+              analyzing={competitorAnalyzing}
+              error={competitorError}
+              capabilityState={capabilities.find((item) => item.key === "competitor_evidence")?.state || "unknown"}
               language={language}
               provider={provider}
               copiedPrompt={copiedCompetitorPrompt}
-              onNamesChange={setCompetitorNames}
+              onNamesChange={(value) => {
+                setCompetitorNames(value);
+                setCompetitorEvidence(null);
+                setCompetitorResult(null);
+              }}
               onMarketChange={setCompetitorMarket}
               onPlatformChange={setCompetitorPlatform}
               onNotesChange={setCompetitorNotes}
               onProviderChange={setProvider}
+              onCollect={collectCompetitorEvidence}
+              onEvidenceStatusChange={updateCompetitorEvidenceStatus}
               onGenerate={runCompetitorSpy}
               onCopyPrompt={copyCompetitorPrompt}
             />
@@ -2634,8 +2687,12 @@ function CompetitorSpyPanel({
   market,
   platform,
   notes,
+  evidence,
   result,
-  loading,
+  collecting,
+  analyzing,
+  error,
+  capabilityState,
   language,
   provider,
   copiedPrompt,
@@ -2644,6 +2701,8 @@ function CompetitorSpyPanel({
   onPlatformChange,
   onNotesChange,
   onProviderChange,
+  onCollect,
+  onEvidenceStatusChange,
   onGenerate,
   onCopyPrompt,
 }: {
@@ -2651,8 +2710,12 @@ function CompetitorSpyPanel({
   market: string;
   platform: CompetitorPlatform;
   notes: string;
+  evidence: CompetitorFetchResult | null;
   result: CompetitorSpyResult | null;
-  loading: boolean;
+  collecting: boolean;
+  analyzing: boolean;
+  error: string;
+  capabilityState: CapabilityStatus["state"];
   language: ReportLanguage;
   provider: Provider;
   copiedPrompt: boolean;
@@ -2661,44 +2724,85 @@ function CompetitorSpyPanel({
   onPlatformChange: (value: CompetitorPlatform) => void;
   onNotesChange: (value: string) => void;
   onProviderChange: (value: Provider) => void;
+  onCollect: () => void;
+  onEvidenceStatusChange: (id: string, status: CompetitorEvidenceStatus) => void;
   onGenerate: () => void;
   onCopyPrompt: () => void;
 }) {
   const isVietnamese = language === "vi";
   const id = React.useId();
-  const hasCompetitors = names
-    .split(/[\n,]/)
-    .map((name) => name.trim())
-    .filter(Boolean).length > 0;
   const competitorNames = normalizeCompetitorNames(names);
-  const evidenceRows = reviewCompetitorEvidence(notes, competitorNames);
-  const linkedEvidence = evidenceRows.filter((row) => row.status === "advertiser_linked");
-  const unlinkedEvidence = evidenceRows.filter((row) => row.status === "needs_review");
-  const hasNotes = evidenceRows.length > 0;
-  const canAnalyze = hasCompetitors && linkedEvidence.length > 0;
+  const hasCompetitors = competitorNames.length > 0;
+  const manualEvidence = reviewCompetitorEvidence(notes, competitorNames);
+  const acceptedManual = manualEvidence.filter((row) => row.status === "accepted");
+  const reviewManual = manualEvidence.filter((row) => row.status === "needs_review");
+  const collectedAds = evidence?.ads || [];
+  const acceptedAds = collectedAds.filter((ad) => ad.evidence?.status === "accepted");
+  const reviewAds = collectedAds.filter((ad) => ad.evidence?.status === "needs_review");
+  const rejectedAds = collectedAds.filter((ad) => ad.evidence?.status === "rejected");
+  const acceptedCount = acceptedAds.length + acceptedManual.length;
+  const reviewCount = reviewAds.length + reviewManual.length;
+  const canAnalyze = hasCompetitors && acceptedCount > 0 && !collecting && !analyzing;
+  const setupRequired = capabilityState === "needs_setup";
+  const orderedAds = [...reviewAds, ...acceptedAds, ...rejectedAds];
+  const liveCoverage = competitorNames.map((competitor) => {
+    const rows = collectedAds.filter(
+      (ad) => ad.evidence?.requestedCompetitor.toLocaleLowerCase() === competitor.toLocaleLowerCase(),
+    );
+    return {
+      competitor,
+      collected: rows.length,
+      accepted: rows.filter((ad) => ad.evidence?.status === "accepted").length,
+      needsReview: rows.filter((ad) => ad.evidence?.status === "needs_review").length,
+      rejected: rows.filter((ad) => ad.evidence?.status === "rejected").length,
+    };
+  });
+  const primaryIsCollect = collectedAds.length === 0 && acceptedManual.length === 0;
+  const dockStatus = collecting || analyzing
+    ? "working"
+    : setupRequired || !hasCompetitors || (!acceptedCount && collectedAds.length > 0)
+      ? "blocked"
+      : canAnalyze || primaryIsCollect
+        ? "ready"
+        : "idle";
+  const dockStatusLabel = collecting
+    ? isVietnamese ? "Đang thu thập" : "Collecting evidence"
+    : analyzing
+      ? isVietnamese ? "Đang phân tích" : "Analyzing"
+      : setupRequired
+        ? isVietnamese ? "Cần thiết lập Apify" : "Apify setup required"
+        : !hasCompetitors
+          ? isVietnamese ? "Thêm đối thủ" : "Add competitors"
+          : !acceptedCount && collectedAds.length > 0
+            ? isVietnamese ? `Duyệt ${reviewCount || collectedAds.length} ads` : `Review ${reviewCount || collectedAds.length} ads`
+            : primaryIsCollect
+              ? isVietnamese ? "Sẵn sàng thu thập" : "Ready to collect"
+              : reviewCount > 0
+                ? isVietnamese ? `${acceptedCount} nhận · ${reviewCount} cần duyệt` : `${acceptedCount} accepted · ${reviewCount} review`
+                : isVietnamese ? `${acceptedCount} evidence đã nhận` : `${acceptedCount} accepted`;
   const themeRows = result?.themes.slice(0, 4) || [];
   const briefs = result?.test_briefs.slice(0, 4) || [];
   const competitors = result?.competitors.slice(0, 4) || [];
   const verdictCopy = uiCopy[language].verdict;
   const spyCopy = uiCopy[language].spy;
   const researchBrief = {
-    title: isVietnamese ? "Research brief" : "Research brief",
+    title: isVietnamese ? "Luồng evidence" : "Evidence workflow",
     description: isVietnamese
-      ? "Nhập đối thủ, thị trường và ghi chú ads đã kiểm tra để tạo brief có ngữ cảnh."
-      : "Add competitors, market context, and verified ad notes to create a grounded research brief.",
+      ? "Thu thập qua Apify, duyệt advertiser, rồi chỉ phân tích evidence đã chấp nhận."
+      : "Collect through Apify, review advertiser attribution, then analyze only accepted evidence.",
     ready: isVietnamese ? "Sẵn sàng" : "Ready",
     next: isVietnamese ? "Cần thêm" : "Needed",
     optional: isVietnamese ? "Tùy chọn" : "Optional",
     inputs: isVietnamese
       ? [
           { label: "Tên đối thủ", done: hasCompetitors },
-          { label: "Thị trường / offer", done: Boolean(market.trim()), optional: true },
-          { label: "Ghi chú ads thật", done: linkedEvidence.length > 0 },
+          { label: "Apify Meta Ads", done: !setupRequired },
+          { label: "Evidence được chấp nhận", done: acceptedCount > 0 },
         ]
       : [
-          { label: "Competitor name", done: hasCompetitors },
-          { label: "Market / offer", done: Boolean(market.trim()), optional: true },
-          { label: "Real ad notes", done: linkedEvidence.length > 0 },
+          { label: "Competitor names", done: hasCompetitors },
+          { label: "Apify Meta Ads", done: !setupRequired },
+          { label: "Accepted evidence", done: acceptedCount > 0 },
         ],
   };
 
@@ -2712,15 +2816,15 @@ function CompetitorSpyPanel({
                   <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{researchBrief.title}</div>
                   <p className="mt-1 text-sm leading-5 text-muted-foreground">{researchBrief.description}</p>
                 </div>
-                <Badge variant="outline" className="shrink-0">No-token</Badge>
+                <Badge variant="outline" className="shrink-0">Evidence-first</Badge>
               </div>
               <div className="grid gap-2">
                 {researchBrief.inputs.map((item) => (
                   <div key={item.label} className="flex items-center justify-between gap-3 rounded-xl border bg-background/60 px-3 py-2 text-xs">
                     <span className="font-medium text-foreground">{item.label}</span>
                     <span className={`flex items-center gap-1.5 ${item.done ? "text-ring" : "text-muted-foreground"}`}>
-                      {item.done ? <CheckIcon className="size-3.5" /> : item.optional ? null : <ChevronRightIcon className="size-3.5" />}
-                      {item.done ? researchBrief.ready : item.optional ? researchBrief.optional : researchBrief.next}
+                      {item.done ? <CheckIcon className="size-3.5" /> : <ChevronRightIcon className="size-3.5" />}
+                      {item.done ? researchBrief.ready : researchBrief.next}
                     </span>
                   </div>
                 ))}
@@ -2755,54 +2859,99 @@ function CompetitorSpyPanel({
             </FieldDescription>
           </Field>
 
-          <Alert>
-            <AlertTitle>{isVietnamese ? "Tự động lấy ads đang tạm dừng" : "Automatic ad fetching is paused"}</AlertTitle>
-            <AlertDescription>
-              {isVietnamese
-                ? "Kiểm thử cho thấy public scrape trộn ads của advertiser không liên quan. Chỉ paste evidence đã tự kiểm tra bên dưới."
-                : "Testing showed the public scrape mixed ads from unrelated advertisers. Paste only evidence you verified below."}
-            </AlertDescription>
-          </Alert>
-
-          <Field>
-            <FieldLabel htmlFor={`${id}-notes`}>{isVietnamese ? "Ghi chú ads đã kiểm tra" : "Verified ad-library notes"}</FieldLabel>
-            <Textarea
-              id={`${id}-notes`}
-              value={notes}
-              onChange={(event) => onNotesChange(event.target.value)}
-              placeholder={
-                isVietnamese
-                  ? "VD: Kangnam - video before/after, CTA Nhắn tin, offer soi da miễn phí, hook trị nám 7 ngày..."
-                  : "Example: Competitor A - UGC video, Send Message CTA, free audit offer, proof-led hook..."
-              }
-              className="min-h-32 resize-none"
-              aria-describedby={`${id}-notes-help`}
-            />
-            <FieldDescription id={`${id}-notes-help`}>
-              {isVietnamese
-                ? "Bắt đầu mỗi dòng bằng tên advertiser và dấu - hoặc :, sau đó thêm copy, CTA, format, offer và link đã xác minh."
-                : "Start each line with the advertiser name and a dash or colon, then add the verified copy, CTA, format, offer, and link."}
-            </FieldDescription>
-          </Field>
-
-          {hasNotes ? (
-            <Alert>
-              <AlertTitle>
-                {isVietnamese
-                  ? `${linkedEvidence.length}/${evidenceRows.length} dòng đã gắn advertiser`
-                  : `${linkedEvidence.length}/${evidenceRows.length} evidence lines linked to an advertiser`}
-              </AlertTitle>
+          {setupRequired ? (
+            <Alert variant="destructive">
+              <AlertTitle>{isVietnamese ? "Cần thiết lập Apify" : "Apify setup required"}</AlertTitle>
               <AlertDescription>
-                {unlinkedEvidence.length > 0
-                  ? isVietnamese
-                    ? "Các dòng chưa gắn advertiser sẽ không được phân tích. Bắt đầu mỗi dòng bằng đúng tên đối thủ, sau đó là dấu - hoặc :."
-                    : "Unlinked lines stay out of analysis. Start each line with the exact advertiser name followed by a dash or colon."
-                  : isVietnamese
-                    ? "Tất cả evidence sẽ được đưa vào bước phân tích."
-                    : "All evidence lines are ready for analysis."}
+                {isVietnamese
+                  ? "Thêm APIFY_TOKEN và APIFY_META_ADS_ACTOR_ID trên server để thu thập evidence. Public search không được xem là evidence đã xác minh."
+                  : "Add APIFY_TOKEN and APIFY_META_ADS_ACTOR_ID on the server to collect evidence. Public search links do not count as verified evidence."}
               </AlertDescription>
             </Alert>
+          ) : (
+            <Alert>
+              <AlertTitle>{isVietnamese ? "Thu thập evidence qua Apify" : "Collect evidence through Apify"}</AlertTitle>
+              <AlertDescription>
+                {isVietnamese
+                  ? "Kết quả được gắn requested competitor, observed advertiser và nguồn để bạn duyệt trước khi phân tích."
+                  : "Each result keeps its requested competitor, observed advertiser, and source so you can review it before analysis."}
+              </AlertDescription>
+            </Alert>
+          )}
+
+          <Button
+            type="button"
+            onClick={onCollect}
+            disabled={setupRequired || !hasCompetitors || collecting || analyzing}
+            className="w-full"
+          >
+            {collecting ? <Spinner data-icon="inline-start" /> : <RefreshCcwIcon data-icon="inline-start" />}
+            {collecting
+              ? isVietnamese ? "Đang thu thập..." : "Collecting evidence..."
+              : evidence ? isVietnamese ? "Thu thập lại" : "Refresh evidence"
+              : isVietnamese ? "Thu thập ads" : "Collect ads"}
+          </Button>
+
+          {error ? (
+            <Alert variant="destructive">
+              <AlertTitle>{isVietnamese ? "Không thể hoàn thành" : "Action failed"}</AlertTitle>
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
           ) : null}
+
+          {evidence ? (
+            <div className="grid grid-cols-3 gap-2 rounded-xl border bg-background/60 p-3 text-center">
+              <div>
+                <div className="text-lg font-semibold tabular-nums text-success">{acceptedAds.length}</div>
+                <div className="text-[11px] text-muted-foreground">{isVietnamese ? "Đã nhận" : "Accepted"}</div>
+              </div>
+              <div>
+                <div className="text-lg font-semibold tabular-nums">{reviewAds.length}</div>
+                <div className="text-[11px] text-muted-foreground">{isVietnamese ? "Cần duyệt" : "Review"}</div>
+              </div>
+              <div>
+                <div className="text-lg font-semibold tabular-nums text-muted-foreground">{rejectedAds.length}</div>
+                <div className="text-[11px] text-muted-foreground">{isVietnamese ? "Loại" : "Rejected"}</div>
+              </div>
+            </div>
+          ) : null}
+
+          <details className="group/manual rounded-xl border bg-background/50 p-3">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-sm font-medium">
+              <span>{isVietnamese ? "Evidence thủ công (tùy chọn)" : "Manual evidence (optional)"}</span>
+              <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground transition-transform group-open/manual:rotate-180" />
+            </summary>
+            <div className="mt-3 flex flex-col gap-3">
+              <Field>
+                <FieldLabel htmlFor={`${id}-notes`}>{isVietnamese ? "Ghi chú đã xác minh" : "Verified notes"}</FieldLabel>
+                <Textarea
+                  id={`${id}-notes`}
+                  value={notes}
+                  onChange={(event) => onNotesChange(event.target.value)}
+                  placeholder={
+                    isVietnamese
+                      ? "Kangnam - video before/after, CTA Nhắn tin, offer soi da miễn phí..."
+                      : "Competitor A - UGC video, Send Message CTA, free audit offer..."
+                  }
+                  className="min-h-28 resize-none"
+                  aria-describedby={`${id}-notes-help`}
+                />
+                <FieldDescription id={`${id}-notes-help`}>
+                  {isVietnamese
+                    ? "Mỗi dòng phải bắt đầu bằng đúng tên đối thủ và dấu - hoặc :. Dòng không khớp sẽ không được phân tích."
+                    : "Start each line with the exact competitor name and a dash or colon. Unmatched lines stay out of analysis."}
+                </FieldDescription>
+              </Field>
+              {manualEvidence.length > 0 ? (
+                <div className="flex flex-wrap gap-2 text-xs">
+                  <Badge variant="success">{acceptedManual.length} {isVietnamese ? "đã nhận" : "accepted"}</Badge>
+                  {reviewManual.length > 0 ? (
+                    <Badge variant="secondary">{reviewManual.length} {isVietnamese ? "không khớp" : "unmatched"}</Badge>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          </details>
 
           <details className="group/adv rounded-xl border bg-background/50 p-3">
             <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-sm font-medium">
@@ -2819,22 +2968,17 @@ function CompetitorSpyPanel({
                     if (value) onPlatformChange(value as CompetitorPlatform);
                   }}
                 >
-                  <SelectTrigger className="w-full" aria-labelledby={`${id}-platform-label`} aria-describedby={`${id}-platform-help`}>
+                  <SelectTrigger className="w-full" aria-labelledby={`${id}-platform-label`}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectGroup>
                       {competitorPlatformItems.map((item) => (
-                        <SelectItem key={item.value} value={item.value}>
-                          {item.label}
-                        </SelectItem>
+                        <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
                       ))}
                     </SelectGroup>
                   </SelectContent>
                 </Select>
-                <FieldDescription id={`${id}-platform-help`}>
-                  {isVietnamese ? "Chọn nền tảng của evidence đã paste." : "Choose the platform for the evidence you pasted."}
-                </FieldDescription>
               </Field>
               <Field>
                 <FieldLabel id={`${id}-provider-label`}>{verdictCopy.provider}</FieldLabel>
@@ -2851,9 +2995,7 @@ function CompetitorSpyPanel({
                   <SelectContent>
                     <SelectGroup>
                       {providerItems.map((item) => (
-                        <SelectItem key={item.value} value={item.value}>
-                          {providerLabel(item.value, language)}
-                        </SelectItem>
+                        <SelectItem key={item.value} value={item.value}>{providerLabel(item.value, language)}</SelectItem>
                       ))}
                     </SelectGroup>
                   </SelectContent>
@@ -2863,6 +3005,154 @@ function CompetitorSpyPanel({
           </details>
           </div>
         </div>
+
+        <div className="flex min-w-0 flex-col gap-4">
+          {evidence ? (
+            <section className="rounded-2xl border bg-card p-4 md:p-5" aria-labelledby={`${id}-evidence-title`}>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                  <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    {isVietnamese ? "Hàng đợi duyệt" : "Evidence review queue"}
+                  </div>
+                  <h2 id={`${id}-evidence-title`} className="mt-1 font-heading text-lg font-semibold">
+                    {isVietnamese ? `${collectedAds.length} ads đã thu thập` : `${collectedAds.length} ads collected`}
+                  </h2>
+                  <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                    {isVietnamese
+                      ? "Chấp nhận chỉ khi requested competitor, advertiser quan sát được và creative thuộc cùng một nguồn đáng tin."
+                      : "Accept only when the requested competitor, observed advertiser, and creative belong to the same credible source."}
+                  </p>
+                </div>
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  <Badge variant="success">{acceptedAds.length} {isVietnamese ? "nhận" : "accepted"}</Badge>
+                  <Badge variant="secondary">{reviewAds.length} {isVietnamese ? "duyệt" : "review"}</Badge>
+                  <Badge variant="outline">{rejectedAds.length} {isVietnamese ? "loại" : "rejected"}</Badge>
+                </div>
+              </div>
+
+              {liveCoverage.length > 0 ? (
+                <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                  {liveCoverage.map((coverage) => (
+                    <div key={coverage.competitor} className="rounded-xl border bg-background/60 p-3">
+                      <div className="truncate text-sm font-medium">{coverage.competitor}</div>
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        {coverage.collected} {isVietnamese ? "ads" : "collected"} · {coverage.accepted} {isVietnamese ? "nhận" : "accepted"} · {coverage.needsReview} {isVietnamese ? "duyệt" : "review"}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+
+              {evidence.warnings.length > 0 ? (
+                <Alert className="mt-4">
+                  <AlertTitle>{isVietnamese ? "Cảnh báo thu thập" : "Collection warning"}</AlertTitle>
+                  <AlertDescription>{evidence.warnings.join(" ")}</AlertDescription>
+                </Alert>
+              ) : null}
+
+              {orderedAds.length > 0 ? (
+                <div className="mt-4 flex max-h-[min(65svh,720px)] flex-col gap-3 overflow-y-auto pr-1">
+                  {orderedAds.map((ad) => {
+                    const provenance = ad.evidence;
+                    if (!provenance) return null;
+                    const sourceUrl = provenance.sourceUrl?.startsWith("https://") ? provenance.sourceUrl : undefined;
+                    const statusVariant = provenance.status === "accepted"
+                      ? "success"
+                      : provenance.status === "rejected"
+                        ? "outline"
+                        : "secondary";
+                    const statusLabel = provenance.status === "accepted"
+                      ? isVietnamese ? "Đã nhận" : "Accepted"
+                      : provenance.status === "rejected"
+                        ? isVietnamese ? "Đã loại" : "Rejected"
+                        : isVietnamese ? "Cần duyệt" : "Needs review";
+
+                    return (
+                      <article key={ad.id} className="rounded-xl border bg-background/60 p-4">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Badge variant={statusVariant}>{statusLabel}</Badge>
+                              <Badge variant="outline">{provenance.match}</Badge>
+                              {ad.format ? <Badge variant="outline">{ad.format}</Badge> : null}
+                            </div>
+                            <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
+                              <div>
+                                <dt className="text-muted-foreground">{isVietnamese ? "Đối thủ yêu cầu" : "Requested competitor"}</dt>
+                                <dd className="mt-0.5 font-medium text-foreground">{provenance.requestedCompetitor}</dd>
+                              </div>
+                              <div>
+                                <dt className="text-muted-foreground">{isVietnamese ? "Advertiser quan sát" : "Observed advertiser"}</dt>
+                                <dd className="mt-0.5 font-medium text-foreground">{provenance.advertiser || spyCopy.unknownAdvertiser}</dd>
+                              </div>
+                            </dl>
+                          </div>
+                          <div className="shrink-0 text-xs text-muted-foreground">
+                            {new Date(provenance.collectedAt).toLocaleString(language === "vi" ? "vi-VN" : "en-US")}
+                          </div>
+                        </div>
+
+                        <div className="mt-3 rounded-lg border bg-card/70 p-3">
+                          {ad.headline ? <div className="text-sm font-semibold">{ad.headline}</div> : null}
+                          <p className="mt-1 line-clamp-3 text-sm leading-6 text-muted-foreground" data-print-expand>
+                            {ad.body || ad.description || spyCopy.noCopy}
+                          </p>
+                          <div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground">
+                            {ad.cta ? <span>CTA: {ad.cta}</span> : null}
+                            {ad.startDate ? <span>{spyCopy.start}: {ad.startDate}</span> : null}
+                            {sourceUrl ? (
+                              <a href={sourceUrl} target="_blank" rel="noreferrer" className="font-medium text-foreground underline-offset-4 hover:underline">
+                                {isVietnamese ? "Mở nguồn" : "Open source"}
+                              </a>
+                            ) : null}
+                          </div>
+                        </div>
+
+                        <div className="mt-3 flex flex-wrap gap-2" aria-label={isVietnamese ? "Trạng thái evidence" : "Evidence status"}>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={provenance.status === "accepted" ? "default" : "outline"}
+                            onClick={() => onEvidenceStatusChange(ad.id, "accepted")}
+                          >
+                            <CheckIcon data-icon="inline-start" />
+                            {isVietnamese ? "Chấp nhận" : "Accept"}
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={provenance.status === "needs_review" ? "secondary" : "outline"}
+                            onClick={() => onEvidenceStatusChange(ad.id, "needs_review")}
+                          >
+                            {isVietnamese ? "Cần duyệt" : "Needs review"}
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={provenance.status === "rejected" ? "secondary" : "outline"}
+                            onClick={() => onEvidenceStatusChange(ad.id, "rejected")}
+                          >
+                            {isVietnamese ? "Loại" : "Reject"}
+                          </Button>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              ) : (
+                <Empty className="mt-4 rounded-xl border bg-background/50">
+                  <EmptyHeader>
+                    <EmptyTitle>{isVietnamese ? "Chưa có ads phù hợp" : "No ads returned"}</EmptyTitle>
+                    <EmptyDescription>
+                      {isVietnamese
+                        ? "Kiểm tra actor input hoặc tên advertiser, sau đó thu thập lại."
+                        : "Check the actor input or advertiser names, then collect again."}
+                    </EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
+              )}
+            </section>
+          ) : null}
 
         {result ? (
           <div className="flex flex-col gap-3" data-print-expand>
@@ -2974,24 +3264,45 @@ function CompetitorSpyPanel({
           <Empty className="min-h-72 rounded-2xl border bg-card">
             <EmptyHeader>
               <EmptyMedia variant="icon"><SearchIcon /></EmptyMedia>
-              <EmptyTitle>{isVietnamese ? "Evidence đang chờ phân tích" : "Evidence is waiting for analysis"}</EmptyTitle>
+              <EmptyTitle>{isVietnamese ? "Từ evidence đến quyết định" : "Move evidence toward a decision"}</EmptyTitle>
               <EmptyDescription>
-                {isVietnamese
-                  ? "Thêm advertiser và ghi chú ads đã tự xác minh. Workspace sẽ tạo pattern, gap và brief test mà không gọi scraper đang tạm dừng."
-                  : "Add advertisers and ad notes you verified yourself. The workspace will create patterns, gaps, and test briefs without calling the paused scraper."}
+                {setupRequired
+                  ? isVietnamese
+                    ? "Thiết lập Apify, sau đó thu thập, duyệt provenance và phân tích evidence đã chấp nhận."
+                    : "Configure Apify, then collect, review provenance, and analyze accepted evidence."
+                  : !hasCompetitors
+                    ? isVietnamese
+                      ? "Thêm tên đối thủ để bắt đầu thu thập ads."
+                      : "Add competitor names to start collecting ads."
+                    : acceptedCount === 0
+                      ? isVietnamese
+                        ? "Thu thập ads và chấp nhận ít nhất một evidence đáng tin trước khi phân tích."
+                        : "Collect ads and accept at least one credible evidence item before analysis."
+                      : isVietnamese
+                        ? "Evidence đã sẵn sàng. Phân tích để tạo pattern, gap và brief test mới."
+                        : "Evidence is ready. Analyze it to produce patterns, gaps, and original test briefs."}
               </EmptyDescription>
             </EmptyHeader>
           </Empty>
         )}
+        </div>
         <StickyActionDock
           contextLabel={isVietnamese ? "Evidence đối thủ" : "Competitor evidence"}
-          status={loading ? "working" : canAnalyze ? "ready" : "blocked"}
-          statusLabel={loading
-            ? isVietnamese ? "Đang phân tích" : "Analyzing"
-            : canAnalyze
-              ? isVietnamese ? `${linkedEvidence.length} dòng sẵn sàng` : `${linkedEvidence.length} lines ready`
-              : isVietnamese ? "Cần evidence đã gắn advertiser" : "Add linked evidence"}
-          primaryAction={{
+          status={dockStatus}
+          statusLabel={dockStatusLabel}
+          statusBadge={acceptedCount}
+          primaryAction={primaryIsCollect ? {
+            id: "collect-competitor-evidence",
+            label: isVietnamese ? "Thu thập evidence" : "Collect evidence",
+            shortLabel: isVietnamese ? "Thu thập" : "Collect",
+            icon: RefreshCcwIcon,
+            onSelect: onCollect,
+            disabled: setupRequired || !hasCompetitors || collecting || analyzing,
+            disabledReason: setupRequired
+              ? isVietnamese ? "Thiết lập Apify trước khi thu thập." : "Configure Apify before collecting."
+              : isVietnamese ? "Thêm ít nhất một đối thủ." : "Add at least one competitor.",
+            loading: collecting,
+          } : {
             id: "analyze-competitor-evidence",
             label: isVietnamese ? "Phân tích evidence" : "Analyze evidence",
             shortLabel: isVietnamese ? "Phân tích" : "Analyze",
@@ -2999,18 +3310,28 @@ function CompetitorSpyPanel({
             onSelect: onGenerate,
             disabled: !canAnalyze,
             disabledReason: isVietnamese
-              ? "Thêm tên đối thủ và ít nhất một dòng evidence bắt đầu bằng tên advertiser."
-              : "Add competitors and at least one evidence line that starts with the advertiser name.",
-            loading,
+              ? "Chấp nhận ít nhất một evidence có advertiser và provenance đáng tin."
+              : "Accept at least one evidence item with credible advertiser provenance.",
+            loading: analyzing,
             shortcut: "mod+enter",
           }}
-          secondaryActions={result ? [{
-            id: "copy-competitor-prompt",
-            label: copiedPrompt ? verdictCopy.copied : spyCopy.copyPrompt,
-            icon: ClipboardIcon,
-            onSelect: onCopyPrompt,
-            disabled: !canAnalyze,
-          }] : []}
+          secondaryActions={[
+            ...(primaryIsCollect ? [] : [{
+              id: "refresh-competitor-evidence",
+              label: isVietnamese ? "Thu thập lại" : "Refresh evidence",
+              icon: RefreshCcwIcon,
+              onSelect: onCollect,
+              disabled: setupRequired || !hasCompetitors || collecting || analyzing,
+              loading: collecting,
+            }]),
+            ...(result ? [{
+              id: "copy-competitor-prompt",
+              label: copiedPrompt ? verdictCopy.copied : spyCopy.copyPrompt,
+              icon: ClipboardIcon,
+              onSelect: onCopyPrompt,
+              disabled: !canAnalyze,
+            }] : []),
+          ]}
           actionsLabel={isVietnamese ? "Hành động khác" : "More actions"}
         />
     </div>

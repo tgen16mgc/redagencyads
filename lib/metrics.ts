@@ -387,7 +387,10 @@ export function buildCompetitorSpyPrompt(args: {
     market_or_offer: args.market || "Not specified",
     platform_focus: args.platform,
     pasted_ad_library_notes: args.notes || "No pasted competitor ad notes provided.",
-    extracted_ads: (args.extractedAds || []).slice(0, 40).map((ad) => ({
+    extracted_ads: (args.extractedAds || [])
+      .filter((ad) => ad.evidence?.status === "accepted")
+      .slice(0, 40)
+      .map((ad) => ({
       source: ad.source,
       competitor: ad.competitorName,
       page: ad.pageName,

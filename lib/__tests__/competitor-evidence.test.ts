@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { advertiserLinkedEvidenceText, reviewCompetitorEvidence } from "../competitor-evidence";
+import { acceptedManualEvidenceText, reviewCompetitorEvidence } from "../competitor-evidence";
 
 describe("reviewCompetitorEvidence", () => {
   it("links manual evidence lines to a named advertiser", () => {
@@ -9,14 +9,14 @@ describe("reviewCompetitorEvidence", () => {
     );
 
     expect(rows).toEqual([
-      expect.objectContaining({ advertiser: "Northstar", status: "advertiser_linked" }),
+      expect.objectContaining({ advertiser: "Northstar", status: "accepted" }),
       expect.objectContaining({ advertiser: undefined, status: "needs_review" }),
     ]);
   });
 
   it("only sends advertiser-linked lines into analysis", () => {
     expect(
-      advertiserLinkedEvidenceText(
+      acceptedManualEvidenceText(
         "Northstar - UGC video\nUnknown advertiser - discount",
         ["Northstar"],
       ),
@@ -40,8 +40,8 @@ describe("reviewCompetitorEvidence", () => {
 
     expect(rows).toEqual([
       expect.objectContaining({ advertiser: undefined, status: "needs_review" }),
-      expect.objectContaining({ advertiser: "Northstar", status: "advertiser_linked" }),
-      expect.objectContaining({ advertiser: "Beacon", status: "advertiser_linked" }),
+      expect.objectContaining({ advertiser: "Northstar", status: "accepted" }),
+      expect.objectContaining({ advertiser: "Beacon", status: "accepted" }),
     ]);
   });
 });

@@ -8,6 +8,7 @@ export async function GET() {
   const capabilities = buildCapabilitySnapshot({
     authenticated,
     apifyConfigured: Boolean(process.env.APIFY_TOKEN),
+    competitorActorConfigured: Boolean(process.env.APIFY_META_ADS_ACTOR_ID),
     nineRouterConfigured: hasNineRouterCredentials(),
   });
 

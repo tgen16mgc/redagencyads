@@ -6,11 +6,12 @@ describe("buildCapabilitySnapshot", () => {
     const capabilities = buildCapabilitySnapshot({
       authenticated: false,
       apifyConfigured: false,
+      competitorActorConfigured: false,
       nineRouterConfigured: false,
     });
 
     expect(capabilityStatus(capabilities, "meta_analysis")?.state).toBe("needs_connection");
-    expect(capabilityStatus(capabilities, "competitor_evidence")?.state).toBe("available");
+    expect(capabilityStatus(capabilities, "competitor_evidence")?.state).toBe("needs_setup");
     expect(capabilityStatus(capabilities, "tiktok_profiles")?.state).toBe("needs_setup");
     expect(capabilityStatus(capabilities, "tiktok_ad_library")?.state).toBe("paused");
     expect(capabilityStatus(capabilities, "page_publishing")?.state).toBe("needs_connection");
@@ -21,10 +22,12 @@ describe("buildCapabilitySnapshot", () => {
     const capabilities = buildCapabilitySnapshot({
       authenticated: true,
       apifyConfigured: true,
+      competitorActorConfigured: true,
       nineRouterConfigured: true,
     });
 
     expect(capabilityStatus(capabilities, "meta_analysis")?.state).toBe("available");
+    expect(capabilityStatus(capabilities, "competitor_evidence")?.state).toBe("available");
     expect(capabilityStatus(capabilities, "tiktok_profiles")?.state).toBe("available");
     expect(capabilityStatus(capabilities, "page_publishing")?.state).toBe("available");
     expect(capabilityStatus(capabilities, "ai_enhancement")?.state).toBe("available");

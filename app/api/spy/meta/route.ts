@@ -13,7 +13,7 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 
 const bodySchema = z.object({
-  source: z.enum(["public", "meta_official", "apify"]).default("public"),
+  source: z.enum(["public", "meta_official", "apify"]).default("apify"),
   competitors: z.array(z.string()).default([]),
   country: z.string().default("VN"),
   limit: z.number().default(20),
@@ -39,9 +39,8 @@ export async function POST(request: Request) {
     });
     return NextResponse.json({ result });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unable to fetch competitor ads." },
-      { status: 400 },
-    );
+    const message = error instanceof Error ? error.message : "Unable to fetch competitor ads.";
+    const status = message.includes("requires APIFY_TOKEN") ? 503 : 400;
+    return NextResponse.json({ error: message }, { status });
   }
 }

@@ -1,33 +1,105 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+const { runApifyActor } = vi.hoisted(() => ({
+  runApifyActor: vi.fn(),
+}));
+
+vi.mock("@/lib/apify", () => ({ runApifyActor }));
+
 import { fetchCompetitorAds, parsePublicMetaLibraryHtml } from "../competitor-spy";
 
 describe("fetchCompetitorAds", () => {
   afterEach(() => {
+    vi.clearAllMocks();
     vi.unstubAllEnvs();
   });
 
-  it("returns no-key public evidence cards when Apify credentials are missing", async () => {
+  it("requires an Apify token and Meta Ads actor instead of falling back to public links", async () => {
     vi.stubEnv("APIFY_TOKEN", "");
     vi.stubEnv("APIFY_META_ADS_ACTOR_ID", "");
 
-    const result = await fetchCompetitorAds({
+    await expect(fetchCompetitorAds({
       source: "apify",
       competitors: ["Seoul Spa"],
       country: "VN",
       limit: 5,
       libraryUrls: [],
+    })).rejects.toThrow("Competitor evidence collection requires APIFY_TOKEN and APIFY_META_ADS_ACTOR_ID.");
+
+    expect(runApifyActor).not.toHaveBeenCalled();
+  });
+
+  it("classifies Apify rows conservatively and reports evidence coverage", async () => {
+    vi.stubEnv("APIFY_TOKEN", "configured-for-test");
+    vi.stubEnv("APIFY_META_ADS_ACTOR_ID", "vendor/meta-ads");
+    runApifyActor.mockResolvedValue([
+      {
+        id: "exact-ad",
+        query: "Seoul Spa",
+        pageName: "Seoul Spa",
+        adText: "Exact advertiser evidence",
+        adSnapshotUrl: "https://www.facebook.com/ads/library/?id=1",
+      },
+      {
+        id: "ambiguous-ad",
+        query: "Seoul Spa",
+        pageName: "Seoul Spa Vietnam",
+        adText: "Similar advertiser evidence",
+        adSnapshotUrl: "https://www.facebook.com/ads/library/?id=2",
+      },
+      {
+        id: "mismatch-ad",
+        query: "Seoul Spa",
+        pageName: "Unrelated Clinic",
+        adText: "Wrong advertiser evidence",
+        adSnapshotUrl: "https://www.facebook.com/ads/library/?id=3",
+      },
+    ]);
+
+    const result = await fetchCompetitorAds({
+      source: "apify",
+      competitors: ["Seoul Spa"],
+      country: "VN",
+      limit: 10,
+      libraryUrls: [],
     });
 
-    expect(result.source).toBe("public");
-    expect(result.ads).toHaveLength(1);
-    expect(result.ads[0]).toMatchObject({
-      competitorName: "Seoul Spa",
-      pageName: "Seoul Spa",
-      source: "public",
-      headline: "Open Meta Ad Library search",
-    });
-    expect(result.ads[0].snapshotUrl).toContain("facebook.com/ads/library");
-    expect(result.warnings.join(" ")).toContain("No Apify credentials");
+    expect(runApifyActor).toHaveBeenCalledWith(expect.objectContaining({
+      actorId: "vendor/meta-ads",
+      timeoutSeconds: 240,
+    }));
+    expect(result.source).toBe("apify");
+    expect(result.ads.map((ad) => ad.evidence)).toEqual([
+      expect.objectContaining({
+        status: "accepted",
+        match: "exact",
+        requestedCompetitor: "Seoul Spa",
+        advertiser: "Seoul Spa",
+        sourceUrl: "https://www.facebook.com/ads/library/?id=1",
+        collectedAt: result.fetchedAt,
+      }),
+      expect.objectContaining({
+        status: "needs_review",
+        match: "ambiguous",
+        requestedCompetitor: "Seoul Spa",
+        advertiser: "Seoul Spa Vietnam",
+      }),
+      expect.objectContaining({
+        status: "rejected",
+        match: "mismatch",
+        requestedCompetitor: "Seoul Spa",
+        advertiser: "Unrelated Clinic",
+      }),
+    ]);
+    expect(result.coverage).toEqual([
+      {
+        competitor: "Seoul Spa",
+        collected: 3,
+        accepted: 1,
+        needsReview: 1,
+        rejected: 1,
+      },
+    ]);
   });
 
   it("extracts ad cards from public Meta Ad Library HTML", () => {

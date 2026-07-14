@@ -281,6 +281,25 @@ export type AiInsightTable = {
 
 export type CompetitorPlatform = "meta" | "google" | "linkedin" | "tiktok" | "mixed";
 export type CompetitorFetchSource = "public" | "meta_official" | "apify";
+export type CompetitorEvidenceStatus = "accepted" | "needs_review" | "rejected";
+export type CompetitorEvidenceMatch = "exact" | "ambiguous" | "mismatch";
+
+export type CompetitorEvidenceProvenance = {
+  status: CompetitorEvidenceStatus;
+  match: CompetitorEvidenceMatch;
+  requestedCompetitor: string;
+  advertiser?: string;
+  sourceUrl?: string;
+  collectedAt: string;
+};
+
+export type CompetitorEvidenceCoverage = {
+  competitor: string;
+  collected: number;
+  accepted: number;
+  needsReview: number;
+  rejected: number;
+};
 
 export type CompetitorSpyAd = {
   id: string;
@@ -299,12 +318,14 @@ export type CompetitorSpyAd = {
   imageUrl?: string;
   videoUrl?: string;
   landingUrl?: string;
+  evidence?: CompetitorEvidenceProvenance;
   raw?: unknown;
 };
 
 export type CompetitorFetchResult = {
   source: CompetitorFetchSource;
   ads: CompetitorSpyAd[];
+  coverage: CompetitorEvidenceCoverage[];
   warnings: string[];
   fetchedAt: string;
 };

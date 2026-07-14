@@ -36,13 +36,21 @@ describe("generateCompetitorSpy", () => {
       extractedAds: [
         {
           id: "ad-1",
-          source: "public",
+          source: "apify",
           competitorName: "Seoul Spa",
           pageName: "Seoul Spa",
           platform: "Meta / Instagram",
           headline: "Open Meta Ad Library search",
           description: "Review active ads and offers.",
-          snapshotUrl: "https://www.facebook.com/ads/library/?q=Seoul%20Spa",
+          snapshotUrl: "https://www.facebook.com/ads/library/?id=1",
+          evidence: {
+            status: "accepted",
+            match: "exact",
+            requestedCompetitor: "Seoul Spa",
+            advertiser: "Seoul Spa",
+            sourceUrl: "https://www.facebook.com/ads/library/?id=1",
+            collectedAt: "2026-07-14T00:00:00.000Z",
+          },
         },
       ],
     });
@@ -55,6 +63,52 @@ describe("generateCompetitorSpy", () => {
     expect(result.themes.length).toBeGreaterThan(0);
     expect(result.test_briefs.length).toBeGreaterThan(0);
     expect(result.next_actions.join(" ")).toContain("Open Meta Ad Library");
+  });
+
+  it("keeps collected evidence out of the prompt until it is accepted", () => {
+    const prompt = buildCompetitorSpyPrompt({
+      competitors: ["Seoul Spa"],
+      market: "premium beauty clinic",
+      platform: "meta",
+      notes: "",
+      extractedAds: [
+        {
+          id: "accepted-ad",
+          source: "apify",
+          competitorName: "Seoul Spa",
+          pageName: "Seoul Spa",
+          body: "Accepted proof-led ad",
+          snapshotUrl: "https://www.facebook.com/ads/library/?id=1",
+          evidence: {
+            status: "accepted",
+            match: "exact",
+            requestedCompetitor: "Seoul Spa",
+            advertiser: "Seoul Spa",
+            sourceUrl: "https://www.facebook.com/ads/library/?id=1",
+            collectedAt: "2026-07-14T00:00:00.000Z",
+          },
+        },
+        {
+          id: "review-ad",
+          source: "apify",
+          competitorName: "Seoul Spa",
+          pageName: "Seoul Spa Vietnam",
+          body: "Pending advertiser review",
+          snapshotUrl: "https://www.facebook.com/ads/library/?id=2",
+          evidence: {
+            status: "needs_review",
+            match: "ambiguous",
+            requestedCompetitor: "Seoul Spa",
+            advertiser: "Seoul Spa Vietnam",
+            sourceUrl: "https://www.facebook.com/ads/library/?id=2",
+            collectedAt: "2026-07-14T00:00:00.000Z",
+          },
+        },
+      ],
+    });
+
+    expect(prompt).toContain("Accepted proof-led ad");
+    expect(prompt).not.toContain("Pending advertiser review");
   });
 
   it("does not refer to fetched cards when analysis uses verified notes only", async () => {

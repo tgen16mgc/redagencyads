@@ -14,6 +14,7 @@ describe("GET /api/capabilities", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     delete process.env.APIFY_TOKEN;
+    delete process.env.APIFY_META_ADS_ACTOR_ID;
   });
 
   it("returns capability states without exposing credentials", async () => {
@@ -26,7 +27,7 @@ describe("GET /api/capabilities", () => {
     expect(response.status).toBe(200);
     expect(json.capabilities).toEqual(expect.arrayContaining([
       { key: "meta_analysis", state: "needs_connection" },
-      { key: "competitor_evidence", state: "available" },
+      { key: "competitor_evidence", state: "needs_setup" },
       { key: "tiktok_profiles", state: "needs_setup" },
       { key: "ai_enhancement", state: "degraded" },
     ]));
@@ -35,6 +36,7 @@ describe("GET /api/capabilities", () => {
 
   it("marks configured server capabilities available", async () => {
     process.env.APIFY_TOKEN = "configured-for-test";
+    process.env.APIFY_META_ADS_ACTOR_ID = "vendor/meta-ads";
     hasTokenSession.mockResolvedValue(true);
     hasNineRouterCredentials.mockReturnValue(true);
 
@@ -43,6 +45,7 @@ describe("GET /api/capabilities", () => {
 
     expect(json.capabilities).toEqual(expect.arrayContaining([
       { key: "meta_analysis", state: "available" },
+      { key: "competitor_evidence", state: "available" },
       { key: "tiktok_profiles", state: "available" },
       { key: "page_publishing", state: "available" },
       { key: "ai_enhancement", state: "available" },

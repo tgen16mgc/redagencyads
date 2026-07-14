@@ -52,10 +52,10 @@ const workspaceJobs: {
     icon: SearchIcon,
     title: { en: "Investigate competitors", vi: "Nghiên cứu đối thủ" },
     description: {
-      en: "Turn advertiser-verified observations into themes, gaps, and original test briefs.",
-      vi: "Biến quan sát đã xác minh advertiser thành theme, gap và brief test mới.",
+      en: "Collect ads through Apify, review advertiser provenance, and turn accepted evidence into original test briefs.",
+      vi: "Thu thập ads qua Apify, duyệt provenance advertiser và biến evidence đã chấp nhận thành brief test mới.",
     },
-    output: { en: "Evidence → pattern → test brief", vi: "Evidence → pattern → brief test" },
+    output: { en: "Collect → review → analyze", vi: "Thu thập → duyệt → phân tích" },
   },
   {
     view: "tiktok",

@@ -51,6 +51,7 @@ export interface StickyActionDockProps {
   secondaryActions?: ActionDockAction[]
   status?: ActionDockStatus
   statusLabel?: string
+  statusBadge?: string | number
   position?: "fixed" | "sticky" | "inline"
   expanded?: boolean
   defaultExpanded?: boolean
@@ -112,6 +113,7 @@ export function StickyActionDock({
   secondaryActions = [],
   status = "idle",
   statusLabel,
+  statusBadge,
   position = "fixed",
   expanded: controlledExpanded,
   defaultExpanded = false,
@@ -299,6 +301,9 @@ export function StickyActionDock({
                 >
                   <span className="action-dock-status-signal" aria-hidden="true" />
                   {resolvedStatusLabel}
+                  {statusBadge !== undefined ? (
+                    <span className="font-mono tabular-nums">{statusBadge}</span>
+                  ) : null}
                 </Badge>
               </div>
 

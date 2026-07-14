@@ -1,7 +1,8 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { promisify } from "node:util";
-import type { CompetitorFetchResult, CompetitorFetchSource, CompetitorSpyAd } from "@/lib/types";
+import { runApifyActor } from "@/lib/apify";
+import type { CompetitorEvidenceCoverage, CompetitorFetchResult, CompetitorFetchSource, CompetitorSpyAd } from "@/lib/types";
 
 type SpyFetchArgs = {
   source: CompetitorFetchSource;
@@ -68,43 +69,37 @@ async function fetchMetaOfficialAds(args: SpyFetchArgs): Promise<CompetitorFetch
   return {
     source: "meta_official",
     ads: uniqueAds(ads).slice(0, args.limit),
+    coverage: [],
     warnings,
     fetchedAt: new Date().toISOString(),
   };
 }
 
 async function fetchApifyAds(args: SpyFetchArgs): Promise<CompetitorFetchResult> {
-  const token = process.env.APIFY_TOKEN;
   const actorId = process.env.APIFY_META_ADS_ACTOR_ID;
-  if (!token || !actorId) {
-    return fetchPublicLibraryCards(args, "No Apify credentials found, so no-key public Meta Ad Library extraction was used instead.");
+  if (!process.env.APIFY_TOKEN || !actorId) {
+    throw new Error("Competitor evidence collection requires APIFY_TOKEN and APIFY_META_ADS_ACTOR_ID.");
   }
 
-  const input = buildApifyInput(args);
-  const actorPath = actorId.replace("/", "~");
-  const url = new URL(`https://api.apify.com/v2/acts/${actorPath}/run-sync-get-dataset-items`);
-  url.searchParams.set("clean", "true");
-  url.searchParams.set("format", "json");
-  url.searchParams.set("timeout", "240");
-
-  const response = await fetch(url.toString(), {
-    method: "POST",
-    cache: "no-store",
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify(input),
+  const rows = await runApifyActor<unknown>({
+    actorId,
+    input: buildApifyInput(args),
+    timeoutSeconds: 240,
   });
-  const json = await response.json();
-  if (!response.ok) throw new Error(json?.error?.message || "Apify actor run failed.");
-  const rows = Array.isArray(json) ? json : [];
+  const fetchedAt = new Date().toISOString();
+  const ads = uniqueAds(rows.map((row, index) => normalizeApifyAd(row, index)))
+    .slice(0, args.limit)
+    .map((ad) => ({
+      ...ad,
+      evidence: classifyEvidence(ad, args.competitors, fetchedAt),
+    }));
 
   return {
     source: "apify",
-    ads: uniqueAds(rows.map((row, index) => normalizeApifyAd(row, index))).slice(0, args.limit),
+    ads,
+    coverage: buildEvidenceCoverage(args.competitors, ads),
     warnings: rows.length ? [] : ["Apify returned no ads. Check actor input mapping or competitor/page URL."],
-    fetchedAt: new Date().toISOString(),
+    fetchedAt,
   };
 }
 
@@ -153,6 +148,7 @@ async function fetchPublicLibraryCards(args: SpyFetchArgs, warning = "No-key pub
   return {
     source: "public",
     ads,
+    coverage: [],
     warnings: extractedAds.length
       ? [`Local Chrome public scrape extracted ${extractedAds.length} Meta Ad Library ad(s). ${warning}`]
       : [warning],
@@ -336,6 +332,77 @@ function normalizeApifyAd(row: unknown, index: number): CompetitorSpyAd {
     landingUrl: pick(item, ["landingUrl", "linkUrl", "destinationUrl", "urlTarget", "ad_creative_link_caption"]),
     raw: row,
   };
+}
+
+function classifyEvidence(ad: CompetitorSpyAd, competitors: string[], collectedAt: string) {
+  const requestedCompetitor = findRequestedCompetitor(ad, competitors);
+  const advertiser = ad.pageName?.trim();
+  const requestedKey = normalizedName(requestedCompetitor);
+  const advertiserKey = normalizedName(advertiser);
+  const sourceUrl = ad.snapshotUrl;
+
+  if (requestedKey && advertiserKey === requestedKey) {
+    return {
+      status: "accepted" as const,
+      match: "exact" as const,
+      requestedCompetitor,
+      advertiser,
+      sourceUrl,
+      collectedAt,
+    };
+  }
+
+  if (requestedKey && advertiserKey && (
+    advertiserKey.includes(requestedKey) || requestedKey.includes(advertiserKey)
+  )) {
+    return {
+      status: "needs_review" as const,
+      match: "ambiguous" as const,
+      requestedCompetitor,
+      advertiser,
+      sourceUrl,
+      collectedAt,
+    };
+  }
+
+  return {
+    status: "rejected" as const,
+    match: "mismatch" as const,
+    requestedCompetitor,
+    advertiser,
+    sourceUrl,
+    collectedAt,
+  };
+}
+
+function findRequestedCompetitor(ad: CompetitorSpyAd, competitors: string[]) {
+  const requestedKey = normalizedName(ad.competitorName);
+  return competitors.find((competitor) => normalizedName(competitor) === requestedKey)
+    || ad.competitorName?.trim()
+    || competitors[0]
+    || "Unknown competitor";
+}
+
+function normalizedName(value: string | undefined) {
+  return value?.trim().toLocaleLowerCase().replace(/\s+/g, " ") || "";
+}
+
+function buildEvidenceCoverage(
+  competitors: string[],
+  ads: CompetitorSpyAd[],
+): CompetitorEvidenceCoverage[] {
+  return competitors.map((competitor) => {
+    const rows = ads.filter(
+      (ad) => normalizedName(ad.evidence?.requestedCompetitor) === normalizedName(competitor),
+    );
+    return {
+      competitor,
+      collected: rows.length,
+      accepted: rows.filter((ad) => ad.evidence?.status === "accepted").length,
+      needsReview: rows.filter((ad) => ad.evidence?.status === "needs_review").length,
+      rejected: rows.filter((ad) => ad.evidence?.status === "rejected").length,
+    };
+  });
 }
 
 function pick(item: Record<string, unknown>, keys: string[]) {

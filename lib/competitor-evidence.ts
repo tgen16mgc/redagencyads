@@ -1,8 +1,10 @@
+import type { CompetitorEvidenceStatus } from "@/lib/types";
+
 export type CompetitorEvidenceRow = {
   id: string;
   text: string;
   advertiser?: string;
-  status: "advertiser_linked" | "needs_review";
+  status: Extract<CompetitorEvidenceStatus, "accepted" | "needs_review">;
   source: "manual_ad_library_note";
 };
 
@@ -42,15 +44,15 @@ export function reviewCompetitorEvidence(notes: string, competitors: string[]): 
         id: `manual-evidence-${index + 1}`,
         text,
         advertiser: match?.name,
-        status: match ? "advertiser_linked" : "needs_review",
+        status: match ? "accepted" : "needs_review",
         source: "manual_ad_library_note" as const,
       };
     });
 }
 
-export function advertiserLinkedEvidenceText(notes: string, competitors: string[]) {
+export function acceptedManualEvidenceText(notes: string, competitors: string[]) {
   return reviewCompetitorEvidence(notes, competitors)
-    .filter((row) => row.status === "advertiser_linked")
+    .filter((row) => row.status === "accepted")
     .map((row) => row.text)
     .join("\n");
 }
