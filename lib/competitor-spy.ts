@@ -83,7 +83,7 @@ async function fetchApifyAds(args: SpyFetchArgs): Promise<CompetitorFetchResult>
 
   const rows = await runApifyActor<unknown>({
     actorId,
-    input: buildApifyInput(args),
+    input: buildApifyInput(args, actorId),
     timeoutSeconds: 240,
   });
   const fetchedAt = new Date().toISOString();
@@ -256,7 +256,7 @@ export function parsePublicMetaLibraryHtml(
   return uniqueAds(ads).slice(0, args.limit);
 }
 
-function buildApifyInput(args: SpyFetchArgs) {
+function buildApifyInput(args: SpyFetchArgs, actorId: string) {
   const template = process.env.APIFY_META_ADS_INPUT_TEMPLATE;
   if (template) {
     return replaceTemplate(JSON.parse(template), {
@@ -266,6 +266,20 @@ function buildApifyInput(args: SpyFetchArgs) {
       libraryUrls: args.libraryUrls,
     });
   }
+
+  const actorKey = actorId.replace("~", "/").toLocaleLowerCase();
+  if (actorKey === "data_xplorer/facebook-ads-library" || actorKey === "mfgxmdyarjhtscl8h") {
+    const urls = (args.libraryUrls.length
+      ? args.libraryUrls
+      : args.competitors.map((competitor) => metaLibrarySearchUrl(competitor, args.country)))
+      .map((url) => ({ url }));
+    return {
+      urls,
+      maxAds: args.limit,
+      fetchDetails: false,
+    };
+  }
+
   return {
     searchQueries: args.competitors,
     country: normalizeCountry(args.country),
@@ -273,6 +287,16 @@ function buildApifyInput(args: SpyFetchArgs) {
     activeStatus: "active",
     startUrls: args.libraryUrls.map((url) => ({ url })),
   };
+}
+
+function metaLibrarySearchUrl(competitor: string, country: string) {
+  const url = new URL("https://www.facebook.com/ads/library/");
+  url.searchParams.set("active_status", "active");
+  url.searchParams.set("ad_type", "all");
+  url.searchParams.set("country", normalizeCountry(country));
+  url.searchParams.set("q", competitor);
+  url.searchParams.set("search_type", "keyword_unordered");
+  return url.toString();
 }
 
 function replaceTemplate(value: unknown, vars: { competitors: string[]; country: string; limit: number; libraryUrls: string[] }): unknown {

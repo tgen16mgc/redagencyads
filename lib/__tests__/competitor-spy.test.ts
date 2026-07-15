@@ -102,6 +102,30 @@ describe("fetchCompetitorAds", () => {
     ]);
   });
 
+  it("builds the required urls input for the data_xplorer Facebook Ads actor", async () => {
+    vi.stubEnv("APIFY_TOKEN", "configured-for-test");
+    vi.stubEnv("APIFY_META_ADS_ACTOR_ID", "data_xplorer/facebook-ads-library");
+    runApifyActor.mockResolvedValue([]);
+
+    await fetchCompetitorAds({
+      source: "apify",
+      competitors: ["Seoul Spa"],
+      country: "VN",
+      limit: 7,
+      libraryUrls: [],
+    });
+
+    expect(runApifyActor).toHaveBeenCalledWith({
+      actorId: "data_xplorer/facebook-ads-library",
+      input: {
+        urls: [{ url: expect.stringContaining("facebook.com/ads/library") }],
+        maxAds: 7,
+        fetchDetails: false,
+      },
+      timeoutSeconds: 240,
+    });
+  });
+
   it("extracts ad cards from public Meta Ad Library HTML", () => {
     const html = String.raw`
       <script>
