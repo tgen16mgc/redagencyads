@@ -69,4 +69,11 @@ describe("competitor evidence workbench trust controls", () => {
     expect(source).toContain("ref={manualEvidenceRef}");
     expect(source).toContain("textarea.setSelectionRange(start, start + firstPendingManualText.length)");
   });
+
+  it("shows the complete market summary without truncating the decision brief", () => {
+    expect(source).toContain(
+      '<p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{result.summary}</p>',
+    );
+    expect(source).not.toContain("compactText(result.summary");
+  });
 });

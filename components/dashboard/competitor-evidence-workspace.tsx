@@ -974,7 +974,7 @@ export function CompetitorEvidenceWorkspace({
                     <SparklesIcon className="size-4" aria-hidden="true" />
                     {isVietnamese ? "Thị trường đang nói gì" : "What the market is saying"}
                   </div>
-                  <p className="mt-2 text-sm leading-6 text-muted-foreground">{compactText(result.summary, 360)}</p>
+                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{result.summary}</p>
                 </div>
 
                 {result.themes.length > 0 ? (
