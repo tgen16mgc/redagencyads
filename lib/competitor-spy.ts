@@ -32,6 +32,7 @@ const execFileAsync = promisify(execFile);
 const PUBLIC_META_SCRAPE_TIMEOUT_MS = Number(process.env.META_PUBLIC_SCRAPE_TIMEOUT_MS || 45000);
 const PUBLIC_META_SCRAPE_WAIT_MS = Number(process.env.META_PUBLIC_SCRAPE_WAIT_MS || 12000);
 const PUBLIC_META_MAX_BUFFER = 24 * 1024 * 1024;
+const COMPETITOR_APIFY_TIMEOUT_SECONDS = 285;
 
 export async function fetchCompetitorAds(args: SpyFetchArgs): Promise<CompetitorFetchResult> {
   if (args.source === "public") return fetchPublicLibraryCards(args);
@@ -87,14 +88,14 @@ async function fetchApifyAds(args: SpyFetchArgs): Promise<CompetitorFetchResult>
     rows = await runApifyActor<unknown>({
       actorId,
       input,
-      timeoutSeconds: 240,
+      timeoutSeconds: COMPETITOR_APIFY_TIMEOUT_SECONDS,
     });
   } catch (error) {
     if (!requiresUrlsInput(error) || hasUsableUrlsInput(input)) throw error;
     rows = await runApifyActor<unknown>({
       actorId,
       input: buildApifyUrlsInput(args),
-      timeoutSeconds: 240,
+      timeoutSeconds: COMPETITOR_APIFY_TIMEOUT_SECONDS,
     });
   }
   const fetchedAt = new Date().toISOString();
@@ -297,9 +298,10 @@ function buildApifyUrlsInput(args: SpyFetchArgs) {
     ? args.libraryUrls
     : args.competitors.map((competitor) => metaLibrarySearchUrl(competitor, args.country)))
     .map((url) => ({ url }));
+  const maxAdsPerUrl = Math.max(1, Math.ceil(args.limit / Math.max(1, urls.length)));
   return {
     urls,
-    maxAds: args.limit,
+    maxAds: maxAdsPerUrl,
     fetchDetails: false,
   };
 }

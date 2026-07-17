@@ -66,7 +66,7 @@ describe("fetchCompetitorAds", () => {
 
     expect(runApifyActor).toHaveBeenCalledWith(expect.objectContaining({
       actorId: "vendor/meta-ads",
-      timeoutSeconds: 240,
+      timeoutSeconds: 285,
     }));
     expect(result.source).toBe("apify");
     expect(result.ads.map((ad) => ad.evidence)).toEqual([
@@ -122,8 +122,34 @@ describe("fetchCompetitorAds", () => {
         maxAds: 7,
         fetchDetails: false,
       },
-      timeoutSeconds: 240,
+      timeoutSeconds: 285,
     });
+  });
+
+  it("keeps the requested ad limit total across multiple competitor URLs", async () => {
+    vi.stubEnv("APIFY_TOKEN", "configured-for-test");
+    vi.stubEnv("APIFY_META_ADS_ACTOR_ID", "data_xplorer/facebook-ads-library");
+    runApifyActor.mockResolvedValue([]);
+
+    await fetchCompetitorAds({
+      source: "apify",
+      competitors: ["Seoul Spa", "Hasaki", "Guardian", "Watsons"],
+      country: "VN",
+      limit: 40,
+      libraryUrls: [],
+    });
+
+    expect(runApifyActor).toHaveBeenCalledWith(expect.objectContaining({
+      input: expect.objectContaining({
+        urls: expect.arrayContaining([
+          { url: expect.stringContaining("q=Seoul+Spa") },
+          { url: expect.stringContaining("q=Hasaki") },
+          { url: expect.stringContaining("q=Guardian") },
+          { url: expect.stringContaining("q=Watsons") },
+        ]),
+        maxAds: 10,
+      }),
+    }));
   });
 
   it("recovers from a stale actor template when input.urls is required", async () => {
@@ -152,7 +178,7 @@ describe("fetchCompetitorAds", () => {
         maxAds: 7,
         fetchDetails: false,
       },
-      timeoutSeconds: 240,
+      timeoutSeconds: 285,
     });
   });
 
