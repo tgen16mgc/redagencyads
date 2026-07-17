@@ -81,11 +81,22 @@ async function fetchApifyAds(args: SpyFetchArgs): Promise<CompetitorFetchResult>
     throw new Error("Competitor evidence collection requires APIFY_TOKEN and APIFY_META_ADS_ACTOR_ID.");
   }
 
-  const rows = await runApifyActor<unknown>({
-    actorId,
-    input: buildApifyInput(args, actorId),
-    timeoutSeconds: 240,
-  });
+  const input = buildApifyInput(args, actorId);
+  let rows: unknown[];
+  try {
+    rows = await runApifyActor<unknown>({
+      actorId,
+      input,
+      timeoutSeconds: 240,
+    });
+  } catch (error) {
+    if (!requiresUrlsInput(error) || hasUsableUrlsInput(input)) throw error;
+    rows = await runApifyActor<unknown>({
+      actorId,
+      input: buildApifyUrlsInput(args),
+      timeoutSeconds: 240,
+    });
+  }
   const fetchedAt = new Date().toISOString();
   const ads = uniqueAds(rows.map((row, index) => normalizeApifyAd(row, index)))
     .slice(0, args.limit)
@@ -267,17 +278,9 @@ function buildApifyInput(args: SpyFetchArgs, actorId: string) {
     });
   }
 
-  const actorKey = actorId.replace("~", "/").toLocaleLowerCase();
+  const actorKey = actorId.trim().replaceAll("~", "/").toLocaleLowerCase();
   if (actorKey === "data_xplorer/facebook-ads-library" || actorKey === "mfgxmdyarjhtscl8h") {
-    const urls = (args.libraryUrls.length
-      ? args.libraryUrls
-      : args.competitors.map((competitor) => metaLibrarySearchUrl(competitor, args.country)))
-      .map((url) => ({ url }));
-    return {
-      urls,
-      maxAds: args.limit,
-      fetchDetails: false,
-    };
+    return buildApifyUrlsInput(args);
   }
 
   return {
@@ -287,6 +290,36 @@ function buildApifyInput(args: SpyFetchArgs, actorId: string) {
     activeStatus: "active",
     startUrls: args.libraryUrls.map((url) => ({ url })),
   };
+}
+
+function buildApifyUrlsInput(args: SpyFetchArgs) {
+  const urls = (args.libraryUrls.length
+    ? args.libraryUrls
+    : args.competitors.map((competitor) => metaLibrarySearchUrl(competitor, args.country)))
+    .map((url) => ({ url }));
+  return {
+    urls,
+    maxAds: args.limit,
+    fetchDetails: false,
+  };
+}
+
+function requiresUrlsInput(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /input\.urls.*required|required.*input\.urls/i.test(message);
+}
+
+function hasUsableUrlsInput(input: unknown) {
+  if (!input || typeof input !== "object") return false;
+  const urls = (input as Record<string, unknown>).urls;
+  return Array.isArray(urls)
+    && urls.length > 0
+    && urls.every((item) => Boolean(
+      item
+      && typeof item === "object"
+      && typeof (item as Record<string, unknown>).url === "string"
+      && (item as Record<string, string>).url.trim(),
+    ));
 }
 
 function metaLibrarySearchUrl(competitor: string, country: string) {

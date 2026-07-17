@@ -126,6 +126,36 @@ describe("fetchCompetitorAds", () => {
     });
   });
 
+  it("recovers from a stale actor template when input.urls is required", async () => {
+    vi.stubEnv("APIFY_TOKEN", "configured-for-test");
+    vi.stubEnv("APIFY_META_ADS_ACTOR_ID", "data_xplorer/facebook-ads-library");
+    vi.stubEnv("APIFY_META_ADS_INPUT_TEMPLATE", JSON.stringify({
+      searchQueries: "{{competitors}}",
+      maxItems: "{{limit}}",
+    }));
+    runApifyActor
+      .mockRejectedValueOnce(new Error("Input is not valid: Field input.urls is required"))
+      .mockResolvedValueOnce([]);
+
+    await fetchCompetitorAds({
+      source: "apify",
+      competitors: ["Seoul Spa"],
+      country: "VN",
+      limit: 7,
+      libraryUrls: [],
+    });
+
+    expect(runApifyActor).toHaveBeenNthCalledWith(2, {
+      actorId: "data_xplorer/facebook-ads-library",
+      input: {
+        urls: [{ url: expect.stringContaining("facebook.com/ads/library") }],
+        maxAds: 7,
+        fetchDetails: false,
+      },
+      timeoutSeconds: 240,
+    });
+  });
+
   it("extracts ad cards from public Meta Ad Library HTML", () => {
     const html = String.raw`
       <script>
