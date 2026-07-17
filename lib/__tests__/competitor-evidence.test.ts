@@ -4,23 +4,40 @@ import { acceptedManualEvidenceText, competitorEvidenceReadiness, reviewCompetit
 describe("reviewCompetitorEvidence", () => {
   it("links manual evidence lines to a named advertiser", () => {
     const rows = reviewCompetitorEvidence(
-      "Northstar - UGC video, Send Message CTA\nUnclear proof-led offer",
+      "Northstar - UGC video, Send Message CTA - https://www.facebook.com/ads/library/?id=101\nUnclear proof-led offer",
       ["Northstar", "Beacon"],
     );
 
     expect(rows).toEqual([
-      expect.objectContaining({ advertiser: "Northstar", status: "accepted" }),
+      expect.objectContaining({
+        advertiser: "Northstar",
+        sourceUrl: "https://www.facebook.com/ads/library/?id=101",
+        status: "accepted",
+      }),
       expect.objectContaining({ advertiser: undefined, status: "needs_review" }),
     ]);
   });
 
-  it("only sends advertiser-linked lines into analysis", () => {
+  it("only sends advertiser-and-source-linked lines into analysis", () => {
     expect(
       acceptedManualEvidenceText(
-        "Northstar - UGC video\nUnknown advertiser - discount",
+        "Northstar - UGC video - https://www.facebook.com/ads/library/?id=101\nUnknown advertiser - discount - https://www.facebook.com/ads/library/?id=202",
         ["Northstar"],
       ),
-    ).toBe("Northstar - UGC video");
+    ).toBe("Northstar - UGC video - https://www.facebook.com/ads/library/?id=101");
+  });
+
+  it("does not verify advertiser-linked notes without Meta Ad Library provenance", () => {
+    const rows = reviewCompetitorEvidence(
+      "Northstar - UGC video\nNorthstar - discount - https://example.com/ad/1\nNorthstar - fake path - https://www.facebook.com/ads/library-fake?id=3",
+      ["Northstar"],
+    );
+
+    expect(rows).toEqual([
+      expect.objectContaining({ advertiser: "Northstar", sourceUrl: undefined, status: "needs_review" }),
+      expect.objectContaining({ advertiser: "Northstar", sourceUrl: undefined, status: "needs_review" }),
+      expect.objectContaining({ advertiser: "Northstar", sourceUrl: undefined, status: "needs_review" }),
+    ]);
   });
 
   it("does not link a competitor name found only as a substring", () => {
@@ -34,7 +51,7 @@ describe("reviewCompetitorEvidence", () => {
 
   it("requires the advertiser to be an explicit line prefix", () => {
     const rows = reviewCompetitorEvidence(
-      "Observed Northstar - UGC video\nNorthstar: proof-led offer\n[Beacon] carousel",
+      "Observed Northstar - UGC video - https://www.facebook.com/ads/library/?id=1\nNorthstar: proof-led offer - https://www.facebook.com/ads/library/?id=2\n[Beacon] carousel - https://www.facebook.com/ads/library/?id=3",
       ["Northstar", "Beacon"],
     );
 

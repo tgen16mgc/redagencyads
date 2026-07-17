@@ -4,6 +4,7 @@ export type CompetitorEvidenceRow = {
   id: string;
   text: string;
   advertiser?: string;
+  sourceUrl?: string;
   status: Extract<CompetitorEvidenceStatus, "accepted" | "needs_review">;
   source: "manual_ad_library_note";
 };
@@ -34,6 +35,22 @@ function startsWithAdvertiserPrefix(text: string, advertiser: string) {
   return /^\s*[-–—:|]\s*\S/u.test(remainder);
 }
 
+function metaLibrarySourceUrl(text: string) {
+  const candidates = text.match(/https:\/\/[^\s)\]}>,]+/giu) || [];
+  for (const candidate of candidates) {
+    try {
+      const url = new URL(candidate.replace(/[.!?;:]+$/u, ""));
+      const host = url.hostname.toLocaleLowerCase();
+      const isFacebookHost = host === "facebook.com" || host.endsWith(".facebook.com");
+      const isLibraryPath = url.pathname === "/ads/library" || url.pathname === "/ads/library/";
+      if (isFacebookHost && isLibraryPath) return url.toString();
+    } catch {
+      continue;
+    }
+  }
+  return undefined;
+}
+
 export function reviewCompetitorEvidence(notes: string, competitors: string[]): CompetitorEvidenceRow[] {
   const names = competitors
     .map((name) => ({ name: name.trim(), normalized: normalized(name) }))
@@ -46,11 +63,13 @@ export function reviewCompetitorEvidence(notes: string, competitors: string[]): 
     .map((text, index) => {
       const normalizedText = normalized(text);
       const match = names.find((item) => startsWithAdvertiserPrefix(normalizedText, item.normalized));
+      const sourceUrl = metaLibrarySourceUrl(text);
       return {
         id: `manual-evidence-${index + 1}`,
         text,
         advertiser: match?.name,
-        status: match ? "accepted" : "needs_review",
+        sourceUrl,
+        status: match && sourceUrl ? "accepted" : "needs_review",
         source: "manual_ad_library_note" as const,
       };
     });

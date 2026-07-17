@@ -78,7 +78,7 @@ const STATUS_VARIANTS = {
 
 const POSITION_CLASSES = {
   fixed:
-    "pointer-events-none fixed inset-x-0 bottom-[max(1rem,env(safe-area-inset-bottom))] z-40 px-3",
+    "pointer-events-none fixed inset-x-0 bottom-[max(0.5rem,env(safe-area-inset-bottom))] z-40 px-3",
   sticky:
     "pointer-events-none sticky bottom-[max(1rem,env(safe-area-inset-bottom))] z-30 px-3",
   inline: "pointer-events-none px-3",
@@ -262,7 +262,10 @@ export function StickyActionDock({
                               tabIndex={isExpanded ? undefined : -1}
                               aria-label={action.label}
                               title={description}
-                              onClick={() => void action.onSelect()}
+                              onClick={() => {
+                                setExpanded(false)
+                                void action.onSelect()
+                              }}
                               className="action-dock-secondary-action"
                               style={{ "--action-index": index } as CSSProperties}
                             >

@@ -78,6 +78,7 @@ The sticky pill is the persistent control surface for the current workflow. It s
 - Keep it reachable above mobile safe areas and prevent it from covering tables, dialogs, or report content.
 
 The glow token is `shadow-action-glow`. It is an action affordance, never a container treatment or ambient background.
+Reserve `--action-dock-clearance: 6rem` at the end of dock-enabled workspaces so the persistent rail never blocks the final record or report action.
 
 ## Component Rules
 

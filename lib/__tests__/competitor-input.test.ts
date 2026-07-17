@@ -27,6 +27,17 @@ describe("competitor input normalization", () => {
     ).toEqual(["https://www.facebook.com/ads/library/?id=1", "https://www.facebook.com/ads/library/?id=2"]);
   });
 
+  it("rejects insecure, off-domain, and lookalike Ad Library URLs", () => {
+    expect(normalizeCompetitorUrls([
+      "http://www.facebook.com/ads/library/?id=1",
+      "https://example.com/ads/library/?id=2",
+      "https://facebook.com.evil.test/ads/library/?id=3",
+      "https://www.facebook.com/ads/library-fake?id=4",
+      "https://www.facebook.com/ads/library/report/?id=5",
+      "https://m.facebook.com/ads/library/?id=6",
+    ])).toEqual(["https://m.facebook.com/ads/library/?id=6"]);
+  });
+
   it("clamps max ads to a stable crawler range", () => {
     expect(normalizeCompetitorLimit(0)).toBe(1);
     expect(normalizeCompetitorLimit(999)).toBe(80);

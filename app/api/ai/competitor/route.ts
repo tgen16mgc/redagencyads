@@ -6,7 +6,7 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 
 const bodySchema = z.object({
-  prompt: z.string().min(100),
+  prompt: z.string().min(100).max(120000),
   provider: z.enum(["auto", "9router", "prompt"]).default("auto"),
 });
 

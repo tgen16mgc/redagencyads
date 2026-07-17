@@ -24,7 +24,10 @@ export function normalizeCompetitorUrls(value: string | string[], maxItems = 8) 
   const validUrls = splitInput(value).filter((item) => {
     try {
       const url = new URL(item);
-      return url.protocol === "https:" || url.protocol === "http:";
+      const host = url.hostname.toLocaleLowerCase();
+      const isFacebookHost = host === "facebook.com" || host.endsWith(".facebook.com");
+      const isLibraryPath = url.pathname === "/ads/library" || url.pathname === "/ads/library/";
+      return url.protocol === "https:" && isFacebookHost && isLibraryPath;
     } catch {
       return false;
     }

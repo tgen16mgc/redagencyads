@@ -283,10 +283,20 @@ export type CompetitorPlatform = "meta" | "google" | "linkedin" | "tiktok" | "mi
 export type CompetitorFetchSource = "public" | "meta_official" | "apify";
 export type CompetitorEvidenceStatus = "accepted" | "needs_review" | "rejected";
 export type CompetitorEvidenceMatch = "exact" | "ambiguous" | "mismatch";
+export type CompetitorEvidenceReason =
+  | "exact_advertiser_trusted_source"
+  | "exact_advertiser_missing_source"
+  | "similar_advertiser"
+  | "advertiser_mismatch"
+  | "advertiser_unknown";
+export type CompetitorCollectionOutcome = "matched" | "zero_match" | "empty";
 
 export type CompetitorEvidenceProvenance = {
   status: CompetitorEvidenceStatus;
   match: CompetitorEvidenceMatch;
+  reason: CompetitorEvidenceReason;
+  matchedToCompetitor: boolean;
+  hasUsableCreative: boolean;
   requestedCompetitor: string;
   advertiser?: string;
   sourceUrl?: string;
@@ -296,6 +306,8 @@ export type CompetitorEvidenceProvenance = {
 export type CompetitorEvidenceCoverage = {
   competitor: string;
   collected: number;
+  matched: number;
+  mediaReady: number;
   accepted: number;
   needsReview: number;
   rejected: number;
@@ -312,6 +324,7 @@ export type CompetitorSpyAd = {
   description?: string;
   cta?: string;
   format?: string;
+  isActive?: boolean;
   startDate?: string;
   endDate?: string;
   snapshotUrl?: string;
@@ -324,6 +337,7 @@ export type CompetitorSpyAd = {
 
 export type CompetitorFetchResult = {
   source: CompetitorFetchSource;
+  outcome: CompetitorCollectionOutcome;
   ads: CompetitorSpyAd[];
   coverage: CompetitorEvidenceCoverage[];
   warnings: string[];
@@ -341,6 +355,7 @@ export type CompetitorSpyResult = {
   themes: {
     theme: string;
     evidence: string;
+    evidence_ids: string[];
     opportunity: string;
     confidence: "low" | "medium" | "high";
   }[];

@@ -32,7 +32,7 @@ const execFileAsync = promisify(execFile);
 const PUBLIC_META_SCRAPE_TIMEOUT_MS = Number(process.env.META_PUBLIC_SCRAPE_TIMEOUT_MS || 45000);
 const PUBLIC_META_SCRAPE_WAIT_MS = Number(process.env.META_PUBLIC_SCRAPE_WAIT_MS || 12000);
 const PUBLIC_META_MAX_BUFFER = 24 * 1024 * 1024;
-const COMPETITOR_APIFY_TIMEOUT_SECONDS = 285;
+const COMPETITOR_APIFY_TIMEOUT_SECONDS = 135;
 
 export async function fetchCompetitorAds(args: SpyFetchArgs): Promise<CompetitorFetchResult> {
   if (args.source === "public") return fetchPublicLibraryCards(args);
@@ -69,6 +69,7 @@ async function fetchMetaOfficialAds(args: SpyFetchArgs): Promise<CompetitorFetch
 
   return {
     source: "meta_official",
+    outcome: ads.length ? "matched" : "empty",
     ads: uniqueAds(ads).slice(0, args.limit),
     coverage: [],
     warnings,
@@ -82,37 +83,112 @@ async function fetchApifyAds(args: SpyFetchArgs): Promise<CompetitorFetchResult>
     throw new Error("Competitor evidence collection requires APIFY_TOKEN and APIFY_META_ADS_ACTOR_ID.");
   }
 
+  const targets = buildApifyTargets(args);
+  const targetResults = await Promise.all(targets.map(async (target) => {
+    try {
+      const rows = await runApifyTarget(target.args, actorId);
+      return { ...target, rows, error: undefined as unknown };
+    } catch (error) {
+      return { ...target, rows: [] as unknown[], error };
+    }
+  }));
+  const failedTargets = targetResults.filter((result) => result.error);
+  if (failedTargets.length === targetResults.length && failedTargets[0]?.error) {
+    throw failedTargets[0].error;
+  }
+  const fetchedAt = new Date().toISOString();
+  const normalizedAds = targetResults.flatMap((target, targetIndex) => target.rows.map((row, rowIndex) => {
+    const ad = normalizeApifyAd(row, targetIndex * Math.max(1, target.args.limit) + rowIndex);
+    const advertiserCompetitor = findAdvertiserCompetitor(ad.pageName, args.competitors);
+    const competitorName = advertiserCompetitor || target.competitor || ad.competitorName;
+    return competitorName ? { ...ad, competitorName } : ad;
+  }));
+  const ads = uniqueAds(normalizedAds)
+    .slice(0, args.limit)
+    .map((ad) => ({
+      ...ad,
+      evidence: classifyEvidence(ad, args.competitors, fetchedAt),
+    }));
+  const matchedCount = ads.filter((ad) => ad.evidence?.matchedToCompetitor).length;
+  const outcome = ads.length === 0 ? "empty" : matchedCount > 0 ? "matched" : "zero_match";
+  const warnings = failedTargets.map((target) => {
+    const message = target.error instanceof Error ? target.error.message : "Actor run failed.";
+    return `${target.competitor || "Ad Library URL"}: ${message}`;
+  });
+  if (outcome === "empty") {
+    warnings.push("Apify returned no ads. Check the actor input or use an exact Meta Ad Library page URL.");
+  } else if (outcome === "zero_match") {
+    warnings.push("Ads were collected, but none matched the requested advertiser. Add the exact advertiser Ad Library page URL for a precise retry.");
+  }
+
+  return {
+    source: "apify",
+    outcome,
+    ads,
+    coverage: buildEvidenceCoverage(args.competitors, ads),
+    warnings,
+    fetchedAt,
+  };
+}
+
+async function runApifyTarget(args: SpyFetchArgs, actorId: string) {
   const input = buildApifyInput(args, actorId);
-  let rows: unknown[];
   try {
-    rows = await runApifyActor<unknown>({
+    return await runApifyActor<unknown>({
       actorId,
       input,
       timeoutSeconds: COMPETITOR_APIFY_TIMEOUT_SECONDS,
     });
   } catch (error) {
     if (!requiresUrlsInput(error) || hasUsableUrlsInput(input)) throw error;
-    rows = await runApifyActor<unknown>({
+    return runApifyActor<unknown>({
       actorId,
       input: buildApifyUrlsInput(args),
       timeoutSeconds: COMPETITOR_APIFY_TIMEOUT_SECONDS,
     });
   }
-  const fetchedAt = new Date().toISOString();
-  const ads = uniqueAds(rows.map((row, index) => normalizeApifyAd(row, index)))
-    .slice(0, args.limit)
-    .map((ad) => ({
-      ...ad,
-      evidence: classifyEvidence(ad, args.competitors, fetchedAt),
-    }));
+}
 
-  return {
-    source: "apify",
-    ads,
-    coverage: buildEvidenceCoverage(args.competitors, ads),
-    warnings: rows.length ? [] : ["Apify returned no ads. Check actor input mapping or competitor/page URL."],
-    fetchedAt,
-  };
+function buildApifyTargets(args: SpyFetchArgs) {
+  const rawTargets = args.libraryUrls.length
+    ? [
+      ...args.libraryUrls.map((libraryUrl, index) => {
+      const competitor = args.competitors[index]
+        || (args.competitors.length === 1 ? args.competitors[0] : undefined)
+        || pageLabelFromLibraryUrl(libraryUrl);
+      return {
+        competitor,
+        libraryUrls: [libraryUrl],
+      };
+      }),
+      ...args.competitors.slice(args.libraryUrls.length).map((competitor) => ({
+        competitor,
+        libraryUrls: [] as string[],
+      })),
+    ]
+    : args.competitors.map((competitor) => ({ competitor, libraryUrls: [] as string[] }));
+  const limit = Math.max(1, Math.ceil(args.limit / Math.max(1, rawTargets.length)));
+
+  return rawTargets.map((target) => ({
+    competitor: target.competitor,
+    args: {
+      ...args,
+      competitors: target.competitor ? [target.competitor] : [],
+      libraryUrls: target.libraryUrls,
+      limit,
+    },
+  }));
+}
+
+function findAdvertiserCompetitor(advertiser: string | undefined, competitors: string[]) {
+  const advertiserKey = normalizedName(advertiser);
+  if (!advertiserKey) return undefined;
+  const matches = competitors.filter((competitor) => {
+    const competitorKey = normalizedName(competitor);
+    return advertiserKey === competitorKey
+      || (advertiserKey.includes(competitorKey) || competitorKey.includes(advertiserKey));
+  });
+  return matches.length === 1 ? matches[0] : undefined;
 }
 
 async function fetchPublicLibraryCards(args: SpyFetchArgs, warning = "No-key public mode used Meta Ad Library public pages. If extraction is thin, open the links to inspect live ads."): Promise<CompetitorFetchResult> {
@@ -159,6 +235,7 @@ async function fetchPublicLibraryCards(args: SpyFetchArgs, warning = "No-key pub
   const ads = extractedAds.length ? uniqueAds([...extractedAds, ...linkAds]).slice(0, args.limit) : linkAds;
   return {
     source: "public",
+    outcome: ads.length ? "matched" : "empty",
     ads,
     coverage: [],
     warnings: extractedAds.length
@@ -366,30 +443,45 @@ function normalizeMetaAd(row: Record<string, unknown>, competitorName: string): 
     endDate: readString(row.ad_delivery_stop_time),
     snapshotUrl: readString(row.ad_snapshot_url),
     landingUrl: readStringArray(row.ad_creative_link_captions)[0],
-    raw: row,
   };
 }
 
 function normalizeApifyAd(row: unknown, index: number): CompetitorSpyAd {
   const item = (row && typeof row === "object" ? row : {}) as Record<string, unknown>;
+  const publicationDate = item.publicationDate && typeof item.publicationDate === "object"
+    ? item.publicationDate as Record<string, unknown>
+    : {};
+  const archiveId = pick(item, ["adArchiveId", "adArchiveID", "archiveId", "libraryId"]);
+  const id = archiveId || pick(item, ["id", "adId", "ad_id"])
+    || `apify-${index}`;
+  const snapshotUrl = metaLibraryEvidenceUrl(
+    pick(item, ["snapshotUrl", "adSnapshotUrl", "ad_snapshot_url", "adLibraryUrl", "adUrl"]),
+  ) || (archiveId ? `https://www.facebook.com/ads/library/?id=${encodeURIComponent(archiveId)}` : undefined);
   return {
-    id: pick(item, ["id", "adId", "ad_id", "archiveId", "libraryId"]) || `apify-${index}`,
+    id,
     source: "apify",
     competitorName: pick(item, ["competitorName", "query", "searchQuery"]),
     pageName: pick(item, ["pageName", "page_name", "advertiserName", "advertiser", "brandName"]),
-    platform: pick(item, ["platform", "publisherPlatform", "publisher_platforms"]),
-    body: pick(item, ["body", "text", "copy", "adText", "adCreativeBody", "ad_creative_body", "adCreativeBodies"]),
+    platform: pickList(item, ["platforms", "publisherPlatforms", "publisher_platforms"])
+      || pick(item, ["platform", "publisherPlatform"]),
+    body: pick(item, ["body", "bodyText", "text", "copy", "adText", "adCreativeBody", "ad_creative_body", "adCreativeBodies"]),
     headline: pick(item, ["headline", "title", "adTitle", "adCreativeLinkTitle", "ad_creative_link_title"]),
     description: pick(item, ["description", "adDescription", "adCreativeLinkDescription"]),
-    cta: pick(item, ["cta", "callToAction", "call_to_action", "buttonText"]),
+    cta: pick(item, ["cta", "ctaText", "callToAction", "call_to_action", "buttonText"]),
     format: pick(item, ["format", "type", "mediaType", "adFormat"]),
-    startDate: pick(item, ["startDate", "adDeliveryStartTime", "ad_delivery_start_time", "startedAt"]),
-    endDate: pick(item, ["endDate", "adDeliveryStopTime", "ad_delivery_stop_time", "endedAt"]),
-    snapshotUrl: pick(item, ["snapshotUrl", "adSnapshotUrl", "ad_snapshot_url", "url", "adUrl"]),
-    imageUrl: pick(item, ["imageUrl", "image", "adCreativeImageUrl", "ad_creative_image_url"]),
-    videoUrl: pick(item, ["videoUrl", "video", "adCreativeVideoUrl", "ad_creative_video_url"]),
+    isActive: pickBoolean(item, ["isActive", "is_active", "active"]),
+    startDate: pick(item, ["startDate", "adDeliveryStartTime", "ad_delivery_start_time", "startedAt"])
+      || pick(publicationDate, ["startDate"]),
+    endDate: pick(item, ["endDate", "adDeliveryStopTime", "ad_delivery_stop_time", "endedAt"])
+      || pick(publicationDate, ["endDate"]),
+    snapshotUrl,
+    imageUrl: pickMediaUrl(item, ["imageUrl", "image", "adCreativeImageUrl", "ad_creative_image_url", "all_images"], [
+      "url", "imageUrl", "resized_image_url", "original_image_url", "thumbnailUrl", "poster",
+    ]),
+    videoUrl: pickMediaUrl(item, ["videoUrl", "video", "adCreativeVideoUrl", "ad_creative_video_url", "all_videos"], [
+      "video_hd_url", "video_sd_url", "url", "videoUrl", "src",
+    ]),
     landingUrl: pick(item, ["landingUrl", "linkUrl", "destinationUrl", "urlTarget", "ad_creative_link_caption"]),
-    raw: row,
   };
 }
 
@@ -398,12 +490,36 @@ function classifyEvidence(ad: CompetitorSpyAd, competitors: string[], collectedA
   const advertiser = ad.pageName?.trim();
   const requestedKey = normalizedName(requestedCompetitor);
   const advertiserKey = normalizedName(advertiser);
-  const sourceUrl = ad.snapshotUrl;
+  const sourceUrl = metaLibraryEvidenceUrl(ad.snapshotUrl);
+  const hasUsableCreative = Boolean(sourceUrl && (
+    ad.body?.trim()
+    || ad.headline?.trim()
+    || ad.description?.trim()
+    || ad.imageUrl
+    || ad.videoUrl
+  ));
 
-  if (requestedKey && advertiserKey === requestedKey) {
+  if (requestedKey && advertiserKey === requestedKey && sourceUrl) {
     return {
       status: "accepted" as const,
       match: "exact" as const,
+      reason: "exact_advertiser_trusted_source" as const,
+      matchedToCompetitor: true,
+      hasUsableCreative,
+      requestedCompetitor,
+      advertiser,
+      sourceUrl,
+      collectedAt,
+    };
+  }
+
+  if (requestedKey && advertiserKey === requestedKey) {
+    return {
+      status: "needs_review" as const,
+      match: "ambiguous" as const,
+      reason: "exact_advertiser_missing_source" as const,
+      matchedToCompetitor: true,
+      hasUsableCreative,
       requestedCompetitor,
       advertiser,
       sourceUrl,
@@ -417,6 +533,9 @@ function classifyEvidence(ad: CompetitorSpyAd, competitors: string[], collectedA
     return {
       status: "needs_review" as const,
       match: "ambiguous" as const,
+      reason: "similar_advertiser" as const,
+      matchedToCompetitor: true,
+      hasUsableCreative,
       requestedCompetitor,
       advertiser,
       sourceUrl,
@@ -427,6 +546,9 @@ function classifyEvidence(ad: CompetitorSpyAd, competitors: string[], collectedA
   return {
     status: "rejected" as const,
     match: "mismatch" as const,
+    reason: advertiserKey ? "advertiser_mismatch" as const : "advertiser_unknown" as const,
+    matchedToCompetitor: false,
+    hasUsableCreative,
     requestedCompetitor,
     advertiser,
     sourceUrl,
@@ -436,14 +558,38 @@ function classifyEvidence(ad: CompetitorSpyAd, competitors: string[], collectedA
 
 function findRequestedCompetitor(ad: CompetitorSpyAd, competitors: string[]) {
   const requestedKey = normalizedName(ad.competitorName);
-  return competitors.find((competitor) => normalizedName(competitor) === requestedKey)
-    || ad.competitorName?.trim()
-    || competitors[0]
-    || "Unknown competitor";
+  const explicitMatch = competitors.find((competitor) => normalizedName(competitor) === requestedKey);
+  if (explicitMatch) return explicitMatch;
+
+  const advertiserKey = normalizedName(ad.pageName);
+  const advertiserMatches = competitors.filter((competitor) => {
+    const competitorKey = normalizedName(competitor);
+    return advertiserKey === competitorKey
+      || (advertiserKey && competitorKey && (advertiserKey.includes(competitorKey) || competitorKey.includes(advertiserKey)));
+  });
+  if (advertiserMatches.length === 1) return advertiserMatches[0];
+
+  return ad.competitorName?.trim() || "Unattributed result";
 }
 
 function normalizedName(value: string | undefined) {
   return value?.trim().toLocaleLowerCase().replace(/\s+/g, " ") || "";
+}
+
+function metaLibraryEvidenceUrl(value: string | undefined) {
+  if (!value) return undefined;
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLocaleLowerCase();
+    const isFacebookHost = host === "facebook.com" || host.endsWith(".facebook.com");
+    const isLibraryPath = url.pathname === "/ads/library" || url.pathname === "/ads/library/";
+    if (url.protocol !== "https:" || !isFacebookHost || !isLibraryPath) {
+      return undefined;
+    }
+    return url.toString();
+  } catch {
+    return undefined;
+  }
 }
 
 function buildEvidenceCoverage(
@@ -457,6 +603,8 @@ function buildEvidenceCoverage(
     return {
       competitor,
       collected: rows.length,
+      matched: rows.filter((ad) => ad.evidence?.matchedToCompetitor).length,
+      mediaReady: rows.filter((ad) => ad.evidence?.hasUsableCreative).length,
       accepted: rows.filter((ad) => ad.evidence?.status === "accepted").length,
       needsReview: rows.filter((ad) => ad.evidence?.status === "needs_review").length,
       rejected: rows.filter((ad) => ad.evidence?.status === "rejected").length,
@@ -473,6 +621,50 @@ function pick(item: Record<string, unknown>, keys: string[]) {
     }
     if (typeof value === "string" && value.trim()) return value;
     if (typeof value === "number") return String(value);
+  }
+  return undefined;
+}
+
+function pickList(item: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const values = readStringArray(item[key]);
+    if (values.length) return values.join(", ");
+  }
+  return undefined;
+}
+
+function pickBoolean(item: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = item[key];
+    if (typeof value === "boolean") return value;
+    if (value === "true" || value === 1 || value === "1") return true;
+    if (value === "false" || value === 0 || value === "0") return false;
+  }
+  return undefined;
+}
+
+function pickMediaUrl(item: Record<string, unknown>, keys: string[], nestedKeys: string[]) {
+  for (const key of keys) {
+    const value = mediaUrlFromValue(item[key], nestedKeys);
+    if (value) return value;
+  }
+  return undefined;
+}
+
+function mediaUrlFromValue(value: unknown, nestedKeys: string[]): string | undefined {
+  if (typeof value === "string" && /^https:\/\//iu.test(value.trim())) return value.trim();
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const nested = mediaUrlFromValue(item, nestedKeys);
+      if (nested) return nested;
+    }
+    return undefined;
+  }
+  if (!value || typeof value !== "object") return undefined;
+  const record = value as Record<string, unknown>;
+  for (const key of nestedKeys) {
+    const nested = mediaUrlFromValue(record[key], nestedKeys);
+    if (nested) return nested;
   }
   return undefined;
 }

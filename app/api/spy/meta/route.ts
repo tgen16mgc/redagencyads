@@ -14,10 +14,10 @@ export const maxDuration = 300;
 
 const bodySchema = z.object({
   source: z.enum(["public", "meta_official", "apify"]).default("apify"),
-  competitors: z.array(z.string()).default([]),
-  country: z.string().default("VN"),
+  competitors: z.array(z.string().max(160)).max(8).default([]),
+  country: z.string().max(8).default("VN"),
   limit: z.number().default(20),
-  libraryUrls: z.array(z.string()).default([]),
+  libraryUrls: z.array(z.string().max(2000)).max(8).default([]),
 });
 
 export async function POST(request: Request) {
