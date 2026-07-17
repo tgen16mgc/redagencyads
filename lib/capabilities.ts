@@ -66,3 +66,10 @@ export function capabilityStatus(
 ): CapabilityStatus | undefined {
   return capabilities.find((capability) => capability.key === key);
 }
+
+export function isFacebookOAuthConfigured(input: {
+  appId?: string;
+  appSecret?: string;
+}): boolean {
+  return Boolean(input.appId?.trim() && input.appSecret?.trim());
+}

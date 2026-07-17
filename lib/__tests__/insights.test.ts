@@ -119,6 +119,31 @@ describe("generateInsights", () => {
     expect(healthRow?.priority).toBe("high");
   });
 
+  it("reads failing items and the canonical score from the health-summary payload", async () => {
+    vi.stubEnv("NINEROUTER_KEY", "test-key");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(invalidJsonResponse()));
+
+    const insights = await generateInsights(
+      promptWith({
+        totals: { spend: 100, ctr: 2.5, frequency: 1.2 },
+        health: {
+          score: 73,
+          grade: "C",
+          items: [{
+            title: { en: "Funnel drop", vi: "Rớt phễu" },
+            detail: { en: "Conversion fell.", vi: "Chuyển đổi giảm." },
+            severity: "danger",
+          }],
+        },
+      }),
+      "9router",
+    );
+
+    const healthRow = insights.rows.find((row) => row.area === "Account health");
+    expect(healthRow?.insight).toBe("Funnel drop");
+    expect(healthRow?.evidence).toBe("Conversion fell.");
+  });
+
   it("flags high frequency as an audience-fatigue row with high priority above 5", async () => {
     vi.stubEnv("NINEROUTER_KEY", "test-key");
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(invalidJsonResponse()));

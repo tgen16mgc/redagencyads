@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { acceptedManualEvidenceText, reviewCompetitorEvidence } from "../competitor-evidence";
+import { acceptedManualEvidenceText, competitorEvidenceReadiness, reviewCompetitorEvidence } from "../competitor-evidence";
 
 describe("reviewCompetitorEvidence", () => {
   it("links manual evidence lines to a named advertiser", () => {
@@ -43,5 +43,43 @@ describe("reviewCompetitorEvidence", () => {
       expect.objectContaining({ advertiser: "Northstar", status: "accepted" }),
       expect.objectContaining({ advertiser: "Beacon", status: "accepted" }),
     ]);
+  });
+});
+
+describe("competitorEvidenceReadiness", () => {
+  it("keeps accepted manual evidence analyzable when Apify is unavailable", () => {
+    expect(competitorEvidenceReadiness({
+      hasCompetitors: true,
+      acceptedCount: 1,
+      acceptedManualCount: 1,
+      collectedCount: 0,
+      setupRequired: true,
+      collecting: false,
+      analyzing: false,
+    })).toEqual({ canAnalyze: true, primaryIsCollect: false, dockStatus: "ready" });
+  });
+
+  it("blocks collection without Apify when there is no accepted evidence", () => {
+    expect(competitorEvidenceReadiness({
+      hasCompetitors: true,
+      acceptedCount: 0,
+      acceptedManualCount: 0,
+      collectedCount: 0,
+      setupRequired: true,
+      collecting: false,
+      analyzing: false,
+    })).toEqual({ canAnalyze: false, primaryIsCollect: true, dockStatus: "blocked" });
+  });
+
+  it("makes an in-flight analysis the active status", () => {
+    expect(competitorEvidenceReadiness({
+      hasCompetitors: true,
+      acceptedCount: 1,
+      acceptedManualCount: 1,
+      collectedCount: 0,
+      setupRequired: true,
+      collecting: false,
+      analyzing: true,
+    }).dockStatus).toBe("working");
   });
 });

@@ -1,5 +1,6 @@
 import type { DashboardReport, InterfaceLanguage, Verdict, VerdictProvider } from "@/lib/types";
 import { buildLocalVerdict } from "@/lib/verdict-rules";
+import { summarizeHealth } from "@/lib/health-score";
 import {
   confidenceValue,
   errorMessage,
@@ -122,7 +123,7 @@ function buildVerdictEnhancementPrompt(args: {
     selected_pack: args.report.selectedPack,
     date_range: args.report.dateRange,
     totals: args.report.totals,
-    health: args.report.health,
+    health: summarizeHealth(args.report),
     local_verdict: args.localVerdict,
   };
   return `You are improving wording for a Meta Ads Verdict.

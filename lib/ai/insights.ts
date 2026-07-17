@@ -37,15 +37,31 @@ function compactNumber(value: number, suffix = "") {
   return `${value.toLocaleString("vi-VN", { maximumFractionDigits: 2 })}${suffix}`;
 }
 
+function healthText(value: unknown, fallback: string) {
+  if (typeof value === "object" && value !== null) {
+    const localized = value as Record<string, unknown>;
+    return stringValue(localized.en || localized.vi, fallback);
+  }
+  return stringValue(value, fallback);
+}
+
 function localInsightFallback(prompt: string, reason: string): AiInsightTable {
   const input = promptInputJson(prompt);
   if (!input) return insightFallback(prompt, reason);
 
   const totals = typeof input.totals === "object" && input.totals !== null ? (input.totals as Record<string, unknown>) : {};
   const health = typeof input.health === "object" && input.health !== null ? (input.health as Record<string, unknown>) : {};
-  const checks = Array.isArray(health.checks) ? health.checks : [];
+  const checks = Array.isArray(health.items)
+    ? health.items
+    : Array.isArray(health.checks)
+      ? health.checks
+      : [];
   const rows: AiInsightTable["rows"] = [];
-  const failingCheck = checks.find((check) => typeof check === "object" && check !== null && (check as Record<string, unknown>).status !== "pass") as Record<string, unknown> | undefined;
+  const failingCheck = checks.find((check) => {
+    if (typeof check !== "object" || check === null) return false;
+    const item = check as Record<string, unknown>;
+    return item.severity ? item.severity !== "healthy" : item.status !== "pass";
+  }) as Record<string, unknown> | undefined;
   const topCampaign = Array.isArray(input.top_campaigns) ? input.top_campaigns[0] as Record<string, unknown> | undefined : undefined;
   const comparison = typeof input.comparison === "object" && input.comparison !== null ? (input.comparison as Record<string, unknown>) : null;
   const deltas = comparison && Array.isArray(comparison.deltas) ? comparison.deltas as Record<string, unknown>[] : [];
@@ -62,8 +78,8 @@ function localInsightFallback(prompt: string, reason: string): AiInsightTable {
   if (failingCheck) {
     rows.push({
       area: "Account health",
-      insight: stringValue(failingCheck.label, "Health check needs attention"),
-      evidence: stringValue(failingCheck.detail, `Health score ${compactNumber(numberValue(health.score))}/100.`),
+      insight: healthText(failingCheck.title || failingCheck.label, "Health check needs attention"),
+      evidence: healthText(failingCheck.detail, `Health score ${compactNumber(numberValue(health.score))}/100.`),
       action: "Fix this check before scaling budget or broadening campaign scope.",
       priority: "high",
       confidence: "high",

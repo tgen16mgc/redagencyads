@@ -239,7 +239,7 @@ export async function buildReport(params: {
   const activeAdSetIds = new Set(activeAdSets.map((adset) => adset.id));
   const activeAds = activeAdsData.filter((ad) => activeAdSetIds.has(ad.adset_id));
   const previewHtmls = await getAdPreviews(params.token, activeAds.map((ad) => ad.id));
-  const adsetPreviews = buildAdSetPreviewsWithCreatives(activeAdSets, activeAds, previewHtmls);
+  const adsetPreviews = buildAdSetPreviewsWithCreatives(activeAdSets, activeAds, previewHtmls, selectedCampaigns);
 
   const campaignRows = normalizeRows(campaignInsights, "campaign");
   const adsetRows = normalizeRows(adsetInsights, "adset");

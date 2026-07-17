@@ -15,6 +15,8 @@ describe("GET /api/capabilities", () => {
     vi.clearAllMocks();
     delete process.env.APIFY_TOKEN;
     delete process.env.APIFY_META_ADS_ACTOR_ID;
+    delete process.env.META_APP_ID;
+    delete process.env.META_APP_SECRET;
   });
 
   it("returns capability states without exposing credentials", async () => {
@@ -32,11 +34,14 @@ describe("GET /api/capabilities", () => {
       { key: "ai_enhancement", state: "degraded" },
     ]));
     expect(JSON.stringify(json)).not.toContain("token");
+    expect(json.facebookOAuthConfigured).toBe(false);
   });
 
   it("marks configured server capabilities available", async () => {
     process.env.APIFY_TOKEN = "configured-for-test";
     process.env.APIFY_META_ADS_ACTOR_ID = "vendor/meta-ads";
+    process.env.META_APP_ID = "meta-app-id";
+    process.env.META_APP_SECRET = "meta-app-secret";
     hasTokenSession.mockResolvedValue(true);
     hasNineRouterCredentials.mockReturnValue(true);
 
@@ -50,5 +55,19 @@ describe("GET /api/capabilities", () => {
       { key: "page_publishing", state: "available" },
       { key: "ai_enhancement", state: "available" },
     ]));
+    expect(json.facebookOAuthConfigured).toBe(true);
+    expect(JSON.stringify(json)).not.toContain("meta-app-id");
+    expect(JSON.stringify(json)).not.toContain("meta-app-secret");
+  });
+
+  it("does not report Facebook OAuth configured with only one credential", async () => {
+    process.env.META_APP_ID = "meta-app-id";
+    hasTokenSession.mockResolvedValue(false);
+    hasNineRouterCredentials.mockReturnValue(false);
+
+    const response = await GET();
+    const json = await response.json();
+
+    expect(json.facebookOAuthConfigured).toBe(false);
   });
 });

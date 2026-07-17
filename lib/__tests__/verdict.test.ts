@@ -327,6 +327,9 @@ describe("generateVerdict", () => {
     expect(fetchSpy.mock.calls[0][1]?.headers).toMatchObject({ authorization: "Bearer test-key" });
     const requestBody = JSON.parse(String(fetchSpy.mock.calls[0][1]?.body));
     expect(requestBody.response_format).toMatchObject({ type: "json_object" });
+    expect(JSON.stringify(requestBody.messages)).toContain('\\"score\\": 50');
+    expect(JSON.stringify(requestBody.messages)).toContain('\\"grade\\": \\"D\\"');
+    expect(JSON.stringify(requestBody.messages)).not.toContain('\\"score\\": 68');
     expect(verdict.provider).toBe("9router");
     expect(verdict.verdict).toBe(enhanced.verdict);
     expect(verdict.budget_moves).toEqual(enhanced.budget_moves);

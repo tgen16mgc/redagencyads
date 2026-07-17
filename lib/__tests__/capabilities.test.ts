@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { buildCapabilitySnapshot, buildUnknownCapabilitySnapshot, capabilityStatus } from "../capabilities";
+import {
+  buildCapabilitySnapshot,
+  buildUnknownCapabilitySnapshot,
+  capabilityStatus,
+  isFacebookOAuthConfigured,
+} from "../capabilities";
 
 describe("buildCapabilitySnapshot", () => {
   it("separates account connection, provider setup, degradation, and paused products", () => {
@@ -38,5 +43,14 @@ describe("buildCapabilitySnapshot", () => {
 
     expect(capabilities).toHaveLength(6);
     expect(capabilities.every((capability) => capability.state === "unknown")).toBe(true);
+  });
+});
+
+describe("isFacebookOAuthConfigured", () => {
+  it("requires both non-empty Facebook app credentials", () => {
+    expect(isFacebookOAuthConfigured({ appId: "app_123", appSecret: "secret_123" })).toBe(true);
+    expect(isFacebookOAuthConfigured({ appId: "app_123" })).toBe(false);
+    expect(isFacebookOAuthConfigured({ appSecret: "secret_123" })).toBe(false);
+    expect(isFacebookOAuthConfigured({ appId: "   ", appSecret: "secret_123" })).toBe(false);
   });
 });

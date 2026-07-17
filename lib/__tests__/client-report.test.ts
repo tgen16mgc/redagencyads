@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { buildClientReportViewModel, downloadClientReportPdf } from "../client-report";
+import { assertClientReportHealthParity, buildClientReportViewModel, downloadClientReportPdf } from "../client-report";
 import { buildClientReportPdf } from "../client-report-pdf";
+import { summarizeHealth } from "../health-score";
 import type { DashboardReport, KpiCard, NormalizedRow, Verdict } from "../types";
 
 function row(overrides: Partial<NormalizedRow>): NormalizedRow {
@@ -103,6 +104,43 @@ function verdict(overrides: Partial<Verdict> = {}): Verdict {
 }
 
 describe("buildClientReportViewModel", () => {
+  it("uses the canonical health summary for the cover, health KPI, and fallback Verdict", () => {
+    const current = report({
+      health: {
+        score: 91,
+        grade: "A",
+        checks: [
+          { id: "warning", label: "Watch", status: "warning", detail: "Watch this." },
+          { id: "danger", label: "Risk", status: "fail", detail: "Fix this." },
+        ],
+      },
+    });
+    const healthSummary = summarizeHealth(current);
+    const model = buildClientReportViewModel({
+      report: current,
+      healthSummary,
+      compareMode: "off",
+      language: "en",
+      kpis,
+    });
+
+    expect(healthSummary).toMatchObject({ score: 73, grade: "C" });
+    expect(model.healthLabel).toBe("C · 73/100");
+    expect(model.kpis.find((kpi) => kpi.key === "healthScore")?.value).toBe("C");
+    expect(model.verdictText).toContain("graded C");
+    expect(model.copy.footnoteComparison).toBe("No comparison selected for this report.");
+    expect(model.kpis.every((kpi) => !kpi.delta)).toBe(true);
+  });
+
+  it("stops export preflight when the PDF model health does not match the dashboard summary", () => {
+    const current = report();
+    const healthSummary = summarizeHealth(current);
+    const model = buildClientReportViewModel({ report: current, healthSummary, compareMode: "off", language: "en", kpis });
+
+    expect(() => assertClientReportHealthParity({ ...model, healthScore: 91, healthGrade: "A" }, healthSummary))
+      .toThrow("Report export stopped because the health summary did not match the dashboard. Refresh the report and try again.");
+  });
+
   it("builds client-ready KPI cards with comparison deltas", () => {
     const model = buildClientReportViewModel({
       report: report(),
@@ -117,6 +155,8 @@ describe("buildClientReportViewModel", () => {
     expect(model.verdictText).toBe("Scale carefully while protecting CPA.");
     expect(model.kpis.find((kpi) => kpi.key === "spend")?.delta).toContain("vs MoM");
     expect(model.kpis.find((kpi) => kpi.key === "healthScore")?.value).toBe("B");
+    expect(model.copy.footnoteComparison).toContain("current 2026-06-01 to 2026-06-26");
+    expect(model.copy.footnoteComparison).toContain("previous 2026-06-01 to 2026-06-26");
   });
 
   it("keeps appendix tables and creative details explicit", () => {
@@ -128,6 +168,8 @@ describe("buildClientReportViewModel", () => {
     });
 
     expect(model.tables.map((table) => table.title)).toEqual(["Campaigns", "Ad sets", "Ads", "Daily"]);
+    expect(model.copy.footnoteComparison).toBe("No comparison selected for this report.");
+    expect(model.kpis.every((kpi) => !kpi.delta)).toBe(true);
     expect(model.tables[0].rows[0].name).toBe("Lead campaign - HCM");
     expect(model.creativeDetails[0]).toMatchObject({
       name: "Consult retargeting",

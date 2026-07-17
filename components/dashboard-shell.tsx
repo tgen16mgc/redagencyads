@@ -46,7 +46,7 @@ import {
 import { AppSidebar, type AppSidebarItem, type WorkflowSidebarItem } from "@/components/dashboard/app-sidebar";
 import { WorkspaceOverview } from "@/components/dashboard/workspace-overview";
 import { StickyActionDock } from "@/components/dashboard/sticky-action-dock";
-import { buildClientReportViewModel, downloadClientReportPdf } from "@/lib/client-report";
+import { assertClientReportHealthParity, buildClientReportViewModel, downloadClientReportPdf } from "@/lib/client-report";
 import { buildClientReportPdf } from "@/lib/client-report-pdf";
 import { CustomChartsSection } from "@/components/dashboard/custom-charts-section";
 import { PagePublisherPanel } from "@/components/dashboard/page-publisher-panel";
@@ -70,14 +70,14 @@ import { assessAudienceOverlap } from "@/lib/audience-overlap";
 import { recommendBudgetMoves } from "@/lib/budget-move-engine";
 import { analyzeComparisonRootCauses } from "@/lib/comparison-root-cause";
 import { diagnoseDailyChange } from "@/lib/daily-diagnosis";
-import { summarizeHealth } from "@/lib/health-score";
+import { summarizeHealth, type HealthScoreSummary } from "@/lib/health-score";
 import { assessConsolidationPressure } from "@/lib/consolidation-pressure";
 import { assessCostCapDelivery } from "@/lib/cost-cap-delivery";
 import { assessSpendPacing } from "@/lib/spend-pacing";
 import { assessDecisionConfidence, type DecisionTargets } from "@/lib/decision-confidence";
 import { rowDecision } from "@/lib/row-decision";
 import { normalizeCompetitorNames } from "@/lib/competitor-input";
-import { acceptedManualEvidenceText, reviewCompetitorEvidence } from "@/lib/competitor-evidence";
+import { acceptedManualEvidenceText, competitorEvidenceReadiness, reviewCompetitorEvidence } from "@/lib/competitor-evidence";
 import { detectBaselineAnomalies, anomalyBadgeText } from "@/lib/baseline-anomaly";
 import { diagnosticNextStep, type DiagnosticKind, type DiagnosticTone } from "@/lib/diagnostic-next-step";
 import { performanceChartConfig } from "@/lib/chart-palette";
@@ -632,6 +632,7 @@ export function DashboardShell() {
   const [targetRoas, setTargetRoas] = React.useState("");
   const [provider, setProvider] = React.useState<Provider>("auto");
   const [capabilities, setCapabilities] = React.useState<CapabilityStatus[]>(buildUnknownCapabilitySnapshot);
+  const [facebookOAuthConfigured, setFacebookOAuthConfigured] = React.useState<boolean | null>(null);
   const [language, setLanguage] = React.useState<ReportLanguage>(() => {
     if (typeof window === "undefined") return "en";
     const stored = window.localStorage.getItem(LANGUAGE_STORAGE_KEY);
@@ -682,6 +683,7 @@ export function DashboardShell() {
     if (!report) return null;
     return { ...report, kpis: effectiveKpis };
   }, [effectiveKpis, report]);
+  const healthSummary = React.useMemo(() => report ? summarizeHealth(report) : null, [report]);
   const reportHasData = report ? hasReportSignal(report.totals) : false;
   const kpiComparisons = React.useMemo(() => {
     if (!comparisonReport || !previousReport || compareMode === "off") return null;
@@ -839,10 +841,12 @@ export function DashboardShell() {
 
   const loadCapabilities = React.useCallback(async () => {
     try {
-      const data = await jsonFetch<{ capabilities: CapabilityStatus[] }>("/api/capabilities", { timeoutMs: 8000 });
+      const data = await jsonFetch<{ capabilities: CapabilityStatus[]; facebookOAuthConfigured: boolean }>("/api/capabilities", { timeoutMs: 8000 });
       setCapabilities(data.capabilities);
+      setFacebookOAuthConfigured(data.facebookOAuthConfigured);
     } catch {
       setCapabilities(buildUnknownCapabilitySnapshot());
+      setFacebookOAuthConfigured(false);
     }
   }, []);
 
@@ -1090,16 +1094,20 @@ export function DashboardShell() {
   }
 
   async function exportPdf() {
-    if (!report || !reportHasData) return;
+    if (!report || !reportHasData || !healthSummary) return;
+    setError("");
     setExportingPdf(true);
     try {
       await new Promise((resolve) => requestAnimationFrame(() => window.setTimeout(resolve, 0)));
-      const model = buildClientReportViewModel({ report, previousReport, compareMode, verdict, insights, language, kpis: effectiveKpis });
+      const model = buildClientReportViewModel({ report, healthSummary, previousReport, compareMode, verdict, insights, language, kpis: effectiveKpis });
+      assertClientReportHealthParity(model, healthSummary);
       downloadClientReportPdf(buildClientReportPdf(model), {
         createObjectUrl: (blob) => URL.createObjectURL(blob),
         revokeObjectUrl: (url) => URL.revokeObjectURL(url),
         createLink: () => document.createElement("a"),
       });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not export a consistent report.");
     } finally {
       setExportingPdf(false);
     }
@@ -1128,6 +1136,7 @@ export function DashboardShell() {
         loading={loading === "session"}
         language={language}
         intendedView={activeView}
+        facebookOAuthConfigured={facebookOAuthConfigured}
         onLanguageChange={setLanguage}
         onBack={() => setActiveView("overview")}
         onTokenChange={setToken}
@@ -1330,7 +1339,11 @@ export function DashboardShell() {
                       items={compareItems}
                       value={compareMode}
                       onValueChange={(value) => {
-                        if (value) setCompareMode(value as CompareMode);
+                        if (value) {
+                          const nextMode = value as CompareMode;
+                          setCompareMode(nextMode);
+                          if (nextMode === "off") setPreviousReport(null);
+                        }
                       }}
                     >
                       <SelectTrigger className="w-full">
@@ -1422,7 +1435,9 @@ export function DashboardShell() {
                         <CardHeader>
                           <CardDescription className="text-xs font-medium uppercase tracking-wide">{kpi.label}</CardDescription>
                           <CardTitle className="text-3xl font-semibold tabular-nums leading-none">
-                            {formatMetric(Number(report.totals[kpi.key as keyof NormalizedRow] || 0), kpi.format, report.account.currency || "VND")}
+                            {kpi.key === "healthScore" && healthSummary
+                              ? `${healthSummary.score}/100`
+                              : formatMetric(Number(report.totals[kpi.key as keyof NormalizedRow] || 0), kpi.format, report.account.currency || "VND")}
                           </CardTitle>
                           {comparison ? (
                             <CardDescription className={`text-xs tabular-nums ${metricMovementIsBad(kpi.key, comparison.change) ? "text-destructive" : "text-muted-foreground"}`}>
@@ -1525,7 +1540,7 @@ export function DashboardShell() {
                   </CardContent>
                 </Card>
 
-                <HealthTriageCard report={report} language={language} />
+                <HealthTriageCard summary={healthSummary!} language={language} />
               </section>
 
               <section data-print-flow>
@@ -1642,7 +1657,10 @@ export function DashboardShell() {
               }}
               onMarketChange={setCompetitorMarket}
               onPlatformChange={setCompetitorPlatform}
-              onNotesChange={setCompetitorNotes}
+              onNotesChange={(value) => {
+                setCompetitorNotes(value);
+                setCompetitorResult(null);
+              }}
               onProviderChange={setProvider}
               onCollect={collectCompetitorEvidence}
               onEvidenceStatusChange={updateCompetitorEvidenceStatus}
@@ -1774,6 +1792,7 @@ function TokenScreen(props: {
   loading: boolean;
   language: ReportLanguage;
   intendedView: ActiveView;
+  facebookOAuthConfigured: boolean | null;
   onLanguageChange: (value: ReportLanguage) => void;
   onBack: () => void;
   onTokenChange: (value: string) => void;
@@ -1784,6 +1803,7 @@ function TokenScreen(props: {
   const isVietnamese = props.language === "vi";
   const tokenInputId = React.useId();
   const publishing = props.intendedView === "publisher";
+  const oauthReturnTo = publishing ? "publisher" : "ads";
   const destination = publishing
     ? isVietnamese ? "Vận hành đăng bài" : "Publishing operations"
     : isVietnamese ? "Chẩn đoán hiệu quả" : "Performance diagnosis";
@@ -1829,19 +1849,42 @@ function TokenScreen(props: {
               </Alert>
             ) : null}
 
-            <div className="flex min-w-0 flex-col gap-3">
-              <Button type="button" className="w-full" onClick={() => { window.location.href = "/api/auth/facebook/start"; }}>
-                <ShieldCheckIcon data-icon="inline-start" />
-                {copy.facebookLogin}
-              </Button>
-              <FieldDescription className="break-words">{copy.facebookHelp}</FieldDescription>
-            </div>
+            {props.facebookOAuthConfigured === true ? (
+              <>
+                <div className="flex min-w-0 flex-col gap-3">
+                  <Button
+                    type="button"
+                    className="w-full"
+                    onClick={() => { window.location.href = `/api/auth/facebook/start?returnTo=${oauthReturnTo}`; }}
+                  >
+                    <ShieldCheckIcon data-icon="inline-start" />
+                    {copy.facebookLogin}
+                  </Button>
+                  <FieldDescription className="break-words">{copy.facebookHelp}</FieldDescription>
+                </div>
 
-            <div className="flex items-center gap-3 text-xs text-muted-foreground">
-              <Separator className="flex-1" />
-              {copy.manualToken}
-              <Separator className="flex-1" />
-            </div>
+                <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                  <Separator className="flex-1" />
+                  {copy.manualToken}
+                  <Separator className="flex-1" />
+                </div>
+              </>
+            ) : (
+              <Alert>
+                <AlertTitle>
+                  {props.facebookOAuthConfigured === null
+                    ? isVietnamese ? "Đang kiểm tra Facebook Login…" : "Checking Facebook Login availability…"
+                    : isVietnamese ? "Dùng Meta access token" : "Use a Meta access token"}
+                </AlertTitle>
+                <AlertDescription>
+                  {props.facebookOAuthConfigured === null
+                    ? isVietnamese ? "Bạn vẫn có thể dùng token bên dưới." : "You can still use a token below."
+                    : isVietnamese
+                      ? "Facebook Login chưa khả dụng trên bản triển khai này. Hãy dùng Meta access token bên dưới."
+                      : "Facebook Login is not available on this deployment. Use a Meta access token below."}
+                </AlertDescription>
+              </Alert>
+            )}
 
             <form onSubmit={props.onSubmit} className="flex min-w-0 flex-col gap-4">
               <FieldGroup>
@@ -2632,7 +2675,7 @@ function InsightPanel({
           <div className="flex flex-col gap-3">
             <div className="rounded-xl border bg-background/50 p-4">
               <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="secondary">{insights.provider}</Badge>
+                <Badge variant="secondary">{providerLabel(insights.provider, language)}</Badge>
                 <Badge variant="outline">{insights.confidence} confidence</Badge>
                 <span className="text-sm text-muted-foreground">{insights.summary}</span>
               </div>
@@ -2742,8 +2785,16 @@ function CompetitorSpyPanel({
   const rejectedAds = collectedAds.filter((ad) => ad.evidence?.status === "rejected");
   const acceptedCount = acceptedAds.length + acceptedManual.length;
   const reviewCount = reviewAds.length + reviewManual.length;
-  const canAnalyze = hasCompetitors && acceptedCount > 0 && !collecting && !analyzing;
   const setupRequired = capabilityState === "needs_setup";
+  const { canAnalyze, primaryIsCollect, dockStatus } = competitorEvidenceReadiness({
+    hasCompetitors,
+    acceptedCount,
+    acceptedManualCount: acceptedManual.length,
+    collectedCount: collectedAds.length,
+    setupRequired,
+    collecting,
+    analyzing,
+  });
   const orderedAds = [...reviewAds, ...acceptedAds, ...rejectedAds];
   const liveCoverage = competitorNames.map((competitor) => {
     const rows = collectedAds.filter(
@@ -2757,29 +2808,23 @@ function CompetitorSpyPanel({
       rejected: rows.filter((ad) => ad.evidence?.status === "rejected").length,
     };
   });
-  const primaryIsCollect = collectedAds.length === 0 && acceptedManual.length === 0;
-  const dockStatus = collecting || analyzing
-    ? "working"
-    : setupRequired || !hasCompetitors || (!acceptedCount && collectedAds.length > 0)
-      ? "blocked"
-      : canAnalyze || primaryIsCollect
-        ? "ready"
-        : "idle";
   const dockStatusLabel = collecting
     ? isVietnamese ? "Đang thu thập" : "Collecting evidence"
     : analyzing
       ? isVietnamese ? "Đang phân tích" : "Analyzing"
-      : setupRequired
-        ? isVietnamese ? "Cần thiết lập Apify" : "Apify setup required"
+      : canAnalyze
+        ? reviewCount > 0
+          ? isVietnamese ? `${acceptedCount} nhận · ${reviewCount} cần duyệt` : `${acceptedCount} accepted · ${reviewCount} review`
+          : isVietnamese ? `${acceptedCount} evidence sẵn sàng phân tích` : `${acceptedCount} accepted — ready to analyze`
         : !hasCompetitors
           ? isVietnamese ? "Thêm đối thủ" : "Add competitors"
-          : !acceptedCount && collectedAds.length > 0
-            ? isVietnamese ? `Duyệt ${reviewCount || collectedAds.length} ads` : `Review ${reviewCount || collectedAds.length} ads`
-            : primaryIsCollect
-              ? isVietnamese ? "Sẵn sàng thu thập" : "Ready to collect"
-              : reviewCount > 0
-                ? isVietnamese ? `${acceptedCount} nhận · ${reviewCount} cần duyệt` : `${acceptedCount} accepted · ${reviewCount} review`
-                : isVietnamese ? `${acceptedCount} evidence đã nhận` : `${acceptedCount} accepted`;
+          : setupRequired
+            ? isVietnamese ? "Thu thập tự động chưa khả dụng" : "Automated collection unavailable"
+            : !acceptedCount && collectedAds.length > 0
+              ? isVietnamese ? `Duyệt ${reviewCount || collectedAds.length} ads` : `Review ${reviewCount || collectedAds.length} ads`
+              : primaryIsCollect
+                ? isVietnamese ? "Sẵn sàng thu thập" : "Ready to collect"
+                : isVietnamese ? "Cần evidence được chấp nhận" : "Accepted evidence needed";
   const themeRows = result?.themes.slice(0, 4) || [];
   const briefs = result?.test_briefs.slice(0, 4) || [];
   const competitors = result?.competitors.slice(0, 4) || [];
@@ -2788,20 +2833,20 @@ function CompetitorSpyPanel({
   const researchBrief = {
     title: isVietnamese ? "Luồng evidence" : "Evidence workflow",
     description: isVietnamese
-      ? "Thu thập qua Apify, duyệt advertiser, rồi chỉ phân tích evidence đã chấp nhận."
-      : "Collect through Apify, review advertiser attribution, then analyze only accepted evidence.",
+      ? "Thu thập tự động hoặc thêm evidence thủ công, sau đó chỉ phân tích evidence đã chấp nhận."
+      : "Collect automatically or add manual evidence, then analyze only accepted evidence.",
     ready: isVietnamese ? "Sẵn sàng" : "Ready",
     next: isVietnamese ? "Cần thêm" : "Needed",
     optional: isVietnamese ? "Tùy chọn" : "Optional",
     inputs: isVietnamese
       ? [
           { label: "Tên đối thủ", done: hasCompetitors },
-          { label: "Apify Meta Ads", done: !setupRequired },
+          { label: "Apify Meta Ads", done: !setupRequired, optional: true },
           { label: "Evidence được chấp nhận", done: acceptedCount > 0 },
         ]
       : [
           { label: "Competitor names", done: hasCompetitors },
-          { label: "Apify Meta Ads", done: !setupRequired },
+          { label: "Apify Meta Ads", done: !setupRequired, optional: true },
           { label: "Accepted evidence", done: acceptedCount > 0 },
         ],
   };
@@ -2824,7 +2869,7 @@ function CompetitorSpyPanel({
                     <span className="font-medium text-foreground">{item.label}</span>
                     <span className={`flex items-center gap-1.5 ${item.done ? "text-ring" : "text-muted-foreground"}`}>
                       {item.done ? <CheckIcon className="size-3.5" /> : <ChevronRightIcon className="size-3.5" />}
-                      {item.done ? researchBrief.ready : researchBrief.next}
+                      {item.done ? researchBrief.ready : item.optional ? researchBrief.optional : researchBrief.next}
                     </span>
                   </div>
                 ))}
@@ -2860,12 +2905,12 @@ function CompetitorSpyPanel({
           </Field>
 
           {setupRequired ? (
-            <Alert variant="destructive">
-              <AlertTitle>{isVietnamese ? "Cần thiết lập Apify" : "Apify setup required"}</AlertTitle>
+            <Alert>
+              <AlertTitle>{isVietnamese ? "Thu thập tự động chưa khả dụng" : "Automated collection unavailable"}</AlertTitle>
               <AlertDescription>
                 {isVietnamese
-                  ? "Thêm APIFY_TOKEN và APIFY_META_ADS_ACTOR_ID trên server để thu thập evidence. Public search không được xem là evidence đã xác minh."
-                  : "Add APIFY_TOKEN and APIFY_META_ADS_ACTOR_ID on the server to collect evidence. Public search links do not count as verified evidence."}
+                  ? "Bạn vẫn có thể thêm evidence thủ công có advertiser rõ ràng và phân tích ngay sau khi evidence được chấp nhận."
+                  : "You can still add advertiser-linked manual evidence and analyze it as soon as the evidence is accepted."}
               </AlertDescription>
             </Alert>
           ) : (
@@ -3167,7 +3212,7 @@ function CompetitorSpyPanel({
                   </p>
                 </div>
                 <div className="flex shrink-0 flex-wrap gap-2 md:justify-end">
-                  <Badge variant="secondary">{result.provider}</Badge>
+                  <Badge variant="secondary">{providerLabel(result.provider, language)}</Badge>
                   <Badge variant="outline">{platformLabel(platform)}</Badge>
                 </div>
               </div>
@@ -3266,21 +3311,21 @@ function CompetitorSpyPanel({
               <EmptyMedia variant="icon"><SearchIcon /></EmptyMedia>
               <EmptyTitle>{isVietnamese ? "Từ evidence đến quyết định" : "Move evidence toward a decision"}</EmptyTitle>
               <EmptyDescription>
-                {setupRequired
+                {!hasCompetitors
                   ? isVietnamese
-                    ? "Thiết lập Apify, sau đó thu thập, duyệt provenance và phân tích evidence đã chấp nhận."
-                    : "Configure Apify, then collect, review provenance, and analyze accepted evidence."
-                  : !hasCompetitors
+                    ? "Thêm tên đối thủ để bắt đầu thu thập ads."
+                    : "Add competitor names to start collecting ads."
+                  : acceptedCount > 0
                     ? isVietnamese
-                      ? "Thêm tên đối thủ để bắt đầu thu thập ads."
-                      : "Add competitor names to start collecting ads."
-                    : acceptedCount === 0
+                      ? "Evidence đã sẵn sàng. Phân tích để tạo pattern, gap và brief test mới."
+                      : "Evidence is ready. Analyze it to produce patterns, gaps, and original test briefs."
+                    : setupRequired
                       ? isVietnamese
-                        ? "Thu thập ads và chấp nhận ít nhất một evidence đáng tin trước khi phân tích."
-                        : "Collect ads and accept at least one credible evidence item before analysis."
+                        ? "Thêm evidence thủ công có advertiser rõ ràng để tiếp tục mà không cần Apify."
+                        : "Add advertiser-linked manual evidence to continue without Apify."
                       : isVietnamese
-                        ? "Evidence đã sẵn sàng. Phân tích để tạo pattern, gap và brief test mới."
-                        : "Evidence is ready. Analyze it to produce patterns, gaps, and original test briefs."}
+                        ? "Thu thập ads và chấp nhận ít nhất một evidence đáng tin trước khi phân tích."
+                        : "Collect ads and accept at least one credible evidence item before analysis."}
               </EmptyDescription>
             </EmptyHeader>
           </Empty>
@@ -3298,9 +3343,13 @@ function CompetitorSpyPanel({
             icon: RefreshCcwIcon,
             onSelect: onCollect,
             disabled: setupRequired || !hasCompetitors || collecting || analyzing,
-            disabledReason: setupRequired
-              ? isVietnamese ? "Thiết lập Apify trước khi thu thập." : "Configure Apify before collecting."
-              : isVietnamese ? "Thêm ít nhất một đối thủ." : "Add at least one competitor.",
+            disabledReason: !hasCompetitors
+              ? isVietnamese ? "Thêm ít nhất một đối thủ." : "Add at least one competitor."
+              : setupRequired
+                ? isVietnamese ? "Thu thập tự động cần Apify; bạn vẫn có thể thêm evidence thủ công." : "Automated collection needs Apify; you can still add manual evidence."
+                : collecting || analyzing
+                  ? isVietnamese ? "Hãy đợi thao tác hiện tại hoàn tất." : "Wait for the current action to finish."
+                  : undefined,
             loading: collecting,
           } : {
             id: "analyze-competitor-evidence",
@@ -3309,9 +3358,11 @@ function CompetitorSpyPanel({
             icon: SearchIcon,
             onSelect: onGenerate,
             disabled: !canAnalyze,
-            disabledReason: isVietnamese
-              ? "Chấp nhận ít nhất một evidence có advertiser và provenance đáng tin."
-              : "Accept at least one evidence item with credible advertiser provenance.",
+            disabledReason: collecting || analyzing
+              ? isVietnamese ? "Hãy đợi thao tác hiện tại hoàn tất." : "Wait for the current action to finish."
+              : isVietnamese
+                ? "Chấp nhận ít nhất một evidence có advertiser và provenance đáng tin."
+                : "Accept at least one evidence item with credible advertiser provenance.",
             loading: analyzing,
             shortcut: "mod+enter",
           }}
@@ -3322,6 +3373,13 @@ function CompetitorSpyPanel({
               icon: RefreshCcwIcon,
               onSelect: onCollect,
               disabled: setupRequired || !hasCompetitors || collecting || analyzing,
+              disabledReason: !hasCompetitors
+                ? isVietnamese ? "Thêm ít nhất một đối thủ." : "Add at least one competitor."
+                : setupRequired
+                  ? isVietnamese ? "Thu thập tự động cần Apify; phân tích evidence đã chấp nhận vẫn khả dụng." : "Automated collection needs Apify; accepted evidence can still be analyzed."
+                  : collecting || analyzing
+                    ? isVietnamese ? "Hãy đợi thao tác hiện tại hoàn tất." : "Wait for the current action to finish."
+                    : undefined,
               loading: collecting,
             }]),
             ...(result ? [{
@@ -3857,16 +3915,16 @@ function BreakdownAnalysisSection({ report, language }: { report: DashboardRepor
   }, [dimension, selectedDimension?.value]);
 
   return (
-    <section className="grid items-start gap-4 xl:grid-cols-[1.6fr_1fr]" data-print-flow>
-      <div className="rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5">
-        <div className="flex max-w-2xl flex-col gap-1.5">
+    <section className="grid min-w-0 items-start gap-4 xl:grid-cols-[1.6fr_1fr]" data-print-flow>
+      <div className="min-w-0 rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5">
+        <div className="flex min-w-0 max-w-2xl flex-col gap-1.5">
           <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
             {language === "vi" ? "Chẩn đoán phân khúc" : "Segment Diagnostics"}
           </p>
           <h2 className="text-xl font-semibold tracking-tight">{copy.breakdowns}</h2>
           <p className="text-sm text-muted-foreground">{copy.breakdownsDescription}</p>
         </div>
-        <div className="mt-5 rounded-xl border bg-background/50 p-4">
+        <div className="mt-5 min-w-0 overflow-hidden rounded-xl border bg-background/50 p-4">
           <AdaptiveBreakdownChart
             report={report}
             language={language}
@@ -3927,7 +3985,7 @@ function AdaptiveBreakdownChart({
   }, [dimension, model.activeDimension, onDimensionChange]);
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex min-w-0 flex-col gap-4">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between" data-print-hidden>
         <ToggleGroup
           aria-label={language === "vi" ? "Dimension breakdown" : "Breakdown dimension"}
@@ -3995,9 +4053,9 @@ function BreakdownPieChart({ rows, mode, currency, language, annotations }: { ro
   const totalResults = rows.reduce((sum, row) => sum + row.results, 0);
   const centerValue = dataKey === "results" ? formatMetric(totalResults, "number", currency) : formatMetric(totalSpend, "currency", currency);
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex min-w-0 flex-col gap-2">
       <ChartAnnotationHeader annotations={annotations} />
-      <ChartContainer config={performanceChartConfig} className="relative h-[300px] w-full" role="img" aria-label={annotations.title}>
+      <ChartContainer config={performanceChartConfig} className="relative h-[300px] min-w-0 w-full" role="img" aria-label={annotations.title}>
         <PieChart>
           <ChartTooltip content={<BreakdownTooltip mode={mode} currency={currency} language={language} dimensionLabel={annotations.title} />} />
           <Pie data={rows} dataKey={dataKey} nameKey="label" innerRadius={62} outerRadius={104} paddingAngle={2} label={(props: { percent?: number }) => formatSharePct(Number(props.percent ?? 0), currency)} labelLine={false}>
@@ -4018,9 +4076,9 @@ function BreakdownPieChart({ rows, mode, currency, language, annotations }: { ro
 
 function BreakdownAreaChart({ rows, mode, currency, language, annotations }: { rows: BreakdownChartRow[]; mode: BreakdownMetricMode; currency: string; language: ReportLanguage; annotations: BreakdownChartAnnotations }) {
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex min-w-0 flex-col gap-2">
       <ChartAnnotationHeader annotations={annotations} />
-      <ChartContainer config={performanceChartConfig} className="h-[300px] w-full" role="img" aria-label={annotations.title}>
+      <ChartContainer config={performanceChartConfig} className="h-[300px] min-w-0 w-full" role="img" aria-label={annotations.title}>
         <ComposedChart data={rows} margin={{ left: 8, right: 8, top: 12, bottom: 8 }}>
           <CartesianGrid vertical={false} />
           <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} minTickGap={12} />
@@ -4038,9 +4096,9 @@ function BreakdownAreaChart({ rows, mode, currency, language, annotations }: { r
 function BreakdownBarChart({ rows, mode, currency, language, annotations }: { rows: BreakdownChartRow[]; mode: BreakdownMetricMode; currency: string; language: ReportLanguage; annotations: BreakdownChartAnnotations }) {
   const dataKey = breakdownChartDataKey(mode);
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex min-w-0 flex-col gap-2">
       <ChartAnnotationHeader annotations={annotations} />
-      <ChartContainer config={performanceChartConfig} className="h-[300px] w-full" role="img" aria-label={annotations.title}>
+      <ChartContainer config={performanceChartConfig} className="h-[300px] min-w-0 w-full" role="img" aria-label={annotations.title}>
         <BarChart data={rows} layout="vertical" margin={{ left: 12, right: 36, top: 4, bottom: 4 }}>
           <CartesianGrid horizontal={false} />
           <XAxis type="number" domain={paddedPositiveDomain()} tickLine={false} axisLine={false} tickFormatter={(value) => formatCompactNumber(Number(value), currency)} label={annotations.xAxisLabel ? { value: annotations.xAxisLabel, position: "insideBottom", offset: -2, style: { fontSize: 11, fill: "currentColor" } } : undefined} />
@@ -4059,9 +4117,9 @@ function BreakdownBarChart({ rows, mode, currency, language, annotations }: { ro
 
 function BreakdownScatterChart({ rows, currency, language, annotations }: { rows: BreakdownChartRow[]; currency: string; language: ReportLanguage; annotations: BreakdownChartAnnotations }) {
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex min-w-0 flex-col gap-2">
       <ChartAnnotationHeader annotations={annotations} />
-      <ChartContainer config={performanceChartConfig} className="h-[300px] w-full" role="img" aria-label={annotations.title}>
+      <ChartContainer config={performanceChartConfig} className="h-[300px] min-w-0 w-full" role="img" aria-label={annotations.title}>
         <ScatterChart margin={{ left: 8, right: 16, top: 12, bottom: 8 }}>
           <CartesianGrid />
           <XAxis dataKey="spend" name={language === "vi" ? "Chi tiêu" : "Spend"} type="number" domain={paddedPositiveDomain()} tickFormatter={(value) => formatCompactNumber(Number(value), currency)} label={annotations.xAxisLabel ? { value: annotations.xAxisLabel, position: "insideBottom", offset: -2, style: { fontSize: 11, fill: "currentColor" } } : undefined} />
@@ -4238,17 +4296,17 @@ function PerformanceCharts({ report, language }: { report: DashboardReport; lang
   }
 
   return (
-    <section className="grid gap-4 xl:grid-cols-3">
-      <div className="rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5 xl:col-span-2">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex max-w-2xl flex-col gap-1.5">
+    <section className="grid min-w-0 gap-4 xl:grid-cols-3">
+      <div className="min-w-0 rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5 xl:col-span-2">
+        <div className="flex min-w-0 flex-col items-start gap-3 sm:flex-row sm:justify-between">
+          <div className="flex min-w-0 max-w-2xl flex-col gap-1.5">
             <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
               {language === "vi" ? "Theo dõi xu hướng" : "Trend Monitor"}
             </p>
             <h2 className="text-xl font-semibold tracking-tight">{spec.trendTitle}</h2>
             <p className="text-sm text-muted-foreground">{spec.trendDescription}</p>
           </div>
-          <div className="flex shrink-0 items-center gap-2 flex-wrap justify-end">
+          <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
             {anomalyResult.status === "anomalies_found" ? (
               anomalyResult.anomalies.slice(0, 2).map((anomaly) => (
                 <Badge key={anomaly.key} variant={anomaly.severity === "danger" ? "destructive" : "outline"} className="shrink-0">
@@ -4259,7 +4317,7 @@ function PerformanceCharts({ report, language }: { report: DashboardReport; lang
             {trendAnnotation ? <Badge variant="outline" className="shrink-0">{trendAnnotation.label}</Badge> : null}
           </div>
         </div>
-        <div className="mt-5 rounded-xl border bg-background/50 p-4">
+        <div className="mt-5 min-w-0 overflow-hidden rounded-xl border bg-background/50 p-4">
           {dailyData.length ? (
             <ChartContainer config={performanceChartConfig} className="h-[280px] w-full">
               <ComposedChart data={dailyData} margin={{ left: 8, right: 8, top: 8, bottom: 0 }}>
@@ -4291,7 +4349,7 @@ function PerformanceCharts({ report, language }: { report: DashboardReport; lang
         </div>
       </div>
 
-      <div className="rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5">
+      <div className="min-w-0 rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5">
         <div className="flex max-w-2xl flex-col gap-1.5">
           <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
             {language === "vi" ? "Đường hiệu quả" : "Efficiency Curve"}
@@ -4299,7 +4357,7 @@ function PerformanceCharts({ report, language }: { report: DashboardReport; lang
           <h2 className="text-xl font-semibold tracking-tight">{spec.efficiencyTitle}</h2>
           <p className="text-sm text-muted-foreground">{spec.efficiencyDescription}</p>
         </div>
-        <div className="mt-5 rounded-xl border bg-background/50 p-4">
+        <div className="mt-5 min-w-0 overflow-hidden rounded-xl border bg-background/50 p-4">
           {dailyData.length ? (
             <ChartContainer config={performanceChartConfig} className="h-[280px] w-full">
               <LineChart data={dailyData} margin={{ left: 8, right: 8, top: 8, bottom: 0 }}>
@@ -4329,7 +4387,7 @@ function PerformanceCharts({ report, language }: { report: DashboardReport; lang
         </div>
       </div>
 
-      <div className="rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5">
+      <div className="min-w-0 rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5">
         <div className="flex max-w-2xl flex-col gap-1.5">
           <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
             {language === "vi" ? "Tín hiệu chẩn đoán" : "Diagnostic Signal"}
@@ -4337,7 +4395,7 @@ function PerformanceCharts({ report, language }: { report: DashboardReport; lang
           <h2 className="text-xl font-semibold tracking-tight">{spec.diagnosticTitle}</h2>
           <p className="text-sm text-muted-foreground">{spec.diagnosticDescription}</p>
         </div>
-        <div className="mt-5 rounded-xl border bg-background/50 p-4">
+        <div className="mt-5 min-w-0 overflow-hidden rounded-xl border bg-background/50 p-4">
           {dailyData.length ? (
             <ChartContainer config={performanceChartConfig} className="h-[240px] w-full">
               <LineChart data={dailyData} margin={{ left: 8, right: 8, top: 8, bottom: 0 }}>
@@ -4368,7 +4426,7 @@ function PerformanceCharts({ report, language }: { report: DashboardReport; lang
         </div>
       </div>
 
-      <div className="rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5 xl:col-span-2">
+      <div className="min-w-0 rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5 xl:col-span-2">
         <div className="flex max-w-2xl flex-col gap-1.5">
           <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
             {language === "vi" ? "Phân rã nhóm quảng cáo" : "Ad Set Drilldown"}
@@ -4376,7 +4434,7 @@ function PerformanceCharts({ report, language }: { report: DashboardReport; lang
           <h2 className="text-xl font-semibold tracking-tight">{spec.drilldownTitle}</h2>
           <p className="text-sm text-muted-foreground">{spec.drilldownDescription}</p>
         </div>
-        <div className="mt-5 rounded-xl border bg-background/50 p-4">
+        <div className="mt-5 min-w-0 overflow-hidden rounded-xl border bg-background/50 p-4">
           {adsetData.length ? (
             <ChartContainer config={performanceChartConfig} className="h-[240px] w-full">
               <BarChart data={adsetData} layout="vertical" margin={{ left: 12, right: 8, top: 4, bottom: 4 }}>
@@ -4512,9 +4570,7 @@ function DiagnosticNextStep({ kind, tone, language }: { kind: DiagnosticKind; to
   );
 }
 
-function HealthTriageCard({ report, language }: { report: DashboardReport; language: ReportLanguage }) {
-  const diagnosis = diagnoseDailyChange({ dailyRows: report.dailyRows, selectedPack: report.selectedPack });
-  const summary = summarizeHealth(report, diagnosis);
+function HealthTriageCard({ summary, language }: { summary: HealthScoreSummary; language: ReportLanguage }) {
   const activeItems = summary.items.filter((item) => item.severity !== "healthy").slice(0, 4);
   const healthyItems = summary.items.filter((item) => item.severity === "healthy");
   const variant = summary.severity === "danger" ? "destructive" : summary.severity === "warning" ? "outline" : "secondary";
@@ -5046,7 +5102,7 @@ function BreakdownWasteCard({
     : `${dimensionLabel}: spend and result allocation.`;
   const topRows = chartRows.slice(0, 3);
   return (
-    <div data-print-flow className={`${diagnosticAccentClass(waste.variant)} self-start rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5`}>
+    <div data-print-flow className={`${diagnosticAccentClass(waste.variant)} min-w-0 self-start rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5`}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex flex-col gap-1.5">
           <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
@@ -5347,7 +5403,7 @@ function VerdictCard({ verdict, language }: { verdict: Verdict; language: Report
         </div>
         <div className="rounded-lg border bg-background p-3">
           <div className="flex flex-wrap gap-1.5">
-            <Badge variant="outline">{verdict.provider}</Badge>
+            <Badge variant="outline">{providerLabel(verdict.provider, language)}</Badge>
             <Badge variant="secondary">{verdict.confidence} confidence</Badge>
           </div>
           <Separator className="my-3" />

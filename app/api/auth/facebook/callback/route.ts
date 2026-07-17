@@ -1,19 +1,23 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { exchangeFacebookCode, FACEBOOK_OAUTH_STATE_COOKIE, getFacebookOAuthRedirectUri, validateFacebookOAuthToken } from "@/lib/meta-oauth";
+import {
+  buildFacebookOAuthReturnUrl,
+  exchangeFacebookCode,
+  FACEBOOK_OAUTH_RETURN_COOKIE,
+  FACEBOOK_OAUTH_STATE_COOKIE,
+  getFacebookOAuthRedirectUri,
+  parseFacebookOAuthReturnDestination,
+  validateFacebookOAuthToken,
+} from "@/lib/meta-oauth";
 import { setTokenCookie } from "@/lib/session";
-
-function redirectHome(request: Request, error?: string) {
-  const url = new URL("/", request.url);
-  if (error) url.searchParams.set("auth_error", error);
-  return NextResponse.redirect(url);
-}
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const store = await cookies();
   const expectedState = store.get(FACEBOOK_OAUTH_STATE_COOKIE)?.value;
+  const destination = parseFacebookOAuthReturnDestination(store.get(FACEBOOK_OAUTH_RETURN_COOKIE)?.value);
   store.delete(FACEBOOK_OAUTH_STATE_COOKIE);
+  store.delete(FACEBOOK_OAUTH_RETURN_COOKIE);
 
   try {
     const error = url.searchParams.get("error_description") || url.searchParams.get("error");
@@ -28,8 +32,8 @@ export async function GET(request: Request) {
     const token = await exchangeFacebookCode(code, getFacebookOAuthRedirectUri(request));
     await validateFacebookOAuthToken(token);
     await setTokenCookie(token);
-    return redirectHome(request);
-  } catch (error) {
-    return redirectHome(request, error instanceof Error ? error.message : "Facebook login failed.");
+    return NextResponse.redirect(buildFacebookOAuthReturnUrl(request, destination));
+  } catch {
+    return NextResponse.redirect(buildFacebookOAuthReturnUrl(request, destination, true));
   }
 }

@@ -1,6 +1,7 @@
 import { sumRows } from "@/lib/metric-aggregation";
 import type { CompareMode, CompetitorPlatform, CompetitorSpyAd, DashboardReport, InsightAction, InsightRow, KpiCard, KpiPack, MetaAccount, MetaCampaign, NormalizedRow } from "@/lib/types";
 import { compareTotals } from "@/lib/metric-comparison";
+import { summarizeHealth } from "@/lib/health-score";
 
 export { sumRows } from "@/lib/metric-aggregation";
 
@@ -270,6 +271,11 @@ export function buildPrompt(args: {
   health: DashboardReport["health"];
   dateRange: { since: string; until: string };
 }) {
+  const health = summarizeHealth({
+    health: args.health,
+    dailyRows: args.dailyRows,
+    selectedPack: args.selectedPack,
+  });
   const payload = {
     account: args.account.name,
     date_range: args.dateRange,
@@ -288,7 +294,7 @@ export function buildPrompt(args: {
     platform_rows: args.platformRows,
     age_gender_rows: args.ageGenderRows,
     region_rows: args.regionRows,
-    health: args.health,
+    health,
   };
   return `You are a senior Meta Ads strategist. Analyze this campaign data with a long-term system mindset.
 
@@ -321,7 +327,7 @@ export function buildInsightPrompt(args: {
   previousReport?: DashboardReport | null;
   compareMode: CompareMode;
 }) {
-  const comparison = args.previousReport
+  const comparison = args.compareMode !== "off" && args.previousReport
     ? {
         mode: args.compareMode,
         current_range: args.report.dateRange,
@@ -341,7 +347,7 @@ export function buildInsightPrompt(args: {
     totals: args.report.totals,
     top_campaigns: args.report.campaignRows.slice(0, 8),
     top_adsets: args.report.adsetRows.slice(0, 10),
-    health: args.report.health,
+    health: summarizeHealth(args.report),
     comparison,
   };
   return `You are a senior Meta Ads analyst. Return an insight table for an evidence-led ads workspace.

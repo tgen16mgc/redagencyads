@@ -1,8 +1,7 @@
-import { sumRows } from "@/lib/metric-aggregation";
 import type { CompareMode, DashboardReport, KpiCard, NormalizedRow } from "@/lib/types";
 
 type ReportLanguage = "en" | "vi";
-type ComparisonBasis = "compare-range" | "recent-window";
+type ComparisonBasis = "compare-range";
 
 export type MetricComparisonDelta = {
   key: keyof NormalizedRow;
@@ -47,11 +46,10 @@ export function buildKpiComparisons(args: {
   compareMode: CompareMode;
   language?: ReportLanguage;
 }): MetricComparisonDelta[] {
-  const basis = args.previousReport ? "compare-range" : "recent-window";
-  const previousTotals = args.previousReport ? args.previousReport.totals : recentPriorTotals(args.report);
-  const currentTotals = args.previousReport ? args.report.totals : recentCurrentTotals(args.report);
-
-  if (!currentTotals || !previousTotals) return [];
+  if (args.compareMode === "off" || !args.previousReport) return [];
+  const basis = "compare-range";
+  const previousTotals = args.previousReport.totals;
+  const currentTotals = args.report.totals;
 
   return args.report.kpis
     .filter((kpi): kpi is KpiCard & { key: keyof NormalizedRow } => kpi.key !== "healthScore")
@@ -117,13 +115,37 @@ export function comparisonDescriptor(args: {
   language?: ReportLanguage;
 }) {
   const language = args.language ?? "en";
-  const basis: ComparisonBasis = args.previousReport ? "compare-range" : "recent-window";
-
-  if (basis === "recent-window") return language === "vi" ? "so với kỳ trước" : "vs prior period";
+  if (args.compareMode === "off") return language === "vi" ? "không so sánh" : "no comparison";
   if (args.compareMode === "wow") return language === "vi" ? "so với WoW" : "vs WoW";
   if (args.compareMode === "mom") return language === "vi" ? "so với MoM" : "vs MoM";
   if (args.compareMode === "yoy") return language === "vi" ? "so với YoY" : "vs YoY";
   return language === "vi" ? "so với kỳ trước" : "vs prior period";
+}
+
+export function comparisonFootnote(args: {
+  report: DashboardReport;
+  previousReport?: DashboardReport | null;
+  compareMode: CompareMode;
+  language?: ReportLanguage;
+}) {
+  const language = args.language ?? "en";
+  if (args.compareMode === "off") {
+    return language === "vi"
+      ? "Không chọn so sánh cho báo cáo này."
+      : "No comparison selected for this report.";
+  }
+  if (!args.previousReport) {
+    return language === "vi"
+      ? "Không có dữ liệu so sánh; báo cáo này chỉ bao gồm số liệu của kỳ hiện tại."
+      : "Comparison unavailable; this report contains current-period values only.";
+  }
+
+  const mode = args.compareMode === "wow" ? "WoW" : args.compareMode === "mom" ? "MoM" : "YoY";
+  const current = `${args.report.dateRange.since} to ${args.report.dateRange.until}`;
+  const previous = `${args.previousReport.dateRange.since} to ${args.previousReport.dateRange.until}`;
+  return language === "vi"
+    ? `So sánh ${mode}: kỳ hiện tại ${current}; kỳ trước ${previous}.`
+    : `${mode} comparison: current ${current}; previous ${previous}.`;
 }
 
 function buildDelta(args: {
@@ -153,30 +175,4 @@ function buildDelta(args: {
       language: args.language,
     }),
   };
-}
-
-function recentCurrentTotals(report: DashboardReport) {
-  const windows = recentWindows(report);
-  return windows ? sumRows(windows.recentRows, "Recent KPI window") : null;
-}
-
-function recentPriorTotals(report: DashboardReport) {
-  const windows = recentWindows(report);
-  return windows ? sumRows(windows.priorRows, "Prior KPI window") : null;
-}
-
-function recentWindows(report: DashboardReport) {
-  const dated = report.dailyRows
-    .filter((row) => Boolean(row.date))
-    .slice()
-    .sort((a, b) => (a.date! < b.date! ? -1 : a.date! > b.date! ? 1 : 0));
-
-  if (dated.length < 6) return null;
-
-  const windowSize = Math.min(7, Math.floor(dated.length / 2));
-  const recentRows = dated.slice(dated.length - windowSize);
-  const priorRows = dated.slice(dated.length - windowSize * 2, dated.length - windowSize);
-
-  if (!recentRows.length || !priorRows.length) return null;
-  return { recentRows, priorRows };
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildKpiComparisons,
+  comparisonFootnote,
   comparisonDescriptor,
   formatComparisonChangePct,
   metricMovementIsBad,
@@ -110,7 +111,7 @@ describe("buildKpiComparisons", () => {
     expect(deltas.find((delta) => delta.key === "cpl")).toMatchObject({ current: 100, previous: 20 });
   });
 
-  it("falls back to recent vs prior daily-window comparison when compare mode is off and no previous report exists", () => {
+  it("returns no client-facing deltas when compare mode is off, even with daily history", () => {
     const current = report({
       dailyRows: [
         daily("2026-06-01", { spend: 5, leads: 1 }),
@@ -132,11 +133,10 @@ describe("buildKpiComparisons", () => {
 
     const deltas = buildKpiComparisons(comparisonArgs({ report: current }));
 
-    expect(deltas.find((delta) => delta.key === "spend")).toMatchObject({ current: 70, previous: 35 });
-    expect(deltas.find((delta) => delta.key === "leads")).toMatchObject({ current: 14, previous: 7 });
+    expect(deltas).toEqual([]);
   });
 
-  it("recomputes daily-window derived metrics such as cpl from summed rows instead of averaging daily rates", () => {
+  it("ignores a stale previous report when compare mode is off", () => {
     const current = report({
       dailyRows: [
         daily("2026-06-01", { spend: 70, leads: 7, cpl: 10 }),
@@ -156,11 +156,10 @@ describe("buildKpiComparisons", () => {
       ],
     });
 
-    const deltas = buildKpiComparisons(comparisonArgs({ report: current }));
-    const cplDelta = deltas.find((delta) => delta.key === "cpl");
+    const stalePrevious = report({ totals: row({ spend: 999, leads: 99, cpl: 10 }) });
+    const deltas = buildKpiComparisons(comparisonArgs({ report: current, previousReport: stalePrevious }));
 
-    expect(cplDelta?.current).toBeCloseTo(96 / 15);
-    expect(cplDelta?.previous).toBeCloseTo(82 / 13);
+    expect(deltas).toEqual([]);
   });
 
   it("returns no KPI deltas when there are too few dated daily rows and no previous report", () => {
@@ -205,8 +204,27 @@ describe("comparisonDescriptor", () => {
     expect(comparisonDescriptor(descriptorArgs({ compareMode: "mom", previousReport: previous, language: "vi" }))).toBe("so với MoM");
   });
 
-  it("labels recent-window descriptors in English and Vietnamese", () => {
-    expect(comparisonDescriptor(descriptorArgs({ compareMode: "off", language: "en" }))).toBe("vs prior period");
-    expect(comparisonDescriptor(descriptorArgs({ compareMode: "off", language: "vi" }))).toBe("so với kỳ trước");
+  it("does not label compare-off state as a prior-period comparison", () => {
+    expect(comparisonDescriptor(descriptorArgs({ compareMode: "off", language: "en" }))).toBe("no comparison");
+    expect(comparisonDescriptor(descriptorArgs({ compareMode: "off", language: "vi" }))).toBe("không so sánh");
+  });
+});
+
+describe("comparisonFootnote", () => {
+  it("states compare-off and comparison-unavailable provenance without implying a delta", () => {
+    const current = report({ dateRange: { since: "2026-06-01", until: "2026-06-14" } });
+
+    expect(comparisonFootnote({ report: current, compareMode: "off", language: "en" }))
+      .toBe("No comparison selected for this report.");
+    expect(comparisonFootnote({ report: current, compareMode: "mom", language: "vi" }))
+      .toBe("Không có dữ liệu so sánh; báo cáo này chỉ bao gồm số liệu của kỳ hiện tại.");
+  });
+
+  it("includes the selected mode and exact current and previous date ranges", () => {
+    const current = report({ dateRange: { since: "2026-06-01", until: "2026-06-14" } });
+    const previous = report({ dateRange: { since: "2026-05-18", until: "2026-05-31" } });
+
+    expect(comparisonFootnote({ report: current, previousReport: previous, compareMode: "wow", language: "en" }))
+      .toBe("WoW comparison: current 2026-06-01 to 2026-06-14; previous 2026-05-18 to 2026-05-31.");
   });
 });

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { hasNineRouterCredentials } from "@/lib/ai/transport";
-import { buildCapabilitySnapshot } from "@/lib/capabilities";
+import { buildCapabilitySnapshot, isFacebookOAuthConfigured } from "@/lib/capabilities";
 import { hasTokenSession } from "@/lib/session";
 
 export async function GET() {
@@ -14,6 +14,10 @@ export async function GET() {
 
   return NextResponse.json({
     capabilities,
+    facebookOAuthConfigured: isFacebookOAuthConfigured({
+      appId: process.env.META_APP_ID,
+      appSecret: process.env.META_APP_SECRET,
+    }),
     checkedAt: new Date().toISOString(),
   });
 }

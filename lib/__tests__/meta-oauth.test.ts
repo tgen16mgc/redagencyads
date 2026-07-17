@@ -50,6 +50,24 @@ describe("Facebook OAuth helpers", () => {
     expect(getFacebookOAuthRedirectUri(new Request("http://localhost:3000/connect"))).toBe("https://app.example.com/oauth/meta");
   });
 
+  it("allowlists OAuth return destinations and builds only local return URLs", async () => {
+    const { buildFacebookOAuthReturnUrl, parseFacebookOAuthReturnDestination } = await import("../meta-oauth");
+
+    expect(parseFacebookOAuthReturnDestination("ads")).toBe("ads");
+    expect(parseFacebookOAuthReturnDestination("publisher")).toBe("publisher");
+    expect(parseFacebookOAuthReturnDestination("https://evil.example")).toBeUndefined();
+    expect(parseFacebookOAuthReturnDestination("javascript:alert(1)")).toBeUndefined();
+
+    const success = buildFacebookOAuthReturnUrl(new Request("https://app.example.com/api/auth/facebook/callback"), "publisher");
+    expect(success.toString()).toBe("https://app.example.com/?view=publisher");
+
+    const failure = buildFacebookOAuthReturnUrl(new Request("https://app.example.com/api/auth/facebook/callback"), undefined, true);
+    expect(failure.origin).toBe("https://app.example.com");
+    expect(failure.pathname).toBe("/");
+    expect(failure.searchParams.get("view")).toBeNull();
+    expect(failure.searchParams.get("auth_error")).toBe("Facebook Login could not finish. Try again or use a Meta access token.");
+  });
+
   it("requires Facebook app credentials", async () => {
     delete process.env.META_APP_ID;
     const { buildFacebookOAuthUrl } = await import("../meta-oauth");

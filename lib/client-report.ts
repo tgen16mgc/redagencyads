@@ -1,4 +1,5 @@
-import { buildKpiComparisons, formatComparisonChangePct, metricMovementIsBad } from "@/lib/metric-comparison";
+import { buildKpiComparisons, comparisonFootnote, formatComparisonChangePct, metricMovementIsBad } from "@/lib/metric-comparison";
+import { summarizeHealth, type HealthScoreSummary } from "@/lib/health-score";
 import { formatMetric } from "@/lib/metrics";
 import type { AiInsightTable, CompareMode, DashboardReport, InterfaceLanguage, KpiCard, NormalizedRow, Verdict } from "@/lib/types";
 
@@ -48,6 +49,8 @@ export type ClientReportViewModel = {
     footnoteRecommendations: string;
   };
   verdictText: string;
+  healthScore: number;
+  healthGrade: string;
   healthLabel: string;
   kpis: ClientReportKpi[];
   wins: string[];
@@ -120,6 +123,7 @@ const copy = {
 
 export function buildClientReportViewModel(args: {
   report: DashboardReport;
+  healthSummary?: HealthScoreSummary;
   language: InterfaceLanguage;
   compareMode: CompareMode;
   kpis: KpiCard[];
@@ -129,6 +133,7 @@ export function buildClientReportViewModel(args: {
 }): ClientReportViewModel {
   const report = { ...args.report, kpis: args.kpis };
   const languageCopy = copy[args.language];
+  const healthSummary = args.healthSummary ?? summarizeHealth(report);
   const currency = report.account.currency || "VND";
   const comparisons = buildKpiComparisons({
     report,
@@ -146,13 +151,23 @@ export function buildClientReportViewModel(args: {
     generatedLabel: formatDateTime(report.pulledAt, args.language),
     currency,
     language: args.language,
-    copy: languageCopy,
-    verdictText: args.verdict?.verdict || defaultVerdict(report, args.language),
-    healthLabel: `${report.health.grade} · ${report.health.score}/100`,
+    copy: {
+      ...languageCopy,
+      footnoteComparison: comparisonFootnote({
+        report,
+        previousReport: args.previousReport,
+        compareMode: args.compareMode,
+        language: args.language,
+      }),
+    },
+    verdictText: args.verdict?.verdict || defaultVerdict(healthSummary, args.language),
+    healthScore: healthSummary.score,
+    healthGrade: healthSummary.grade,
+    healthLabel: `${healthSummary.grade} · ${healthSummary.score}/100`,
     kpis: args.kpis.slice(0, 6).map((kpi) => {
       const key = kpi.key as keyof NormalizedRow;
       const value = kpi.key === "healthScore"
-        ? report.health.grade
+        ? healthSummary.grade
         : formatMetric(Number(report.totals[key] || 0), kpi.format, currency);
       const comparison = kpi.key === "healthScore" ? undefined : comparisonByKey.get(key);
       return {
@@ -213,6 +228,15 @@ export type PdfDownloadRuntime = {
   createLink: () => { href: string; download: string; click: () => void };
 };
 
+export const CLIENT_REPORT_HEALTH_MISMATCH_MESSAGE =
+  "Report export stopped because the health summary did not match the dashboard. Refresh the report and try again.";
+
+export function assertClientReportHealthParity(model: ClientReportViewModel, healthSummary: HealthScoreSummary) {
+  if (model.healthScore !== healthSummary.score || model.healthGrade !== healthSummary.grade) {
+    throw new Error(CLIENT_REPORT_HEALTH_MISMATCH_MESSAGE);
+  }
+}
+
 export function downloadClientReportPdf(pdf: ClientReportPdfFile, runtime: PdfDownloadRuntime) {
   const url = runtime.createObjectUrl(pdf.blob);
   const link = runtime.createLink();
@@ -242,9 +266,9 @@ function formatDateTime(value: string, language: InterfaceLanguage) {
   return new Intl.DateTimeFormat(language === "vi" ? "vi-VN" : "en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date(value));
 }
 
-function defaultVerdict(report: DashboardReport, language: InterfaceLanguage) {
-  if (language === "vi") return `Tài khoản đạt hạng ${report.health.grade}. Nên tối ưu có kiểm soát dựa trên KPI chính và các cảnh báo sức khỏe tài khoản.`;
-  return `The account is graded ${report.health.grade}. Optimize carefully based on the primary KPI trend and account health warnings.`;
+function defaultVerdict(healthSummary: HealthScoreSummary, language: InterfaceLanguage) {
+  if (language === "vi") return `Tài khoản đạt hạng ${healthSummary.grade}. Nên tối ưu có kiểm soát dựa trên KPI chính và các cảnh báo sức khỏe tài khoản.`;
+  return `The account is graded ${healthSummary.grade}. Optimize carefully based on the primary KPI trend and account health warnings.`;
 }
 
 function defaultInsightSummary(report: DashboardReport, language: InterfaceLanguage) {

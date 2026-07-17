@@ -8,6 +8,12 @@ export type CompetitorEvidenceRow = {
   source: "manual_ad_library_note";
 };
 
+export type CompetitorEvidenceReadiness = {
+  canAnalyze: boolean;
+  primaryIsCollect: boolean;
+  dockStatus: "idle" | "ready" | "working" | "blocked";
+};
+
 function normalized(value: string) {
   return value.trim().toLocaleLowerCase();
 }
@@ -55,4 +61,29 @@ export function acceptedManualEvidenceText(notes: string, competitors: string[])
     .filter((row) => row.status === "accepted")
     .map((row) => row.text)
     .join("\n");
+}
+
+export function competitorEvidenceReadiness(input: {
+  hasCompetitors: boolean;
+  acceptedCount: number;
+  acceptedManualCount: number;
+  collectedCount: number;
+  setupRequired: boolean;
+  collecting: boolean;
+  analyzing: boolean;
+}): CompetitorEvidenceReadiness {
+  const working = input.collecting || input.analyzing;
+  const canAnalyze = input.hasCompetitors && input.acceptedCount > 0 && !working;
+  const primaryIsCollect = input.collectedCount === 0 && input.acceptedManualCount === 0;
+  const dockStatus = working
+    ? "working"
+    : canAnalyze
+      ? "ready"
+      : input.setupRequired || !input.hasCompetitors || (input.acceptedCount === 0 && input.collectedCount > 0)
+        ? "blocked"
+        : primaryIsCollect
+          ? "ready"
+          : "idle";
+
+  return { canAnalyze, primaryIsCollect, dockStatus };
 }

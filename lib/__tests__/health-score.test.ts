@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { summarizeHealth } from "../health-score";
-import type { DailyDiagnosis } from "../daily-diagnosis";
 import type { DashboardReport, NormalizedRow } from "../types";
 
 function row(): NormalizedRow {
@@ -57,18 +56,10 @@ function report(overrides: Partial<DashboardReport> = {}): DashboardReport {
   };
 }
 
-const stableDiagnosis: DailyDiagnosis = {
-  status: "stable",
-  summary: { en: "Stable", vi: "Ổn định" },
-  window: { recentDays: 7, priorDays: 7 },
-  causes: [],
-};
-
 describe("summarizeHealth", () => {
   it("keeps a healthy account healthy when checks pass", () => {
     const summary = summarizeHealth(
       report({ health: { score: 90, grade: "A", checks: [{ id: "ctr", label: "CTR", status: "pass", detail: "Strong" }] } }),
-      stableDiagnosis,
     );
 
     expect(summary.score).toBe(90);
@@ -80,7 +71,7 @@ describe("summarizeHealth", () => {
     const summary = summarizeHealth(
       report({
         health: {
-          score: 90,
+          score: 91,
           grade: "A",
           checks: [
             { id: "ctr", label: "CTR", status: "warning", detail: "Soft" },
@@ -88,10 +79,9 @@ describe("summarizeHealth", () => {
           ],
         },
       }),
-      stableDiagnosis,
     );
 
-    expect(summary.score).toBe(72);
+    expect(summary.score).toBe(73);
     expect(summary.grade).toBe("C");
     expect(summary.severity).toBe("danger");
     expect(summary.counts.danger).toBe(1);
@@ -99,23 +89,26 @@ describe("summarizeHealth", () => {
   });
 
   it("folds daily diagnosis causes into triage", () => {
-    const diagnosis: DailyDiagnosis = {
-      status: "causes_found",
-      summary: { en: "Found", vi: "Có" },
-      window: { recentDays: 7, priorDays: 7 },
-      causes: [
-        {
-          id: "creative_fatigue",
-          severity: "danger",
-          score: 50,
-          title: { en: "Creative fatigue", vi: "Mỏi creative" },
-          evidence: [],
-          action: { en: "Refresh creative", vi: "Thay creative" },
-        },
-      ],
-    };
+    const prior = Array.from({ length: 3 }, (_, index) => ({
+      ...row(),
+      id: `prior-${index}`,
+      level: "daily" as const,
+      name: `2026-06-0${index + 1}`,
+      date: `2026-06-0${index + 1}`,
+      ctr: 2,
+      frequency: 2,
+    }));
+    const recent = Array.from({ length: 3 }, (_, index) => ({
+      ...row(),
+      id: `recent-${index}`,
+      level: "daily" as const,
+      name: `2026-06-0${index + 4}`,
+      date: `2026-06-0${index + 4}`,
+      ctr: 1,
+      frequency: 3,
+    }));
 
-    const summary = summarizeHealth(report(), diagnosis);
+    const summary = summarizeHealth(report({ dailyRows: [...prior, ...recent] }));
 
     expect(summary.severity).toBe("danger");
     expect(summary.counts.danger).toBe(1);

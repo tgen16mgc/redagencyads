@@ -1,5 +1,5 @@
 import type { DashboardReport, InterfaceLanguage } from "@/lib/types";
-import type { DailyDiagnosis } from "@/lib/daily-diagnosis";
+import { diagnoseDailyChange, type DailyDiagnosis } from "@/lib/daily-diagnosis";
 
 export type TriageSeverity = "danger" | "warning" | "healthy";
 
@@ -19,6 +19,8 @@ export type HealthScoreSummary = {
   items: TriageItem[];
   counts: Record<TriageSeverity, number>;
 };
+
+type HealthReportInput = Pick<DashboardReport, "health" | "dailyRows" | "selectedPack">;
 
 function gradeFor(score: number): string {
   if (score >= 90) return "A";
@@ -40,7 +42,15 @@ function checkSeverity(status: "pass" | "warning" | "fail"): TriageSeverity {
   return "healthy";
 }
 
-export function summarizeHealth(report: DashboardReport, diagnosis: DailyDiagnosis): HealthScoreSummary {
+export function summarizeHealth(report: HealthReportInput): HealthScoreSummary {
+  const diagnosis = diagnoseDailyChange({
+    dailyRows: report.dailyRows,
+    selectedPack: report.selectedPack,
+  });
+  return summarizeHealthInputs(report, diagnosis);
+}
+
+function summarizeHealthInputs(report: HealthReportInput, diagnosis: DailyDiagnosis): HealthScoreSummary {
   const items: TriageItem[] = report.health.checks.map((check) => ({
     id: `health-${check.id}`,
     severity: checkSeverity(check.status),

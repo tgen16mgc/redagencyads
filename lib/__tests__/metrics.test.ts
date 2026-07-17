@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { detectKpiPack, formatMetric, formatSharePct, formatRatePct, formatCompactNumber, getKpiCards, normalizeRows, scoreHealth, sumRows } from "../metrics";
-import type { InsightRow, NormalizedRow } from "../types";
+import { buildInsightPrompt, buildPrompt, detectKpiPack, formatMetric, formatSharePct, formatRatePct, formatCompactNumber, getKpiCards, normalizeRows, scoreHealth, sumRows } from "../metrics";
+import type { DashboardReport, InsightRow, NormalizedRow } from "../types";
 
 function normalized(overrides: Partial<NormalizedRow>): NormalizedRow {
   return {
@@ -201,6 +201,71 @@ describe("getKpiCards", () => {
     expect(getKpiCards("sales_roas").map((kpi) => kpi.key)).not.toContain("spend");
     expect(getKpiCards("traffic").map((kpi) => kpi.key)).not.toContain("spend");
     expect(getKpiCards("awareness").map((kpi) => kpi.key)).not.toContain("spend");
+  });
+});
+
+describe("buildPrompt", () => {
+  it("supplies the canonical client-facing health summary to analyst context", () => {
+    const prompt = buildPrompt({
+      account: { id: "act", name: "Account", currency: "VND" },
+      campaigns: [],
+      selectedPack: "lead_gen",
+      totals: normalized({}),
+      campaignRows: [],
+      adsetRows: [],
+      adRows: [],
+      dailyRows: [],
+      platformRows: [],
+      ageGenderRows: [],
+      regionRows: [],
+      health: {
+        score: 91,
+        grade: "A",
+        checks: [
+          { id: "warning", label: "Watch", status: "warning", detail: "Watch this." },
+          { id: "danger", label: "Risk", status: "fail", detail: "Fix this." },
+        ],
+      },
+      dateRange: { since: "2026-06-01", until: "2026-06-14" },
+    });
+
+    expect(prompt).toContain('"score": 73');
+    expect(prompt).toContain('"grade": "C"');
+    expect(prompt).not.toContain('"score": 91');
+  });
+
+  it("keeps compare-off insight context current-period only and uses canonical health", () => {
+    const current: DashboardReport = {
+      account: { id: "act", name: "Account", currency: "VND" },
+      selectedCampaigns: [],
+      dateRange: { since: "2026-06-01", until: "2026-06-14" },
+      detectedPack: "lead_gen",
+      selectedPack: "lead_gen",
+      packReason: "test",
+      kpis: [],
+      totals: normalized({}),
+      campaignRows: [],
+      adsetRows: [],
+      adRows: [],
+      dailyRows: [],
+      platformRows: [],
+      ageGenderRows: [],
+      regionRows: [],
+      health: {
+        score: 91,
+        grade: "A",
+        checks: [
+          { id: "warning", label: "Watch", status: "warning", detail: "Watch this." },
+          { id: "danger", label: "Risk", status: "fail", detail: "Fix this." },
+        ],
+      },
+      prompt: "",
+      pulledAt: "2026-06-14T00:00:00.000Z",
+    };
+    const prompt = buildInsightPrompt({ report: current, previousReport: current, compareMode: "off" });
+
+    expect(prompt).toContain('"score": 73');
+    expect(prompt).toContain('"comparison": null');
   });
 });
 

@@ -27,6 +27,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { actionDescription } from "@/components/dashboard/action-dock-description"
 import { cn } from "@/lib/utils"
 
 export type ActionDockStatus = "idle" | "ready" | "working" | "blocked"
@@ -83,13 +84,6 @@ const POSITION_CLASSES = {
   inline: "pointer-events-none px-3",
 } as const
 
-function actionDescription(action: ActionDockAction) {
-  const description = action.disabledReason ?? action.tooltip ?? action.label
-  return action.shortcut === "mod+enter"
-    ? `${description} (Command or Control + Enter)`
-    : description
-}
-
 function ActionLabel({ action }: { action: ActionDockAction }) {
   return (
     <>
@@ -136,9 +130,9 @@ export function StickyActionDock({
   const isExpanded = controlledExpanded ?? uncontrolledExpanded
   const hasSecondaryActions = secondaryActions.length > 0
   const resolvedStatusLabel = statusLabel ?? STATUS_LABELS[status]
-  const primaryIsWorking = status === "working" || primaryAction.loading
+  const primaryIsWorking = status === "working" || Boolean(primaryAction.loading)
   const primaryIsDisabled =
-    status === "blocked" || primaryAction.disabled || primaryIsWorking
+    status === "blocked" || Boolean(primaryAction.disabled) || primaryIsWorking
 
   const setExpanded = useCallback(
     (nextExpanded: boolean) => {
@@ -252,6 +246,8 @@ export function StickyActionDock({
                   </div>
                   {secondaryActions.map((action, index) => {
                     const Icon = action.icon
+                    const actionIsDisabled = Boolean(action.disabled || action.loading)
+                    const description = actionDescription(action, actionIsDisabled)
 
                     return (
                       <Tooltip key={action.id}>
@@ -262,10 +258,10 @@ export function StickyActionDock({
                               type="button"
                               size="sm"
                               variant="outline"
-                              disabled={action.disabled || action.loading}
+                              disabled={actionIsDisabled}
                               tabIndex={isExpanded ? undefined : -1}
                               aria-label={action.label}
-                              title={action.disabledReason}
+                              title={description}
                               onClick={() => void action.onSelect()}
                               className="action-dock-secondary-action"
                               style={{ "--action-index": index } as CSSProperties}
@@ -282,7 +278,7 @@ export function StickyActionDock({
                             </Button>
                           }
                         />
-                        <TooltipContent>{actionDescription(action)}</TooltipContent>
+                        <TooltipContent>{description}</TooltipContent>
                       </Tooltip>
                     )
                   })}
@@ -363,7 +359,7 @@ export function StickyActionDock({
                             ? "Meta+Enter Control+Enter"
                             : undefined
                         }
-                        title={primaryAction.disabledReason}
+                        title={actionDescription(primaryAction, primaryIsDisabled)}
                         onClick={runPrimaryAction}
                         data-working={primaryIsWorking ? "true" : undefined}
                         className="action-dock-primary max-w-64 sm:max-w-none"
@@ -382,7 +378,7 @@ export function StickyActionDock({
                       </Button>
                     }
                   />
-                  <TooltipContent>{actionDescription(primaryAction)}</TooltipContent>
+                  <TooltipContent>{actionDescription(primaryAction, primaryIsDisabled)}</TooltipContent>
                 </Tooltip>
               </div>
             </div>

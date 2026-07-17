@@ -5,8 +5,12 @@ import { validateToken } from "@/lib/meta";
 const graphVersion = () => process.env.META_GRAPH_VERSION || "v22.0";
 
 export const FACEBOOK_OAUTH_STATE_COOKIE = "meta_facebook_oauth_state";
+export const FACEBOOK_OAUTH_RETURN_COOKIE = "meta_facebook_oauth_return";
 export const FACEBOOK_OAUTH_STATE_MAX_AGE_SECONDS = 10 * 60;
+export const FACEBOOK_OAUTH_GENERIC_ERROR = "Facebook Login could not finish. Try again or use a Meta access token.";
 export const facebookOAuthScopes = pageSetupPermissions;
+
+export type FacebookOAuthReturnDestination = "ads" | "publisher";
 
 type TokenResponse = {
   access_token?: string;
@@ -36,6 +40,23 @@ function getRequiredEnv(name: "META_APP_ID" | "META_APP_SECRET") {
 
 export function createFacebookOAuthState() {
   return crypto.randomBytes(24).toString("base64url");
+}
+
+export function parseFacebookOAuthReturnDestination(
+  value: string | null | undefined,
+): FacebookOAuthReturnDestination | undefined {
+  return value === "ads" || value === "publisher" ? value : undefined;
+}
+
+export function buildFacebookOAuthReturnUrl(
+  request: Request,
+  destination?: FacebookOAuthReturnDestination,
+  error?: boolean,
+) {
+  const url = new URL("/", request.url);
+  if (destination) url.searchParams.set("view", destination);
+  if (error) url.searchParams.set("auth_error", FACEBOOK_OAUTH_GENERIC_ERROR);
+  return url;
 }
 
 export function getFacebookOAuthRedirectUri(request: Request) {
