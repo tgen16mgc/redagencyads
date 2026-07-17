@@ -8,31 +8,49 @@ import {
   promptInputJson,
 } from "@/lib/ai/transport";
 
+const competitorSchema = z.object({
+  name: z.string(),
+  likely_positioning: z.string(),
+  observed_or_expected_patterns: z.array(z.string()),
+  gap: z.string(),
+});
+
+const themeSchema = z.object({
+  theme: z.string(),
+  evidence: z.string(),
+  evidence_ids: z.array(z.string()).max(12),
+  opportunity: z.string(),
+  confidence: z.enum(["low", "medium", "high"]),
+});
+
+const testBriefSchema = z.object({
+  angle: z.string(),
+  hook: z.string(),
+  format: z.string(),
+  why: z.string(),
+  guardrail: z.string(),
+});
+
 const competitorSpyPayloadSchema = z.object({
   summary: z.string().min(1),
-  competitors: z.array(z.object({
-    name: z.string(),
-    likely_positioning: z.string(),
-    observed_or_expected_patterns: z.array(z.string()),
-    gap: z.string(),
-  })),
-  themes: z.array(z.object({
-    theme: z.string(),
-    evidence: z.string(),
-    evidence_ids: z.array(z.string()).max(12),
-    opportunity: z.string(),
-    confidence: z.enum(["low", "medium", "high"]),
-  })),
+  competitors: z.array(competitorSchema),
+  themes: z.array(themeSchema),
   creative_gaps: z.array(z.string()),
-  test_briefs: z.array(z.object({
-    angle: z.string(),
-    hook: z.string(),
-    format: z.string(),
-    why: z.string(),
-    guardrail: z.string(),
-  })),
+  test_briefs: z.array(testBriefSchema),
   next_actions: z.array(z.string()),
   assumptions: z.array(z.string()),
+});
+
+const recoverableCompetitorSpyPayloadSchema = z.object({
+  summary: z.string().min(1).optional().catch(undefined),
+  competitors: z.array(competitorSchema).optional().catch(undefined),
+  themes: z.array(themeSchema.extend({
+    evidence_ids: z.array(z.string()).max(12).default([]),
+  })).optional().catch(undefined),
+  creative_gaps: z.array(z.string()).optional().catch(undefined),
+  test_briefs: z.array(testBriefSchema).optional().catch(undefined),
+  next_actions: z.array(z.string()).optional().catch(undefined),
+  assumptions: z.array(z.string()).optional().catch(undefined),
 });
 
 function competitorFallback(prompt: string): CompetitorSpyResult {
@@ -117,42 +135,45 @@ function competitorFallback(prompt: string): CompetitorSpyResult {
 }
 
 function parseCompetitorSpy(text: string, provider: CompetitorSpyResult["provider"], prompt: string): CompetitorSpyResult {
-  try {
-    const parsed = competitorSpyPayloadSchema.parse(parseJsonObject(text));
-    const payload = promptInputJson(prompt);
-    const allowedEvidenceIds = new Set(
-      Array.isArray(payload?.available_evidence_ids)
-        ? payload.available_evidence_ids.filter((value): value is string => typeof value === "string")
-        : [],
-    );
-    return {
-      ...parsed,
-      themes: parsed.themes.map((theme) => ({
-        ...theme,
-        evidence_ids: theme.evidence_ids.filter((id) => allowedEvidenceIds.has(id)),
-      })),
+  const json = parseJsonObject(text);
+  const strictResult = competitorSpyPayloadSchema.safeParse(json);
+  const recovered = recoverableCompetitorSpyPayloadSchema.parse(json);
+  const fallback = competitorFallback(prompt);
+  const payload = promptInputJson(prompt);
+  const allowedEvidenceIds = new Set(
+    Array.isArray(payload?.available_evidence_ids)
+      ? payload.available_evidence_ids.filter((value): value is string => typeof value === "string")
+      : [],
+  );
+  const themes = (recovered.themes ?? fallback.themes).map((theme) => ({
+    ...theme,
+    evidence_ids: theme.evidence_ids.filter((id) => allowedEvidenceIds.has(id)),
+  }));
+  const recoveryAssumption = strictResult.success
+    ? []
+    : ["9router returned partial structured output; missing or invalid sections were filled from the deterministic verified-evidence brief."];
+
+  if (!strictResult.success) {
+    console.warn("[competitor-ai] Recovered partial structured output", {
       provider,
-    };
-  } catch {
-    return {
-      provider,
-      summary: "Model returned non-JSON output.",
-      competitors: [],
-      themes: [
-        {
-          theme: "AI output",
-          evidence: text.slice(0, 220),
-          evidence_ids: [],
-          opportunity: "Retry with shorter competitor notes or use prompt fallback.",
-          confidence: "low",
-        },
-      ],
-      creative_gaps: ["JSON parsing failed."],
-      test_briefs: [],
-      next_actions: ["Retry competitor spy generation."],
-      assumptions: ["Raw model output truncated into theme evidence."],
-    };
+      responseChars: text.length,
+      issuePaths: Array.from(new Set(strictResult.error.issues.map((issue) => issue.path.join(".") || "root"))),
+    });
   }
+
+  return {
+    summary: recovered.summary ?? fallback.summary,
+    competitors: recovered.competitors ?? fallback.competitors,
+    themes,
+    creative_gaps: recovered.creative_gaps ?? fallback.creative_gaps,
+    test_briefs: recovered.test_briefs ?? fallback.test_briefs,
+    next_actions: recovered.next_actions ?? fallback.next_actions,
+    assumptions: Array.from(new Set([
+      ...(recovered.assumptions ?? []),
+      ...recoveryAssumption,
+    ])),
+    provider,
+  };
 }
 
 export async function generateCompetitorSpy(prompt: string, provider: "auto" | CompetitorSpyResult["provider"]) {

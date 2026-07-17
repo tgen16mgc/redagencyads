@@ -78,14 +78,7 @@ describe("generateInsights", () => {
 
   it("falls back to local metric insights when 9router returns invalid JSON or is missing summary", async () => {
     vi.stubEnv("NINEROUTER_KEY", "test-key");
-    const fetchSpy = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          choices: [{ message: { content: "not json at all" } }],
-        }),
-        { status: 200, headers: { "content-type": "application/json" } },
-      ),
-    );
+    const fetchSpy = vi.fn().mockImplementation(invalidJsonResponse);
     vi.stubGlobal("fetch", fetchSpy);
 
     const promptPayload = `Some instructions\n\nInput JSON:\n${JSON.stringify({
@@ -94,7 +87,7 @@ describe("generateInsights", () => {
     })}`;
     const insights = await generateInsights(promptPayload, "9router");
 
-    expect(fetchSpy).toHaveBeenCalledOnce();
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
     expect(insights.provider).toBe("prompt");
     expect(insights.summary).toContain("unavailable");
     expect(insights.rows.length).toBeGreaterThan(0);

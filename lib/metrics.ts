@@ -482,6 +482,10 @@ Use the competitor ads framework:
 - If only competitor names are provided, clearly mark findings as hypotheses and do not claim live scraping.
 - Use competitor insights for original test ideas only. Do not copy competitor ads, copy, claims, or visual designs.
 - Convert findings into practical Meta Ads experiments that fit the current account context when provided.
+- Include every output key exactly once. Use an empty array when a section has no supported findings.
+- Keep the response compact: at most 4 themes, 5 creative gaps, 3 test briefs, and 5 next actions.
+- Keep the summary under 70 words and each other string under 50 words.
+- Every theme must include evidence_ids. Use an empty evidence_ids array for hypotheses.
 
 Return strict JSON only.
 

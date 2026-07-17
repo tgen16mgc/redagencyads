@@ -398,17 +398,17 @@ describe("generateVerdict", () => {
 
   it("falls back to local Verdict when 9router returns invalid JSON", async () => {
     vi.stubEnv("NINEROUTER_KEY", "test-key");
-    const fetchSpy = vi.fn().mockResolvedValue(
+    const fetchSpy = vi.fn().mockImplementation(() => (
       new Response(
         JSON.stringify({ choices: [{ message: { content: "not json" } }] }),
         { status: 200, headers: { "content-type": "application/json" } },
-      ),
-    );
+      )
+    ));
     vi.stubGlobal("fetch", fetchSpy);
 
     const verdict = await generateVerdict({ report: report(), language: "en", provider: "9router" });
 
-    expect(fetchSpy).toHaveBeenCalledOnce();
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
     expect(verdict.provider).toBe("prompt");
     expect(verdict.winners.length).toBeGreaterThan(0);
     expect(verdict.assumptions.join(" ")).toContain("9router enhancement failed");

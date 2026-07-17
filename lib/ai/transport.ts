@@ -340,27 +340,57 @@ export async function nineRouterCompletion(prompt: string, options: { jsonMode?:
   const headers: Record<string, string> = { "content-type": "application/json" };
   const apiKey = nineRouterApiKey();
   if (apiKey) headers.authorization = `Bearer ${apiKey}`;
+  const requestedMaxTokens = Math.max(
+    300,
+    Math.min(positiveMs(options.maxTokens ?? NINEROUTER_MAX_TOKENS, NINEROUTER_MAX_TOKENS), 2400),
+  );
 
   try {
-    const body: Record<string, unknown> = {
-      model: process.env.NINEROUTER_MODEL || NINEROUTER_DEFAULT_MODEL,
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.2,
-      max_tokens: Math.max(300, Math.min(positiveMs(options.maxTokens ?? NINEROUTER_MAX_TOKENS, NINEROUTER_MAX_TOKENS), 2400)),
-    };
-    if (options.jsonMode) body.response_format = { type: "json_object" };
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      const body: Record<string, unknown> = {
+        model: process.env.NINEROUTER_MODEL || NINEROUTER_DEFAULT_MODEL,
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.2,
+        max_tokens: Math.min(requestedMaxTokens + (attempt - 1) * 600, 2400),
+      };
+      if (options.jsonMode) body.response_format = { type: "json_object" };
 
-    const response = await fetch(`${nineRouterBaseUrl()}/v1/chat/completions`, {
-      method: "POST",
-      signal: controller.signal,
-      headers,
-      body: JSON.stringify(body),
-    });
-    const json = await readJson(response);
-    if (!response.ok) throw new Error(json?.error?.message || "9router request failed.");
-    const text = choiceText(json?.choices?.[0]);
-    if (!text) throw new Error("9router returned an empty response.");
-    return text;
+      const response = await fetch(`${nineRouterBaseUrl()}/v1/chat/completions`, {
+        method: "POST",
+        signal: controller.signal,
+        headers,
+        body: JSON.stringify(body),
+      });
+      const json = await readJson(response);
+      if (!response.ok) {
+        const message = json?.error?.message || "9router request failed.";
+        if (attempt === 1 && [408, 429, 502, 503, 529].includes(response.status)) continue;
+        throw new Error(message);
+      }
+
+      const choice = json?.choices?.[0];
+      const text = choiceText(choice);
+      if (!text) {
+        if (attempt === 1) continue;
+        throw new Error("9router returned an empty response after 2 attempts.");
+      }
+
+      if (options.jsonMode) {
+        try {
+          parseJsonObject(text);
+        } catch {
+          if (attempt === 1) continue;
+          const finishReason = choice?.finish_reason || "unknown";
+          throw new Error(
+            `9router did not return valid JSON after 2 attempts (finish_reason: ${finishReason}, response_chars: ${text.length}).`,
+          );
+        }
+      }
+
+      return text;
+    }
+
+    throw new Error("9router request failed after 2 attempts.");
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
       throw new Error(`9router timed out after ${Math.round(timeoutMs / 1000)}s.`);

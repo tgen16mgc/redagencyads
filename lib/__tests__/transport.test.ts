@@ -1,12 +1,27 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   confidenceValue,
   errorMessage,
+  nineRouterCompletion,
   parseJsonObject,
   promptInputJson,
   stringArray,
   stringValue,
 } from "../ai/transport";
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
+});
+
+function nineRouterResponse(content: string, finishReason: string) {
+  return new Response(JSON.stringify({
+    choices: [{ finish_reason: finishReason, message: { content } }],
+  }), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
+}
 
 describe("parseJsonObject", () => {
   it("parses a plain JSON object", () => {
@@ -126,5 +141,37 @@ describe("errorMessage", () => {
   it("returns a generic message for non-Error values", () => {
     expect(errorMessage("string error")).toBe("request failed");
     expect(errorMessage(null)).toBe("request failed");
+  });
+});
+
+describe("nineRouterCompletion", () => {
+  it("retries length-truncated JSON with a larger output budget", async () => {
+    vi.stubEnv("NINEROUTER_KEY", "test-key");
+    vi.stubEnv("NINEROUTER_URL", "http://localhost:20128");
+    const fetchSpy = vi.fn()
+      .mockResolvedValueOnce(nineRouterResponse('{"summary":"cut off', "length"))
+      .mockResolvedValueOnce(nineRouterResponse('{"summary":"complete"}', "stop"));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const content = await nineRouterCompletion("Return JSON", { jsonMode: true, maxTokens: 1800 });
+
+    expect(content).toBe('{"summary":"complete"}');
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    const firstBody = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body));
+    const secondBody = JSON.parse(String(fetchSpy.mock.calls[1]?.[1]?.body));
+    expect(firstBody.max_tokens).toBe(1800);
+    expect(secondBody.max_tokens).toBe(2400);
+  });
+
+  it("rejects unusable JSON after the retry instead of returning it to callers", async () => {
+    vi.stubEnv("NINEROUTER_KEY", "test-key");
+    const fetchSpy = vi.fn()
+      .mockResolvedValueOnce(nineRouterResponse("not json", "stop"))
+      .mockResolvedValueOnce(nineRouterResponse('{"still":"cut off', "length"));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await expect(nineRouterCompletion("Return JSON", { jsonMode: true, maxTokens: 1800 }))
+      .rejects.toThrow("valid JSON");
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 });

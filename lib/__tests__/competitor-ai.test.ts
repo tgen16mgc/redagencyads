@@ -23,6 +23,7 @@ describe("generateCompetitorSpy", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
+    vi.restoreAllMocks();
   });
 
   it("returns a usable local competitor brief when no AI provider key is configured", async () => {
@@ -202,6 +203,8 @@ describe("generateCompetitorSpy", () => {
     expect(prompt).not.toContain("proof-led creative ".repeat(60));
     expect(prompt).toContain("https://www.facebook.com/ads/library/?id=bounded-ad");
     expect(prompt).not.toContain("http://insecure.example/ad");
+    expect(prompt).toContain("at most 4 themes");
+    expect(prompt).toContain("Every theme must include evidence_ids");
   });
 
   it("does not refer to fetched cards when analysis uses verified notes only", async () => {
@@ -267,32 +270,83 @@ describe("generateCompetitorSpy", () => {
     expect(result.themes[0]?.evidence_ids).toEqual(["ad-1"]);
   });
 
-  it("reports non-JSON 9router output instead of throwing", async () => {
+  it("returns a complete prompt fallback when 9router repeatedly returns non-JSON output", async () => {
     vi.stubEnv("NINEROUTER_KEY", "test-key");
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(nineRouterResponse("no json here at all")));
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce(nineRouterResponse("no json here at all"))
+      .mockResolvedValueOnce(nineRouterResponse("still no json")));
 
-    const result = await generateCompetitorSpy("x".repeat(120), "9router");
+    const prompt = buildCompetitorSpyPrompt({
+      competitors: ["Seoul Spa"],
+      market: "premium beauty clinic",
+      platform: "meta",
+      notes: "",
+      extractedAds: [],
+    });
 
-    expect(result.provider).toBe("9router");
-    expect(result.summary).toBe("Model returned non-JSON output.");
-    expect(result.competitors).toEqual([]);
+    const result = await generateCompetitorSpy(prompt, "9router");
+
+    expect(result.provider).toBe("prompt");
+    expect(result.summary).toContain("prompt-only output returned");
+    expect(result.summary).not.toContain("Model returned non-JSON output");
+    expect(result.competitors[0]?.name).toBe("Seoul Spa");
   });
 
-  it("returns a safe result shape when 9router JSON is missing required arrays", async () => {
+  it("fills missing 9router arrays from the deterministic verified-evidence brief", async () => {
     vi.stubEnv("NINEROUTER_KEY", "test-key");
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(nineRouterResponse(JSON.stringify({
-      summary: "Looks valid but is incomplete",
+    const warningSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const modelResponse = JSON.stringify({
+      summary: "Useful 9router summary with an incomplete response shape.",
       themes: null,
+    });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(nineRouterResponse(modelResponse)));
+
+    const prompt = buildCompetitorSpyPrompt({
+      competitors: ["Seoul Spa"],
+      market: "premium beauty clinic",
+      platform: "meta",
+      notes: "",
+      extractedAds: [],
+    });
+
+    const result = await generateCompetitorSpy(prompt, "9router");
+
+    expect(result.provider).toBe("9router");
+    expect(result.summary).toBe("Useful 9router summary with an incomplete response shape.");
+    expect(result.competitors[0]?.name).toBe("Seoul Spa");
+    expect(result.themes.length).toBeGreaterThan(0);
+    expect(result.creative_gaps.length).toBeGreaterThan(0);
+    expect(result.test_briefs.length).toBeGreaterThan(0);
+    expect(result.next_actions.length).toBeGreaterThan(0);
+    expect(result.assumptions.join(" ")).toContain("missing or invalid sections");
+    expect(result.assumptions.join(" ")).not.toContain("no live 9router key");
+    expect(warningSpy).toHaveBeenCalledWith(
+      "[competitor-ai] Recovered partial structured output",
+      expect.objectContaining({
+        provider: "9router",
+        responseChars: modelResponse.length,
+        issuePaths: expect.arrayContaining(["competitors", "themes"]),
+      }),
+    );
+  });
+
+  it("keeps a valid model theme when only evidence_ids is missing", async () => {
+    vi.stubEnv("NINEROUTER_KEY", "test-key");
+    const { evidence_ids: _evidenceIds, ...themeWithoutEvidenceIds } = spyPayload.themes[0];
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(nineRouterResponse(JSON.stringify({
+      ...spyPayload,
+      themes: [themeWithoutEvidenceIds],
     }))));
 
     const result = await generateCompetitorSpy("x".repeat(120), "9router");
 
     expect(result.provider).toBe("9router");
-    expect(result.summary).toBe("Model returned non-JSON output.");
-    expect(result.competitors).toEqual([]);
-    expect(result.themes).toHaveLength(1);
-    expect(result.test_briefs).toEqual([]);
-    expect(result.next_actions).toEqual(["Retry competitor spy generation."]);
+    expect(result.summary).toBe(spyPayload.summary);
+    expect(result.themes[0]).toMatchObject({
+      theme: spyPayload.themes[0].theme,
+      evidence_ids: [],
+    });
+    expect(result.creative_gaps).toEqual(spyPayload.creative_gaps);
   });
 
   it("falls back to prompt-only output when 9router returns an empty response", async () => {
