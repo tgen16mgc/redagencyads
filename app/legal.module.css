@@ -1,0 +1,140 @@
+.page {
+  min-height: 100vh;
+  padding: 4rem 1.5rem 6rem;
+  background:
+    radial-gradient(circle at 12% 0%, rgb(47 140 255 / 14%), transparent 34rem),
+    radial-gradient(circle at 88% 12%, rgb(50 213 131 / 8%), transparent 28rem),
+    var(--background);
+}
+
+.shell {
+  width: min(100%, 54rem);
+  margin: 0 auto;
+}
+
+.eyebrow {
+  margin: 0 0 1rem;
+  color: var(--info);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.title {
+  margin: 0;
+  max-width: 16ch;
+  font-size: clamp(2.5rem, 7vw, 4.75rem);
+  font-weight: 680;
+  letter-spacing: -0.055em;
+  line-height: 0.96;
+}
+
+.lede {
+  max-width: 46rem;
+  margin: 1.5rem 0 0;
+  color: var(--muted-foreground);
+  font-size: 1.05rem;
+  line-height: 1.75;
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.5rem;
+  margin: 1.5rem 0 0;
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+}
+
+.nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 2rem 0;
+}
+
+.nav a {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.55rem 0.9rem;
+  color: var(--secondary-foreground);
+  font-size: 0.875rem;
+  text-decoration: none;
+  transition: border-color var(--duration-medium), color var(--duration-medium), background var(--duration-medium);
+}
+
+.nav a:hover {
+  border-color: var(--info);
+  background: rgb(86 165 255 / 8%);
+  color: var(--foreground);
+}
+
+.document {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 1.5rem;
+  background: rgb(19 21 25 / 92%);
+  box-shadow: var(--shadow-glow-surface);
+}
+
+.section {
+  padding: 2rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.section:last-child {
+  border-bottom: 0;
+}
+
+.section h2 {
+  margin: 0 0 0.85rem;
+  font-size: 1.15rem;
+  letter-spacing: -0.02em;
+}
+
+.section p,
+.section li {
+  color: #c6cad2;
+  line-height: 1.75;
+}
+
+.section p {
+  margin: 0.75rem 0 0;
+}
+
+.section ul,
+.section ol {
+  margin: 0.85rem 0 0;
+  padding-left: 1.25rem;
+}
+
+.section li + li {
+  margin-top: 0.6rem;
+}
+
+.section a,
+.footer a {
+  color: var(--info);
+  text-underline-offset: 0.2em;
+}
+
+.footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-top: 1.5rem;
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+}
+
+@media (max-width: 640px) {
+  .page {
+    padding: 2.5rem 1rem 4rem;
+  }
+
+  .section {
+    padding: 1.35rem;
+  }
+}
