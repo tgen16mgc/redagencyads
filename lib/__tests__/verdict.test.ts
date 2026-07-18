@@ -254,7 +254,7 @@ describe("generateVerdict", () => {
     expect(fetchSpy).toHaveBeenCalled();
     expect(verdict.provider).toBe("prompt");
     expect(verdict.winners.length).toBeGreaterThan(0);
-    expect(verdict.assumptions.join(" ")).toContain("9router enhancement failed");
+    expect(verdict.assumptions.join(" ")).toContain("AI enhancement failed");
   });
 
   it("enhances a structured Verdict with 9router in auto mode when 9router credentials exist", async () => {
@@ -297,7 +297,7 @@ describe("generateVerdict", () => {
 
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(verdict.provider).toBe("prompt");
-    expect(verdict.assumptions.join(" ")).toContain("9router credentials missing");
+    expect(verdict.assumptions.join(" ")).toContain("AI provider credentials missing");
   });
 
   it("enhances a structured Verdict with 9router when explicitly selected", async () => {
@@ -344,7 +344,7 @@ describe("generateVerdict", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(verdict.provider).toBe("prompt");
     expect(verdict.winners.length).toBeGreaterThan(0);
-    expect(verdict.assumptions.join(" ")).toContain("9router credentials missing");
+    expect(verdict.assumptions.join(" ")).toContain("AI provider credentials missing");
   });
 
   it("does not let 9router raise confidence above the local Verdict", async () => {
@@ -393,7 +393,7 @@ describe("generateVerdict", () => {
     expect(verdict.winners.length).toBeGreaterThan(0);
     expect(verdict.losers.length).toBeGreaterThan(0);
     expect(verdict.budget_moves.join(" ")).toContain("20%");
-    expect(verdict.assumptions.join(" ")).toContain("9router enhanced wording");
+    expect(verdict.assumptions.join(" ")).toContain("AI-enhanced wording");
   });
 
   it("falls back to local Verdict when 9router returns invalid JSON", async () => {
@@ -411,7 +411,7 @@ describe("generateVerdict", () => {
     expect(fetchSpy).toHaveBeenCalledTimes(2);
     expect(verdict.provider).toBe("prompt");
     expect(verdict.winners.length).toBeGreaterThan(0);
-    expect(verdict.assumptions.join(" ")).toContain("9router enhancement failed");
+    expect(verdict.assumptions.join(" ")).toContain("AI enhancement failed");
   });
 
   it("returns Vietnamese local Verdict strings when language is vi", async () => {

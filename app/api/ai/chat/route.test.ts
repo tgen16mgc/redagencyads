@@ -106,9 +106,9 @@ describe("POST /api/ai/chat", () => {
     const timeoutJson = await timeoutResponse.json();
 
     expect(providerResponse.status).toBe(502);
-    expect(providerJson.error).toBe("9router is temporarily unavailable.");
+    expect(providerJson.error).toBe("The smart assistant is temporarily unavailable.");
     expect(JSON.stringify(providerJson)).not.toContain("private upstream detail");
     expect(timeoutResponse.status).toBe(504);
-    expect(timeoutJson.error).toBe("9router took too long to answer. Try a shorter question.");
+    expect(timeoutJson.error).toBe("The smart assistant took too long to answer. Try a shorter question.");
   });
 });

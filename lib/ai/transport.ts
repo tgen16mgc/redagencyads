@@ -45,7 +45,7 @@ export class NineRouterTimeoutError extends Error {
 
 export class NineRouterAbortError extends Error {
   constructor() {
-    super("9router request was cancelled.");
+    super("AI provider request was cancelled.");
     this.name = "NineRouterAbortError";
   }
 }
@@ -398,7 +398,7 @@ export async function nineRouterChatCompletion(
       });
       const json = await readJson(response);
       if (!response.ok) {
-        const message = json?.error?.message || "9router request failed.";
+        const message = json?.error?.message || "AI provider request failed.";
         if (attempt === 1 && [408, 429, 502, 503, 529].includes(response.status)) continue;
         throw new NineRouterProviderError(message, response.status);
       }
@@ -407,7 +407,7 @@ export async function nineRouterChatCompletion(
       const text = choiceText(choice);
       if (!text) {
         if (attempt === 1) continue;
-        throw new NineRouterProviderError("9router returned an empty response after 2 attempts.", 502);
+        throw new NineRouterProviderError("AI provider returned an empty response after 2 attempts.", 502);
       }
 
       if (options.jsonMode) {
@@ -417,7 +417,7 @@ export async function nineRouterChatCompletion(
           if (attempt === 1) continue;
           const finishReason = choice?.finish_reason || "unknown";
           throw new Error(
-            `9router did not return valid JSON after 2 attempts (finish_reason: ${finishReason}, response_chars: ${text.length}).`,
+            `AI provider did not return valid JSON after 2 attempts (finish_reason: ${finishReason}, response_chars: ${text.length}).`,
           );
         }
       }
@@ -425,11 +425,11 @@ export async function nineRouterChatCompletion(
       return text;
     }
 
-    throw new NineRouterProviderError("9router request failed after 2 attempts.", 502);
+    throw new NineRouterProviderError("AI provider request failed after 2 attempts.", 502);
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
       if (!timedOut && options.signal?.aborted) throw new NineRouterAbortError();
-      throw new NineRouterTimeoutError(`9router timed out after ${Math.round(timeoutMs / 1000)}s.`);
+      throw new NineRouterTimeoutError(`AI provider timed out after ${Math.round(timeoutMs / 1000)}s.`);
     }
     if (error instanceof NineRouterProviderError || error instanceof NineRouterTimeoutError || error instanceof NineRouterAbortError) {
       throw error;

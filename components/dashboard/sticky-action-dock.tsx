@@ -36,6 +36,7 @@ export interface ActionDockAction {
   id: string
   label: string
   shortLabel?: string
+  controlsId?: string
   icon: LucideIcon
   onSelect: () => void | Promise<void>
   disabled?: boolean
@@ -61,6 +62,7 @@ export interface StickyActionDockProps {
   className?: string
   glowColors?: string[]
   companionAction?: ActionDockAction
+  companionActive?: boolean
   shortcutsDisabled?: boolean
 }
 
@@ -122,6 +124,7 @@ export function StickyActionDock({
     "var(--action-glow-primary)",
   ],
   companionAction,
+  companionActive = false,
   shortcutsDisabled = false,
 }: StickyActionDockProps) {
   const actionsId = useId()
@@ -129,8 +132,10 @@ export function StickyActionDock({
   const firstSecondaryActionRef = useRef<HTMLButtonElement>(null)
   const dockSurfaceRef = useRef<HTMLDivElement>(null)
   const pointerFrameRef = useRef<number | null>(null)
+  const companionFrameRef = useRef<number | null>(null)
   const pointerPositionRef = useRef({ x: 0, y: 0 })
   const [uncontrolledExpanded, setUncontrolledExpanded] = useState(defaultExpanded)
+  const [collapsedWidth, setCollapsedWidth] = useState<number>()
   const isExpanded = controlledExpanded ?? uncontrolledExpanded
   const hasSecondaryActions = secondaryActions.length > 0
   const resolvedStatusLabel = statusLabel ?? STATUS_LABELS[status]
@@ -147,6 +152,10 @@ export function StickyActionDock({
     },
     [controlledExpanded, onExpandedChange]
   )
+
+  useEffect(() => {
+    if (companionActive) setExpanded(false)
+  }, [companionActive, setExpanded])
 
   const runPrimaryAction = useCallback(() => {
     if (primaryIsDisabled) return
@@ -170,9 +179,18 @@ export function StickyActionDock({
   }, [primaryAction.shortcut, runPrimaryAction, shortcutsDisabled])
 
   useEffect(() => {
+    if (companionActive) return
+    const timeout = window.setTimeout(() => setCollapsedWidth(undefined), 540)
+    return () => window.clearTimeout(timeout)
+  }, [companionActive])
+
+  useEffect(() => {
     return () => {
       if (pointerFrameRef.current !== null) {
         cancelAnimationFrame(pointerFrameRef.current)
+      }
+      if (companionFrameRef.current !== null) {
+        cancelAnimationFrame(companionFrameRef.current)
       }
     }
   }, [])
@@ -233,10 +251,13 @@ export function StickyActionDock({
             <div
               ref={dockSurfaceRef}
               onPointerMove={handlePointerMove}
-              data-expanded={isExpanded ? "true" : "false"}
+              data-expanded={isExpanded && !companionActive ? "true" : "false"}
+              data-chat-expanded={companionActive ? "true" : "false"}
               className="action-dock-island max-w-full"
+              style={{ "--dock-collapsed-width": collapsedWidth ? `${collapsedWidth}px` : undefined } as CSSProperties}
             >
-            {hasSecondaryActions ? (
+            <div className="action-dock-expansion">
+              {hasSecondaryActions ? (
               <div className="action-dock-tray-shell" aria-hidden={!isExpanded}>
                 <div
                   id={actionsId}
@@ -295,9 +316,13 @@ export function StickyActionDock({
                   })}
                 </div>
               </div>
-            ) : null}
+              ) : null}
+              <div className="context-chat-dock-host" aria-hidden={!companionActive}>
+                <div id="context-chat-dock-panel-root" />
+              </div>
+            </div>
 
-            <div className="action-dock-surface flex max-w-full items-center gap-1">
+            <div className="action-dock-surface flex max-w-full items-center gap-1" inert={companionActive}>
               <div className="action-dock-context hidden min-w-0 items-center gap-2 pl-2 sm:flex">
                 <span className="max-w-40 truncate text-sm font-medium text-foreground">
                   {contextLabel}
@@ -350,6 +375,46 @@ export function StickyActionDock({
                 </Tooltip>
               ) : null}
 
+              {companionAction ? (
+                <>
+                  <Separator orientation="vertical" className="mx-1 h-6" />
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          disabled={Boolean(companionAction.disabled || companionAction.loading)}
+                          aria-label={companionAction.label}
+                          aria-expanded={companionActive}
+                          aria-controls={companionAction.controlsId}
+                          data-context-chat-trigger="true"
+                          data-active={companionActive ? "true" : "false"}
+                          onClick={() => {
+                            if (companionActive) {
+                              void companionAction.onSelect()
+                              return
+                            }
+                            if (companionFrameRef.current !== null) return
+                            setCollapsedWidth(dockSurfaceRef.current?.getBoundingClientRect().width)
+                            companionFrameRef.current = requestAnimationFrame(() => {
+                              companionFrameRef.current = null
+                              void companionAction.onSelect()
+                            })
+                          }}
+                          className="context-chat-dock-trigger"
+                        >
+                          {companionAction.loading ? <Spinner /> : <companionAction.icon data-icon="inline-start" />}
+                          <span className="hidden sm:inline">{companionAction.shortLabel || companionAction.label}</span>
+                        </Button>
+                      }
+                    />
+                    <TooltipContent>{actionDescription(companionAction, Boolean(companionAction.disabled))}</TooltipContent>
+                  </Tooltip>
+                </>
+              ) : null}
+
               <div
                 data-active={status === "ready" && !primaryIsDisabled ? "true" : "false"}
                 className="action-dock-primary-frame min-w-0 shrink-0"
@@ -395,27 +460,6 @@ export function StickyActionDock({
             </div>
             </div>
           </div>
-
-          {companionAction ? (
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={Boolean(companionAction.disabled || companionAction.loading)}
-                    aria-label={companionAction.label}
-                    onClick={() => void companionAction.onSelect()}
-                    className="context-chat-dock-pill h-12 shrink-0 rounded-full px-3 sm:px-4"
-                  >
-                    {companionAction.loading ? <Spinner /> : <companionAction.icon />}
-                    <span className="hidden sm:inline">{companionAction.shortLabel || companionAction.label}</span>
-                  </Button>
-                }
-              />
-              <TooltipContent>{actionDescription(companionAction, Boolean(companionAction.disabled))}</TooltipContent>
-            </Tooltip>
-          ) : null}
         </div>
       </div>
     </TooltipProvider>

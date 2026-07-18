@@ -69,7 +69,7 @@ function mergeEnhancedVerdict(localVerdict: Verdict, enhanced: Verdict): Verdict
     budget_moves: enhanced.budget_moves.length > 0 ? enhanced.budget_moves : localVerdict.budget_moves,
     tests: enhanced.tests.length > 0 ? enhanced.tests : localVerdict.tests,
     confidence: enhanced.confidence,
-    assumptions: Array.from(new Set([...localVerdict.assumptions, ...enhanced.assumptions, "9router enhanced wording; deterministic local Verdict fields preserved where missing."])),
+    assumptions: Array.from(new Set([...localVerdict.assumptions, ...enhanced.assumptions, "AI-enhanced wording; deterministic local Verdict fields preserved where missing."])),
   };
 }
 
@@ -161,7 +161,7 @@ async function enhanceVerdictWithNineRouter(args: {
     await nineRouterCompletion(buildVerdictEnhancementPrompt(args), { jsonMode: true, maxTokens: 1800 }),
     "9router",
   );
-  if (!parsed || hasLargeBudgetMove(parsed)) throw new Error("9router Verdict failed guardrail validation.");
+  if (!parsed || hasLargeBudgetMove(parsed)) throw new Error("AI Verdict failed guardrail validation.");
   return capConfidence(mergeEnhancedVerdict(args.localVerdict, parsed), args.localVerdict.confidence);
 }
 
@@ -171,10 +171,10 @@ async function generateLegacyVerdict(prompt: string, provider: VerdictRequestPro
     try {
       return parseVerdict(await nineRouterCompletion(prompt, { jsonMode: true }), "9router");
     } catch (error) {
-      return fallback(prompt, `9router could not finish a live Verdict in time. Local prompt mode used instead. ${errorMessage(error)}`);
+      return fallback(prompt, `The AI assistant could not finish a live Verdict in time. Local prompt mode used instead. ${errorMessage(error)}`);
     }
   }
-  return fallback(prompt, "9router credentials missing. Use local prompt mode for deterministic Verdict generation.");
+  return fallback(prompt, "AI provider credentials missing. Use local prompt mode for deterministic Verdict generation.");
 }
 
 export async function generateVerdict(input: GenerateVerdictInput | string, legacyProvider: VerdictRequestProvider = "auto"): Promise<Verdict> {
@@ -192,12 +192,12 @@ export async function generateVerdict(input: GenerateVerdictInput | string, lega
 
   if (provider === "9router" || provider === "auto") {
     if (!hasNineRouterCredentials()) {
-      return mergeProviderAssumption(localVerdict, "9router credentials missing; local ads-rule Verdict used instead.");
+      return mergeProviderAssumption(localVerdict, "AI provider credentials missing; local ads-rule Verdict used instead.");
     }
     try {
       return await enhanceVerdictWithNineRouter({ report: input.report, localVerdict, language });
     } catch (error) {
-      return mergeProviderAssumption(localVerdict, `9router enhancement failed; local ads-rule Verdict used instead. ${errorMessage(error)}`);
+      return mergeProviderAssumption(localVerdict, `AI enhancement failed; local ads-rule Verdict used instead. ${errorMessage(error)}`);
     }
   }
 

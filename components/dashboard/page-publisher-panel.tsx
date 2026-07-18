@@ -26,6 +26,7 @@ import {
   type SchedulePreset,
 } from "@/lib/page-publisher-validation";
 import { StickyActionDock } from "@/components/dashboard/sticky-action-dock";
+import { CONTEXT_CHAT_PANEL_ID } from "@/components/dashboard/context-chat-copy";
 import type { ChatContext } from "@/lib/ai/chat-contract";
 import { buildPublisherChatContext } from "@/lib/ai/chat-context";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -1014,11 +1015,13 @@ export const PagePublisherPanel = React.forwardRef<PagePublisherContextHandle, {
         shortcutsDisabled={chatShortcutsDisabled}
         companionAction={{
           id: "open-publisher-assistant",
-          label: language === "vi" ? "Hỏi 9router về bài đăng" : "Ask 9router about this post",
-          shortLabel: language === "vi" ? "Hỏi AI" : "Ask AI",
+          label: language === "vi" ? "Hỏi trợ lý AI về bài đăng" : "Ask the smart assistant about this post",
+          shortLabel: language === "vi" ? "Trợ lý AI" : "Assistant",
+          controlsId: CONTEXT_CHAT_PANEL_ID,
           icon: BotMessageSquareIcon,
           onSelect: onOpenAssistant,
         }}
+        companionActive={chatShortcutsDisabled}
       />
     </section>
   );

@@ -49,6 +49,7 @@ import { AppSidebar, type AppSidebarItem, type WorkflowSidebarItem } from "@/com
 import { WorkspaceOverview } from "@/components/dashboard/workspace-overview";
 import { StickyActionDock } from "@/components/dashboard/sticky-action-dock";
 import { ContextChat, type ContextChatHandle } from "@/components/dashboard/context-chat";
+import { CONTEXT_CHAT_PANEL_ID } from "@/components/dashboard/context-chat-copy";
 import { CompetitorEvidenceWorkspace } from "@/components/dashboard/competitor-evidence-workspace";
 import { assertClientReportHealthParity, buildClientReportViewModel, downloadClientReportPdf } from "@/lib/client-report";
 import { buildClientReportPdf } from "@/lib/client-report-pdf";
@@ -198,7 +199,7 @@ const packItems: { label: string; value: KpiPack }[] = [
 
 const providerItems = [
   { label: "Auto: best available", value: "auto" },
-  { label: "9router", value: "9router" },
+  { label: "AI assistant", value: "9router" },
   { label: "Local rules only", value: "prompt" },
 ] as const;
 
@@ -1260,19 +1261,31 @@ export function DashboardShell() {
 
   if (!canOpenDashboardView({ authenticated, activeView })) {
     return (
-      <TokenScreen
-        error={error}
-        token={token}
-        loading={loading === "session"}
-        language={language}
-        intendedView={activeView}
-        facebookOAuthConfigured={facebookOAuthConfigured}
-        onLanguageChange={setLanguage}
-        onBack={() => setActiveView("overview")}
-        onTokenChange={setToken}
-        onUseCompetitor={() => setActiveView("competitor")}
-        onSubmit={connectToken}
-      />
+      <>
+        <TokenScreen
+          error={error}
+          token={token}
+          loading={loading === "session"}
+          language={language}
+          intendedView={activeView}
+          facebookOAuthConfigured={facebookOAuthConfigured}
+          onLanguageChange={setLanguage}
+          onBack={() => setActiveView("overview")}
+          onTokenChange={setToken}
+          onUseCompetitor={() => setActiveView("competitor")}
+          onSubmit={connectToken}
+        />
+        <ContextChat
+          ref={contextChatRef}
+          activeView={activeView}
+          language={language}
+          available={nineRouterAvailable}
+          open={chatOpen}
+          showStandaloneLauncher
+          getContext={getChatContext}
+          onOpenChange={setChatOpen}
+        />
+      </>
     );
   }
 
@@ -1757,11 +1770,13 @@ export function DashboardShell() {
               shortcutsDisabled={chatOpen}
               companionAction={{
                 id: "open-performance-assistant",
-                label: language === "vi" ? "Hỏi 9router về hiệu quả" : "Ask 9router about performance",
-                shortLabel: language === "vi" ? "Hỏi AI" : "Ask AI",
+                label: language === "vi" ? "Hỏi trợ lý AI về hiệu quả" : "Ask the smart assistant about performance",
+                shortLabel: language === "vi" ? "Trợ lý AI" : "Assistant",
+                controlsId: CONTEXT_CHAT_PANEL_ID,
                 icon: BotMessageSquareIcon,
-                onSelect: () => setChatOpen(true),
+                onSelect: () => setChatOpen((current) => !current),
               }}
+              companionActive={chatOpen}
             />
           ) : null}
             </>
@@ -1770,14 +1785,14 @@ export function DashboardShell() {
               language={language}
               state={tiktokWorkspace}
               onStateChange={setTikTokWorkspace}
-              onOpenAssistant={() => setChatOpen(true)}
+              onOpenAssistant={() => setChatOpen((current) => !current)}
               chatShortcutsDisabled={chatOpen}
             />
           ) : activeView === "publisher" ? (
             <PagePublisherPanel
               ref={publisherContextRef}
               language={language}
-              onOpenAssistant={() => setChatOpen(true)}
+              onOpenAssistant={() => setChatOpen((current) => !current)}
               chatShortcutsDisabled={chatOpen}
             />
           ) : (
@@ -1823,7 +1838,7 @@ export function DashboardShell() {
               onEvidenceStatusChange={updateCompetitorEvidenceStatus}
               onGenerate={runCompetitorSpy}
               onCopyPrompt={copyCompetitorPrompt}
-              onOpenAssistant={() => setChatOpen(true)}
+              onOpenAssistant={() => setChatOpen((current) => !current)}
               chatShortcutsDisabled={chatOpen}
             />
           )}
@@ -2718,8 +2733,8 @@ function VerdictPanel({
           <h2 className="text-xl font-semibold tracking-tight">Verdict</h2>
           <p className="text-sm text-muted-foreground">
             {isVietnamese
-              ? "Verdict local có thể chạy không cần model; auto dùng 9router để enhancement khi có key."
-              : "Local Verdict works without a model call; auto uses 9router for enhancement when a key exists."}
+              ? "Verdict local có thể chạy không cần model; chế độ auto dùng AI để cải thiện khi có key."
+              : "Local Verdict works without a model call; auto uses AI enhancement when a provider key exists."}
           </p>
         </div>
         <div className="flex flex-col gap-2 md:flex-row md:items-end" data-print-hidden>
@@ -3230,11 +3245,13 @@ function TikTokIntelligencePanel({
         shortcutsDisabled={chatShortcutsDisabled}
         companionAction={{
           id: "open-tiktok-assistant",
-          label: isVietnamese ? "Hỏi 9router về TikTok" : "Ask 9router about TikTok",
-          shortLabel: isVietnamese ? "Hỏi AI" : "Ask AI",
+          label: isVietnamese ? "Hỏi trợ lý AI về TikTok" : "Ask the smart assistant about TikTok",
+          shortLabel: isVietnamese ? "Trợ lý AI" : "Assistant",
+          controlsId: CONTEXT_CHAT_PANEL_ID,
           icon: BotMessageSquareIcon,
           onSelect: onOpenAssistant,
         }}
+        companionActive={chatShortcutsDisabled}
       />
     </div>
   );
@@ -3409,10 +3426,10 @@ function workflowStateLabel(state: "complete" | "current" | "pending", language:
 }
 
 function providerLabel(provider: Provider, language: ReportLanguage, capabilities?: CapabilityStatus[]) {
-  if (provider === "9router") return "9router";
+  if (provider === "9router") return language === "vi" ? "Trợ lý AI" : "AI assistant";
   if (provider === "prompt") return language === "vi" ? "Luật local" : "Local rules only";
   const enhancement = capabilities?.find((capability) => capability.key === "ai_enhancement");
-  if (enhancement?.state === "available") return language === "vi" ? "9router sẵn sàng" : "9router ready";
+  if (enhancement?.state === "available") return language === "vi" ? "AI sẵn sàng" : "AI ready";
   if (enhancement?.state === "degraded") return language === "vi" ? "Fallback local đang bật" : "Local fallback active";
   return language === "vi" ? "Tự chọn nguồn tốt nhất" : "Auto: best available";
 }

@@ -109,9 +109,9 @@ function competitorFallback(prompt: string): CompetitorSpyResult {
         },
       ],
       next_actions: hasExtractedAds
-        ? ["Open Meta Ad Library links from fetched cards.", "Paste notable hooks/offers into notes if live scraping is thin.", "Generate again with 9router when provider key is available for deeper synthesis."]
-        : ["Recheck the pasted evidence against the live Meta Ad Library before using it in a brief.", "Add landing-page or CTA details that materially change the offer interpretation.", "Generate again with 9router when provider key is available for deeper synthesis."],
-      assumptions: ["Local deterministic brief used because no live 9router key was available.", evidenceCount ? "Evidence links or notes need human review before final claims." : "No live competitor ad evidence was available."],
+        ? ["Open Meta Ad Library links from fetched cards.", "Paste notable hooks/offers into notes if live scraping is thin.", "Generate again with the AI assistant when a provider key is available for deeper synthesis."]
+        : ["Recheck the pasted evidence against the live Meta Ad Library before using it in a brief.", "Add landing-page or CTA details that materially change the offer interpretation.", "Generate again with the AI assistant when a provider key is available for deeper synthesis."],
+      assumptions: ["Local deterministic brief used because no live AI provider key was available.", evidenceCount ? "Evidence links or notes need human review before final claims." : "No live competitor ad evidence was available."],
     };
   }
   return {
@@ -123,14 +123,14 @@ function competitorFallback(prompt: string): CompetitorSpyResult {
         theme: "Manual competitor brief required",
         evidence: `Prompt ready with ${prompt.length} chars.`,
         evidence_ids: [],
-        opportunity: "Add NINEROUTER_KEY, then regenerate competitor spy output.",
+        opportunity: "Configure the AI provider key, then regenerate the competitor analysis.",
         confidence: "high",
       },
     ],
     creative_gaps: ["Live AI competitor interpretation unavailable in prompt-only mode."],
     test_briefs: [],
     next_actions: ["Paste competitor ad-library notes into the panel and regenerate after adding an AI provider key."],
-    assumptions: ["NINEROUTER_KEY missing in server environment."],
+    assumptions: ["The AI provider key is missing from the server environment."],
   };
 }
 
@@ -151,7 +151,7 @@ function parseCompetitorSpy(text: string, provider: CompetitorSpyResult["provide
   }));
   const recoveryAssumption = strictResult.success
     ? []
-    : ["9router returned partial structured output; missing or invalid sections were filled from the deterministic verified-evidence brief."];
+    : ["The AI assistant returned partial structured output; missing or invalid sections were filled from the deterministic verified-evidence brief."];
 
   if (!strictResult.success) {
     console.warn("[competitor-ai] Recovered partial structured output", {
@@ -184,8 +184,8 @@ export async function generateCompetitorSpy(prompt: string, provider: "auto" | C
     } catch (error) {
       return {
         ...competitorFallback(prompt),
-        summary: `9router competitor spy failed; prompt-only output returned. ${errorMessage(error)}`,
-        assumptions: [`9router failed; prompt-only output returned. ${errorMessage(error)}`],
+        summary: `The AI assistant could not complete the competitor analysis; prompt-only output returned. ${errorMessage(error)}`,
+        assumptions: [`The AI assistant failed; prompt-only output returned. ${errorMessage(error)}`],
       };
     }
   }

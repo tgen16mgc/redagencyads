@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 
 import { StickyActionDock } from "@/components/dashboard/sticky-action-dock";
+import { CONTEXT_CHAT_PANEL_ID } from "@/components/dashboard/context-chat-copy";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -74,7 +75,7 @@ const platformItems: { label: string; value: CompetitorPlatform }[] = [
 
 const providerItems: { label: string; value: Provider }[] = [
   { label: "Auto: best available", value: "auto" },
-  { label: "9router", value: "9router" },
+  { label: "AI assistant", value: "9router" },
   { label: "Local rules only", value: "prompt" },
 ];
 
@@ -134,7 +135,7 @@ function platformLabel(platform: CompetitorPlatform) {
 }
 
 function providerLabel(provider: Provider | CompetitorSpyResult["provider"], language: ReportLanguage) {
-  if (provider === "9router") return "9router";
+  if (provider === "9router") return "AI assistant";
   if (provider === "prompt") return language === "vi" ? "Luật cục bộ" : "Local rules";
   return language === "vi" ? "Tự động" : "Auto";
 }
@@ -1437,11 +1438,13 @@ export function CompetitorEvidenceWorkspace({
         shortcutsDisabled={chatShortcutsDisabled}
         companionAction={{
           id: "open-competitor-assistant",
-          label: isVietnamese ? "Hỏi 9router về evidence" : "Ask 9router about this evidence",
-          shortLabel: isVietnamese ? "Hỏi AI" : "Ask AI",
+          label: isVietnamese ? "Hỏi trợ lý AI về evidence" : "Ask the smart assistant about this evidence",
+          shortLabel: isVietnamese ? "Trợ lý AI" : "Assistant",
+          controlsId: CONTEXT_CHAT_PANEL_ID,
           icon: BotMessageSquareIcon,
           onSelect: onOpenAssistant,
         }}
+        companionActive={chatShortcutsDisabled}
       />
     </div>
   );

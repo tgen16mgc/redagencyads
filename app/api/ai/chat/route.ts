@@ -33,7 +33,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Workspace context changed before the request was sent." }, { status: 400 });
     }
     if (!hasNineRouterCredentials()) {
-      return NextResponse.json({ error: "9router is not configured for this workspace." }, { status: 503 });
+      return NextResponse.json({ error: "The smart assistant is not configured for this workspace." }, { status: 503 });
     }
 
     const reply = await generateContextualChat(body, request.signal);
@@ -48,10 +48,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: error.issues[0]?.message || "Invalid chat request." }, { status: 400 });
     }
     if (error instanceof NineRouterTimeoutError) {
-      return NextResponse.json({ error: "9router took too long to answer. Try a shorter question." }, { status: 504 });
+      return NextResponse.json({ error: "The smart assistant took too long to answer. Try a shorter question." }, { status: 504 });
     }
     if (error instanceof NineRouterProviderError) {
-      return NextResponse.json({ error: "9router is temporarily unavailable." }, { status: 502 });
+      return NextResponse.json({ error: "The smart assistant is temporarily unavailable." }, { status: 502 });
     }
     if (error instanceof NineRouterAbortError) {
       return NextResponse.json({ error: "Chat request cancelled." }, { status: 499 });

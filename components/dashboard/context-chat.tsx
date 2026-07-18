@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { AlertCircleIcon, BotMessageSquareIcon, RotateCcwIcon, SendIcon, SquareIcon, Trash2Icon, UserIcon, XIcon } from "lucide-react";
 import type { DashboardView } from "@/lib/dashboard-access";
 import { CHAT_LIMITS, type ChatContext } from "@/lib/ai/chat-contract";
@@ -13,13 +14,12 @@ import {
   type ChatDisplayMessage,
 } from "@/lib/ai/chat-thread";
 import type { InterfaceLanguage } from "@/lib/types";
-import { contextChatCopy } from "@/components/dashboard/context-chat-copy";
+import { CONTEXT_CHAT_PANEL_ID, contextChatCopy } from "@/components/dashboard/context-chat-copy";
 import { ContextChatLauncher } from "@/components/dashboard/context-chat-launcher";
+import { ContextChatMarkdown } from "@/components/dashboard/context-chat-markdown";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetClose, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
-import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
 
 type PendingViews = Record<DashboardView, boolean>;
@@ -50,20 +50,29 @@ export const ContextChat = React.forwardRef<ContextChatHandle, {
   getContext: (view: DashboardView) => ChatContext;
   onOpenChange: (open: boolean) => void;
 }>(function ContextChat({ activeView, language, available, open, showStandaloneLauncher, getContext, onOpenChange }, ref) {
-  const isMobile = useIsMobile();
   const [threads, setThreads] = React.useState(emptyChatThreads);
   const [pendingViews, setPendingViews] = React.useState<PendingViews>(EMPTY_PENDING);
   const [input, setInput] = React.useState("");
+  const [dockTarget, setDockTarget] = React.useState<HTMLElement | null>(null);
+  const [backdropVisible, setBackdropVisible] = React.useState(false);
   const controllers = React.useRef(new Map<DashboardView, AbortController>());
   const getContextRef = React.useRef(getContext);
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
+  const latestAssistantRef = React.useRef<HTMLElement>(null);
+  const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+  const panelRef = React.useRef<HTMLElement>(null);
+  const openerRef = React.useRef<HTMLElement | null>(null);
+  const wasOpenRef = React.useRef(false);
+  const panelTitleId = React.useId();
+  const panelDescriptionId = React.useId();
   getContextRef.current = getContext;
 
   const copy = contextChatCopy(language, activeView);
   const messages = threads[activeView];
   const isPending = pendingViews[activeView];
   const activeFingerprint = chatContextFingerprint(getContext(activeView));
-  const latestAnnouncement = [...messages].reverse().find((message) => message.role === "assistant" && message.status === "complete")?.content || "";
+  const latestAssistant = [...messages].reverse().find((message) => message.role === "assistant" && message.status === "complete");
+  const latestAnnouncement = latestAssistant?.content || "";
 
   const clearAll = React.useCallback(() => {
     for (const controller of controllers.current.values()) controller.abort();
@@ -78,8 +87,63 @@ export const ContextChat = React.forwardRef<ContextChatHandle, {
   React.useEffect(() => {
     if (!open) return;
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    messagesEndRef.current?.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "end" });
-  }, [isPending, messages.length, open]);
+    const target = !isPending && latestAssistantRef.current ? latestAssistantRef.current : messagesEndRef.current;
+    target?.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: isPending ? "end" : "start" });
+  }, [isPending, latestAssistant?.id, messages.length, open]);
+
+  React.useLayoutEffect(() => {
+    if (open && !wasOpenRef.current) {
+      const activeElement = document.activeElement;
+      const activeTrigger = document.querySelector<HTMLElement>('[data-context-chat-trigger="true"][aria-expanded="true"]');
+      openerRef.current = activeTrigger || (activeElement instanceof HTMLElement && activeElement !== document.body ? activeElement : null);
+      textareaRef.current?.focus({ preventScroll: true });
+    }
+    if (!open && wasOpenRef.current) {
+      const opener = openerRef.current;
+      window.requestAnimationFrame(() => {
+        if (opener?.isConnected) opener.focus();
+      });
+    }
+    wasOpenRef.current = open;
+  }, [open]);
+
+  React.useEffect(() => {
+    if (open) {
+      setBackdropVisible(true);
+      return;
+    }
+    if (!backdropVisible) return;
+    const timer = window.setTimeout(() => setBackdropVisible(false), 520);
+    return () => window.clearTimeout(timer);
+  }, [backdropVisible, open]);
+
+  React.useEffect(() => {
+    if (!open && !backdropVisible) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [backdropVisible, open]);
+
+  React.useLayoutEffect(() => {
+    if (showStandaloneLauncher) {
+      setDockTarget(null);
+      return;
+    }
+    setDockTarget(document.getElementById("context-chat-dock-panel-root"));
+  }, [activeView, showStandaloneLauncher]);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      onOpenChange(false);
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [onOpenChange, open]);
 
   React.useEffect(() => () => {
     for (const controller of controllers.current.values()) controller.abort();
@@ -163,42 +227,63 @@ export const ContextChat = React.forwardRef<ContextChatHandle, {
     setThreads((current) => ({ ...current, [activeView]: [] }));
   };
 
-  return (
-    <>
-      {showStandaloneLauncher ? (
-        <ContextChatLauncher activeView={activeView} language={language} available={available} onOpen={() => onOpenChange(true)} />
-      ) : null}
+  const trapPanelFocus = (event: React.KeyboardEvent<HTMLElement>) => {
+    if (event.key !== "Tab") return;
+    const panel = panelRef.current;
+    if (!panel) return;
+    const focusable = Array.from(panel.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+    )).filter((element) => !element.hasAttribute("inert") && element.offsetParent !== null);
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
 
-      <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent
-          side={isMobile ? "bottom" : "right"}
-          className={cn(
-            "context-chat-panel gap-0 overflow-hidden p-0",
-            isMobile ? "max-h-[92svh] rounded-t-2xl" : "w-full sm:max-w-lg",
-          )}
-          data-slot="context-chat"
-          showCloseButton={false}
-        >
-          <SheetHeader className="border-b px-4 py-4 pr-14">
-            <SheetClose
-              render={
-                <Button type="button" variant="ghost" size="icon" className="absolute right-3 top-3" aria-label={copy.close} />
-              }
+  const chatContent = (
+    <section
+      ref={panelRef}
+      id={CONTEXT_CHAT_PANEL_ID}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={panelTitleId}
+      aria-describedby={panelDescriptionId}
+      aria-hidden={!open}
+      inert={!open}
+      data-open={open ? "true" : "false"}
+      data-slot="context-chat"
+      className="context-chat-expanded-content relative flex min-h-0 flex-col overflow-hidden"
+      onKeyDown={trapPanelFocus}
+    >
+          <header className="relative border-b px-4 py-3.5 pr-14">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="absolute right-3 top-3"
+              aria-label={copy.close}
+              onClick={() => onOpenChange(false)}
             >
               <XIcon />
-            </SheetClose>
+            </Button>
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant="secondary" className="context-chat-context-pill rounded-full">
                 <BotMessageSquareIcon />
                 {copy.viewLabel}
               </Badge>
               <Badge variant={available ? "success" : "outline"} className="rounded-full">
-                {available ? "9router live" : copy.unavailable}
+                {available ? copy.live : copy.unavailable}
               </Badge>
             </div>
-            <SheetTitle className="mt-2 text-lg">{copy.title}</SheetTitle>
-            <SheetDescription>{copy.description}</SheetDescription>
-          </SheetHeader>
+            <h2 id={panelTitleId} className="mt-2 font-heading text-lg font-semibold">{copy.title}</h2>
+            <p id={panelDescriptionId} className="text-sm text-muted-foreground">{copy.description}</p>
+          </header>
 
           <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4" aria-busy={isPending}>
             {!available ? (
@@ -239,6 +324,7 @@ export const ContextChat = React.forwardRef<ContextChatHandle, {
                   return (
                     <article
                       key={message.id}
+                      ref={message.id === latestAssistant?.id ? latestAssistantRef : undefined}
                       className={cn(
                         "context-chat-message flex gap-2",
                         message.role === "user" && "justify-end",
@@ -250,11 +336,17 @@ export const ContextChat = React.forwardRef<ContextChatHandle, {
                         </span>
                       ) : null}
                       <div className={cn(
-                        "max-w-[85%] rounded-2xl px-3 py-2.5 text-sm leading-6",
-                        message.role === "user" ? "rounded-br-md bg-primary text-primary-foreground" : "rounded-bl-md border bg-card",
+                        "min-w-0 rounded-2xl px-3 py-2.5 text-sm leading-6",
+                        message.role === "user"
+                          ? "max-w-[85%] rounded-br-md bg-primary text-primary-foreground"
+                          : "context-chat-assistant-message max-w-[calc(100%_-_2.25rem)] flex-1 rounded-bl-md border bg-card",
                         message.status === "error" && "border-destructive/35 bg-destructive/5 text-destructive",
                       )}>
-                        <p className="whitespace-pre-wrap break-words">{message.content}</p>
+                        {message.role === "assistant" && message.status === "complete" ? (
+                          <ContextChatMarkdown content={message.content} />
+                        ) : (
+                          <p className="whitespace-pre-wrap break-words">{message.content}</p>
+                        )}
                         {stale ? <p className="mt-2 text-[11px] text-muted-foreground">{copy.stale}</p> : null}
                         {message.status === "error" && message.retryContent ? (
                           <Button type="button" variant="ghost" size="sm" className="mt-1 -ml-2" onClick={() => retryMessage(message)}>
@@ -287,9 +379,10 @@ export const ContextChat = React.forwardRef<ContextChatHandle, {
 
           <span className="sr-only" aria-live="polite">{latestAnnouncement}</span>
 
-          <SheetFooter className="border-t bg-popover/95 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur">
+          <footer className="border-t bg-popover/95 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur">
             <div className="flex items-end gap-2">
               <Textarea
+                ref={textareaRef}
                 value={input}
                 onChange={(event) => setInput(event.target.value.slice(0, CHAT_LIMITS.userMessageCharacters))}
                 onKeyDown={(event) => {
@@ -313,16 +406,56 @@ export const ContextChat = React.forwardRef<ContextChatHandle, {
               )}
             </div>
             <div className="flex items-center justify-between gap-3">
-              <p className="text-[11px] leading-4 text-muted-foreground">{copy.privacy}</p>
+              <p className="context-chat-privacy text-[11px] leading-4 text-muted-foreground">{copy.privacy}</p>
               {messages.length ? (
                 <Button type="button" variant="ghost" size="icon" onClick={clearCurrent} aria-label={copy.clear} title={copy.clear}>
                   <Trash2Icon />
                 </Button>
               ) : null}
             </div>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
+          </footer>
+    </section>
+  );
+
+  const backdrop = (open || backdropVisible) && typeof document !== "undefined" ? createPortal(
+    <div
+      aria-hidden="true"
+      className="context-chat-backdrop fixed inset-0 z-[39] bg-black/25 backdrop-blur-[1px]"
+      data-open={open ? "true" : "false"}
+      onPointerDown={() => onOpenChange(false)}
+    />,
+    document.body,
+  ) : null;
+
+  if (!showStandaloneLauncher) {
+    return (
+      <>
+        {backdrop}
+        {dockTarget ? createPortal(chatContent, dockTarget) : null}
+      </>
+    );
+  }
+
+  return (
+    <>
+      {backdrop}
+      <div className="pointer-events-none fixed inset-x-0 bottom-[max(0.5rem,env(safe-area-inset-bottom))] z-50 px-2 sm:px-4" data-print-hidden>
+        <div
+          className="context-chat-island pointer-events-auto relative mx-auto overflow-hidden"
+          data-open={open ? "true" : "false"}
+        >
+          <div className="context-chat-collapsed-content absolute inset-0" aria-hidden={open} inert={open}>
+            <ContextChatLauncher
+              activeView={activeView}
+              language={language}
+              available={available}
+              open={open}
+              onToggle={() => onOpenChange(!open)}
+            />
+          </div>
+          {chatContent}
+        </div>
+      </div>
     </>
   );
 });

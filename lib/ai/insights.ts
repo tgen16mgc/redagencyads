@@ -19,7 +19,7 @@ function insightFallback(prompt: string, reason = "AI provider key not configure
         area: "Setup",
         insight: "Live AI insight table unavailable.",
         evidence: `Prompt ready with ${prompt.length} chars.`,
-        action: reason.includes("9router") ? "Retry with a shorter report scope or confirm 9router is running." : "Add NINEROUTER_KEY on server or keep using local rules, then regenerate insights.",
+        action: reason.includes("9router") || reason.includes("AI provider") ? "Retry with a shorter report scope or confirm the AI provider is available." : "Configure the AI provider key on the server or keep using local rules, then regenerate insights.",
         priority: "medium",
         confidence: "high",
       },
@@ -189,11 +189,11 @@ export async function generateInsights(prompt: string, provider: "auto" | AiInsi
     try {
       const text = await nineRouterCompletion(prompt, { jsonMode: true, maxTokens: 2200 });
       const parsed = parseInsightsStrict(text, "9router");
-      if (!parsed) throw new Error("9router insights response failed JSON validation.");
+      if (!parsed) throw new Error("AI provider insights response failed JSON validation.");
       return parsed;
     } catch (error) {
-      return localInsightFallback(prompt, `9router insights were unavailable or returned unusable output. ${errorMessage(error)}`);
+      return localInsightFallback(prompt, `AI insights were unavailable or returned unusable output. ${errorMessage(error)}`);
     }
   }
-  return localInsightFallback(prompt, "9router credentials missing; local metric insights used instead.");
+  return localInsightFallback(prompt, "AI provider credentials missing; local metric insights used instead.");
 }
