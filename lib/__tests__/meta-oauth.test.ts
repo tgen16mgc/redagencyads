@@ -18,6 +18,7 @@ describe("Facebook OAuth helpers", () => {
     vi.clearAllMocks();
     process.env.META_APP_ID = "app_123";
     process.env.META_APP_SECRET = "secret_123";
+    process.env.META_LOGIN_CONFIG_ID = "config_123";
     delete process.env.META_OAUTH_REDIRECT_URI;
     delete process.env.META_GRAPH_VERSION;
   });
@@ -26,11 +27,12 @@ describe("Facebook OAuth helpers", () => {
     vi.unstubAllGlobals();
     delete process.env.META_APP_ID;
     delete process.env.META_APP_SECRET;
+    delete process.env.META_LOGIN_CONFIG_ID;
     delete process.env.META_OAUTH_REDIRECT_URI;
     delete process.env.META_GRAPH_VERSION;
   });
 
-  it("builds a Facebook authorization URL with Page publishing scopes", async () => {
+  it("builds a Facebook Login for Business authorization URL", async () => {
     const { buildFacebookOAuthUrl } = await import("../meta-oauth");
 
     const url = buildFacebookOAuthUrl(new Request("http://localhost:3000/connect"), "state_123");
@@ -40,7 +42,9 @@ describe("Facebook OAuth helpers", () => {
     expect(url.searchParams.get("client_id")).toBe("app_123");
     expect(url.searchParams.get("redirect_uri")).toBe("http://localhost:3000/api/auth/facebook/callback");
     expect(url.searchParams.get("state")).toBe("state_123");
-    expect(url.searchParams.get("scope")).toBe("pages_show_list,pages_read_engagement,pages_manage_posts");
+    expect(url.searchParams.get("config_id")).toBe("config_123");
+    expect(url.searchParams.get("scope")).toBeNull();
+    expect(url.searchParams.get("response_type")).toBe("code");
   });
 
   it("uses a configured redirect URI when provided", async () => {
@@ -75,6 +79,13 @@ describe("Facebook OAuth helpers", () => {
     expect(() => buildFacebookOAuthUrl(new Request("http://localhost:3000"), "state_123")).toThrow("META_APP_ID is required for Facebook login.");
   });
 
+  it("requires the Facebook Login for Business configuration", async () => {
+    delete process.env.META_LOGIN_CONFIG_ID;
+    const { buildFacebookOAuthUrl } = await import("../meta-oauth");
+
+    expect(() => buildFacebookOAuthUrl(new Request("http://localhost:3000"), "state_123")).toThrow("META_LOGIN_CONFIG_ID is required for Facebook login.");
+  });
+
   it("exchanges an authorization code for an access token", async () => {
     const fetchSpy = vi.fn().mockResolvedValue(graphResponse({ access_token: "oauth-token" }));
     vi.stubGlobal("fetch", fetchSpy);
@@ -103,6 +114,7 @@ describe("Facebook OAuth helpers", () => {
       vi.fn().mockResolvedValue(
         graphResponse({
           data: [
+            { permission: "ads_read", status: "granted" },
             { permission: "pages_show_list", status: "granted" },
             { permission: "pages_read_engagement", status: "granted" },
             { permission: "pages_manage_posts", status: "granted" },
@@ -116,13 +128,14 @@ describe("Facebook OAuth helpers", () => {
     expect(validateToken).toHaveBeenCalledWith("oauth-token");
   });
 
-  it("rejects missing required Page scopes", async () => {
+  it("rejects missing required Business Login permissions", async () => {
     validateToken.mockResolvedValue({ id: "user_1" });
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
         graphResponse({
           data: [
+            { permission: "ads_read", status: "granted" },
             { permission: "pages_show_list", status: "granted" },
             { permission: "pages_read_engagement", status: "granted" },
           ],

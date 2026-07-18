@@ -17,6 +17,7 @@ export async function GET() {
     facebookOAuthConfigured: isFacebookOAuthConfigured({
       appId: process.env.META_APP_ID,
       appSecret: process.env.META_APP_SECRET,
+      loginConfigId: process.env.META_LOGIN_CONFIG_ID,
     }),
     checkedAt: new Date().toISOString(),
   });

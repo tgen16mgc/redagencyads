@@ -70,6 +70,7 @@ export function capabilityStatus(
 export function isFacebookOAuthConfigured(input: {
   appId?: string;
   appSecret?: string;
+  loginConfigId?: string;
 }): boolean {
-  return Boolean(input.appId?.trim() && input.appSecret?.trim());
+  return Boolean(input.appId?.trim() && input.appSecret?.trim() && input.loginConfigId?.trim());
 }

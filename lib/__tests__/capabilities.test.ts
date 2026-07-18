@@ -47,10 +47,11 @@ describe("buildCapabilitySnapshot", () => {
 });
 
 describe("isFacebookOAuthConfigured", () => {
-  it("requires both non-empty Facebook app credentials", () => {
-    expect(isFacebookOAuthConfigured({ appId: "app_123", appSecret: "secret_123" })).toBe(true);
+  it("requires app credentials and a Business Login configuration", () => {
+    expect(isFacebookOAuthConfigured({ appId: "app_123", appSecret: "secret_123", loginConfigId: "config_123" })).toBe(true);
+    expect(isFacebookOAuthConfigured({ appId: "app_123", appSecret: "secret_123" })).toBe(false);
     expect(isFacebookOAuthConfigured({ appId: "app_123" })).toBe(false);
     expect(isFacebookOAuthConfigured({ appSecret: "secret_123" })).toBe(false);
-    expect(isFacebookOAuthConfigured({ appId: "   ", appSecret: "secret_123" })).toBe(false);
+    expect(isFacebookOAuthConfigured({ appId: "   ", appSecret: "secret_123", loginConfigId: "config_123" })).toBe(false);
   });
 });

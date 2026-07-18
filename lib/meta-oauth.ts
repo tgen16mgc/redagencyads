@@ -8,7 +8,7 @@ export const FACEBOOK_OAUTH_STATE_COOKIE = "meta_facebook_oauth_state";
 export const FACEBOOK_OAUTH_RETURN_COOKIE = "meta_facebook_oauth_return";
 export const FACEBOOK_OAUTH_STATE_MAX_AGE_SECONDS = 10 * 60;
 export const FACEBOOK_OAUTH_GENERIC_ERROR = "Facebook Login could not finish. Try again or use a Meta access token.";
-export const facebookOAuthScopes = pageSetupPermissions;
+export const facebookOAuthScopes = ["ads_read", ...pageSetupPermissions];
 
 export type FacebookOAuthReturnDestination = "ads" | "publisher";
 
@@ -32,7 +32,7 @@ function graphUrl(path: string) {
   return `https://graph.facebook.com/${graphVersion()}${path}`;
 }
 
-function getRequiredEnv(name: "META_APP_ID" | "META_APP_SECRET") {
+function getRequiredEnv(name: "META_APP_ID" | "META_APP_SECRET" | "META_LOGIN_CONFIG_ID") {
   const value = process.env[name]?.trim();
   if (!value) throw new Error(`${name} is required for Facebook login.`);
   return value;
@@ -70,7 +70,7 @@ export function buildFacebookOAuthUrl(request: Request, state: string) {
   url.searchParams.set("client_id", getRequiredEnv("META_APP_ID"));
   url.searchParams.set("redirect_uri", getFacebookOAuthRedirectUri(request));
   url.searchParams.set("state", state);
-  url.searchParams.set("scope", facebookOAuthScopes.join(","));
+  url.searchParams.set("config_id", getRequiredEnv("META_LOGIN_CONFIG_ID"));
   url.searchParams.set("response_type", "code");
   return url;
 }

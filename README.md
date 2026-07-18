@@ -250,6 +250,7 @@ Useful:
 META_GRAPH_VERSION=v22.0
 META_APP_ID=
 META_APP_SECRET=
+META_LOGIN_CONFIG_ID=
 META_OAUTH_REDIRECT_URI=
 NINEROUTER_URL=http://localhost:20128
 NINEROUTER_KEY=
@@ -266,6 +267,8 @@ APIFY_TIKTOK_ADS_ACTOR_ID=data_xplorer/tiktok-ads-library-fast
 APIFY_TIKTOK_PROFILE_INPUT_TEMPLATE=
 APIFY_TIKTOK_ADS_INPUT_TEMPLATE=
 ```
+
+Facebook Login uses a Meta Facebook Login for Business configuration. Set `META_LOGIN_CONFIG_ID` to that configuration ID and grant `ads_read`, `pages_show_list`, `pages_read_engagement`, and `pages_manage_posts` in the configuration. The valid OAuth redirect URI must exactly match `META_OAUTH_REDIRECT_URI` or `/api/auth/facebook/callback` on the current origin.
 
 No 9router key means Verdict and Insights still return local rule-based output. No Apify vars means competitor fetch uses public no-key scraping and keeps Meta Ad Library links as fallback evidence. TikTok endpoints require `APIFY_TOKEN` plus the selected TikTok actor IDs.
 

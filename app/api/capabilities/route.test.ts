@@ -17,6 +17,7 @@ describe("GET /api/capabilities", () => {
     delete process.env.APIFY_META_ADS_ACTOR_ID;
     delete process.env.META_APP_ID;
     delete process.env.META_APP_SECRET;
+    delete process.env.META_LOGIN_CONFIG_ID;
   });
 
   it("returns capability states without exposing credentials", async () => {
@@ -42,6 +43,7 @@ describe("GET /api/capabilities", () => {
     process.env.APIFY_META_ADS_ACTOR_ID = "vendor/meta-ads";
     process.env.META_APP_ID = "meta-app-id";
     process.env.META_APP_SECRET = "meta-app-secret";
+    process.env.META_LOGIN_CONFIG_ID = "meta-login-config-id";
     hasTokenSession.mockResolvedValue(true);
     hasNineRouterCredentials.mockReturnValue(true);
 
@@ -58,6 +60,7 @@ describe("GET /api/capabilities", () => {
     expect(json.facebookOAuthConfigured).toBe(true);
     expect(JSON.stringify(json)).not.toContain("meta-app-id");
     expect(JSON.stringify(json)).not.toContain("meta-app-secret");
+    expect(JSON.stringify(json)).not.toContain("meta-login-config-id");
   });
 
   it("does not report Facebook OAuth configured with only one credential", async () => {
