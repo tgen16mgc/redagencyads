@@ -8,6 +8,8 @@ import {
   CalendarClockIcon,
   CheckCircle2Icon,
   Clock3Icon,
+  CopyIcon,
+  ExternalLinkIcon,
   FileTextIcon,
   ImageIcon,
   InstagramIcon,
@@ -17,8 +19,17 @@ import {
   RefreshCcwIcon,
   SendIcon,
   Trash2Icon,
+  UsersRoundIcon,
 } from "lucide-react";
 import { FACEBOOK_PAGE_PUBLISHING_SETUP_MESSAGE, type InterfaceLanguage, type MediaAttachment, type MetaPage, type PagePostMode, type PagePostSubmission, type PublishTarget } from "@/lib/types";
+import {
+  buildFacebookGroupHandoffText,
+  facebookGroupFallbackName,
+  getFacebookSubmissionUrl,
+  normalizeFacebookGroupUrl,
+  sanitizeFacebookGroupDestinations,
+  type FacebookGroupDestination,
+} from "@/lib/facebook-group-handoff";
 import {
   getSchedulePresetDateTimeLocal,
   validatePagePostDraft,
@@ -143,13 +154,35 @@ type Copy = {
   publishFailed: string;
   queueValidation: string;
   queueFileMediaUnsupported: string;
+  groupTitle: string;
+  groupDescription: string;
+  groupPolicy: string;
+  groupNameLabel: string;
+  groupNamePlaceholder: string;
+  groupUrlLabel: string;
+  groupUrlPlaceholder: string;
+  groupSave: string;
+  groupEmpty: string;
+  groupCopyOpen: string;
+  groupRemove: string;
+  groupUsingDraft: string;
+  groupUsingSubmission: string;
+  groupNoSource: string;
+  groupNoContent: string;
+  groupMediaNote: string;
+  groupScheduledNote: string;
+  groupInvalidUrl: string;
+  groupSaved: string;
+  groupCopiedOpened: string;
+  groupOpened: string;
+  groupCopyFailed: string;
   validation: PagePostValidationMessages;
 };
 
 const COPY: Record<InterfaceLanguage, Copy> = {
   en: {
-    title: "Page publisher",
-    description: "Preview, publish, or queue Facebook and Instagram posts with Meta permissions checked on the server.",
+    title: "Publishing studio",
+    description: "Preview, publish, or queue Page and Instagram posts, then hand successful content into Facebook Groups.",
     pageLabel: "Facebook Page",
     pagePlaceholder: "Choose a Page",
     pageHelp: "Only Pages where your token has content creation permissions are shown.",
@@ -225,6 +258,28 @@ const COPY: Record<InterfaceLanguage, Copy> = {
     publishFailed: "Unable to submit post.",
     queueValidation: "Switch to Schedule and choose a time before adding to the queue.",
     queueFileMediaUnsupported: "Queued scheduled posts can only use hosted media URLs. Submit uploaded files directly instead.",
+    groupTitle: "Facebook Group handoff",
+    groupDescription: "Save your regular Groups, then copy the current content and open the selected Group in one action.",
+    groupPolicy: "Meta retired direct Groups API publishing. This handoff keeps the final paste and media attachment under your Facebook account.",
+    groupNameLabel: "Group name",
+    groupNamePlaceholder: "Client community",
+    groupUrlLabel: "Facebook Group URL",
+    groupUrlPlaceholder: "https://www.facebook.com/groups/client-community/",
+    groupSave: "Save Group",
+    groupEmpty: "No Groups saved in this browser yet.",
+    groupCopyOpen: "Copy + open",
+    groupRemove: "Remove Group",
+    groupUsingDraft: "Using the current draft",
+    groupUsingSubmission: "Using the latest submitted post",
+    groupNoSource: "No handoff source yet",
+    groupNoContent: "Write a draft or submit a Page post before opening a Group handoff.",
+    groupMediaNote: "Facebook will open the Group composer. Attach the media there before posting.",
+    groupScheduledNote: "A scheduled Page post link becomes shareable only after the Page post is live.",
+    groupInvalidUrl: "Enter a valid facebook.com/groups/... URL.",
+    groupSaved: "Facebook Group saved in this browser.",
+    groupCopiedOpened: "Post content copied and the Facebook Group opened in a new tab.",
+    groupOpened: "Facebook Group opened. Add the media manually before posting.",
+    groupCopyFailed: "The Group opened, but the browser could not copy the post. Copy the preview manually.",
     validation: {
       pageRequired: "Choose a Page before publishing.",
       contentRequired: "Add a message, link, or media before publishing.",
@@ -238,8 +293,8 @@ const COPY: Record<InterfaceLanguage, Copy> = {
     },
   },
   vi: {
-    title: "Đăng bài Page",
-    description: "Xem trước, đăng ngay hoặc lên lịch bài Facebook và Instagram với quyền Meta được kiểm tra trên server.",
+    title: "Studio đăng bài",
+    description: "Xem trước, đăng hoặc lên lịch bài Page và Instagram, sau đó chuyển nội dung thành công vào Facebook Group.",
     pageLabel: "Facebook Page",
     pagePlaceholder: "Chọn Page",
     pageHelp: "Chỉ hiển thị Page mà token hiện tại có quyền tạo nội dung.",
@@ -315,6 +370,28 @@ const COPY: Record<InterfaceLanguage, Copy> = {
     publishFailed: "Không gửi được bài đăng.",
     queueValidation: "Chuyển sang Lên lịch và chọn thời gian trước khi thêm vào hàng chờ.",
     queueFileMediaUnsupported: "Bài trong hàng chờ chỉ hỗ trợ URL media public. Hãy gửi trực tiếp nếu dùng file upload.",
+    groupTitle: "Chuyển bài vào Facebook Group",
+    groupDescription: "Lưu các Group thường dùng, sau đó sao chép nội dung và mở Group đã chọn chỉ với một thao tác.",
+    groupPolicy: "Meta đã ngừng API đăng trực tiếp vào Group. Luồng này giữ bước dán bài và đính kèm media trong tài khoản Facebook của bạn.",
+    groupNameLabel: "Tên Group",
+    groupNamePlaceholder: "Cộng đồng khách hàng",
+    groupUrlLabel: "URL Facebook Group",
+    groupUrlPlaceholder: "https://www.facebook.com/groups/cong-dong-khach-hang/",
+    groupSave: "Lưu Group",
+    groupEmpty: "Chưa lưu Group nào trong trình duyệt này.",
+    groupCopyOpen: "Sao chép + mở",
+    groupRemove: "Xóa Group",
+    groupUsingDraft: "Đang dùng bản nháp hiện tại",
+    groupUsingSubmission: "Đang dùng bài vừa gửi gần nhất",
+    groupNoSource: "Chưa có nội dung để chuyển",
+    groupNoContent: "Hãy viết bản nháp hoặc gửi bài Page trước khi chuyển vào Group.",
+    groupMediaNote: "Facebook sẽ mở trình soạn bài của Group. Hãy đính kèm media tại đó trước khi đăng.",
+    groupScheduledNote: "Link bài Page đã lên lịch chỉ chia sẻ được sau khi bài Page hiển thị công khai.",
+    groupInvalidUrl: "Nhập URL hợp lệ dạng facebook.com/groups/....",
+    groupSaved: "Đã lưu Facebook Group trong trình duyệt này.",
+    groupCopiedOpened: "Đã sao chép nội dung và mở Facebook Group trong tab mới.",
+    groupOpened: "Đã mở Facebook Group. Hãy thêm media thủ công trước khi đăng.",
+    groupCopyFailed: "Đã mở Group nhưng trình duyệt không sao chép được nội dung. Hãy sao chép từ phần xem trước.",
     validation: {
       pageRequired: "Chọn Page trước khi đăng.",
       contentRequired: "Thêm nội dung, link hoặc media trước khi đăng.",
@@ -339,6 +416,7 @@ const SCHEDULE_PRESETS: Array<{ key: SchedulePreset; copyKey: keyof Pick<Copy, "
 
 const SUBMISSION_STORAGE_KEY = "decision-workspace-page-submissions";
 const DRAFT_STORAGE_KEY = "decision-workspace-page-draft";
+const GROUP_STORAGE_KEY = "decision-workspace-facebook-groups";
 
 type PublisherDraft = {
   pageId: string;
@@ -367,6 +445,16 @@ function readPublisherDraft(): PublisherDraft {
   }
 }
 
+function readFacebookGroups() {
+  if (typeof window === "undefined") return [];
+  try {
+    return sanitizeFacebookGroupDestinations(JSON.parse(window.localStorage.getItem(GROUP_STORAGE_KEY) || "[]"));
+  } catch {
+    window.localStorage.removeItem(GROUP_STORAGE_KEY);
+    return [];
+  }
+}
+
 export type PagePublisherContextHandle = {
   getChatContext: () => Extract<ChatContext, { view: "publisher" }>;
 };
@@ -379,6 +467,7 @@ export const PagePublisherPanel = React.forwardRef<PagePublisherContextHandle, {
   const copy = COPY[language];
   const id = React.useId();
   const initialDraft = React.useMemo(readPublisherDraft, []);
+  const initialGroups = React.useMemo(readFacebookGroups, []);
   const [pages, setPages] = React.useState<MetaPage[]>([]);
   const [pageId, setPageId] = React.useState(initialDraft.pageId);
   const [target, setTarget] = React.useState<PublishTarget>("facebook");
@@ -396,6 +485,11 @@ export const PagePublisherPanel = React.forwardRef<PagePublisherContextHandle, {
   const [error, setError] = React.useState("");
   const [success, setSuccess] = React.useState<PagePostSubmission | null>(null);
   const [submissions, setSubmissions] = React.useState<PagePostSubmission[]>([]);
+  const [groups, setGroups] = React.useState<FacebookGroupDestination[]>(initialGroups);
+  const [groupName, setGroupName] = React.useState("");
+  const [groupUrl, setGroupUrl] = React.useState("");
+  const [groupNotice, setGroupNotice] = React.useState("");
+  const [groupError, setGroupError] = React.useState("");
   const [confirmOpen, setConfirmOpen] = React.useState(false);
   const selectedPage = pages.find((page) => page.id === pageId);
   const draftValidation = validatePagePostDraft({ pageId, message, link, mode, scheduledFor, target, mediaItems }, Date.now(), copy.validation);
@@ -430,7 +524,21 @@ export const PagePublisherPanel = React.forwardRef<PagePublisherContextHandle, {
     window.localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify({ pageId, message, link, mode, scheduledFor }));
   }, [link, message, mode, pageId, scheduledFor]);
 
+  React.useEffect(() => {
+    window.localStorage.setItem(GROUP_STORAGE_KEY, JSON.stringify(groups));
+  }, [groups]);
+
   const hasPreview = Boolean(message.trim() || link.trim() || mediaItems.length);
+  const groupSourceSubmission = hasPreview ? null : submissions[0];
+  const groupSourceMediaItems = hasPreview
+    ? mediaItems
+    : groupSourceSubmission?.mediaItems || (groupSourceSubmission?.media ? [groupSourceSubmission.media] : []);
+  const groupHandoffText = buildFacebookGroupHandoffText({
+    message: hasPreview ? message : groupSourceSubmission?.message,
+    link: hasPreview ? link : groupSourceSubmission?.link,
+    facebookPostUrl: getFacebookSubmissionUrl(groupSourceSubmission),
+  });
+  const hasGroupSource = Boolean(groupHandoffText || groupSourceMediaItems.length);
   const submittingLabel = uploadProgress === null ? copy.submitting : `${copy.submitting} ${uploadProgress}%`;
 
   const loadPages = React.useCallback(async () => {
@@ -589,6 +697,43 @@ export const PagePublisherPanel = React.forwardRef<PagePublisherContextHandle, {
       setError(err instanceof Error ? err.message : copy.publishFailed);
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  function saveFacebookGroup() {
+    setGroupError("");
+    setGroupNotice("");
+    const normalizedUrl = normalizeFacebookGroupUrl(groupUrl);
+    if (!normalizedUrl) {
+      setGroupError(copy.groupInvalidUrl);
+      return;
+    }
+
+    const destination = {
+      name: groupName.trim().slice(0, 120) || facebookGroupFallbackName(normalizedUrl),
+      url: normalizedUrl,
+    };
+    setGroups((current) => [...current.filter((group) => group.url !== normalizedUrl), destination]);
+    setGroupName("");
+    setGroupUrl("");
+    setGroupNotice(copy.groupSaved);
+  }
+
+  async function openFacebookGroup(destination: FacebookGroupDestination) {
+    setGroupError("");
+    setGroupNotice("");
+    if (!hasGroupSource) {
+      setGroupError(copy.groupNoContent);
+      return;
+    }
+
+    const copyPromise = groupHandoffText ? copyTextToClipboard(groupHandoffText) : Promise.resolve();
+    window.open(destination.url, "_blank", "noopener,noreferrer");
+    try {
+      await copyPromise;
+      setGroupNotice(groupHandoffText ? copy.groupCopiedOpened : copy.groupOpened);
+    } catch {
+      setGroupError(copy.groupCopyFailed);
     }
   }
 
@@ -875,6 +1020,116 @@ export const PagePublisherPanel = React.forwardRef<PagePublisherContextHandle, {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
+              <UsersRoundIcon className="size-4 text-muted-foreground" />
+              {copy.groupTitle}
+            </CardTitle>
+            <CardDescription>{copy.groupDescription}</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <Alert>
+              <UsersRoundIcon />
+              <AlertDescription>{copy.groupPolicy}</AlertDescription>
+            </Alert>
+
+            {groupError ? (
+              <Alert variant="destructive">
+                <AlertTitle>{language === "vi" ? "Cần kiểm tra" : "Needs attention"}</AlertTitle>
+                <AlertDescription>{groupError}</AlertDescription>
+              </Alert>
+            ) : null}
+
+            {groupNotice ? (
+              <Alert className="border-success/30 bg-success/10 text-success">
+                <CheckCircle2Icon />
+                <AlertDescription className="text-success/90">{groupNotice}</AlertDescription>
+              </Alert>
+            ) : null}
+
+            <div className="rounded-xl border bg-muted/25 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <Badge variant={hasPreview ? "secondary" : "outline"}>
+                  {hasPreview ? copy.groupUsingDraft : groupSourceSubmission ? copy.groupUsingSubmission : copy.groupNoSource}
+                </Badge>
+                {groupSourceSubmission?.mode === "scheduled" ? <Badge variant="secondary">{copy.scheduled}</Badge> : null}
+              </div>
+              {hasGroupSource ? (
+                <p className="mt-3 max-h-32 overflow-auto whitespace-pre-wrap text-sm leading-6">
+                  {groupHandoffText || copy.groupMediaNote}
+                </p>
+              ) : (
+                <p className="mt-3 text-sm text-muted-foreground">{copy.groupNoContent}</p>
+              )}
+              {groupSourceMediaItems.length ? <p className="mt-2 text-xs leading-5 text-muted-foreground">{copy.groupMediaNote}</p> : null}
+              {groupSourceSubmission?.mode === "scheduled" ? <p className="mt-2 text-xs leading-5 text-muted-foreground">{copy.groupScheduledNote}</p> : null}
+            </div>
+
+            <FieldGroup className="grid gap-3 sm:grid-cols-2">
+              <Field>
+                <FieldLabel htmlFor={`${id}-group-name`}>{copy.groupNameLabel}</FieldLabel>
+                <Input
+                  id={`${id}-group-name`}
+                  value={groupName}
+                  onChange={(event) => setGroupName(event.target.value)}
+                  placeholder={copy.groupNamePlaceholder}
+                />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor={`${id}-group-url`}>{copy.groupUrlLabel}</FieldLabel>
+                <Input
+                  id={`${id}-group-url`}
+                  value={groupUrl}
+                  onChange={(event) => setGroupUrl(event.target.value)}
+                  placeholder={copy.groupUrlPlaceholder}
+                />
+              </Field>
+            </FieldGroup>
+            <Button type="button" variant="outline" onClick={saveFacebookGroup} disabled={!groupUrl.trim()}>
+              <PlusIcon data-icon="inline-start" />
+              {copy.groupSave}
+            </Button>
+
+            {groups.length ? (
+              <div className="space-y-2">
+                {groups.map((group) => (
+                  <div key={group.url} className="flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium">{group.name}</p>
+                      <p className="truncate text-xs text-muted-foreground">{group.url}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="flex-1 sm:flex-none"
+                        disabled={!hasGroupSource}
+                        onClick={() => void openFacebookGroup(group)}
+                      >
+                        <CopyIcon data-icon="inline-start" />
+                        {copy.groupCopyOpen}
+                        <ExternalLinkIcon data-icon="inline-end" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => setGroups((current) => current.filter((item) => item.url !== group.url))}
+                      >
+                        <Trash2Icon />
+                        <span className="sr-only">{copy.groupRemove}</span>
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">{copy.groupEmpty}</p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
               <CalendarClockIcon className="size-4 text-muted-foreground" />
               {copy.queueTitle}
             </CardTitle>
@@ -1039,6 +1294,24 @@ export const PagePublisherPanel = React.forwardRef<PagePublisherContextHandle, {
     </section>
   );
 });
+
+async function copyTextToClipboard(value: string) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = value;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  const copied = document.execCommand("copy");
+  textarea.remove();
+  if (!copied) throw new Error("Clipboard copy failed.");
+}
 
 function buildHostedMedia(type: MediaAttachment["type"], url: string): MediaAttachment | undefined {
   if (url.trim()) return { type, url: url.trim() };
