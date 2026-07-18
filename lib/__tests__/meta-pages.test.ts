@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { FACEBOOK_PAGE_PUBLISHING_SETUP_MESSAGE } from "../types";
-import { getPages, publishPageFeedPost } from "../meta-pages";
+import {
+  finishFacebookVideoUpload,
+  getPages,
+  publishPageFeedPost,
+  startFacebookVideoUpload,
+  transferFacebookVideoUpload,
+} from "../meta-pages";
 
 function graphResponse(body: unknown, ok = true, status = 200) {
   return new Response(JSON.stringify(body), { status, statusText: ok ? "OK" : "Bad Request" });
@@ -452,6 +458,24 @@ describe("publishPageFeedPost", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it("rejects local Instagram media before any partial Facebook publish", async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await expect(
+      publishPageFeedPost({
+        token: "user-token",
+        pageId: "page_1",
+        message: "Both targets",
+        mode: "publish_now",
+        target: "both",
+        media: { type: "video", name: "launch.mp4", file: new File(["video"], "launch.mp4") },
+      }),
+    ).rejects.toThrow("Instagram publishing requires a public hosted media URL");
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   it("publishes Instagram media through container and publish endpoints", async () => {
     const fetchSpy = vi
       .fn()
@@ -492,5 +516,78 @@ describe("publishPageFeedPost", () => {
     expect(publishBody.get("creation_id")).toBe("container_1");
     expect(result.metaPostId).toBe("ig_media_1");
     expect(result.results).toEqual([{ target: "instagram", metaPostId: "ig_media_1", status: "submitted" }]);
+  });
+});
+
+describe("resumable Facebook video uploads", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("starts a graph-video upload with the selected Page token", async () => {
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValueOnce(permissionsResponse(pagePermissions))
+      .mockResolvedValueOnce(graphResponse({
+        data: [{ id: "page_1", name: "Ready Page", tasks: ["CREATE_CONTENT"], access_token: "page-token-1" }],
+      }))
+      .mockResolvedValueOnce(graphResponse({
+        upload_session_id: "upload_1",
+        video_id: "video_1",
+        start_offset: "0",
+        end_offset: "4194304",
+      }));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const upload = await startFacebookVideoUpload({ token: "user-token", pageId: "page_1", fileSize: 12_000_000 });
+
+    expect(upload).toMatchObject({ uploadSessionId: "upload_1", videoId: "video_1", startOffset: 0, endOffset: 4_194_304 });
+    expect(String(fetchSpy.mock.calls[2][0])).toContain("graph-video.facebook.com/v22.0/page_1/videos");
+    const body = fetchSpy.mock.calls[2][1]?.body as URLSearchParams;
+    expect(body.get("file_size")).toBe("12000000");
+    expect(body.get("access_token")).toBe("page-token-1");
+  });
+
+  it("transfers the exact chunk and advances using Meta offsets", async () => {
+    const chunk = new File([new Uint8Array(1024)], "launch.mp4", { type: "video/mp4" });
+    const fetchSpy = vi.fn().mockResolvedValueOnce(graphResponse({ start_offset: "1024", end_offset: "2048" }));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const progress = await transferFacebookVideoUpload({
+      pageId: "page_1",
+      pageAccessToken: "page-token-1",
+      uploadSessionId: "upload_1",
+      startOffset: 0,
+      chunk,
+    });
+
+    expect(progress).toEqual({ startOffset: 1024, endOffset: 2048 });
+    const body = fetchSpy.mock.calls[0][1]?.body as FormData;
+    expect(body.get("upload_phase")).toBe("transfer");
+    expect(body.get("video_file_chunk")).toMatchObject({ name: "launch.mp4", size: 1024, type: "video/mp4" });
+  });
+
+  it("finishes a scheduled video with the caption and schedule metadata", async () => {
+    const scheduledFor = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const fetchSpy = vi.fn().mockResolvedValueOnce(graphResponse({ success: true }));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const submission = await finishFacebookVideoUpload({
+      pageId: "page_1",
+      pageName: "Ready Page",
+      pageAccessToken: "page-token-1",
+      uploadSessionId: "upload_1",
+      videoId: "video_1",
+      message: "Launch caption",
+      mode: "scheduled",
+      scheduledFor,
+      fileName: "launch.mp4",
+    });
+
+    const body = fetchSpy.mock.calls[0][1]?.body as URLSearchParams;
+    expect(body.get("description")).toBe("Launch caption");
+    expect(body.get("published")).toBe("false");
+    expect(body.get("scheduled_publish_time")).toBe(String(Math.floor(new Date(scheduledFor).getTime() / 1000)));
+    expect(submission).toMatchObject({ metaPostId: "video_1", status: "scheduled", media: { type: "video", name: "launch.mp4" } });
   });
 });

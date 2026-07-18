@@ -46,6 +46,22 @@ describe("validatePagePostDraft", () => {
     ).toBe("Instagram posts require an image, video, or GIF attachment.");
   });
 
+  it("requires hosted media for Instagram targets before any partial publish", () => {
+    const file = new File(["video"], "launch.mp4", { type: "video/mp4" });
+
+    expect(
+      validatePagePostDraft({
+        pageId: "page_1",
+        message: "Launch",
+        link: "",
+        mode: "publish_now",
+        scheduledFor: "",
+        target: "both",
+        media: { type: "video", name: file.name, file },
+      }),
+    ).toBe("Instagram publishing requires a public hosted media URL. Local file uploads are supported only for Facebook.");
+  });
+
   it("allows ordered multi-image media for Facebook only", () => {
     const mediaItems = [
       { type: "image" as const, url: "https://cdn.example.com/first.jpg" },

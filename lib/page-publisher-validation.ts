@@ -17,6 +17,7 @@ export type PagePostValidationMessages = {
   scheduleRequired: string;
   scheduleTooSoon: string;
   instagramMediaRequired: string;
+  instagramHostedMediaRequired: string;
   instagramScheduleUnsupported: string;
   multipleMediaInstagramUnsupported: string;
   multipleVideoUnsupported: string;
@@ -28,6 +29,7 @@ const EN_MESSAGES: PagePostValidationMessages = {
   scheduleRequired: "Choose a schedule time.",
   scheduleTooSoon: "Schedule time must be at least 10 minutes in the future.",
   instagramMediaRequired: "Instagram posts require an image, video, or GIF attachment.",
+  instagramHostedMediaRequired: "Instagram publishing requires a public hosted media URL. Local file uploads are supported only for Facebook.",
   instagramScheduleUnsupported: "Instagram scheduling is not available here yet; use Facebook or publish now.",
   multipleMediaInstagramUnsupported: "Multiple media attachments are only supported for Facebook posts right now.",
   multipleVideoUnsupported: "Multiple media Facebook posts can only use images or GIFs.",
@@ -46,6 +48,7 @@ export function validatePagePostDraft(
   if (!draft.message.trim() && !draft.link.trim() && !hasMedia) return messages.contentRequired;
   if ((target === "instagram" || target === "both") && !hasMedia) return messages.instagramMediaRequired;
   if ((target === "instagram" || target === "both") && mediaItems.length > 1) return messages.multipleMediaInstagramUnsupported;
+  if ((target === "instagram" || target === "both") && mediaItems.some((item) => item.file)) return messages.instagramHostedMediaRequired;
   if (target === "facebook" && mediaItems.length > 1 && mediaItems.some((item) => item.type === "video")) return messages.multipleVideoUnsupported;
   if ((target === "instagram" || target === "both") && draft.mode === "scheduled") return messages.instagramScheduleUnsupported;
   if (draft.mode !== "scheduled") return null;

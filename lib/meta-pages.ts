@@ -45,6 +45,10 @@ function graphUrl(path: string, params: Record<string, string>) {
   return url;
 }
 
+function graphVideoUrl(path: string) {
+  return new URL(`https://graph-video.facebook.com/${graphVersion()}${path}`);
+}
+
 function mediaForClient(media?: MediaAttachment) {
   if (!media) return undefined;
   return { type: media.type, url: media.url, name: media.name };
@@ -158,6 +162,14 @@ async function getEligiblePagesContext(token: string): Promise<PageContext> {
       )
       .map((page) => decoratePage(page, permissions) as MetaPageWithToken & Required<Pick<MetaPageWithToken, "access_token">>),
   };
+}
+
+async function getFacebookPublishingPage(token: string, pageId: string) {
+  const { permissions, pages } = await getEligiblePagesContext(token);
+  const page = pages.find((item) => item.id === pageId);
+  if (!page?.access_token) throw new Error("Selected Page not found for current token.");
+  assertFacebookReady(page, permissions);
+  return page;
 }
 
 export async function getPages(token: string): Promise<MetaPage[]> {
@@ -318,6 +330,9 @@ export async function publishPageFeedPost(input: {
   if ((target === "instagram" || target === "both") && mediaItems.length > 1) {
     throw new Error("Multiple media attachments are only supported for Facebook posts right now.");
   }
+  if ((target === "instagram" || target === "both") && mediaItems.some((item) => item.file)) {
+    throw new Error("Instagram publishing requires a public hosted media URL. Local file uploads are supported only for Facebook.");
+  }
   if (target === "facebook" && mediaItems.length > 1 && mediaItems.some((item) => item.type === "video")) {
     throw new Error("Multiple media Facebook posts can only use images or GIFs.");
   }
@@ -366,6 +381,97 @@ export async function publishPageFeedPost(input: {
     mediaItems: mediaItemsForClient(mediaItems),
     status: input.mode === "scheduled" ? "scheduled" : "submitted",
     results,
+    scheduledFor: input.scheduledFor,
+    createdAt: new Date().toISOString(),
+  };
+}
+
+type FacebookVideoUploadContext = {
+  pageId: string;
+  pageName: string;
+  pageAccessToken: string;
+  uploadSessionId: string;
+  videoId: string;
+};
+
+export async function startFacebookVideoUpload(input: { token: string; pageId: string; fileSize: number }) {
+  const page = await getFacebookPublishingPage(input.token, input.pageId);
+  const body = new URLSearchParams({
+    access_token: page.access_token,
+    upload_phase: "start",
+    file_size: String(input.fileSize),
+  });
+  const response = await fetch(graphVideoUrl(`/${page.id}/videos`), { method: "POST", body });
+  const upload = await graphJson<{
+    upload_session_id: string;
+    video_id: string;
+    start_offset: string;
+    end_offset: string;
+  }>(response, "facebook");
+
+  return {
+    pageId: page.id,
+    pageName: page.name,
+    pageAccessToken: page.access_token,
+    uploadSessionId: upload.upload_session_id,
+    videoId: upload.video_id,
+    startOffset: Number(upload.start_offset),
+    endOffset: Number(upload.end_offset),
+  };
+}
+
+export async function transferFacebookVideoUpload(input: {
+  pageId: string;
+  pageAccessToken: string;
+  uploadSessionId: string;
+  startOffset: number;
+  chunk: File;
+}) {
+  const body = new FormData();
+  body.set("access_token", input.pageAccessToken);
+  body.set("upload_phase", "transfer");
+  body.set("upload_session_id", input.uploadSessionId);
+  body.set("start_offset", String(input.startOffset));
+  body.set("video_file_chunk", input.chunk, input.chunk.name || "video.mp4");
+
+  const response = await fetch(graphVideoUrl(`/${input.pageId}/videos`), { method: "POST", body });
+  const upload = await graphJson<{ start_offset: string; end_offset: string }>(response, "facebook");
+  return { startOffset: Number(upload.start_offset), endOffset: Number(upload.end_offset) };
+}
+
+export async function finishFacebookVideoUpload(input: FacebookVideoUploadContext & {
+  message?: string;
+  link?: string;
+  mode: PagePostMode;
+  scheduledFor?: string;
+  fileName: string;
+}): Promise<PagePostSubmission> {
+  const scheduledAt = validateSchedule(input.mode, input.scheduledFor);
+  const body = new URLSearchParams({
+    access_token: input.pageAccessToken,
+    upload_phase: "finish",
+    upload_session_id: input.uploadSessionId,
+    published: "true",
+  });
+  if (input.message) body.set("description", input.message);
+  appendSchedule(body, input.mode, scheduledAt);
+
+  const response = await fetch(graphVideoUrl(`/${input.pageId}/videos`), { method: "POST", body });
+  const finished = await graphJson<{ success?: boolean }>(response, "facebook");
+  if (finished.success === false) throw new Error("Meta could not finish the Facebook video upload.");
+
+  return {
+    pageId: input.pageId,
+    pageName: input.pageName,
+    metaPostId: input.videoId,
+    message: input.message,
+    link: input.link,
+    mode: input.mode,
+    target: "facebook",
+    media: { type: "video", name: input.fileName },
+    mediaItems: [{ type: "video", name: input.fileName }],
+    status: input.mode === "scheduled" ? "scheduled" : "submitted",
+    results: [{ target: "facebook", metaPostId: input.videoId, status: input.mode === "scheduled" ? "scheduled" : "submitted" }],
     scheduledFor: input.scheduledFor,
     createdAt: new Date().toISOString(),
   };

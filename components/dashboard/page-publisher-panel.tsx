@@ -29,6 +29,7 @@ import { StickyActionDock } from "@/components/dashboard/sticky-action-dock";
 import { CONTEXT_CHAT_PANEL_ID } from "@/components/dashboard/context-chat-copy";
 import type { ChatContext } from "@/lib/ai/chat-contract";
 import { buildPublisherChatContext } from "@/lib/ai/chat-context";
+import { readPublisherJson, uploadFacebookVideo } from "@/lib/page-publisher-request";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   AlertDialog,
@@ -230,6 +231,7 @@ const COPY: Record<InterfaceLanguage, Copy> = {
       scheduleRequired: "Choose a schedule time.",
       scheduleTooSoon: "Schedule time must be at least 10 minutes in the future.",
       instagramMediaRequired: "Instagram posts require an image, video, or GIF attachment.",
+      instagramHostedMediaRequired: "Instagram publishing requires a public hosted media URL. Local file uploads are supported only for Facebook.",
       instagramScheduleUnsupported: "Instagram scheduling is not available here yet; use Facebook or publish now.",
       multipleMediaInstagramUnsupported: "Multiple media attachments are only supported for Facebook posts right now.",
       multipleVideoUnsupported: "Multiple media Facebook posts can only use images or GIFs.",
@@ -319,6 +321,7 @@ const COPY: Record<InterfaceLanguage, Copy> = {
       scheduleRequired: "Chọn thời gian lên lịch.",
       scheduleTooSoon: "Thời gian lên lịch phải sau hiện tại ít nhất 10 phút.",
       instagramMediaRequired: "Bài Instagram cần ảnh, video hoặc GIF.",
+      instagramHostedMediaRequired: "Instagram cần URL media public. File tải trực tiếp hiện chỉ hỗ trợ Facebook.",
       instagramScheduleUnsupported: "Chưa hỗ trợ lên lịch Instagram ở đây; hãy dùng Facebook hoặc đăng ngay.",
       multipleMediaInstagramUnsupported: "Nhiều media hiện chỉ hỗ trợ cho bài Facebook.",
       multipleVideoUnsupported: "Bài Facebook nhiều media chỉ dùng ảnh hoặc GIF.",
@@ -389,6 +392,7 @@ export const PagePublisherPanel = React.forwardRef<PagePublisherContextHandle, {
   const [queue, setQueue] = React.useState<ScheduleQueueItem[]>([]);
   const [loadingPages, setLoadingPages] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
+  const [uploadProgress, setUploadProgress] = React.useState<number | null>(null);
   const [error, setError] = React.useState("");
   const [success, setSuccess] = React.useState<PagePostSubmission | null>(null);
   const [submissions, setSubmissions] = React.useState<PagePostSubmission[]>([]);
@@ -427,14 +431,14 @@ export const PagePublisherPanel = React.forwardRef<PagePublisherContextHandle, {
   }, [link, message, mode, pageId, scheduledFor]);
 
   const hasPreview = Boolean(message.trim() || link.trim() || mediaItems.length);
+  const submittingLabel = uploadProgress === null ? copy.submitting : `${copy.submitting} ${uploadProgress}%`;
 
   const loadPages = React.useCallback(async () => {
     setLoadingPages(true);
     setError("");
     try {
       const response = await fetch("/api/meta/pages");
-      const json = await response.json();
-      if (!response.ok) throw new Error(json.error || copy.pagesLoadFailed);
+      const json = await readPublisherJson<{ pages?: MetaPage[] }>(response, copy.pagesLoadFailed);
       const nextPages = (json.pages || []) as MetaPage[];
       setPages(nextPages);
       setPageId((current) => nextPages.some((page) => page.id === current) ? current : nextPages[0]?.id || "");
@@ -467,13 +471,22 @@ export const PagePublisherPanel = React.forwardRef<PagePublisherContextHandle, {
 
     setSubmitting(true);
     try {
-      const response = await fetch("/api/meta/page-posts", {
-        method: "POST",
-        body: buildSubmitBody({ pageId, message, link, mode, scheduledFor, target, mediaItems }),
-      });
-      const json = await response.json();
-      if (!response.ok) throw new Error(json.error || copy.publishFailed);
-      const submission = json.submission as PagePostSubmission;
+      const localFacebookVideo = target === "facebook" && mediaItems.length === 1 && mediaItems[0]?.type === "video" && mediaItems[0].file;
+      let submission: PagePostSubmission;
+
+      if (localFacebookVideo) {
+        submission = await uploadFacebookVideo(
+          { pageId, message, link, mode, scheduledFor, file: localFacebookVideo },
+          { onProgress: setUploadProgress },
+        );
+      } else {
+        const response = await fetch("/api/meta/page-posts", {
+          method: "POST",
+          body: buildSubmitBody({ pageId, message, link, mode, scheduledFor, target, mediaItems }),
+        });
+        const json = await readPublisherJson<{ submission: PagePostSubmission }>(response, copy.publishFailed);
+        submission = json.submission;
+      }
       setSuccess(submission);
       setSubmissions((current) => {
         const next = [submission, ...current].slice(0, 8);
@@ -484,6 +497,7 @@ export const PagePublisherPanel = React.forwardRef<PagePublisherContextHandle, {
     } catch (err) {
       setError(err instanceof Error ? err.message : copy.publishFailed);
     } finally {
+      setUploadProgress(null);
       setSubmitting(false);
     }
   }
@@ -563,9 +577,8 @@ export const PagePublisherPanel = React.forwardRef<PagePublisherContextHandle, {
           })),
         }),
       });
-      const json = await response.json();
+      const json = await readPublisherJson<{ results?: Array<{ ok: boolean; submission?: PagePostSubmission; error?: string }> }>(response, copy.publishFailed);
       const results = (json.results || []) as Array<{ ok: boolean; submission?: PagePostSubmission; error?: string }>;
-      if (!response.ok && !results.length) throw new Error(json.error || copy.publishFailed);
       const accepted = results.flatMap((result) => (result.submission ? [result.submission] : []));
       if (accepted.length) setSubmissions((current) => [...accepted, ...current].slice(0, 8));
       const failed = results.filter((result) => !result.ok).map((result) => result.error).filter(Boolean);
@@ -791,7 +804,7 @@ export const PagePublisherPanel = React.forwardRef<PagePublisherContextHandle, {
               <div className="flex flex-col gap-2 sm:flex-row">
                 <Button type="submit" disabled={!canReview} className="w-full sm:w-fit">
                   {submitting ? <Spinner data-icon="inline-start" /> : <SendIcon data-icon="inline-start" />}
-                  {submitting ? copy.submitting : copy.review}
+                  {submitting ? submittingLabel : copy.review}
                 </Button>
                 {mode === "scheduled" ? (
                   <Button type="button" variant="outline" disabled={submitting || loadingPages || pages.length === 0} onClick={addToQueue}>
@@ -976,7 +989,7 @@ export const PagePublisherPanel = React.forwardRef<PagePublisherContextHandle, {
             <AlertDialogCancel>{copy.cancel}</AlertDialogCancel>
             <AlertDialogAction onClick={() => void submitPost()} disabled={submitting}>
               {submitting ? <Spinner data-icon="inline-start" /> : <SendIcon data-icon="inline-start" />}
-              {submitting ? copy.submitting : copy.confirm}
+              {submitting ? submittingLabel : copy.confirm}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -988,7 +1001,7 @@ export const PagePublisherPanel = React.forwardRef<PagePublisherContextHandle, {
         statusLabel={loadingPages
           ? copy.loadingPages
           : submitting
-            ? copy.submitting
+            ? submittingLabel
             : canReview
               ? copy.review
               : draftValidation || copy.noPagesTitle}

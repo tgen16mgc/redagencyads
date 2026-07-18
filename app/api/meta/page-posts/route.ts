@@ -45,6 +45,9 @@ const pagePostItemSchema = z
     if ((value.target === "instagram" || value.target === "both") && mediaItems.length > 1) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Multiple media attachments are only supported for Facebook posts right now." });
     }
+    if ((value.target === "instagram" || value.target === "both") && mediaItems.some((item) => item.file)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Instagram publishing requires a public hosted media URL. Local file uploads are supported only for Facebook." });
+    }
     if (value.target === "facebook" && mediaItems.length > 1 && mediaItems.some((item) => item.type === "video")) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Multiple media Facebook posts can only use images or GIFs." });
     }
