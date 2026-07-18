@@ -63,7 +63,8 @@ export function contextChatCopy(language: InterfaceLanguage, view: DashboardView
       ? "Dữ liệu tóm tắt của tab hiện tại được gửi tới nhà cung cấp AI. Token, file và raw payload không được gửi."
       : "A compact summary of this tab is sent to the configured AI provider. Tokens, files, and raw payloads are excluded.",
     stale: isVietnamese ? "Dựa trên ngữ cảnh trước đó" : "Based on earlier context",
-    cancelled: isVietnamese ? "Yêu cầu đã được huỷ." : "Request cancelled.",
+    cancelled: isVietnamese ? "Đã dừng yêu cầu." : "Request stopped.",
+    responseReady: isVietnamese ? "Trợ lý AI đã trả lời." : "Assistant response ready.",
     genericError: isVietnamese ? "Không thể nhận câu trả lời từ trợ lý AI." : "Could not get an answer from the smart assistant.",
     suggestions: SUGGESTIONS[view][language],
   };
