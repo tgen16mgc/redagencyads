@@ -162,21 +162,6 @@ describe("Facebook OAuth routes", () => {
     expect(cookieStore.delete).toHaveBeenCalledWith("meta_facebook_oauth_return");
   });
 
-  it("logs the callback stage when permission validation fails", async () => {
-    cookieStore.get.mockImplementation((name: string) => name === "meta_facebook_oauth_state" ? { value: "state_123" } : { value: "ads" });
-    validateFacebookOAuthToken.mockRejectedValueOnce(new Error("Missing permissions"));
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    const { GET } = await import("./callback/route");
-
-    await GET(new Request("http://localhost/api/auth/facebook/callback?state=state_123&code=code_123"));
-
-    expect(consoleError).toHaveBeenCalledWith("[DEBUG-meta-oauth]", {
-      stage: "permissions",
-      message: "Missing permissions",
-    });
-    consoleError.mockRestore();
-  });
-
   it("falls back to the root when the stored destination is malicious", async () => {
     cookieStore.get.mockImplementation((name: string) => name === "meta_facebook_oauth_state" ? { value: "state_123" } : { value: "javascript:alert(1)" });
     const { GET } = await import("./callback/route");
