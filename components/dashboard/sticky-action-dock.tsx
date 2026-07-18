@@ -60,6 +60,8 @@ export interface StickyActionDockProps {
   actionsLabel?: string
   className?: string
   glowColors?: string[]
+  companionAction?: ActionDockAction
+  shortcutsDisabled?: boolean
 }
 
 const STATUS_LABELS: Record<ActionDockStatus, string> = {
@@ -119,6 +121,8 @@ export function StickyActionDock({
     "var(--action-glow-secondary)",
     "var(--action-glow-primary)",
   ],
+  companionAction,
+  shortcutsDisabled = false,
 }: StickyActionDockProps) {
   const actionsId = useId()
   const toggleRef = useRef<HTMLButtonElement>(null)
@@ -150,17 +154,20 @@ export function StickyActionDock({
   }, [primaryAction, primaryIsDisabled])
 
   useEffect(() => {
-    if (primaryAction.shortcut !== "mod+enter") return
+    if (primaryAction.shortcut !== "mod+enter" || shortcutsDisabled) return
 
     const handleShortcut = (event: globalThis.KeyboardEvent) => {
       if (event.key !== "Enter" || (!event.metaKey && !event.ctrlKey)) return
+      if (event.isComposing) return
+      const target = event.target as HTMLElement | null
+      if (target?.closest?.("input, textarea, [contenteditable='true'], [role='textbox']")) return
       event.preventDefault()
       runPrimaryAction()
     }
 
     document.addEventListener("keydown", handleShortcut)
     return () => document.removeEventListener("keydown", handleShortcut)
-  }, [primaryAction.shortcut, runPrimaryAction])
+  }, [primaryAction.shortcut, runPrimaryAction, shortcutsDisabled])
 
   useEffect(() => {
     return () => {
@@ -216,18 +223,19 @@ export function StickyActionDock({
           role="group"
           aria-label={`${contextLabel}. ${resolvedStatusLabel}`}
           onKeyDown={handleDockKeyDown}
-          className="pointer-events-auto mx-auto flex w-fit max-w-full flex-col items-end gap-2"
+          className="pointer-events-auto mx-auto flex w-fit max-w-full items-end gap-2"
         >
           <span className="sr-only" aria-live="polite">
             {resolvedStatusLabel}
           </span>
 
-          <div
-            ref={dockSurfaceRef}
-            onPointerMove={handlePointerMove}
-            data-expanded={isExpanded ? "true" : "false"}
-            className="action-dock-island max-w-full"
-          >
+          <div className="flex min-w-0 flex-col items-end gap-2">
+            <div
+              ref={dockSurfaceRef}
+              onPointerMove={handlePointerMove}
+              data-expanded={isExpanded ? "true" : "false"}
+              className="action-dock-island max-w-full"
+            >
             {hasSecondaryActions ? (
               <div className="action-dock-tray-shell" aria-hidden={!isExpanded}>
                 <div
@@ -385,7 +393,29 @@ export function StickyActionDock({
                 </Tooltip>
               </div>
             </div>
+            </div>
           </div>
+
+          {companionAction ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={Boolean(companionAction.disabled || companionAction.loading)}
+                    aria-label={companionAction.label}
+                    onClick={() => void companionAction.onSelect()}
+                    className="context-chat-dock-pill h-12 shrink-0 rounded-full px-3 sm:px-4"
+                  >
+                    {companionAction.loading ? <Spinner /> : <companionAction.icon />}
+                    <span className="hidden sm:inline">{companionAction.shortLabel || companionAction.label}</span>
+                  </Button>
+                }
+              />
+              <TooltipContent>{actionDescription(companionAction, Boolean(companionAction.disabled))}</TooltipContent>
+            </Tooltip>
+          ) : null}
         </div>
       </div>
     </TooltipProvider>

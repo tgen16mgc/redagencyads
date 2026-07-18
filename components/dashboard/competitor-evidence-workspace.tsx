@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import {
+  BotMessageSquareIcon,
   CheckIcon,
   ClipboardIcon,
   ExternalLinkIcon,
@@ -285,6 +286,8 @@ export function CompetitorEvidenceWorkspace({
   onEvidenceStatusChange,
   onGenerate,
   onCopyPrompt,
+  onOpenAssistant,
+  chatShortcutsDisabled,
 }: {
   names: string;
   market: string;
@@ -310,6 +313,8 @@ export function CompetitorEvidenceWorkspace({
   onEvidenceStatusChange: (id: string, status: CompetitorEvidenceStatus) => void;
   onGenerate: () => void;
   onCopyPrompt: () => void;
+  onOpenAssistant: () => void;
+  chatShortcutsDisabled: boolean;
 }) {
   const isVietnamese = language === "vi";
   const id = React.useId();
@@ -1429,6 +1434,14 @@ export function CompetitorEvidenceWorkspace({
           }] : []),
         ]}
         actionsLabel={isVietnamese ? "Hành động khác" : "More actions"}
+        shortcutsDisabled={chatShortcutsDisabled}
+        companionAction={{
+          id: "open-competitor-assistant",
+          label: isVietnamese ? "Hỏi 9router về evidence" : "Ask 9router about this evidence",
+          shortLabel: isVietnamese ? "Hỏi AI" : "Ask AI",
+          icon: BotMessageSquareIcon,
+          onSelect: onOpenAssistant,
+        }}
       />
     </div>
   );

@@ -24,6 +24,7 @@ import {
   ActivityIcon,
   ArrowLeftIcon,
   BarChart3Icon,
+  BotMessageSquareIcon,
   CalendarClockIcon,
   BrainIcon,
   CheckIcon,
@@ -47,11 +48,20 @@ import {
 import { AppSidebar, type AppSidebarItem, type WorkflowSidebarItem } from "@/components/dashboard/app-sidebar";
 import { WorkspaceOverview } from "@/components/dashboard/workspace-overview";
 import { StickyActionDock } from "@/components/dashboard/sticky-action-dock";
+import { ContextChat, type ContextChatHandle } from "@/components/dashboard/context-chat";
 import { CompetitorEvidenceWorkspace } from "@/components/dashboard/competitor-evidence-workspace";
 import { assertClientReportHealthParity, buildClientReportViewModel, downloadClientReportPdf } from "@/lib/client-report";
 import { buildClientReportPdf } from "@/lib/client-report-pdf";
 import { CustomChartsSection } from "@/components/dashboard/custom-charts-section";
-import { PagePublisherPanel } from "@/components/dashboard/page-publisher-panel";
+import { PagePublisherPanel, type PagePublisherContextHandle } from "@/components/dashboard/page-publisher-panel";
+import type { ChatContext } from "@/lib/ai/chat-contract";
+import {
+  buildCompetitorChatContext,
+  buildOverviewChatContext,
+  buildPerformanceChatContext,
+  buildPublisherChatContext,
+  buildTikTokChatContext,
+} from "@/lib/ai/chat-context";
 import type { AdSetWithPreviews, AiInsightTable, CompareMode, CompetitorEvidenceStatus, CompetitorFetchResult, CompetitorPlatform, CompetitorSpyResult, DashboardReport, KpiCard, KpiPack, MetaAccount, MetaCampaign, NormalizedRow, TikTokProfile, TikTokProfileResult, TikTokVideo, Verdict } from "@/lib/types";
 import { buildWorkflowSteps, type DashboardWorkflowStep } from "@/lib/dashboard-workflow";
 import { canOpenDashboardView, initialDashboardViewFromSearch, shouldLoadAdsWorkspaceData, type DashboardView } from "@/lib/dashboard-access";
@@ -673,7 +683,10 @@ export function DashboardShell() {
   const [diagnosticsOpen, setDiagnosticsOpen] = React.useState(false);
   const [aiLoading, setAiLoading] = React.useState({ verdict: false, insights: false });
   const [exportingPdf, setExportingPdf] = React.useState(false);
+  const [chatOpen, setChatOpen] = React.useState(false);
   const reportStartRef = React.useRef<HTMLDivElement>(null);
+  const contextChatRef = React.useRef<ContextChatHandle>(null);
+  const publisherContextRef = React.useRef<PagePublisherContextHandle>(null);
   const historyInitializedRef = React.useRef(false);
   const verdictProgress = useTimedProgress(aiLoading.verdict);
   const insightProgress = useTimedProgress(aiLoading.insights);
@@ -702,6 +715,73 @@ export function DashboardShell() {
       targetRoas: Number.isFinite(roas) && roas > 0 ? roas : undefined,
     };
   }, [targetCpa, targetRoas]);
+  const workspaceLabel = accounts.find((account) => account.id === accountId)?.name;
+  const nineRouterAvailable = capabilities.find((capability) => capability.key === "ai_enhancement")?.state === "available";
+  const getChatContext = React.useCallback((view: DashboardView): ChatContext => {
+    if (view === "overview") {
+      return buildOverviewChatContext({
+        workspaceLabel,
+        authenticated: Boolean(authenticated),
+        capabilities,
+      });
+    }
+    if (view === "ads") {
+      return buildPerformanceChatContext({
+        workspaceLabel,
+        report,
+        previousReport,
+        compareMode,
+        targets: decisionTargets,
+        verdict,
+        insights,
+      });
+    }
+    if (view === "competitor") {
+      return buildCompetitorChatContext({
+        names: normalizeCompetitorNames(competitorNames),
+        market: competitorMarket,
+        platform: competitorPlatform,
+        evidence: competitorEvidence,
+        result: competitorResult,
+      });
+    }
+    if (view === "tiktok") {
+      return buildTikTokChatContext({
+        profilesInput: tiktokWorkspace.profilesInput,
+        result: tiktokWorkspace.profileResult,
+      });
+    }
+    return publisherContextRef.current?.getChatContext() || buildPublisherChatContext({
+      target: "facebook",
+      message: "",
+      link: "",
+      mode: "publish_now",
+      scheduledFor: "",
+      mediaItems: [],
+      queueCount: 0,
+    });
+  }, [
+    authenticated,
+    capabilities,
+    compareMode,
+    competitorEvidence,
+    competitorMarket,
+    competitorNames,
+    competitorPlatform,
+    competitorResult,
+    decisionTargets,
+    insights,
+    previousReport,
+    report,
+    tiktokWorkspace.profileResult,
+    tiktokWorkspace.profilesInput,
+    verdict,
+    workspaceLabel,
+  ]);
+  const hasWorkspaceDock = activeView === "competitor"
+    || activeView === "tiktok"
+    || activeView === "publisher"
+    || (activeView === "ads" && Boolean(report && reportHasData));
   const copy = uiCopy[language];
   const workflowSteps = React.useMemo(
     () => buildWorkflowSteps({ hasAccount: Boolean(accountId), hasReport: reportHasData, hasVerdict: Boolean(verdict) }),
@@ -906,6 +986,8 @@ export function DashboardShell() {
   }
 
   async function logout() {
+    contextChatRef.current?.clearAll();
+    setChatOpen(false);
     await fetch("/api/session", { method: "DELETE" });
     setAuthenticated(false);
     setActiveView("overview");
@@ -1672,6 +1754,14 @@ export function DashboardShell() {
                   onSelect: copyPrompt,
                 },
               ]}
+              shortcutsDisabled={chatOpen}
+              companionAction={{
+                id: "open-performance-assistant",
+                label: language === "vi" ? "Hỏi 9router về hiệu quả" : "Ask 9router about performance",
+                shortLabel: language === "vi" ? "Hỏi AI" : "Ask AI",
+                icon: BotMessageSquareIcon,
+                onSelect: () => setChatOpen(true),
+              }}
             />
           ) : null}
             </>
@@ -1680,9 +1770,16 @@ export function DashboardShell() {
               language={language}
               state={tiktokWorkspace}
               onStateChange={setTikTokWorkspace}
+              onOpenAssistant={() => setChatOpen(true)}
+              chatShortcutsDisabled={chatOpen}
             />
           ) : activeView === "publisher" ? (
-            <PagePublisherPanel language={language} />
+            <PagePublisherPanel
+              ref={publisherContextRef}
+              language={language}
+              onOpenAssistant={() => setChatOpen(true)}
+              chatShortcutsDisabled={chatOpen}
+            />
           ) : (
             <CompetitorSpyPanel
               names={competitorNames}
@@ -1726,11 +1823,23 @@ export function DashboardShell() {
               onEvidenceStatusChange={updateCompetitorEvidenceStatus}
               onGenerate={runCompetitorSpy}
               onCopyPrompt={copyCompetitorPrompt}
+              onOpenAssistant={() => setChatOpen(true)}
+              chatShortcutsDisabled={chatOpen}
             />
           )}
         </div>
       </SidebarInset>
       </SidebarProvider>
+      <ContextChat
+        ref={contextChatRef}
+        activeView={activeView}
+        language={language}
+        available={nineRouterAvailable}
+        open={chatOpen}
+        showStandaloneLauncher={!hasWorkspaceDock}
+        getContext={getChatContext}
+        onOpenChange={setChatOpen}
+      />
     </>
   );
 }
@@ -2810,6 +2919,8 @@ function CompetitorSpyPanel({
   onEvidenceStatusChange,
   onGenerate,
   onCopyPrompt,
+  onOpenAssistant,
+  chatShortcutsDisabled,
 }: {
   names: string;
   market: string;
@@ -2835,6 +2946,8 @@ function CompetitorSpyPanel({
   onEvidenceStatusChange: (id: string, status: CompetitorEvidenceStatus) => void;
   onGenerate: () => void;
   onCopyPrompt: () => void;
+  onOpenAssistant: () => void;
+  chatShortcutsDisabled: boolean;
 }) {
   return (
     <CompetitorEvidenceWorkspace
@@ -2862,6 +2975,8 @@ function CompetitorSpyPanel({
       onEvidenceStatusChange={onEvidenceStatusChange}
       onGenerate={onGenerate}
       onCopyPrompt={onCopyPrompt}
+      onOpenAssistant={onOpenAssistant}
+      chatShortcutsDisabled={chatShortcutsDisabled}
     />
   );
 }
@@ -2870,10 +2985,14 @@ function TikTokIntelligencePanel({
   language,
   state,
   onStateChange,
+  onOpenAssistant,
+  chatShortcutsDisabled,
 }: {
   language: ReportLanguage;
   state: TikTokWorkspaceState;
   onStateChange: React.Dispatch<React.SetStateAction<TikTokWorkspaceState>>;
+  onOpenAssistant: () => void;
+  chatShortcutsDisabled: boolean;
 }) {
   const isVietnamese = language === "vi";
   const id = React.useId();
@@ -3107,6 +3226,14 @@ function TikTokIntelligencePanel({
           disabledReason: isVietnamese ? "Nhập ít nhất một username TikTok." : "Add at least one TikTok username.",
           loading: profileLoading,
           shortcut: "mod+enter",
+        }}
+        shortcutsDisabled={chatShortcutsDisabled}
+        companionAction={{
+          id: "open-tiktok-assistant",
+          label: isVietnamese ? "Hỏi 9router về TikTok" : "Ask 9router about TikTok",
+          shortLabel: isVietnamese ? "Hỏi AI" : "Ask AI",
+          icon: BotMessageSquareIcon,
+          onSelect: onOpenAssistant,
         }}
       />
     </div>

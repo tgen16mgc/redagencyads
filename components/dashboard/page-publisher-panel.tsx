@@ -4,6 +4,7 @@ import * as React from "react";
 import {
   ArrowDownIcon,
   ArrowUpIcon,
+  BotMessageSquareIcon,
   CalendarClockIcon,
   CheckCircle2Icon,
   Clock3Icon,
@@ -25,6 +26,8 @@ import {
   type SchedulePreset,
 } from "@/lib/page-publisher-validation";
 import { StickyActionDock } from "@/components/dashboard/sticky-action-dock";
+import type { ChatContext } from "@/lib/ai/chat-contract";
+import { buildPublisherChatContext } from "@/lib/ai/chat-context";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   AlertDialog,
@@ -360,7 +363,15 @@ function readPublisherDraft(): PublisherDraft {
   }
 }
 
-export function PagePublisherPanel({ language }: { language: InterfaceLanguage }) {
+export type PagePublisherContextHandle = {
+  getChatContext: () => Extract<ChatContext, { view: "publisher" }>;
+};
+
+export const PagePublisherPanel = React.forwardRef<PagePublisherContextHandle, {
+  language: InterfaceLanguage;
+  onOpenAssistant: () => void;
+  chatShortcutsDisabled: boolean;
+}>(function PagePublisherPanel({ language, onOpenAssistant, chatShortcutsDisabled }, ref) {
   const copy = COPY[language];
   const id = React.useId();
   const initialDraft = React.useMemo(readPublisherDraft, []);
@@ -384,6 +395,20 @@ export function PagePublisherPanel({ language }: { language: InterfaceLanguage }
   const selectedPage = pages.find((page) => page.id === pageId);
   const draftValidation = validatePagePostDraft({ pageId, message, link, mode, scheduledFor, target, mediaItems }, Date.now(), copy.validation);
   const canReview = pages.length > 0 && !loadingPages && !submitting && !draftValidation;
+
+  React.useImperativeHandle(ref, () => ({
+    getChatContext: () => buildPublisherChatContext({
+      selectedPage,
+      target,
+      message,
+      link,
+      mode,
+      scheduledFor,
+      mediaItems,
+      validationMessage: draftValidation || undefined,
+      queueCount: queue.length,
+    }),
+  }), [draftValidation, link, mediaItems, message, mode, queue.length, scheduledFor, selectedPage, target]);
 
   React.useEffect(() => {
     try {
@@ -986,10 +1011,18 @@ export function PagePublisherPanel({ language }: { language: InterfaceLanguage }
           loading: loadingPages,
         }]}
         actionsLabel={language === "vi" ? "Hành động khác" : "More actions"}
+        shortcutsDisabled={chatShortcutsDisabled}
+        companionAction={{
+          id: "open-publisher-assistant",
+          label: language === "vi" ? "Hỏi 9router về bài đăng" : "Ask 9router about this post",
+          shortLabel: language === "vi" ? "Hỏi AI" : "Ask AI",
+          icon: BotMessageSquareIcon,
+          onSelect: onOpenAssistant,
+        }}
       />
     </section>
   );
-}
+});
 
 function buildHostedMedia(type: MediaAttachment["type"], url: string): MediaAttachment | undefined {
   if (url.trim()) return { type, url: url.trim() };

@@ -24,6 +24,32 @@ const GEMINI_TIMEOUT_MS = Number(process.env.GEMINI_TIMEOUT_MS || 45000);
 const GEMINI_MAX_TOKENS = Number(process.env.GEMINI_MAX_TOKENS || 1400);
 const GEMINI_DEFAULT_MODEL = "gemini-2.5-flash";
 
+export type NineRouterMessage = {
+  role: "system" | "user" | "assistant";
+  content: string;
+};
+
+export class NineRouterProviderError extends Error {
+  constructor(message: string, public readonly status: number) {
+    super(message);
+    this.name = "NineRouterProviderError";
+  }
+}
+
+export class NineRouterTimeoutError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "NineRouterTimeoutError";
+  }
+}
+
+export class NineRouterAbortError extends Error {
+  constructor() {
+    super("9router request was cancelled.");
+    this.name = "NineRouterAbortError";
+  }
+}
+
 export const VERDICT_JSON_SCHEMA = {
   type: "object",
   properties: {
@@ -333,10 +359,19 @@ export function hasNineRouterCredentials() {
   return Boolean(nineRouterApiKey());
 }
 
-export async function nineRouterCompletion(prompt: string, options: { jsonMode?: boolean; maxTokens?: number } = {}) {
+export async function nineRouterChatCompletion(
+  messages: NineRouterMessage[],
+  options: { jsonMode?: boolean; maxTokens?: number; signal?: AbortSignal } = {},
+) {
   const controller = new AbortController();
   const timeoutMs = positiveMs(NINEROUTER_TIMEOUT_MS, 45000);
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+  const abortFromCaller = () => controller.abort();
+  options.signal?.addEventListener("abort", abortFromCaller, { once: true });
   const headers: Record<string, string> = { "content-type": "application/json" };
   const apiKey = nineRouterApiKey();
   if (apiKey) headers.authorization = `Bearer ${apiKey}`;
@@ -349,7 +384,7 @@ export async function nineRouterCompletion(prompt: string, options: { jsonMode?:
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       const body: Record<string, unknown> = {
         model: process.env.NINEROUTER_MODEL || NINEROUTER_DEFAULT_MODEL,
-        messages: [{ role: "user", content: prompt }],
+        messages,
         temperature: 0.2,
         max_tokens: Math.min(requestedMaxTokens + (attempt - 1) * 600, 2400),
       };
@@ -365,14 +400,14 @@ export async function nineRouterCompletion(prompt: string, options: { jsonMode?:
       if (!response.ok) {
         const message = json?.error?.message || "9router request failed.";
         if (attempt === 1 && [408, 429, 502, 503, 529].includes(response.status)) continue;
-        throw new Error(message);
+        throw new NineRouterProviderError(message, response.status);
       }
 
       const choice = json?.choices?.[0];
       const text = choiceText(choice);
       if (!text) {
         if (attempt === 1) continue;
-        throw new Error("9router returned an empty response after 2 attempts.");
+        throw new NineRouterProviderError("9router returned an empty response after 2 attempts.", 502);
       }
 
       if (options.jsonMode) {
@@ -390,15 +425,27 @@ export async function nineRouterCompletion(prompt: string, options: { jsonMode?:
       return text;
     }
 
-    throw new Error("9router request failed after 2 attempts.");
+    throw new NineRouterProviderError("9router request failed after 2 attempts.", 502);
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
-      throw new Error(`9router timed out after ${Math.round(timeoutMs / 1000)}s.`);
+      if (!timedOut && options.signal?.aborted) throw new NineRouterAbortError();
+      throw new NineRouterTimeoutError(`9router timed out after ${Math.round(timeoutMs / 1000)}s.`);
     }
-    throw error;
+    if (error instanceof NineRouterProviderError || error instanceof NineRouterTimeoutError || error instanceof NineRouterAbortError) {
+      throw error;
+    }
+    throw new NineRouterProviderError(errorMessage(error), 502);
   } finally {
     clearTimeout(timeout);
+    options.signal?.removeEventListener("abort", abortFromCaller);
   }
+}
+
+export async function nineRouterCompletion(
+  prompt: string,
+  options: { jsonMode?: boolean; maxTokens?: number; signal?: AbortSignal } = {},
+) {
+  return nineRouterChatCompletion([{ role: "user", content: prompt }], options);
 }
 
 function geminiModelPath() {

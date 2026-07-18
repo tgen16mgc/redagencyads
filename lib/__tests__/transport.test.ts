@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   confidenceValue,
   errorMessage,
+  nineRouterChatCompletion,
   nineRouterCompletion,
   parseJsonObject,
   promptInputJson,
@@ -173,5 +174,25 @@ describe("nineRouterCompletion", () => {
     await expect(nineRouterCompletion("Return JSON", { jsonMode: true, maxTokens: 1800 }))
       .rejects.toThrow("valid JSON");
     expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("sends system and conversation messages to the existing 9router endpoint", async () => {
+    vi.stubEnv("NINEROUTER_KEY", "test-key");
+    vi.stubEnv("NINEROUTER_URL", "http://localhost:20128/v1");
+    const fetchSpy = vi.fn().mockResolvedValue(nineRouterResponse("Answer", "stop"));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await nineRouterChatCompletion([
+      { role: "system", content: "Use workspace context." },
+      { role: "user", content: "What should I fix?" },
+    ], { maxTokens: 1400 });
+
+    const body = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body));
+    expect(fetchSpy.mock.calls[0]?.[0]).toBe("http://localhost:20128/v1/chat/completions");
+    expect(body.messages).toEqual([
+      { role: "system", content: "Use workspace context." },
+      { role: "user", content: "What should I fix?" },
+    ]);
+    expect(body.max_tokens).toBe(1400);
   });
 });
