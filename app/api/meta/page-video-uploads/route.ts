@@ -6,12 +6,12 @@ import {
   transferFacebookVideoUpload,
 } from "@/lib/meta-pages";
 import { openMetaVideoUploadTicket, sealMetaVideoUploadTicket } from "@/lib/meta-video-upload-ticket";
+import { PAGE_VIDEO_UPLOAD_CHUNK_BYTES } from "@/lib/page-video-upload-limits";
 import { requireToken } from "@/lib/session";
 
 export const maxDuration = 300;
 
 const MAX_VIDEO_FILE_BYTES = 10 * 1024 * 1024 * 1024;
-const MAX_VIDEO_CHUNK_BYTES = 4 * 1024 * 1024;
 
 const startSchema = z.object({
   phase: z.literal("start"),
@@ -51,7 +51,7 @@ export async function POST(request: Request) {
       if (!upload) throw new Error("Video upload session expired. Start the upload again.");
       if (!Number.isInteger(startOffset) || startOffset < 0) throw new Error("Invalid video upload offset.");
       if (!(videoChunk instanceof File) || !videoChunk.size) throw new Error("Video upload chunk is missing.");
-      if (videoChunk.size > MAX_VIDEO_CHUNK_BYTES) throw new Error("Video upload chunk exceeds the platform request limit.");
+      if (videoChunk.size > PAGE_VIDEO_UPLOAD_CHUNK_BYTES) throw new Error("Video upload chunk exceeds the platform request limit.");
 
       const progress = await transferFacebookVideoUpload({
         pageId: upload.pageId,

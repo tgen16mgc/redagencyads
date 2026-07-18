@@ -14,6 +14,14 @@ describe("readPublisherJson", () => {
 
     await expect(readPublisherJson(response, "Unable to submit post.")).rejects.toThrow(PUBLISH_UPLOAD_TOO_LARGE_MESSAGE);
   });
+
+  it("supports a phase-specific message for rejected video chunks", async () => {
+    const response = new Response("Request Entity Too Large", { status: 413 });
+
+    await expect(readPublisherJson(response, "Unable to transfer video.", {
+      tooLargeMessage: "The video transfer chunk is too large.",
+    })).rejects.toThrow("The video transfer chunk is too large.");
+  });
 });
 
 describe("uploadFacebookVideo", () => {
@@ -85,5 +93,44 @@ describe("uploadFacebookVideo", () => {
       fileName: "launch.mp4",
     });
     expect(onProgress).toHaveBeenLastCalledWith(100);
+  });
+
+  it("keeps a Meta 5 MB transfer window below the deployment request limit", async () => {
+    const megabyte = 1024 * 1024;
+    const fileSize = 5 * megabyte;
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ upload: { ticket: "sealed-ticket", startOffset: 0, endOffset: fileSize } }))
+      .mockResolvedValueOnce(jsonResponse({ upload: { startOffset: 2 * megabyte, endOffset: fileSize } }))
+      .mockResolvedValueOnce(jsonResponse({ upload: { startOffset: 4 * megabyte, endOffset: fileSize } }))
+      .mockResolvedValueOnce(jsonResponse({ upload: { startOffset: fileSize, endOffset: fileSize } }))
+      .mockResolvedValueOnce(jsonResponse({
+        submission: {
+          pageId: "page_1",
+          pageName: "Ready Page",
+          metaPostId: "video_1",
+          mode: "publish_now",
+          target: "facebook",
+          status: "submitted",
+          createdAt: "2026-07-18T00:00:00.000Z",
+        },
+      }));
+
+    await uploadFacebookVideo(
+      {
+        pageId: "page_1",
+        message: "Launch caption",
+        link: "",
+        mode: "publish_now",
+        scheduledFor: "",
+        file: new File([new Uint8Array(fileSize)], "launch.mp4", { type: "video/mp4" }),
+      },
+      { fetchImpl: fetchImpl as unknown as typeof fetch },
+    );
+
+    const chunkSizes = fetchImpl.mock.calls
+      .slice(1, 4)
+      .map((call) => ((call[1]?.body as FormData).get("videoChunk") as File).size);
+    expect(chunkSizes).toEqual([2 * megabyte, 2 * megabyte, megabyte]);
   });
 });

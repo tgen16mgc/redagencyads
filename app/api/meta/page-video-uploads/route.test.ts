@@ -78,6 +78,21 @@ describe("POST /api/meta/page-video-uploads", () => {
     });
   });
 
+  it("rejects chunks larger than the browser upload ceiling", async () => {
+    const formData = new FormData();
+    formData.set("phase", "transfer");
+    formData.set("ticket", "sealed-ticket");
+    formData.set("startOffset", "0");
+    formData.set("videoChunk", new File([new Uint8Array(2 * 1024 * 1024 + 1)], "oversized.mp4"));
+
+    const response = await POST(new Request("http://localhost/api/meta/page-video-uploads", { method: "POST", body: formData }));
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.error).toContain("exceeds the platform request limit");
+    expect(transferFacebookVideoUpload).not.toHaveBeenCalled();
+  });
+
   it("finishes the upload with its caption and returns the submission", async () => {
     finishFacebookVideoUpload.mockResolvedValue({
       pageId: "page_1",

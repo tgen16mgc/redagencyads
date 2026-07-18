@@ -1,14 +1,20 @@
 import type { PagePostMode, PagePostSubmission } from "@/lib/types";
+import { PAGE_VIDEO_UPLOAD_CHUNK_BYTES } from "@/lib/page-video-upload-limits";
 
 const UPLOAD_ROUTE = "/api/meta/page-video-uploads";
 const INVALID_UPLOAD_PROGRESS_MESSAGE = "Meta returned invalid video upload progress. Please retry the upload.";
 
 type JsonObject = Record<string, unknown>;
+type PublisherResponseOptions = { tooLargeMessage?: string };
 
 export const PUBLISH_UPLOAD_TOO_LARGE_MESSAGE =
   "This media upload is too large for a single request. Use a public hosted media URL or retry with a smaller file.";
 
-export async function readPublisherJson<T extends JsonObject>(response: Response, fallback: string): Promise<T> {
+export async function readPublisherJson<T extends JsonObject>(
+  response: Response,
+  fallback: string,
+  options: PublisherResponseOptions = {},
+): Promise<T> {
   const text = await response.text();
   let json: JsonObject | null = null;
 
@@ -23,7 +29,7 @@ export async function readPublisherJson<T extends JsonObject>(response: Response
 
   if (!response.ok) {
     if (response.status === 413 || /request entity too large|payload too large/i.test(text)) {
-      throw new Error(PUBLISH_UPLOAD_TOO_LARGE_MESSAGE);
+      throw new Error(options.tooLargeMessage || PUBLISH_UPLOAD_TOO_LARGE_MESSAGE);
     }
 
     const apiError = typeof json?.error === "string" ? json.error.trim() : "";
@@ -110,17 +116,19 @@ export async function uploadFacebookVideo(
     formData.set("phase", "transfer");
     formData.set("ticket", ticket);
     formData.set("startOffset", String(startOffset));
-    formData.set("videoChunk", input.file.slice(startOffset, endOffset, input.file.type), input.file.name);
+    const chunkEndOffset = Math.min(endOffset, startOffset + PAGE_VIDEO_UPLOAD_CHUNK_BYTES);
+    formData.set("videoChunk", input.file.slice(startOffset, chunkEndOffset, input.file.type), input.file.name);
 
     const transferResponse = await fetchImpl(UPLOAD_ROUTE, { method: "POST", body: formData });
     const transferJson = await readPublisherJson<{ upload: Pick<UploadProgress, "startOffset" | "endOffset"> }>(
       transferResponse,
       "Unable to transfer the video upload.",
+      { tooLargeMessage: "The video transfer chunk exceeded the deployment request limit. Please retry the upload." },
     );
     const nextStartOffset = parseOffset(transferJson.upload?.startOffset);
     const nextEndOffset = parseOffset(transferJson.upload?.endOffset);
 
-    if (nextStartOffset <= startOffset || nextStartOffset > input.file.size) {
+    if (nextStartOffset !== chunkEndOffset || nextStartOffset > input.file.size) {
       throw new Error(INVALID_UPLOAD_PROGRESS_MESSAGE);
     }
 
