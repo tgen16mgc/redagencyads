@@ -1,0 +1,7 @@
+# Diagnostics run through the Diagnosis Engine registry
+
+`lib/diagnosis.ts` owns which diagnostic rules run over a DashboardReport, in what order, with which report slice (adRows → adsetRows → campaignRows fallbacks), and returns a uniform `Diagnostic` list: id, Diagnostic Severity (`ok | watch | risk | insufficient`), bilingual copy, detail items, and the resolved next step. The dashboard renders one generic `DiagnosticCard` over that list; rules with bespoke bodies use typed payloads keyed by id. Rule modules emit domain severity — never shadcn Badge variants; the severity → badge/accent mapping is a single render-time function.
+
+This exists because the composition previously lived as sixteen hand-copied card components inside the dashboard shell: each card chose its own report slice, mapped its rule's private "insufficient" vocabulary (`insufficient_data` / `no_budget_data` / `no_cap_data` / `not_applicable`) to a tone, and duplicated ~50 lines of chrome. Deleting a card silently removed a diagnostic from the product with no failing test, and a badge redesign touched fifteen lib modules.
+
+The load-bearing consequences: adding a diagnostic means a registry entry plus its rule test — `lib/__tests__/diagnosis.test.ts` pins the id list and severities, and the `Record<DiagnosticId, …>` type in `diagnostic-next-step.ts` forces next-step coverage, so dropping either fails the build rather than the user. Keep new rules on this path; a diagnostic rendered outside the registry recreates the silent-removal failure mode this decision eliminated.

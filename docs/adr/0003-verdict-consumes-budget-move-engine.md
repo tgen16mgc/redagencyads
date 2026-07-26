@@ -1,0 +1,9 @@
+# The local Verdict consumes the Budget Move Engine
+
+Budget Move is one domain rule with one implementation: `recommendBudgetMoves` in `lib/budget-move-engine.ts`. `buildLocalVerdict` derives its winner/loser claims and budget-move wording from the engine's recommendation instead of keeping a parallel implementation with its own thresholds. The engine owns Meaningful Spend, the 20% step cap, decision-confidence actionability, and the fatigue guardrail (via `classifyCreativeFatigue`, the baseline-aware seam — never re-encoded fixed thresholds).
+
+This exists because the two previous implementations could contradict each other on the same screen: the Verdict card recommended "increase X by up to 20%" while the Budget Move Engine card said "Hold — winner blocked by the decision confidence guardrail." Both were local ads rules (ADR-0001 intact), but they shared no interface, so no test could even express the coherence property. Now one fixture report through both paths asserts the Verdict never names a move the engine blocks, and that test lives in `verdict.test.ts`.
+
+The trade-off is that the Verdict's claims got stricter: a report with fewer than three budget-owning rows, or without primary-result signal on at least two rows, yields "Hold budget" instead of a thin winner/loser claim. That is the point — the engine's guardrails are the better-defended rule, and a Verdict that asserts less under thin evidence matches the Verdict Confidence definition in CONTEXT.md. Do not reintroduce a second budget-move derivation in the Verdict path; extend the engine instead.
+
+The KPI-pack → Primary Result mapping this all depends on lives in `lib/primary-result.ts` — the single owner. The awareness pack has `resultKey: null` (no conversion-scale Primary Result; reach is signal volume only), which is why awareness reports produce holds, not transfers.

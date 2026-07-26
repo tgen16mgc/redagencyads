@@ -88,6 +88,26 @@ _Avoid_: sanitize, auto-fix, repair
 The legibility gate on a Custom Chart spec. A valid spec renders legibly: non-empty, within the series cap, at most two distinct metric formats, and no single axis hosting two formats.
 _Avoid_: schema check, lint, sanitize
 
+**Diagnostic Severity**:
+The domain outcome of one diagnostic rule over a report: ok, watch, risk, or insufficient. Insufficient is one shared notion across all rules; badge styling is derived from severity at render time, never stored in a rule.
+_Avoid_: badge variant, tone, destructive/outline/secondary
+
+**Diagnosis Engine**:
+The registry that runs every diagnostic rule over a DashboardReport in pinned order and returns the uniform diagnostic list (severity, bilingual copy, detail items, next step). Report-slice wiring lives here, not in cards.
+_Avoid_: card list, per-card wiring, diagnostic components
+
+**Trusted Ad Library Source**:
+An evidence source URL accepted for verification: https, a facebook.com host, and an /ads/library path, with trailing punctuation stripped. One predicate serves the spy path, manual notes, and the workspace.
+_Avoid_: any facebook link, http library URL, per-path URL check
+
+**Advertiser Match**:
+The one rule linking evidence to a requested competitor: exact normalized equality, or word-boundary containment with at least two non-space characters in the contained name.
+_Avoid_: substring includes, fuzzy match
+
+**Verified Competitor Evidence**:
+Evidence that may be accepted for analysis: its advertiser is an Advertiser Match and its source is a Trusted Ad Library Source. Both halves are enforced everywhere, including the accept handler.
+_Avoid_: matched-only acceptance, UI-only verification
+
 ## Relationships
 
 - A **Verdict** is produced from one advertising report.
@@ -97,7 +117,10 @@ _Avoid_: schema check, lint, sanitize
 - A **Verdict Enhancement** may improve wording but does not replace the local **Verdict** logic.
 - A **Budget Move** belongs to a **Verdict** and must respect Meta learning stability.
 - A **Budget Move** needs **Meaningful Spend** unless it recommends holding budget.
-- A **Primary Result** is selected from the report's KPI pack.
+- A **Verdict**'s Budget Moves and winner/loser claims come from the Budget Move Engine — one implementation of the Budget Move rule.
+- A **Primary Result** is selected from the report's KPI pack; the awareness pack has no conversion-scale Primary Result and reach serves only as signal volume.
+- A **Diagnostic Severity** is produced by every diagnostic rule; the **Diagnosis Engine** owns which rules run and in what order.
+- **Verified Competitor Evidence** requires an **Advertiser Match** and a **Trusted Ad Library Source**.
 - A **Verdict** respects the **Selected KPI Pack** even when other signals look stronger.
 - A **Verdict Enhancement** cannot raise **Verdict Confidence** above the local **Verdict**.
 - A **Verdict** uses the current **Interface Language**.
