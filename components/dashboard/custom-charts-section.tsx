@@ -24,6 +24,7 @@ import {
   setSeriesAxis,
   validateSpec,
 } from "@/lib/custom-chart";
+import { readStorageSlot } from "@/lib/storage-slot";
 import { CustomChartCard } from "@/components/dashboard/custom-chart-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -158,15 +159,11 @@ export function CustomChartsSection({
   const [dropAxis, setDropAxis] = React.useState<CustomAxis | null>(null);
   const [saved, setSaved] = React.useState<CustomChartSpec[]>(() => {
     if (typeof window === "undefined") return [];
-    const currentValue = window.localStorage.getItem(CUSTOM_CHARTS_STORAGE_KEY);
-    const legacyValue = currentValue === null
-      ? window.localStorage.getItem(LEGACY_CUSTOM_CHARTS_STORAGE_KEY)
-      : null;
-    if (legacyValue !== null) {
-      window.localStorage.setItem(CUSTOM_CHARTS_STORAGE_KEY, legacyValue);
-      window.localStorage.removeItem(LEGACY_CUSTOM_CHARTS_STORAGE_KEY);
-    }
-    return deserializeCharts(currentValue ?? legacyValue);
+    return readStorageSlot(window.localStorage, {
+      key: CUSTOM_CHARTS_STORAGE_KEY,
+      legacyKey: LEGACY_CUSTOM_CHARTS_STORAGE_KEY,
+      deserialize: deserializeCharts,
+    });
   });
 
   React.useEffect(() => {

@@ -827,7 +827,7 @@
 }
 
 [data-slot="sticky-action-dock"][data-status="blocked"] .action-dock-mobile-status {
-  color: var(--destructive);
+  color: var(--muted-foreground);
 }
 
 .action-dock-toggle {

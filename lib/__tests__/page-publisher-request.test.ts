@@ -1,9 +1,117 @@
 import { describe, expect, it, vi } from "vitest";
-import { PUBLISH_UPLOAD_TOO_LARGE_MESSAGE, readPublisherJson, uploadFacebookVideo } from "../page-publisher-request";
+import {
+  PUBLISH_UPLOAD_TOO_LARGE_MESSAGE,
+  buildSubmitBody,
+  readPublisherJson,
+  reconcileScheduleQueue,
+  uploadFacebookVideo,
+} from "../page-publisher-request";
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 }
+
+describe("buildSubmitBody", () => {
+  it("builds a JSON body with trimmed fields and an ISO schedule time for hosted media", () => {
+    const body = buildSubmitBody({
+      pageId: "page_1",
+      message: "  Hello  ",
+      link: " https://example.com/launch ",
+      mode: "scheduled",
+      scheduledFor: "2026-07-02T12:30",
+      target: "facebook",
+      mediaItems: [{ type: "image", url: "https://cdn.example.com/photo.jpg" }],
+    });
+
+    expect(typeof body).toBe("string");
+    expect(JSON.parse(body as string)).toEqual({
+      pageId: "page_1",
+      message: "Hello",
+      link: "https://example.com/launch",
+      mode: "scheduled",
+      scheduledFor: new Date("2026-07-02T12:30").toISOString(),
+      target: "facebook",
+      mediaItems: [{ type: "image", url: "https://cdn.example.com/photo.jpg" }],
+    });
+  });
+
+  it("omits empty optional fields from the JSON body", () => {
+    const body = buildSubmitBody({
+      pageId: "page_1",
+      message: " ",
+      link: "",
+      mode: "publish_now",
+      scheduledFor: "",
+      target: "facebook",
+      mediaItems: [],
+    });
+
+    expect(JSON.parse(body as string)).toEqual({ pageId: "page_1", mode: "publish_now", target: "facebook" });
+  });
+
+  it("builds multipart form data with fileIndex metadata in media order for mixed media", () => {
+    const first = new File(["first"], "first.jpg", { type: "image/jpeg" });
+    const second = new File(["second"], "second.gif", { type: "image/gif" });
+
+    const body = buildSubmitBody({
+      pageId: "page_1",
+      message: "Hello",
+      link: "",
+      mode: "publish_now",
+      scheduledFor: "",
+      target: "facebook",
+      mediaItems: [
+        { type: "gif", name: "second.gif", file: second },
+        { type: "image", url: "https://cdn.example.com/hosted.jpg" },
+        { type: "image", name: "first.jpg", file: first },
+      ],
+    });
+
+    expect(body).toBeInstanceOf(FormData);
+    const formData = body as FormData;
+    expect(formData.get("pageId")).toBe("page_1");
+    expect(formData.get("message")).toBe("Hello");
+    expect(formData.get("mode")).toBe("publish_now");
+    expect(formData.get("target")).toBe("facebook");
+    expect(formData.get("scheduledFor")).toBeNull();
+    expect(formData.getAll("mediaFiles").map((file) => (file as File).name)).toEqual(["second.gif", "first.jpg"]);
+    expect(JSON.parse(String(formData.get("mediaItems")))).toEqual([
+      { type: "gif", name: "second.gif", fileIndex: 0 },
+      { type: "image", url: "https://cdn.example.com/hosted.jpg" },
+      { type: "image", name: "first.jpg", fileIndex: 1 },
+    ]);
+  });
+
+  it("converts the schedule time to ISO in multipart bodies", () => {
+    const file = new File(["clip"], "clip.mp4", { type: "video/mp4" });
+
+    const body = buildSubmitBody({
+      pageId: "page_1",
+      message: "",
+      link: "",
+      mode: "scheduled",
+      scheduledFor: "2026-07-02T12:30",
+      target: "facebook",
+      mediaItems: [{ type: "video", name: "clip.mp4", file }],
+    }) as FormData;
+
+    expect(body.get("scheduledFor")).toBe(new Date("2026-07-02T12:30").toISOString());
+  });
+});
+
+describe("reconcileScheduleQueue", () => {
+  it("clears the queue when every submission succeeds", () => {
+    expect(reconcileScheduleQueue(["a", "b"], [{ ok: true }, { ok: true }])).toEqual([]);
+  });
+
+  it("keeps failed items in their original order", () => {
+    expect(reconcileScheduleQueue(["a", "b", "c", "d"], [{ ok: false }, { ok: true }, { ok: false }, { ok: true }])).toEqual(["a", "c"]);
+  });
+
+  it("keeps items without a matching result", () => {
+    expect(reconcileScheduleQueue(["a", "b"], [{ ok: true }])).toEqual(["b"]);
+  });
+});
 
 describe("readPublisherJson", () => {
   it("turns a plain-text 413 response into a useful publishing error", async () => {

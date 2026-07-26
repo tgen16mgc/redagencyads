@@ -1,6 +1,7 @@
 import { FACEBOOK_PAGE_PUBLISHING_SETUP_MESSAGE, type MediaAttachment, type MetaPage, type PagePostMode, type PagePostSubmission, type PublishTarget } from "@/lib/types";
+import { MetaGraphRequestError, graphList, graphRequest, type GraphRequestArgs, type MetaGraphErrorBody } from "@/lib/meta-graph";
+import { normalizeMediaItems } from "@/lib/page-publisher-validation";
 
-const graphVersion = () => process.env.META_GRAPH_VERSION || "v22.0";
 export const pagePublishingPermissions = ["pages_read_engagement", "pages_manage_posts"];
 export const pageSetupPermissions = ["pages_show_list", ...pagePublishingPermissions];
 const instagramPostPermissions = ["instagram_basic", "instagram_content_publish"];
@@ -13,23 +14,8 @@ type MetaPageWithToken = MetaPage & {
   };
 };
 
-type PagesResponse = {
-  data?: MetaPageWithToken[];
-  paging?: { next?: string };
-};
-
 type PermissionsResponse = {
   data?: Array<{ permission?: string; status?: string }>;
-};
-
-type MetaGraphError = {
-  code?: number;
-  message?: string;
-  type?: string;
-};
-
-type GraphErrorBody = {
-  error?: MetaGraphError;
 };
 
 type PageContext = {
@@ -37,25 +23,9 @@ type PageContext = {
   pages: Array<MetaPageWithToken & Required<Pick<MetaPageWithToken, "access_token">>>;
 };
 
-function graphUrl(path: string, params: Record<string, string>) {
-  const url = new URL(`https://graph.facebook.com/${graphVersion()}${path}`);
-  for (const [key, value] of Object.entries(params)) {
-    url.searchParams.set(key, value);
-  }
-  return url;
-}
-
-function graphVideoUrl(path: string) {
-  return new URL(`https://graph-video.facebook.com/${graphVersion()}${path}`);
-}
-
 function mediaForClient(media?: MediaAttachment) {
   if (!media) return undefined;
   return { type: media.type, url: media.url, name: media.name };
-}
-
-function normalizeMediaItems(mediaItems?: MediaAttachment[], media?: MediaAttachment) {
-  return (mediaItems?.length ? mediaItems : media ? [media] : []).filter((item) => item.url || item.file);
 }
 
 function mediaItemsForClient(mediaItems: MediaAttachment[]) {
@@ -77,7 +47,7 @@ function missingPermissions(permissions: Set<string>, required: string[]) {
   return required.filter((permission) => !permissions.has(permission));
 }
 
-function normalizeGraphError(error: MetaGraphError | undefined, context: "facebook" | "instagram") {
+function normalizeGraphError(error: MetaGraphErrorBody | undefined, context: "facebook" | "instagram") {
   const message = error?.message || "Meta Graph request failed.";
   const lower = message.toLowerCase();
   if (
@@ -96,17 +66,21 @@ function normalizeGraphError(error: MetaGraphError | undefined, context: "facebo
   return `Meta rejected the Facebook Page post: ${message}`;
 }
 
-async function graphJson<T>(response: Response, context: "facebook" | "instagram" = "facebook"): Promise<T> {
-  const json = (await response.json()) as T & GraphErrorBody;
-  if (!response.ok) {
-    throw new Error(normalizeGraphError(json?.error, context));
+function normalizePagesError(error: unknown, context: "facebook" | "instagram") {
+  if (error instanceof MetaGraphRequestError) return new Error(normalizeGraphError(error.graphError, context));
+  return error;
+}
+
+async function pagesGraphRequest<T>(args: GraphRequestArgs, context: "facebook" | "instagram" = "facebook"): Promise<T> {
+  try {
+    return await graphRequest<T>(args);
+  } catch (error) {
+    throw normalizePagesError(error, context);
   }
-  return json as T;
 }
 
 async function getPermissions(token: string) {
-  const response = await fetch(graphUrl("/me/permissions", { access_token: token }), { cache: "no-store" });
-  const json = await graphJson<PermissionsResponse>(response);
+  const json = await pagesGraphRequest<PermissionsResponse>({ path: "/me/permissions", token });
   return getGrantedPermissions(json);
 }
 
@@ -141,17 +115,15 @@ function decoratePage(page: MetaPageWithToken, permissions: Set<string>): MetaPa
 
 async function getEligiblePagesContext(token: string): Promise<PageContext> {
   const permissions = await getPermissions(token);
-  let nextUrl: URL | string | undefined = graphUrl("/me/accounts", {
-    fields: "id,name,category,tasks,access_token,instagram_business_account{id,username}",
-    access_token: token,
-  });
-  const pages: MetaPageWithToken[] = [];
-
-  while (nextUrl) {
-    const response: Response = await fetch(nextUrl, { cache: "no-store" });
-    const json = await graphJson<PagesResponse>(response);
-    pages.push(...(json.data || []));
-    nextUrl = json.paging?.next;
+  let pages: MetaPageWithToken[];
+  try {
+    pages = await graphList<MetaPageWithToken>({
+      path: "/me/accounts",
+      params: { fields: "id,name,category,tasks,access_token,instagram_business_account{id,username}" },
+      token,
+    });
+  } catch (error) {
+    throw normalizePagesError(error, "facebook");
   }
 
   return {
@@ -222,8 +194,7 @@ async function uploadUnpublishedPhoto(
   }
   if (scheduled) body.set("temporary", "true");
 
-  const response = await fetch(graphUrl(`/${page.id}/photos`, {}), { method: "POST", body });
-  const json = await graphJson<{ id: string }>(response, "facebook");
+  const json = await pagesGraphRequest<{ id: string }>({ path: `/${page.id}/photos`, method: "POST", body }, "facebook");
   return json.id;
 }
 
@@ -247,8 +218,7 @@ async function publishFacebook(input: {
     photoIds.forEach((id, index) => body.set(`attached_media[${index}]`, JSON.stringify({ media_fbid: id })));
     appendSchedule(body, input.mode, input.scheduledAt);
 
-    const response = await fetch(graphUrl(`/${input.page.id}/feed`, {}), { method: "POST", body });
-    const json = await graphJson<{ id: string }>(response, "facebook");
+    const json = await pagesGraphRequest<{ id: string }>({ path: `/${input.page.id}/feed`, method: "POST", body }, "facebook");
     return json.id;
   }
 
@@ -287,8 +257,7 @@ async function publishFacebook(input: {
 
   appendSchedule(body, input.mode, input.scheduledAt);
 
-  const response = await fetch(graphUrl(path, {}), { method: "POST", body });
-  const json = await graphJson<{ id: string; post_id?: string }>(response, "facebook");
+  const json = await pagesGraphRequest<{ id: string; post_id?: string }>({ path, method: "POST", body }, "facebook");
   return json.post_id || json.id;
 }
 
@@ -301,12 +270,13 @@ async function publishInstagram(input: { token: string; page: MetaPageWithToken;
   if (input.media.type === "video") createBody.set("video_url", input.media.url);
   else createBody.set("image_url", input.media.url);
 
-  const createResponse = await fetch(graphUrl(`/${accountId}/media`, {}), { method: "POST", body: createBody });
-  const container = await graphJson<{ id: string }>(createResponse, "instagram");
+  const container = await pagesGraphRequest<{ id: string }>({ path: `/${accountId}/media`, method: "POST", body: createBody }, "instagram");
 
   const publishBody = new URLSearchParams({ access_token: input.token, creation_id: container.id });
-  const publishResponse = await fetch(graphUrl(`/${accountId}/media_publish`, {}), { method: "POST", body: publishBody });
-  const published = await graphJson<{ id: string }>(publishResponse, "instagram");
+  const published = await pagesGraphRequest<{ id: string }>(
+    { path: `/${accountId}/media_publish`, method: "POST", body: publishBody },
+    "instagram",
+  );
   return published.id;
 }
 
@@ -401,13 +371,12 @@ export async function startFacebookVideoUpload(input: { token: string; pageId: s
     upload_phase: "start",
     file_size: String(input.fileSize),
   });
-  const response = await fetch(graphVideoUrl(`/${page.id}/videos`), { method: "POST", body });
-  const upload = await graphJson<{
+  const upload = await pagesGraphRequest<{
     upload_session_id: string;
     video_id: string;
     start_offset: string;
     end_offset: string;
-  }>(response, "facebook");
+  }>({ path: `/${page.id}/videos`, method: "POST", body, host: "graph-video.facebook.com" }, "facebook");
 
   return {
     pageId: page.id,
@@ -434,8 +403,10 @@ export async function transferFacebookVideoUpload(input: {
   body.set("start_offset", String(input.startOffset));
   body.set("video_file_chunk", input.chunk, input.chunk.name || "video.mp4");
 
-  const response = await fetch(graphVideoUrl(`/${input.pageId}/videos`), { method: "POST", body });
-  const upload = await graphJson<{ start_offset: string; end_offset: string }>(response, "facebook");
+  const upload = await pagesGraphRequest<{ start_offset: string; end_offset: string }>(
+    { path: `/${input.pageId}/videos`, method: "POST", body, host: "graph-video.facebook.com" },
+    "facebook",
+  );
   return { startOffset: Number(upload.start_offset), endOffset: Number(upload.end_offset) };
 }
 
@@ -456,8 +427,10 @@ export async function finishFacebookVideoUpload(input: FacebookVideoUploadContex
   if (input.message) body.set("description", input.message);
   appendSchedule(body, input.mode, scheduledAt);
 
-  const response = await fetch(graphVideoUrl(`/${input.pageId}/videos`), { method: "POST", body });
-  const finished = await graphJson<{ success?: boolean }>(response, "facebook");
+  const finished = await pagesGraphRequest<{ success?: boolean }>(
+    { path: `/${input.pageId}/videos`, method: "POST", body, host: "graph-video.facebook.com" },
+    "facebook",
+  );
   if (finished.success === false) throw new Error("Meta could not finish the Facebook video upload.");
 
   return {

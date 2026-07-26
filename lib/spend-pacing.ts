@@ -1,3 +1,4 @@
+import type { DiagnosticSeverity } from "@/lib/diagnosis";
 import type { KpiPack, NormalizedRow } from "@/lib/types";
 
 export type SpendPacingStatus = "on_pace" | "underpacing" | "severely_underpacing" | "no_budget_data";
@@ -14,7 +15,7 @@ export type SpendPacingCampaign = {
 
 export type SpendPacingAssessment = {
   status: SpendPacingStatus;
-  variant: "secondary" | "outline" | "destructive";
+  severity: DiagnosticSeverity;
   label: { en: string; vi: string };
   summary: { en: string; vi: string };
   campaigns: SpendPacingCampaign[];
@@ -38,7 +39,7 @@ export function assessSpendPacing(
   if (!withBudget.length) {
     return {
       status: "no_budget_data",
-      variant: "outline",
+      severity: "insufficient",
       label: { en: "No budget data", vi: "Không có dữ liệu ngân sách" },
       summary: {
         en: "No campaign daily budget data available to assess spend pacing.",
@@ -77,7 +78,7 @@ export function assessSpendPacing(
       : "on_pace";
 
   const status: SpendPacingStatus = worst;
-  const variant = status === "on_pace" ? "secondary" : status === "underpacing" ? "outline" : "destructive";
+  const severity: DiagnosticSeverity = status === "on_pace" ? "ok" : status === "underpacing" ? "watch" : "risk";
 
   const label = {
     on_pace: { en: "Pacing on track", vi: "Chi tiêu đúng tiến độ" },
@@ -105,5 +106,5 @@ export function assessSpendPacing(
     },
   }[status];
 
-  return { status, variant, label, summary, campaigns, totalSpend, totalExpected, overallPacePercent };
+  return { status, severity, label, summary, campaigns, totalSpend, totalExpected, overallPacePercent };
 }

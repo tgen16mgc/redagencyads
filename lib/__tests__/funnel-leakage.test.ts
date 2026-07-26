@@ -46,7 +46,7 @@ describe("assessFunnelLeakage", () => {
     );
 
     expect(result.status).toBe("clean");
-    expect(result.variant).toBe("secondary");
+    expect(result.severity).toBe("ok");
     expect(result.score).toBeGreaterThanOrEqual(80);
     expect(result.summary.en).toContain("healthy");
   });
@@ -63,7 +63,7 @@ describe("assessFunnelLeakage", () => {
     );
 
     expect(result.status).toBe("leakage_detected");
-    expect(result.variant).toBe("destructive");
+    expect(result.severity).toBe("risk");
     expect(result.score).toBeLessThan(70);
     expect(result.blockers.en.join(" ")).toContain("checkout");
   });
@@ -94,7 +94,7 @@ describe("assessFunnelLeakage", () => {
     );
 
     expect(result.status).toBe("insufficient_data");
-    expect(result.variant).toBe("outline");
+    expect(result.severity).toBe("insufficient");
     expect(result.summary.vi.toLowerCase()).toContain("tối thiểu");
   });
 
@@ -110,7 +110,7 @@ describe("assessFunnelLeakage", () => {
     );
 
     expect(result.status).toBe("insufficient_data");
-    expect(result.variant).toBe("outline");
+    expect(result.severity).toBe("insufficient");
     expect(result.blockers.en).toHaveLength(0);
     expect(result.summary.en).toContain("does not apply");
   });

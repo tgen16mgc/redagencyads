@@ -1,5 +1,6 @@
+import type { DiagnosticSeverity } from "@/lib/diagnosis";
 import type { KpiPack, NormalizedRow } from "@/lib/types";
-import { SUFFICIENCY } from "@/lib/data-sufficiency";
+import { signalVolumeValue } from "@/lib/primary-result";
 
 export type BreakdownWasteStatus = "clean" | "waste_detected" | "insufficient_data";
 
@@ -15,7 +16,7 @@ export type BreakdownWasteRow = {
 
 export type BreakdownWaste = {
   status: BreakdownWasteStatus;
-  variant: "secondary" | "outline" | "destructive";
+  severity: DiagnosticSeverity;
   label: { en: string; vi: string };
   summary: { en: string; vi: string };
   rows: BreakdownWasteRow[];
@@ -29,14 +30,6 @@ const labels: Record<BreakdownWasteStatus, { en: string; vi: string }> = {
 
 const MIN_BREAKDOWN_ROWS = 2;
 
-function primaryResult(row: NormalizedRow, pack: KpiPack) {
-  if (pack === "messages") return row.messages;
-  if (pack === "lead_gen") return row.leads;
-  if (pack === "sales_roas") return row.purchases;
-  if (pack === "traffic") return row.linkClicks;
-  return row.impressions;
-}
-
 function breakdownWasteRowName(row: NormalizedRow) {
   if (row.region || row.country) return row.region || row.country || row.name;
   const demographic = [row.age, row.gender].filter(Boolean).join(" / ");
@@ -46,7 +39,7 @@ function breakdownWasteRowName(row: NormalizedRow) {
 function insufficientData(): BreakdownWaste {
   return {
     status: "insufficient_data",
-    variant: "outline",
+    severity: "insufficient",
     label: labels.insufficient_data,
     summary: {
       en: `Need at least ${MIN_BREAKDOWN_ROWS} breakdown rows with spend to analyze allocation efficiency.`,
@@ -59,14 +52,14 @@ function insufficientData(): BreakdownWaste {
 export function assessBreakdownWaste(rows: NormalizedRow[], pack: KpiPack): BreakdownWaste {
   const usable = rows.filter((row) => row.spend > 0);
   const totalSpend = usable.reduce((sum, row) => sum + row.spend, 0);
-  const totalResult = usable.reduce((sum, row) => sum + primaryResult(row, pack), 0);
+  const totalResult = usable.reduce((sum, row) => sum + signalVolumeValue(row, pack), 0);
 
   if (usable.length < MIN_BREAKDOWN_ROWS || totalSpend <= 0) {
     return insufficientData();
   }
 
   const detailedRows: BreakdownWasteRow[] = usable.map((row) => {
-    const resultVal = primaryResult(row, pack);
+    const resultVal = signalVolumeValue(row, pack);
     return {
       id: row.id,
       name: breakdownWasteRowName(row),
@@ -92,7 +85,7 @@ export function assessBreakdownWaste(rows: NormalizedRow[], pack: KpiPack): Brea
     const topWaste = wasteRows.sort((a, b) => b.spend - a.spend)[0];
     return {
       status: "waste_detected",
-      variant: "destructive",
+      severity: "risk",
       label: labels.waste_detected,
       summary: {
         en: `High spend share but weak results on ${topWaste.name} (${(topWaste.spendShare * 100).toFixed(0)}% spend share, CPA ${(topWaste.cpa || topWaste.spend).toFixed(2)}).`,
@@ -104,7 +97,7 @@ export function assessBreakdownWaste(rows: NormalizedRow[], pack: KpiPack): Brea
 
   return {
     status: "clean",
-    variant: "secondary",
+    severity: "ok",
     label: labels.clean,
     summary: {
       en: "No major breakdown waste detected. Spend matches results proportionally.",

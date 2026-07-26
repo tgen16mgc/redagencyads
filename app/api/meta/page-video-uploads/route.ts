@@ -7,7 +7,7 @@ import {
 } from "@/lib/meta-pages";
 import { openMetaVideoUploadTicket, sealMetaVideoUploadTicket } from "@/lib/meta-video-upload-ticket";
 import { PAGE_VIDEO_UPLOAD_CHUNK_BYTES } from "@/lib/page-video-upload-limits";
-import { requireToken } from "@/lib/session";
+import { requireToken, sessionErrorStatus } from "@/lib/session";
 
 export const maxDuration = 300;
 
@@ -94,6 +94,6 @@ export async function POST(request: Request) {
     });
     return NextResponse.json({ submission });
   } catch (error) {
-    return NextResponse.json({ error: errorMessage(error) }, { status: 400 });
+    return NextResponse.json({ error: errorMessage(error) }, { status: sessionErrorStatus(error) });
   }
 }

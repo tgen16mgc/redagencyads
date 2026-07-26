@@ -14,13 +14,12 @@ import {
 import type { DashboardView } from "@/lib/dashboard-access";
 import { CHAT_LIMITS, type ChatContext } from "@/lib/ai/chat-contract";
 import { chatContextFingerprint } from "@/lib/ai/chat-context";
+import { createChatLifecycle } from "@/lib/ai/chat-lifecycle";
 import {
-  appendChatMessage,
   clearChatThread,
   emptyChatThreads,
   messagesForContext,
   removeChatMessage,
-  requestHistory,
   type ChatDisplayMessage,
   type ChatThreads,
 } from "@/lib/ai/chat-thread";
@@ -41,16 +40,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
 type PendingRequestIds = Record<DashboardView, string | null>;
-type AbortIntent = "cancel" | "clear" | "context-change" | "reset" | "unmount";
-
-type ActiveRequest = {
-  id: string;
-  view: DashboardView;
-  fingerprint: string;
-  question: string;
-  controller: AbortController;
-  abortIntent?: AbortIntent;
-};
 
 const EMPTY_PENDING_REQUEST_IDS: PendingRequestIds = {
   overview: null,
@@ -63,11 +52,6 @@ const EMPTY_PENDING_REQUEST_IDS: PendingRequestIds = {
 export type ContextChatHandle = {
   clearAll: () => void;
 };
-
-function messageId(prefix: string) {
-  const id = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  return `${prefix}-${id}`;
-}
 
 function dialogOriginStyle(trigger: DOMRect, popup: DOMRect) {
   const x = trigger.left + trigger.width / 2 - (popup.left + popup.width / 2);
@@ -94,7 +78,6 @@ export const ContextChat = React.forwardRef<ContextChatHandle, {
   const [input, setInput] = React.useState("");
   const [announcement, setAnnouncement] = React.useState("");
   const threadsRef = React.useRef<ChatThreads>(threads);
-  const requests = React.useRef(new Map<DashboardView, ActiveRequest>());
   const getContextRef = React.useRef(getContext);
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
   const latestAssistantRef = React.useRef<HTMLElement>(null);
@@ -124,33 +107,26 @@ export const ContextChat = React.forwardRef<ContextChatHandle, {
     return next;
   }, []);
 
-  const releaseRequest = React.useCallback((view: DashboardView, requestId: string) => {
-    if (requests.current.get(view)?.id !== requestId) return;
-    requests.current.delete(view);
-    setPendingRequestIds((current) => current[view] === requestId ? { ...current, [view]: null } : current);
-  }, []);
-
-  const abortRequest = React.useCallback((view: DashboardView, intent: AbortIntent, releaseImmediately = false) => {
-    const request = requests.current.get(view);
-    if (!request) return;
-    request.abortIntent = intent;
-    request.controller.abort();
-    if (releaseImmediately) releaseRequest(view, request.id);
-  }, [releaseRequest]);
+  const [lifecycle] = React.useState(() => createChatLifecycle({
+    fetchFn: (url, init) => fetch(url, init),
+    getContext: (view) => getContextRef.current(view),
+    readThreads: () => threadsRef.current,
+    applyThreads: updateThreads,
+    setPending: (view, requestId) => setPendingRequestIds((current) => ({ ...current, [view]: requestId })),
+    onReply: (view, responseReady) => {
+      if (view === activeViewRef.current) setAnnouncement(responseReady);
+    },
+  }));
 
   const clearAll = React.useCallback(() => {
-    for (const request of requests.current.values()) {
-      request.abortIntent = "reset";
-      request.controller.abort();
-    }
-    requests.current.clear();
+    lifecycle.reset();
     const empty = emptyChatThreads();
     threadsRef.current = empty;
     setThreads(empty);
     setPendingRequestIds(EMPTY_PENDING_REQUEST_IDS);
     setInput("");
     setAnnouncement("");
-  }, []);
+  }, [lifecycle]);
 
   React.useImperativeHandle(ref, () => ({ clearAll }), [clearAll]);
 
@@ -223,14 +199,11 @@ export const ContextChat = React.forwardRef<ContextChatHandle, {
   React.useEffect(() => {
     const contextKey = `${activeView}:${activeFingerprint}`;
     if (activeContextRef.current === contextKey) return;
-    const request = requests.current.get(activeView);
-    if (request && request.fingerprint !== activeFingerprint) {
-      abortRequest(activeView, "context-change", true);
-    }
+    lifecycle.abortOnContextChange(activeView, activeFingerprint);
     activeContextRef.current = contextKey;
     setInput("");
     setAnnouncement("");
-  }, [abortRequest, activeFingerprint, activeView]);
+  }, [activeFingerprint, activeView, lifecycle]);
 
   React.useEffect(() => {
     if (!open) return;
@@ -242,11 +215,8 @@ export const ContextChat = React.forwardRef<ContextChatHandle, {
   React.useEffect(() => () => {
     if (motionFrameRef.current !== null) cancelAnimationFrame(motionFrameRef.current);
     if (originFrameRef.current !== null) cancelAnimationFrame(originFrameRef.current);
-    for (const request of requests.current.values()) {
-      request.abortIntent = "unmount";
-      request.controller.abort();
-    }
-  }, []);
+    lifecycle.dispose();
+  }, [lifecycle]);
 
   const handleOpenChange = React.useCallback((nextOpen: boolean) => {
     if (!nextOpen && popupRef.current?.isConnected) {
@@ -257,109 +227,32 @@ export const ContextChat = React.forwardRef<ContextChatHandle, {
     onOpenChange(nextOpen);
   }, [measureDialogOrigin, onOpenChange]);
 
-  const sendMessage = React.useCallback(async (questionOverride?: string, reuseLastUser = false) => {
-    const originView = activeView;
-    const question = (questionOverride ?? input).trim();
-    if (!question || requests.current.has(originView) || !available) return;
-
-    const context = getContextRef.current(originView);
-    const fingerprint = chatContextFingerprint(context);
-    const originCopy = contextChatCopy(language, originView);
-    const requestId = messageId("request").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64);
-    const userMessage: ChatDisplayMessage = {
-      id: messageId("user"),
-      role: "user",
-      content: question.slice(0, CHAT_LIMITS.userMessageCharacters),
-      status: "complete",
-    };
-    const currentMessages = messagesForContext(threadsRef.current, originView, fingerprint);
-    const nextMessages = reuseLastUser ? currentMessages : [...currentMessages, userMessage];
-
-    if (!reuseLastUser) {
-      updateThreads((current) => appendChatMessage(current, originView, fingerprint, userMessage));
-    }
+  const sendMessage = React.useCallback((questionOverride?: string, reuseLastUser = false) => {
+    if (!available) return;
+    const started = lifecycle.send({
+      view: activeView,
+      question: questionOverride ?? input,
+      language,
+      copy: contextChatCopy(language, activeView),
+      reuseLastUser,
+    });
+    if (!started) return;
     setInput("");
     setAnnouncement("");
-
-    const request: ActiveRequest = {
-      id: requestId,
-      view: originView,
-      fingerprint,
-      question,
-      controller: new AbortController(),
-    };
-    requests.current.set(originView, request);
-    setPendingRequestIds((current) => ({ ...current, [originView]: requestId }));
-
-    try {
-      const response = await fetch("/api/ai/chat", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        signal: request.controller.signal,
-        body: JSON.stringify({
-          requestId,
-          contextFingerprint: fingerprint,
-          language,
-          context,
-          messages: requestHistory(nextMessages),
-        }),
-      });
-      const json = await response.json().catch(() => ({} as Record<string, unknown>));
-      if (!response.ok) throw new Error(typeof json.error === "string" ? json.error : originCopy.genericError);
-
-      if (requests.current.get(originView)?.id !== requestId || request.abortIntent) return;
-      if (chatContextFingerprint(getContextRef.current(originView)) !== fingerprint) return;
-      const responseFingerprint = typeof json.contextFingerprint === "string" ? json.contextFingerprint : fingerprint;
-      if (responseFingerprint !== fingerprint) return;
-
-      updateThreads((current) => appendChatMessage(current, originView, fingerprint, {
-        id: messageId("assistant"),
-        role: "assistant",
-        content: String(json.reply || originCopy.genericError).slice(0, CHAT_LIMITS.assistantMessageCharacters),
-        status: "complete",
-        basedOnFingerprint: fingerprint,
-      }));
-      if (originView === activeViewRef.current) setAnnouncement(originCopy.responseReady);
-    } catch (error) {
-      if (requests.current.get(originView)?.id !== requestId) return;
-      const contextStillMatches = chatContextFingerprint(getContextRef.current(originView)) === fingerprint;
-      if (request.controller.signal.aborted) {
-        if (request.abortIntent === "cancel" && contextStillMatches) {
-          updateThreads((current) => appendChatMessage(current, originView, fingerprint, {
-            id: messageId("notice"),
-            role: "assistant",
-            content: originCopy.cancelled,
-            status: "notice",
-            retryContent: question,
-          }));
-        }
-        return;
-      }
-      if (!contextStillMatches) return;
-      updateThreads((current) => appendChatMessage(current, originView, fingerprint, {
-        id: messageId("error"),
-        role: "assistant",
-        content: error instanceof Error ? error.message : originCopy.genericError,
-        status: "error",
-        retryContent: question,
-      }));
-    } finally {
-      releaseRequest(originView, requestId);
-    }
-  }, [activeView, available, input, language, releaseRequest, updateThreads]);
+  }, [activeView, available, input, language, lifecycle]);
 
   const retryMessage = React.useCallback((message: ChatDisplayMessage) => {
     if (!message.retryContent) return;
     updateThreads((current) => removeChatMessage(current, activeView, activeFingerprint, message.id));
-    void sendMessage(message.retryContent, true);
+    sendMessage(message.retryContent, true);
   }, [activeFingerprint, activeView, sendMessage, updateThreads]);
 
   const clearCurrent = React.useCallback(() => {
-    abortRequest(activeView, "clear", true);
+    lifecycle.abort(activeView, "clear", true);
     updateThreads((current) => clearChatThread(current, activeView, activeFingerprint));
     setInput("");
     setAnnouncement("");
-  }, [abortRequest, activeFingerprint, activeView, updateThreads]);
+  }, [activeFingerprint, activeView, lifecycle, updateThreads]);
 
   const chatPanel = (
     <section
@@ -421,7 +314,7 @@ export const ContextChat = React.forwardRef<ContextChatHandle, {
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => void sendMessage(suggestion)}
+                  onClick={() => sendMessage(suggestion)}
                   className="context-chat-suggestion h-auto min-h-11 whitespace-normal rounded-full px-3 py-2 text-left"
                   style={{ "--suggestion-index": index } as React.CSSProperties}
                 >
@@ -507,18 +400,18 @@ export const ContextChat = React.forwardRef<ContextChatHandle, {
               onKeyDown={(event) => {
                 if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
                 event.preventDefault();
-                void sendMessage();
+                sendMessage();
               }}
               placeholder={copy.placeholder}
               rows={3}
               className="context-chat-composer max-h-36 min-h-20 resize-none text-base sm:text-sm"
             />
             {isPending ? (
-              <Button type="button" variant="outline" size="icon-lg" onClick={() => abortRequest(activeView, "cancel")} aria-label={copy.cancel}>
+              <Button type="button" variant="outline" size="icon-lg" onClick={() => lifecycle.abort(activeView, "cancel")} aria-label={copy.cancel}>
                 <SquareIcon />
               </Button>
             ) : (
-              <Button type="button" size="icon-lg" onClick={() => void sendMessage()} disabled={!input.trim()} aria-label={copy.send}>
+              <Button type="button" size="icon-lg" onClick={() => sendMessage()} disabled={!input.trim()} aria-label={copy.send}>
                 <SendIcon />
               </Button>
             )}

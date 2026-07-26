@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { POST as verdictPOST } from "../../app/api/ai/verdict/route";
-import { generateVerdict } from "../ai";
+import { generateVerdict } from "../ai/verdict";
+import { recommendBudgetMoves } from "../budget-move-engine";
 import { buildLocalVerdict } from "../verdict-rules";
 import type { DashboardReport, NormalizedRow } from "../types";
 
@@ -66,6 +67,21 @@ function report(overrides: Partial<DashboardReport> = {}): DashboardReport {
     messages: 1,
     costPerMessage: 40,
   });
+  const steady = row({
+    id: "steady",
+    name: "Message Steady",
+    spend: 50,
+    impressions: 5500,
+    reach: 3600,
+    frequency: 1.5,
+    clicks: 70,
+    linkClicks: 60,
+    ctr: 1.1,
+    cpc: 0.83,
+    cpm: 9,
+    messages: 5,
+    costPerMessage: 10,
+  });
   return {
     account: { id: "act_1", name: "Test Account", currency: "USD" },
     selectedCampaigns: [{ id: "campaign_1", name: "Messages Campaign", objective: "OUTCOME_ENGAGEMENT" }],
@@ -78,20 +94,20 @@ function report(overrides: Partial<DashboardReport> = {}): DashboardReport {
       id: "total",
       level: "account",
       name: "Account total",
-      spend: 100,
-      impressions: 11000,
-      reach: 6700,
-      frequency: 2.8,
-      clicks: 205,
-      linkClicks: 132,
-      ctr: 1.86,
-      cpc: 0.49,
+      spend: 150,
+      impressions: 16500,
+      reach: 10300,
+      frequency: 2.4,
+      clicks: 275,
+      linkClicks: 192,
+      ctr: 1.67,
+      cpc: 0.55,
       cpm: 9.09,
-      messages: 13,
-      costPerMessage: 7.69,
+      messages: 18,
+      costPerMessage: 8.33,
     }),
-    campaignRows: [winner, loser],
-    adsetRows: [winner, loser],
+    campaignRows: [winner, loser, steady],
+    adsetRows: [winner, loser, steady],
     adRows: [],
     dailyRows: [],
     platformRows: [],
@@ -203,6 +219,48 @@ describe("buildLocalVerdict", () => {
   it("only reports high confidence when spend, primary results, a winner/loser, and health checks all exist", () => {
     expect(buildLocalVerdict(report(), "en").confidence).toBe("high");
     expect(buildLocalVerdict(noSpendReport(), "en").confidence).toBe("low");
+  });
+});
+
+describe("local Verdict and Budget Move Engine coherence", () => {
+  it("names only the engine's transfer target and source in winner, loser, and Budget Move claims", () => {
+    const fixture = report();
+    const engine = recommendBudgetMoves(fixture);
+    const verdict = buildLocalVerdict(fixture, "en");
+
+    expect(engine.status).toBe("moves_recommended");
+    const recommendation = engine.recommendations[0];
+    expect(verdict.winners.join(" ")).toContain(recommendation.targetRowName);
+    expect(verdict.losers.join(" ")).toContain(recommendation.sourceRowName);
+    expect(verdict.budget_moves.join(" ")).toContain(`increasing ${recommendation.targetRowName} by up to ${recommendation.suggestedMovePercent}%`);
+    expect(verdict.budget_moves.join(" ")).toContain(`Reduce or cap ${recommendation.sourceRowName}`);
+  });
+
+  it("holds the Verdict's Budget Moves when the engine blocks scaling", () => {
+    const fatiguedWinner = row({
+      id: "winner",
+      name: "Message Winner",
+      spend: 60,
+      impressions: 6000,
+      reach: 4200,
+      frequency: 5.5,
+      clicks: 180,
+      linkClicks: 120,
+      ctr: 0.7,
+      messages: 12,
+      costPerMessage: 5,
+    });
+    const fixture = report();
+    fixture.campaignRows = [fatiguedWinner, ...fixture.campaignRows.slice(1)];
+    fixture.adsetRows = [fatiguedWinner, ...fixture.adsetRows.slice(1)];
+    const engine = recommendBudgetMoves(fixture);
+    const verdict = buildLocalVerdict(fixture, "en");
+
+    expect(engine.status).toBe("hold");
+    expect(verdict.winners).toHaveLength(0);
+    expect(verdict.losers).toHaveLength(0);
+    expect(verdict.budget_moves.join(" ")).toContain("Hold budget");
+    expect(verdict.budget_moves.join(" ")).not.toMatch(/increas/i);
   });
 });
 

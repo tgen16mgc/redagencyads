@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCampaigns } from "@/lib/meta";
-import { requireToken } from "@/lib/session";
+import { requireToken, sessionErrorStatus } from "@/lib/session";
 
 export async function GET(request: Request) {
   try {
@@ -13,7 +13,7 @@ export async function GET(request: Request) {
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unable to load campaigns." },
-      { status: 400 },
+      { status: sessionErrorStatus(error) },
     );
   }
 }

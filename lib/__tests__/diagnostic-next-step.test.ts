@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { diagnosticNextStep, type DiagnosticKind, type DiagnosticTone } from "../diagnostic-next-step";
+import { diagnosticNextStep } from "../diagnostic-next-step";
+import type { DiagnosticId, DiagnosticSeverity } from "../diagnosis";
 
-const KINDS: DiagnosticKind[] = [
+const IDS: DiagnosticId[] = [
   "healthTriage",
   "dailyDiagnosis",
   "experimentReadiness",
@@ -20,27 +21,27 @@ const KINDS: DiagnosticKind[] = [
   "measurementQuality",
 ];
 
-const TONES: DiagnosticTone[] = ["critical", "warning", "ok", "insufficient"];
+const SEVERITIES: DiagnosticSeverity[] = ["risk", "watch", "ok", "insufficient"];
 
 describe("diagnosticNextStep", () => {
-  it("returns a non-empty bilingual next step for every kind and tone", () => {
-    for (const kind of KINDS) {
-      for (const tone of TONES) {
-        const en = diagnosticNextStep(kind, tone, "en");
-        const vi = diagnosticNextStep(kind, tone, "vi");
-        expect(en.trim().length, `${kind}/${tone}/en`).toBeGreaterThan(0);
-        expect(vi.trim().length, `${kind}/${tone}/vi`).toBeGreaterThan(0);
+  it("returns a non-empty bilingual next step for every id and severity", () => {
+    for (const id of IDS) {
+      for (const severity of SEVERITIES) {
+        const en = diagnosticNextStep(id, severity, "en");
+        const vi = diagnosticNextStep(id, severity, "vi");
+        expect(en.trim().length, `${id}/${severity}/en`).toBeGreaterThan(0);
+        expect(vi.trim().length, `${id}/${severity}/vi`).toBeGreaterThan(0);
       }
     }
   });
 
-  it("gives a distinct action for critical vs ok tone", () => {
-    const critical = diagnosticNextStep("funnelLeakage", "critical", "en");
+  it("gives a distinct action for risk vs ok severity", () => {
+    const risk = diagnosticNextStep("funnelLeakage", "risk", "en");
     const ok = diagnosticNextStep("funnelLeakage", "ok", "en");
-    expect(critical).not.toBe(ok);
+    expect(risk).not.toBe(ok);
   });
 
-  it("frames the insufficient tone around collecting more data", () => {
+  it("frames the insufficient severity around collecting more data", () => {
     const en = diagnosticNextStep("audienceOverlap", "insufficient", "en");
     expect(en.toLowerCase()).toMatch(/data|wait|more/);
   });

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FACEBOOK_PAGE_PUBLISHING_SETUP_MESSAGE } from "@/lib/types";
+import { buildSubmitBody } from "@/lib/page-publisher-request";
 
 const { requireToken, getPages, publishPageFeedPost } = vi.hoisted(() => ({
   requireToken: vi.fn(),
@@ -7,9 +8,14 @@ const { requireToken, getPages, publishPageFeedPost } = vi.hoisted(() => ({
   publishPageFeedPost: vi.fn(),
 }));
 
-vi.mock("@/lib/session", () => ({
-  requireToken,
-}));
+vi.mock("@/lib/session", () => {
+  class SessionAuthError extends Error {}
+  return {
+    requireToken,
+    SessionAuthError,
+    sessionErrorStatus: (error: unknown) => (error instanceof SessionAuthError ? 401 : 400),
+  };
+});
 
 vi.mock("@/lib/meta-pages", () => ({
   getPages,
@@ -177,20 +183,19 @@ describe("Meta Pages API routes", () => {
   it("passes multipart mediaItems files to the publisher in metadata order", async () => {
     const first = new File(["first"], "first.jpg", { type: "image/jpeg" });
     const second = new File(["second"], "second.gif", { type: "image/gif" });
-    const formData = new FormData();
-    formData.set("pageId", "page_1");
-    formData.set("message", "Hello");
-    formData.set("mode", "publish_now");
-    formData.set("target", "facebook");
-    formData.append("mediaFiles", first);
-    formData.append("mediaFiles", second);
-    formData.set(
-      "mediaItems",
-      JSON.stringify([
-        { type: "gif", fileIndex: 1 },
-        { type: "image", fileIndex: 0 },
-      ]),
-    );
+    const body = buildSubmitBody({
+      pageId: "page_1",
+      message: "Hello",
+      link: "",
+      mode: "publish_now",
+      scheduledFor: "",
+      target: "facebook",
+      mediaItems: [
+        { type: "gif", name: "second.gif", file: second },
+        { type: "image", url: "https://cdn.example.com/hosted.jpg" },
+        { type: "image", name: "first.jpg", file: first },
+      ],
+    });
     publishPageFeedPost.mockResolvedValue({
       pageId: "page_1",
       pageName: "Ready Page",
@@ -203,13 +208,14 @@ describe("Meta Pages API routes", () => {
     });
     const { POST } = await import("./page-posts/route");
 
-    const response = await POST(new Request("http://localhost/api/meta/page-posts", { method: "POST", body: formData }));
+    const response = await POST(new Request("http://localhost/api/meta/page-posts", { method: "POST", body }));
 
     expect(response.status).toBe(200);
     expect(publishPageFeedPost).toHaveBeenCalledWith(
       expect.objectContaining({
         mediaItems: [
           { type: "gif", name: "second.gif", file: second },
+          { type: "image", url: "https://cdn.example.com/hosted.jpg" },
           { type: "image", name: "first.jpg", file: first },
         ],
       }),
@@ -281,7 +287,8 @@ describe("Meta Pages API routes", () => {
     expect(publishPageFeedPost).not.toHaveBeenCalled();
   });
 
-  it("rejects Instagram posts without media", async () => {
+  it("maps publishing guard errors to a clean 400 message", async () => {
+    publishPageFeedPost.mockRejectedValue(new Error("Instagram posts require an image, video, or GIF attachment."));
     const { POST } = await import("./page-posts/route");
 
     const response = await POST(
@@ -290,8 +297,9 @@ describe("Meta Pages API routes", () => {
         body: JSON.stringify({ pageId: "page_1", message: "Text only", mode: "publish_now", target: "instagram" }),
       }),
     );
+    const body = await response.json();
 
     expect(response.status).toBe(400);
-    expect(publishPageFeedPost).not.toHaveBeenCalled();
+    expect(body.error).toBe("Instagram posts require an image, video, or GIF attachment.");
   });
 });

@@ -1,4 +1,5 @@
 import { runApifyActor } from "@/lib/apify";
+import { normalizeTikTokProfiles } from "@/lib/tiktok-input";
 import type { TikTokAdLibraryRow, TikTokLibraryReport, TikTokProfile, TikTokProfileResult, TikTokVideo } from "@/lib/types";
 
 type TikTokProfileArgs = {
@@ -21,7 +22,7 @@ const DEFAULT_ADS_ACTOR_ID = "data_xplorer/tiktok-ads-library-fast";
 
 export async function fetchTikTokProfiles(args: TikTokProfileArgs): Promise<TikTokProfileResult> {
   const actorId = process.env.APIFY_TIKTOK_PROFILE_ACTOR_ID || DEFAULT_PROFILE_ACTOR_ID;
-  const profiles = args.profiles.map(normalizeProfileInput);
+  const profiles = normalizeTikTokProfiles(args.profiles);
   const input = buildProfileInput(profiles, args.resultsPerPage);
   const items = await runApifyActor<Record<string, unknown>>({ actorId, input, timeoutSeconds: 240 });
   const warnings = items.flatMap(profileWarning);
@@ -91,10 +92,6 @@ function replaceTemplate(value: unknown, vars: Record<string, unknown>): unknown
   return Object.entries(vars).reduce((result, [key, item]) => {
     return result.replaceAll(`{{${key}}}`, Array.isArray(item) ? item.join(", ") : String(item ?? ""));
   }, value);
-}
-
-function normalizeProfileInput(value: string) {
-  return value.trim().replace(/^@/, "");
 }
 
 function profileWarning(item: Record<string, unknown>) {

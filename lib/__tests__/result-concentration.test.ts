@@ -49,7 +49,7 @@ describe("assessResultConcentration", () => {
     ]);
 
     expect(result.status).toBe("low_risk");
-    expect(result.variant).toBe("secondary");
+    expect(result.severity).toBe("ok");
     expect(result.topRows).toHaveLength(3);
     expect(result.summary.en).toContain("distributed");
   });
@@ -63,7 +63,7 @@ describe("assessResultConcentration", () => {
     ]);
 
     expect(result.status).toBe("high_risk");
-    expect(result.variant).toBe("destructive");
+    expect(result.severity).toBe("risk");
     expect(result.topRows[0].name).toBe("Hero Campaign");
     expect(result.topRows[0].resultShare).toBeCloseTo(0.7);
     expect(result.summary.en).toContain("70.0%");
@@ -78,7 +78,7 @@ describe("assessResultConcentration", () => {
     ]);
 
     expect(result.status).toBe("medium_risk");
-    expect(result.variant).toBe("outline");
+    expect(result.severity).toBe("watch");
     expect(result.summary.en).toContain("top 3");
   });
 
@@ -99,7 +99,7 @@ describe("assessResultConcentration", () => {
     const result = assess([row({ id: "a", name: "Only Campaign", spend: 100, messages: 10 })]);
 
     expect(result.status).toBe("insufficient_data");
-    expect(result.variant).toBe("outline");
+    expect(result.severity).toBe("insufficient");
     expect(result.topRows).toHaveLength(1);
     expect(result.summary.vi.toLowerCase()).toContain("chưa đủ");
   });

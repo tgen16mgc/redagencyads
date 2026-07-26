@@ -1,3 +1,5 @@
+import { trustedMetaLibraryUrl } from "@/lib/competitor-evidence";
+
 function splitInput(value: string | string[]) {
   const rows = Array.isArray(value) ? value : value.split(/[\n,]/);
   return rows.map((item) => item.trim()).filter(Boolean);
@@ -21,17 +23,9 @@ export function normalizeCompetitorNames(value: string | string[], maxItems = 8)
 }
 
 export function normalizeCompetitorUrls(value: string | string[], maxItems = 8) {
-  const validUrls = splitInput(value).filter((item) => {
-    try {
-      const url = new URL(item);
-      const host = url.hostname.toLocaleLowerCase();
-      const isFacebookHost = host === "facebook.com" || host.endsWith(".facebook.com");
-      const isLibraryPath = url.pathname === "/ads/library" || url.pathname === "/ads/library/";
-      return url.protocol === "https:" && isFacebookHost && isLibraryPath;
-    } catch {
-      return false;
-    }
-  });
+  const validUrls = splitInput(value)
+    .map((item) => trustedMetaLibraryUrl(item))
+    .filter((item): item is string => Boolean(item));
   return uniqueStable(validUrls, maxItems);
 }
 

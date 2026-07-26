@@ -95,6 +95,16 @@ describe("assessConsolidationPressure", () => {
     expect(result.status).toBe("critical");
   });
 
+  it("does not judge the awareness pack against the conversion learning threshold", () => {
+    const adsets = [
+      row({ id: "s1", spend: 100, reach: 20000, leads: 2 }),
+      row({ id: "s2", spend: 100, reach: 30000, leads: 0 }),
+    ];
+    const result = assessConsolidationPressure(adsets, "awareness", 7);
+    expect(result.status).toBe("insufficient_data");
+    expect(result.summary.en).toContain("no conversion-scale primary result");
+  });
+
   it("skips adsets with no spend", () => {
     const adsets = [
       row({ id: "s1", spend: 100, leads: 14 }),

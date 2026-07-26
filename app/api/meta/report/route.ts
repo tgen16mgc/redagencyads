@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { buildReport } from "@/lib/meta";
-import { requireToken } from "@/lib/session";
+import { requireToken, sessionErrorStatus } from "@/lib/session";
 
 const packSchema = z.enum(["lead_gen", "messages", "sales_roas", "traffic", "awareness"]).optional();
 
@@ -19,7 +19,7 @@ export async function GET(request: Request) {
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unable to build report." },
-      { status: 400 },
+      { status: sessionErrorStatus(error) },
     );
   }
 }

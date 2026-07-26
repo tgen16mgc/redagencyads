@@ -1,3 +1,4 @@
+import type { DiagnosticSeverity } from "@/lib/diagnosis";
 import type { NormalizedRow } from "@/lib/types";
 import { SUFFICIENCY } from "@/lib/data-sufficiency";
 
@@ -11,7 +12,7 @@ export type OverlapPair = {
 
 export type AudienceOverlap = {
   status: AudienceOverlapStatus;
-  variant: "secondary" | "outline" | "destructive";
+  severity: DiagnosticSeverity;
   label: { en: string; vi: string };
   summary: { en: string; vi: string };
   pairs: OverlapPair[];
@@ -61,7 +62,7 @@ function calculateSimilarity(name1: string, name2: string): number {
 function insufficientData(): AudienceOverlap {
   return {
     status: "insufficient_data",
-    variant: "outline",
+    severity: "insufficient",
     label: labels.insufficient_data,
     summary: {
       en: `Need at least ${MIN_ACTIVE_ADSETS} active ad sets with spend to analyze targeting overlap risk.`,
@@ -97,7 +98,7 @@ export function assessAudienceOverlap(adsets: NormalizedRow[]): AudienceOverlap 
     const highest = pairs.sort((a, b) => b.similarity - a.similarity)[0];
     return {
       status: "overlap_risk",
-      variant: "destructive",
+      severity: "risk",
       label: labels.overlap_risk,
       summary: {
         en: `Potential audience overlap found between highly similar ad sets: "${highest.name1}" and "${highest.name2}" (${(highest.similarity * 100).toFixed(0)}% similarity).`,
@@ -109,7 +110,7 @@ export function assessAudienceOverlap(adsets: NormalizedRow[]): AudienceOverlap 
 
   return {
     status: "clean",
-    variant: "secondary",
+    severity: "ok",
     label: labels.clean,
     summary: {
       en: "Targeting names suggest distinct audiences. Low overlap risk.",

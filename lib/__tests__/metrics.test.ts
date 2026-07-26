@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildInsightPrompt, buildPrompt, detectKpiPack, formatMetric, formatSharePct, formatRatePct, formatCompactNumber, getKpiCards, normalizeRows, scoreHealth, sumRows } from "../metrics";
+import { buildCompetitorSpyPrompt, buildInsightPrompt, buildPrompt, detectKpiPack, formatMetric, formatSharePct, formatRatePct, formatCompactNumber, getKpiCards, normalizeRows, scoreHealth, sumRows } from "../metrics";
 import type { DashboardReport, InsightRow, NormalizedRow } from "../types";
 
 function normalized(overrides: Partial<NormalizedRow>): NormalizedRow {
@@ -266,6 +266,56 @@ describe("buildPrompt", () => {
 
     expect(prompt).toContain('"score": 73');
     expect(prompt).toContain('"comparison": null');
+  });
+});
+
+describe("prompt builder language parameter", () => {
+  const report: DashboardReport = {
+    account: { id: "act", name: "Account", currency: "VND" },
+    selectedCampaigns: [],
+    dateRange: { since: "2026-06-01", until: "2026-06-14" },
+    detectedPack: "lead_gen",
+    selectedPack: "lead_gen",
+    packReason: "test",
+    kpis: [],
+    totals: normalized({}),
+    campaignRows: [],
+    adsetRows: [],
+    adRows: [],
+    dailyRows: [],
+    platformRows: [],
+    ageGenderRows: [],
+    regionRows: [],
+    health: { score: 90, grade: "A", checks: [] },
+    prompt: "",
+    pulledAt: "2026-06-14T00:00:00.000Z",
+  };
+
+  it("appends the Vietnamese language requirement to the insight prompt", () => {
+    const prompt = buildInsightPrompt({ report, compareMode: "off", language: "vi" });
+
+    expect(prompt).toContain("Language requirement:");
+    expect(prompt).toContain("Use Vietnamese for all user-facing values. Keep insight/action text concise for dashboard cards.");
+    expect(prompt).toContain("Keep JSON keys exactly as requested; translate only string values.");
+  });
+
+  it("omits the language requirement from the insight prompt for English", () => {
+    const prompt = buildInsightPrompt({ report, compareMode: "off", language: "en" });
+
+    expect(prompt).not.toContain("Language requirement:");
+  });
+
+  it("appends the Vietnamese language requirement to the competitor spy prompt", () => {
+    const prompt = buildCompetitorSpyPrompt({ competitors: ["Seoul Spa"], market: "clinic", platform: "meta", notes: "", language: "vi" });
+
+    expect(prompt).toContain("Language requirement:");
+    expect(prompt).toContain("Use Vietnamese for all user-facing values. Keep competitor themes, gaps, and test briefs concise.");
+  });
+
+  it("omits the language requirement from the competitor spy prompt when language is not set", () => {
+    const prompt = buildCompetitorSpyPrompt({ competitors: ["Seoul Spa"], market: "clinic", platform: "meta", notes: "" });
+
+    expect(prompt).not.toContain("Language requirement:");
   });
 });
 

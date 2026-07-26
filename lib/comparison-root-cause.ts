@@ -1,4 +1,5 @@
 import type { DashboardReport, NormalizedRow } from "@/lib/types";
+import { primaryResultSpec } from "@/lib/primary-result";
 
 export type ComparisonRootCauseStatus = "drivers_found" | "no_clear_driver" | "insufficient_data";
 export type ComparisonRootCauseDirection = "positive" | "negative";
@@ -52,20 +53,6 @@ function evidenceLine(change: MetricChange) {
   return `${labelMetric(change.metric)} ${change.changePct >= 0 ? "up" : "down"} ${formatPct(change.changePct)}`;
 }
 
-function resultMetric(pack: DashboardReport["selectedPack"]): ComparisonRootCauseMetric {
-  if (pack === "messages") return "messages";
-  if (pack === "sales_roas") return "purchases";
-  if (pack === "traffic") return "linkClicks";
-  return "leads";
-}
-
-function efficiencyMetric(pack: DashboardReport["selectedPack"]): ComparisonRootCauseMetric {
-  if (pack === "messages") return "costPerMessage";
-  if (pack === "sales_roas") return "roas";
-  if (pack === "traffic") return "cpc";
-  return "cpl";
-}
-
 function metricChange(current: NormalizedRow, previous: NormalizedRow, metric: MetricChange["metric"]): MetricChange {
   return {
     metric,
@@ -87,8 +74,10 @@ function comparableRows(current: DashboardReport, previous: DashboardReport) {
 }
 
 function buildDriver(current: DashboardReport, currentRow: NormalizedRow, previousRow: NormalizedRow): ComparisonRootCauseDriver | null {
-  const result = resultMetric(current.selectedPack);
-  const efficiency = efficiencyMetric(current.selectedPack);
+  const spec = primaryResultSpec(current.selectedPack);
+  if (!spec.resultKey || !spec.costKey) return null;
+  const result: ComparisonRootCauseMetric = spec.resultKey;
+  const efficiency: ComparisonRootCauseMetric = current.selectedPack === "sales_roas" ? "roas" : spec.costKey;
   const resultChange = metricChange(currentRow, previousRow, result);
   const efficiencyChange = metricChange(currentRow, previousRow, efficiency);
   const spendChange = metricChange(currentRow, previousRow, "spend");

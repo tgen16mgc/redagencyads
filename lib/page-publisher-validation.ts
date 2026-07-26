@@ -23,7 +23,7 @@ export type PagePostValidationMessages = {
   multipleVideoUnsupported: string;
 };
 
-const EN_MESSAGES: PagePostValidationMessages = {
+export const EN_PAGE_POST_VALIDATION_MESSAGES: PagePostValidationMessages = {
   pageRequired: "Choose a Page before publishing.",
   contentRequired: "Add a message, link, or media before publishing.",
   scheduleRequired: "Choose a schedule time.",
@@ -37,8 +37,8 @@ const EN_MESSAGES: PagePostValidationMessages = {
 
 export function validatePagePostDraft(
   draft: PagePostDraft,
+  messages: PagePostValidationMessages,
   now = Date.now(),
-  messages: PagePostValidationMessages = EN_MESSAGES,
 ) {
   const target = draft.target || "facebook";
   const mediaItems = normalizeMediaItems(draft.mediaItems, draft.media);
@@ -59,7 +59,7 @@ export function validatePagePostDraft(
   return null;
 }
 
-function normalizeMediaItems(mediaItems?: MediaAttachment[], media?: MediaAttachment | null) {
+export function normalizeMediaItems(mediaItems?: MediaAttachment[], media?: MediaAttachment | null) {
   return (mediaItems?.length ? mediaItems : media ? [media] : []).filter((item) => item.url || item.file);
 }
 

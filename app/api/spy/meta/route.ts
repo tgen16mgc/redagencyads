@@ -7,7 +7,7 @@ import {
   normalizeCompetitorNames,
   normalizeCompetitorUrls,
 } from "@/lib/competitor-input";
-import { requireToken } from "@/lib/session";
+import { requireToken, SessionAuthError } from "@/lib/session";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -40,7 +40,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ result });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to fetch competitor ads.";
-    const status = message.includes("requires APIFY_TOKEN") ? 503 : 400;
+    const status = error instanceof SessionAuthError ? 401 : message.includes("requires APIFY_TOKEN") ? 503 : 400;
     return NextResponse.json({ error: message }, { status });
   }
 }

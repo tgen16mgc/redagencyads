@@ -1,4 +1,5 @@
 import type { DashboardReport, InsightRow, KpiPack, MetaAccount, MetaAdSet, MetaCampaign, NormalizedRow } from "@/lib/types";
+import { graphList, graphRequest } from "@/lib/meta-graph";
 import { buildPrompt, detectKpiPack, getKpiCards, normalizeRows, scoreHealth, sumRows } from "@/lib/metrics";
 import { buildAdSetPreviewsWithCreatives } from "@/lib/adset-preview";
 
@@ -27,66 +28,25 @@ const META_FIELDS = [
   "date_stop",
 ].join(",");
 
-const graphVersion = () => process.env.META_GRAPH_VERSION || "v22.0";
-
-function graphUrl(path: string, params: Record<string, string | number | undefined>, token: string) {
-  const url = new URL(`https://graph.facebook.com/${graphVersion()}${path}`);
-  for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined && value !== "") url.searchParams.set(key, String(value));
-  }
-  url.searchParams.set("access_token", token);
-  return url;
-}
-
-async function graphGet<T>(path: string, params: Record<string, string | number | undefined>, token: string): Promise<T> {
-  const response = await fetch(graphUrl(path, params, token), { cache: "no-store" });
-  const json = await response.json();
-  if (!response.ok) {
-    const message = json?.error?.message || `Meta Graph request failed: ${response.status}`;
-    throw new Error(message);
-  }
-  return json as T;
-}
-
-async function graphList<T>(
-  path: string,
-  params: Record<string, string | number | undefined>,
-  token: string,
-  limit = 100,
-) {
-  const first = await graphGet<{ data?: T[]; paging?: { next?: string } }>(path, { ...params, limit }, token);
-  const rows = [...(first.data || [])];
-  let next = first.paging?.next;
-  while (next && rows.length < 500) {
-    const response = await fetch(next, { cache: "no-store" });
-    const json = await response.json();
-    if (!response.ok) throw new Error(json?.error?.message || "Meta Graph pagination failed.");
-    rows.push(...(json.data || []));
-    next = json.paging?.next;
-  }
-  return rows;
-}
-
 export async function validateToken(token: string) {
-  return graphGet<{ id: string; name?: string }>("/me", { fields: "id,name" }, token);
+  return graphRequest<{ id: string; name?: string }>({ path: "/me", params: { fields: "id,name" }, token });
 }
 
 export async function getAccounts(token: string) {
-  const accounts = await graphList<MetaAccount>(
-    "/me/adaccounts",
-    { fields: "id,account_id,name,currency,timezone_name,account_status" },
+  return graphList<MetaAccount>({
+    path: "/me/adaccounts",
+    params: { fields: "id,account_id,name,currency,timezone_name,account_status", limit: 100 },
     token,
-  );
-  return accounts;
+  });
 }
 
 export async function getCampaigns(token: string, accountId: string) {
   const id = normalizeAccountId(accountId);
-  return graphList<MetaCampaign>(
-    `/${id}/campaigns`,
-    { fields: "id,name,objective,status,effective_status,daily_budget,lifetime_budget", limit: 100 },
+  return graphList<MetaCampaign>({
+    path: `/${id}/campaigns`,
+    params: { fields: "id,name,objective,status,effective_status,daily_budget,lifetime_budget", limit: 100 },
     token,
-  );
+  });
 }
 
 export async function getAdSets(token: string, accountId: string, campaignIds: string[] = []) {
@@ -94,15 +54,15 @@ export async function getAdSets(token: string, accountId: string, campaignIds: s
   const filtering = campaignIds.length
     ? JSON.stringify([{ field: "campaign.id", operator: "IN", value: campaignIds }])
     : undefined;
-  return graphList<MetaAdSet>(
-    `/${id}/adsets`,
-    {
+  return graphList<MetaAdSet>({
+    path: `/${id}/adsets`,
+    params: {
       fields: "id,name,campaign_id,campaign_name,status,effective_status,daily_budget,lifetime_budget",
       filtering,
       limit: 100,
     },
     token,
-  );
+  });
 }
 
 export async function getActiveAdsForCampaigns(token: string, accountId: string, campaignIds: string[]) {
@@ -110,15 +70,15 @@ export async function getActiveAdsForCampaigns(token: string, accountId: string,
   const filtering = campaignIds.length
     ? JSON.stringify([{ field: "campaign.id", operator: "IN", value: campaignIds }])
     : undefined;
-  const ads = await graphList<{ id: string; name: string; adset_id: string; status: string; effective_status: string }>(
-    `/${id}/ads`,
-    {
+  const ads = await graphList<{ id: string; name: string; adset_id: string; status: string; effective_status: string }>({
+    path: `/${id}/ads`,
+    params: {
       fields: "id,name,adset_id,status,effective_status",
       filtering,
       limit: 100,
     },
     token,
-  );
+  });
   return ads.filter((ad) => (ad.effective_status || ad.status) === "ACTIVE");
 }
 
@@ -128,11 +88,11 @@ export async function getAdPreviews(token: string, adIds: string[]): Promise<Rec
   await Promise.all(
     adIds.map(async (id) => {
       try {
-        const res = await graphGet<{ data: { body: string }[] }>(
-          `/${id}/previews`,
-          { ad_format: "DESKTOP_FEED_STANDARD" },
+        const res = await graphRequest<{ data: { body: string }[] }>({
+          path: `/${id}/previews`,
+          params: { ad_format: "DESKTOP_FEED_STANDARD" },
           token,
-        );
+        });
         if (res.data?.[0]?.body) {
           previews[id] = res.data[0].body;
         }
@@ -156,9 +116,9 @@ async function getInsights(
   until: string,
   extra: Record<string, string | number | undefined> = {},
 ) {
-  return graphList<InsightRow>(
-    `/${objectId}/insights`,
-    {
+  return graphList<InsightRow>({
+    path: `/${objectId}/insights`,
+    params: {
       fields: META_FIELDS,
       level,
       time_range: JSON.stringify({ since, until }),
@@ -166,8 +126,7 @@ async function getInsights(
       ...extra,
     },
     token,
-    200,
-  );
+  });
 }
 
 export async function buildReport(params: {

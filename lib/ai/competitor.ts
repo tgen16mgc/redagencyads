@@ -1,12 +1,19 @@
-import type { CompetitorSpyResult } from "@/lib/types";
+import type { CompetitorSpyResult, InterfaceLanguage } from "@/lib/types";
 import { z } from "zod";
+import { buildCompetitorSpyPayload, buildCompetitorSpyPrompt, type CompetitorSpyPromptArgs } from "@/lib/metrics";
 import {
   errorMessage,
   hasNineRouterCredentials,
   nineRouterCompletion,
   parseJsonObject,
-  promptInputJson,
 } from "@/lib/ai/transport";
+
+export type GenerateCompetitorSpyInput = CompetitorSpyPromptArgs & {
+  language?: InterfaceLanguage;
+  provider?: "auto" | CompetitorSpyResult["provider"];
+};
+
+type CompetitorSpyPayload = ReturnType<typeof buildCompetitorSpyPayload>;
 
 const competitorSchema = z.object({
   name: z.string(),
@@ -53,17 +60,14 @@ const recoverableCompetitorSpyPayloadSchema = z.object({
   assumptions: z.array(z.string()).optional().catch(undefined),
 });
 
-function competitorFallback(prompt: string): CompetitorSpyResult {
-  const payload = promptInputJson(prompt);
-  const competitors = Array.isArray(payload?.competitors) ? payload.competitors.filter((item): item is string => typeof item === "string" && Boolean(item.trim())) : [];
-  const extractedAds = Array.isArray(payload?.extracted_ads) ? payload.extracted_ads : [];
-  const manualEvidence = Array.isArray(payload?.manual_evidence) ? payload.manual_evidence : [];
-  const notes = typeof payload?.pasted_ad_library_notes === "string" ? payload.pasted_ad_library_notes : "";
-  const hasNotes = manualEvidence.length > 0 || Boolean(notes && !notes.includes("No pasted"));
-  const hasExtractedAds = extractedAds.length > 0;
-  const evidenceIds = [...extractedAds, ...manualEvidence]
-    .map((row) => row && typeof row === "object" && "evidence_id" in row ? row.evidence_id : undefined)
-    .filter((value): value is string => typeof value === "string" && Boolean(value.trim()))
+function competitorFallback(payload: CompetitorSpyPayload, prompt: string): CompetitorSpyResult {
+  const competitors = payload.competitors;
+  const notes = payload.pasted_ad_library_notes;
+  const hasNotes = payload.manual_evidence.length > 0 || !notes.includes("No pasted");
+  const hasExtractedAds = payload.extracted_ads.length > 0;
+  const evidenceIds = [...payload.extracted_ads, ...payload.manual_evidence]
+    .map((row) => row.evidence_id)
+    .filter((value): value is string => Boolean(value))
     .slice(0, 12);
   const evidenceCount = evidenceIds.length;
   const competitorRows = competitors.map((name) => ({
@@ -134,17 +138,12 @@ function competitorFallback(prompt: string): CompetitorSpyResult {
   };
 }
 
-function parseCompetitorSpy(text: string, provider: CompetitorSpyResult["provider"], prompt: string): CompetitorSpyResult {
+function parseCompetitorSpy(text: string, provider: CompetitorSpyResult["provider"], payload: CompetitorSpyPayload, prompt: string): CompetitorSpyResult {
   const json = parseJsonObject(text);
   const strictResult = competitorSpyPayloadSchema.safeParse(json);
   const recovered = recoverableCompetitorSpyPayloadSchema.parse(json);
-  const fallback = competitorFallback(prompt);
-  const payload = promptInputJson(prompt);
-  const allowedEvidenceIds = new Set(
-    Array.isArray(payload?.available_evidence_ids)
-      ? payload.available_evidence_ids.filter((value): value is string => typeof value === "string")
-      : [],
-  );
+  const fallback = competitorFallback(payload, prompt);
+  const allowedEvidenceIds = new Set(payload.available_evidence_ids);
   const themes = (recovered.themes ?? fallback.themes).map((theme) => ({
     ...theme,
     evidence_ids: theme.evidence_ids.filter((id) => allowedEvidenceIds.has(id)),
@@ -176,18 +175,17 @@ function parseCompetitorSpy(text: string, provider: CompetitorSpyResult["provide
   };
 }
 
-export async function generateCompetitorSpy(prompt: string, provider: "auto" | CompetitorSpyResult["provider"]) {
-  if (provider === "prompt") return competitorFallback(prompt);
-  if ((provider === "9router" || provider === "auto") && hasNineRouterCredentials()) {
-    try {
-      return parseCompetitorSpy(await nineRouterCompletion(prompt, { jsonMode: true, maxTokens: 1800 }), "9router", prompt);
-    } catch (error) {
-      return {
-        ...competitorFallback(prompt),
-        summary: `The AI assistant could not complete the competitor analysis; prompt-only output returned. ${errorMessage(error)}`,
-        assumptions: [`The AI assistant failed; prompt-only output returned. ${errorMessage(error)}`],
-      };
-    }
+export async function generateCompetitorSpy(input: GenerateCompetitorSpyInput): Promise<CompetitorSpyResult> {
+  const payload = buildCompetitorSpyPayload(input);
+  const prompt = buildCompetitorSpyPrompt(input);
+  if (input.provider === "prompt" || !hasNineRouterCredentials()) return competitorFallback(payload, prompt);
+  try {
+    return parseCompetitorSpy(await nineRouterCompletion(prompt, { jsonMode: true, maxTokens: 1800 }), "9router", payload, prompt);
+  } catch (error) {
+    return {
+      ...competitorFallback(payload, prompt),
+      summary: `The AI assistant could not complete the competitor analysis; prompt-only output returned. ${errorMessage(error)}`,
+      assumptions: [`The AI assistant failed; prompt-only output returned. ${errorMessage(error)}`],
+    };
   }
-  return competitorFallback(prompt);
 }

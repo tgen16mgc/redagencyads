@@ -1,3 +1,4 @@
+import type { DiagnosticSeverity } from "@/lib/diagnosis";
 import type { NormalizedRow } from "@/lib/types";
 
 export type TargetingExclusionsStatus = "clean" | "warning";
@@ -11,7 +12,7 @@ export type FlaggedTargetingAdset = {
 
 export type TargetingExclusionsAssessment = {
   status: TargetingExclusionsStatus;
-  variant: "secondary" | "outline";
+  severity: DiagnosticSeverity;
   label: { en: string; vi: string };
   summary: { en: string; vi: string };
   flaggedAdsets: FlaggedTargetingAdset[];
@@ -59,7 +60,7 @@ export function assessTargetingExclusions(adsets: NormalizedRow[]): TargetingExc
 
   return {
     status,
-    variant: status === "warning" ? "outline" : "secondary",
+    severity: status === "warning" ? "watch" : "ok",
     label: labels[status],
     summary: {
       en: status === "warning"

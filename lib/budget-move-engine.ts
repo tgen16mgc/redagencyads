@@ -1,6 +1,9 @@
+import type { DiagnosticSeverity } from "@/lib/diagnosis";
 import type { DashboardReport, KpiPack, NormalizedRow } from "@/lib/types";
 import { assessDecisionConfidence } from "@/lib/decision-confidence";
 import { SUFFICIENCY } from "@/lib/data-sufficiency";
+import { classifyCreativeFatigue, computeCreativeFatigueBaseline, type CreativeFatigueBaseline } from "@/lib/creative-fatigue";
+import { primaryResultSpec, primaryResultValue } from "@/lib/primary-result";
 
 export type BudgetMoveEngineStatus = "moves_recommended" | "hold" | "insufficient_data";
 
@@ -37,7 +40,7 @@ export type BudgetMoveRowReason = {
 
 export type BudgetMoveEngineResult = {
   status: BudgetMoveEngineStatus;
-  variant: "secondary" | "outline" | "destructive";
+  severity: DiagnosticSeverity;
   label: { en: string; vi: string };
   summary: { en: string; vi: string };
   recommendations: BudgetMoveRecommendation[];
@@ -52,14 +55,6 @@ const labels: Record<BudgetMoveEngineStatus, { en: string; vi: string }> = {
   insufficient_data: { en: "Insufficient data", vi: "Chưa đủ dữ liệu" },
 };
 
-function primaryResult(row: NormalizedRow, pack: KpiPack) {
-  if (pack === "messages") return row.messages;
-  if (pack === "lead_gen") return row.leads;
-  if (pack === "sales_roas") return row.purchases;
-  if (pack === "traffic") return row.linkClicks;
-  return row.reach || row.impressions;
-}
-
 function selectBudgetRows(report: DashboardReport) {
   const adsets = report.adsetRows.filter((row) => row.spend > 0);
   if (adsets.length > 0) return adsets;
@@ -67,7 +62,7 @@ function selectBudgetRows(report: DashboardReport) {
 }
 
 function rowMetrics(row: NormalizedRow, pack: KpiPack) {
-  const result = primaryResult(row, pack);
+  const result = primaryResultValue(row, pack);
   return {
     spend: row.spend,
     result,
@@ -88,10 +83,14 @@ function asReason(row: NormalizedRow, pack: KpiPack, reasons: string[]): BudgetM
   };
 }
 
+function isFatigued(row: NormalizedRow, baseline: CreativeFatigueBaseline | null) {
+  return classifyCreativeFatigue(row, baseline).status === "fatigued";
+}
+
 function insufficient(reasonEn: string, reasonVi: string): BudgetMoveEngineResult {
   return {
     status: "insufficient_data",
-    variant: "outline",
+    severity: "insufficient",
     label: labels.insufficient_data,
     summary: {
       en: "Need stronger budget-owning row data before recommending guarded reallocations.",
@@ -105,7 +104,7 @@ function insufficient(reasonEn: string, reasonVi: string): BudgetMoveEngineResul
 function hold(reasonsEn: string[], reasonsVi: string[]): BudgetMoveEngineResult {
   return {
     status: "hold",
-    variant: "outline",
+    severity: "watch",
     label: labels.hold,
     summary: {
       en: "No safe guarded budget move is supported by the current report.",
@@ -117,16 +116,25 @@ function hold(reasonsEn: string[], reasonsVi: string[]): BudgetMoveEngineResult 
 }
 
 export function recommendBudgetMoves(report: DashboardReport): BudgetMoveEngineResult {
-  const rows = selectBudgetRows(report);
   const pack = report.selectedPack;
+
+  if (!primaryResultSpec(pack).resultKey) {
+    return hold(
+      ["The awareness pack is judged on CTR/CPM/frequency and does not support conversion-scale budget moves."],
+      ["Gói awareness được đánh giá theo CTR/CPM/frequency nên không có đề xuất ngân sách theo quy mô chuyển đổi."],
+    );
+  }
+
+  const rows = selectBudgetRows(report);
 
   if (rows.length < 3) {
     return insufficient("Need at least 3 budget-owning rows with spend.", "Cần tối thiểu 3 dòng có ngân sách và chi tiêu.");
   }
 
+  const baseline = computeCreativeFatigueBaseline(rows);
   const totalSpend = rows.reduce((sum, row) => sum + row.spend, 0);
-  const totalResult = rows.reduce((sum, row) => sum + primaryResult(row, pack), 0);
-  const resultRows = rows.filter((row) => primaryResult(row, pack) > 0);
+  const totalResult = rows.reduce((sum, row) => sum + primaryResultValue(row, pack), 0);
+  const resultRows = rows.filter((row) => primaryResultValue(row, pack) > 0);
 
   if (totalSpend <= 0 || totalResult <= 0 || resultRows.length < 2) {
     return insufficient("Need primary result signal across at least 2 budget-owning rows.", "Cần tín hiệu kết quả chính trên tối thiểu 2 dòng có ngân sách.");
@@ -143,7 +151,7 @@ export function recommendBudgetMoves(report: DashboardReport): BudgetMoveEngineR
     .map((row) => {
       const metrics = rowMetrics(row, pack);
       const costDelta = accountCost > 0 && metrics.costPerResult > 0 ? (accountCost - metrics.costPerResult) / accountCost : 0;
-      const fatigueRisk = row.frequency >= 3 && row.ctr < 1;
+      const fatigueRisk = isFatigued(row, baseline);
       const enoughVolume = metrics.result >= Math.max(3, resultRowAverage * 0.2);
       const roasOk = pack !== "sales_roas" || (row.roas > 0 && row.roas >= report.totals.roas);
       const confidence = assessDecisionConfidence(row, pack);
@@ -158,7 +166,7 @@ export function recommendBudgetMoves(report: DashboardReport): BudgetMoveEngineR
       const inefficiencyDelta = metrics.result > 0 && metrics.costPerResult > 0 ? (metrics.costPerResult - accountCost) / accountCost : row.spend / totalSpend;
       const zeroResultWaste = metrics.result === 0 && row.spend >= totalSpend / rows.length;
       const weakCtr = row.impressions >= SUFFICIENCY.minRowImpressions && row.ctr < 0.5;
-      const fatigueRisk = row.frequency >= 3 && row.ctr < 1;
+      const fatigueRisk = isFatigued(row, baseline);
       return { row, metrics, inefficiencyDelta, zeroResultWaste, weakCtr, fatigueRisk };
     })
     .filter((item) => item.zeroResultWaste || item.inefficiencyDelta >= 0.25 || item.weakCtr || item.fatigueRisk)
@@ -169,11 +177,11 @@ export function recommendBudgetMoves(report: DashboardReport): BudgetMoveEngineR
 
   if (!target) {
     const fatiguedWinner = resultRows.find((row) => {
-      const cost = primaryResult(row, pack) > 0 ? row.spend / primaryResult(row, pack) : 0;
-      return cost > 0 && cost <= accountCost * 0.85 && row.frequency >= 3 && row.ctr < 1;
+      const cost = primaryResultValue(row, pack) > 0 ? row.spend / primaryResultValue(row, pack) : 0;
+      return cost > 0 && cost <= accountCost * 0.85 && isFatigued(row, baseline);
     });
     const confidenceBlockedWinner = resultRows.find((row) => {
-      const cost = primaryResult(row, pack) > 0 ? row.spend / primaryResult(row, pack) : 0;
+      const cost = primaryResultValue(row, pack) > 0 ? row.spend / primaryResultValue(row, pack) : 0;
       const costDelta = accountCost > 0 && cost > 0 ? (accountCost - cost) / accountCost : 0;
       return costDelta >= 0.15 && !assessDecisionConfidence(row, pack).actionable;
     });
@@ -233,7 +241,7 @@ export function recommendBudgetMoves(report: DashboardReport): BudgetMoveEngineR
 
   return {
     status: "moves_recommended",
-    variant: "secondary",
+    severity: "ok",
     label: labels.moves_recommended,
     summary: {
       en: "A guarded budget transfer is supported by current budget-owning row performance.",

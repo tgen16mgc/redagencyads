@@ -1,8 +1,7 @@
 import crypto from "node:crypto";
 import { pageSetupPermissions } from "@/lib/meta-pages";
 import { validateToken } from "@/lib/meta";
-
-const graphVersion = () => process.env.META_GRAPH_VERSION || "v22.0";
+import { graphRequest } from "@/lib/meta-graph";
 
 export const FACEBOOK_OAUTH_STATE_COOKIE = "meta_facebook_oauth_state";
 export const FACEBOOK_OAUTH_RETURN_COOKIE = "meta_facebook_oauth_return";
@@ -16,21 +15,11 @@ type TokenResponse = {
   access_token?: string;
   token_type?: string;
   expires_in?: number;
-  error?: {
-    message?: string;
-  };
 };
 
 type PermissionsResponse = {
   data?: Array<{ permission?: string; status?: string }>;
-  error?: {
-    message?: string;
-  };
 };
-
-function graphUrl(path: string) {
-  return `https://graph.facebook.com/${graphVersion()}${path}`;
-}
 
 function getRequiredEnv(name: "META_APP_ID" | "META_APP_SECRET" | "META_LOGIN_CONFIG_ID") {
   const value = process.env[name]?.trim();
@@ -76,26 +65,23 @@ export function buildFacebookOAuthUrl(request: Request, state: string) {
 }
 
 export async function exchangeFacebookCode(code: string, redirectUri: string) {
-  const url = new URL(graphUrl("/oauth/access_token"));
-  url.searchParams.set("client_id", getRequiredEnv("META_APP_ID"));
-  url.searchParams.set("client_secret", getRequiredEnv("META_APP_SECRET"));
-  url.searchParams.set("redirect_uri", redirectUri);
-  url.searchParams.set("code", code);
-
-  const response = await fetch(url, { cache: "no-store" });
-  const json = (await response.json()) as TokenResponse;
-  if (!response.ok || !json.access_token) {
-    throw new Error(json.error?.message || "Facebook login failed while exchanging the authorization code.");
+  const json = await graphRequest<TokenResponse>({
+    path: "/oauth/access_token",
+    params: {
+      client_id: getRequiredEnv("META_APP_ID"),
+      client_secret: getRequiredEnv("META_APP_SECRET"),
+      redirect_uri: redirectUri,
+      code,
+    },
+  });
+  if (!json.access_token) {
+    throw new Error("Facebook login failed while exchanging the authorization code.");
   }
   return json.access_token;
 }
 
 export async function getFacebookTokenPermissions(token: string) {
-  const url = new URL(graphUrl("/me/permissions"));
-  url.searchParams.set("access_token", token);
-  const response = await fetch(url, { cache: "no-store" });
-  const json = (await response.json()) as PermissionsResponse;
-  if (!response.ok) throw new Error(json.error?.message || "Unable to verify Facebook login permissions.");
+  const json = await graphRequest<PermissionsResponse>({ path: "/me/permissions", token });
   return new Set((json.data || []).filter((item) => item.status === "granted" && item.permission).map((item) => item.permission as string));
 }
 

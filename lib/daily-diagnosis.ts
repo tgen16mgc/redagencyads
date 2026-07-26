@@ -1,5 +1,6 @@
 import type { InterfaceLanguage, KpiPack, NormalizedRow } from "@/lib/types";
 import { SUFFICIENCY } from "@/lib/data-sufficiency";
+import { primaryResultSpec, type PrimaryResultKey } from "@/lib/primary-result";
 
 export type DailyDiagnosisStatus = "causes_found" | "stable" | "insufficient_data";
 
@@ -26,8 +27,6 @@ export type DailyDiagnosis = {
   causes: DailyDiagnosisCause[];
 };
 
-type ResultMetric = "leads" | "messages" | "purchases" | "linkClicks";
-
 const MIN_DATED_ROWS = SUFFICIENCY.minDatedRows;
 const MAX_WINDOW = 7;
 const MAX_CAUSES = 4;
@@ -36,14 +35,7 @@ const MAX_CAUSES = 4;
 const MOVE_THRESHOLD = 15;
 const STABLE_BAND = 10;
 
-function resultMetric(pack: KpiPack): ResultMetric {
-  if (pack === "messages") return "messages";
-  if (pack === "sales_roas") return "purchases";
-  if (pack === "traffic") return "linkClicks";
-  return "leads";
-}
-
-function resultLabel(metric: ResultMetric): { en: string; vi: string } {
+function resultLabel(metric: PrimaryResultKey): { en: string; vi: string } {
   if (metric === "messages") return { en: "Messages", vi: "Tin nhắn" };
   if (metric === "purchases") return { en: "Purchases", vi: "Đơn hàng" };
   if (metric === "linkClicks") return { en: "Link clicks", vi: "Click link" };
@@ -76,8 +68,8 @@ type WindowStats = {
   cvr: number;
 };
 
-function windowStats(rows: NormalizedRow[], metric: ResultMetric): WindowStats {
-  const result = sum(rows.map((row) => Number(row[metric] || 0)));
+function windowStats(rows: NormalizedRow[], metric: PrimaryResultKey | null): WindowStats {
+  const result = metric ? sum(rows.map((row) => Number(row[metric] || 0))) : 0;
   const linkClicks = sum(rows.map((row) => row.linkClicks || 0));
   return {
     ctr: average(rows.map((row) => row.ctr || 0)),
@@ -151,7 +143,7 @@ export function diagnoseDailyChange(report: {
     return insufficient(window);
   }
 
-  const metric = resultMetric(report.selectedPack);
+  const metric = primaryResultSpec(report.selectedPack).resultKey;
   const recent = windowStats(recentRows, metric);
   const prior = windowStats(priorRows, metric);
 
@@ -240,6 +232,7 @@ export function diagnoseDailyChange(report: {
 
   // 5. Efficiency decay: result down while spend holds.
   if (
+    metric &&
     resultChange !== null &&
     resultChange <= -MOVE_THRESHOLD &&
     spendChange !== null &&

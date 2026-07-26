@@ -48,7 +48,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { CapabilityStatus } from "@/lib/capabilities";
-import { competitorEvidenceReadiness, reviewCompetitorEvidence } from "@/lib/competitor-evidence";
+import { canVerifyCompetitorEvidence, deriveCompetitorEvidenceModel, trustedMetaLibraryUrl } from "@/lib/competitor-evidence";
 import { normalizeCompetitorNames } from "@/lib/competitor-input";
 import type {
   CompetitorEvidenceStatus,
@@ -97,16 +97,6 @@ function safeHttpsUrl(value: string | undefined) {
   } catch {
     return undefined;
   }
-}
-
-function safeEvidenceSourceUrl(value: string | undefined) {
-  const normalizedUrl = safeHttpsUrl(value);
-  if (!normalizedUrl) return undefined;
-  const url = new URL(normalizedUrl);
-  const host = url.hostname.toLocaleLowerCase();
-  const isFacebookHost = host === "facebook.com" || host.endsWith(".facebook.com");
-  const isLibraryPath = url.pathname === "/ads/library" || url.pathname === "/ads/library/";
-  return isFacebookHost && isLibraryPath ? normalizedUrl : undefined;
 }
 
 function compactText(value: string | undefined, maxLength: number) {
@@ -334,10 +324,30 @@ export function CompetitorEvidenceWorkspace({
 
   const competitorNames = normalizeCompetitorNames(names);
   const hasCompetitors = competitorNames.length > 0;
-  const manualEvidence = reviewCompetitorEvidence(notes, competitorNames);
+  const collectionAvailable = capabilityState === "available";
+  const model = deriveCompetitorEvidenceModel({
+    competitors: competitorNames,
+    notes,
+    evidence,
+    collectionAvailable,
+    collecting,
+    analyzing,
+  });
+  const {
+    manualRows: manualEvidence,
+    acceptedCount,
+    reviewCount,
+    matchedCount,
+    totalRecordCount,
+    zeroMatchCollection,
+    evidenceSourceCount,
+    coverage: liveCoverage,
+    canAnalyze,
+    workflowStage,
+    dockStatus: effectiveDockStatus,
+  } = model;
   const acceptedManual = manualEvidence.filter((row) => row.status === "accepted");
   const reviewManual = manualEvidence.filter((row) => row.status === "needs_review");
-  const matchedManual = manualEvidence.filter((row) => Boolean(row.advertiser));
   const firstPendingManualText = reviewManual[0]?.text;
   const collectedAds = evidence?.ads || [];
   const acceptedAds = collectedAds.filter((ad) => ad.evidence?.status === "accepted");
@@ -345,16 +355,8 @@ export function CompetitorEvidenceWorkspace({
   const rejectedAds = collectedAds.filter((ad) => ad.evidence?.status === "rejected");
   const matchedAds = collectedAds.filter((ad) => ad.evidence?.matchedToCompetitor);
   const mediaReadyAds = collectedAds.filter((ad) => ad.evidence?.hasUsableCreative);
-  const analyzableAds = acceptedAds.filter((ad) => ad.evidence?.matchedToCompetitor && ad.evidence.hasUsableCreative);
-  const acceptedCount = acceptedAds.length + acceptedManual.length;
-  const reviewCount = reviewAds.length + reviewManual.length;
-  const matchedCount = matchedAds.length + matchedManual.length;
-  const analyzableCount = analyzableAds.length + acceptedManual.length;
-  const totalRecordCount = collectedAds.length + manualEvidence.length;
-  const zeroMatchCollection = Boolean(evidence && collectedAds.length > 0 && matchedAds.length === 0);
-  const collectionAvailable = capabilityState === "available";
   const selectedAd = collectedAds.find((ad) => ad.id === selectedEvidenceId && ad.evidence) || null;
-  const selectedEvidenceSourceUrl = safeEvidenceSourceUrl(selectedAd?.evidence?.sourceUrl);
+  const selectedEvidenceSourceUrl = trustedMetaLibraryUrl(selectedAd?.evidence?.sourceUrl);
   const effectiveCompetitorFilter = competitorNames.some((name) => normalized(name) === normalized(competitorFilter))
     ? competitorFilter
     : "all";
@@ -385,58 +387,20 @@ export function CompetitorEvidenceWorkspace({
   const videoAdCount = collectedAds.filter((ad) => Boolean(safeHttpsUrl(ad.videoUrl))).length;
   const imageAdCount = collectedAds.filter((ad) => Boolean(safeHttpsUrl(ad.imageUrl)) && !safeHttpsUrl(ad.videoUrl)).length;
 
-  const liveCoverage = competitorNames.map((competitor) => {
-    const rows = collectedAds.filter(
-      (ad) => normalized(ad.evidence?.requestedCompetitor) === normalized(competitor),
-    );
-    const manualRows = manualEvidence.filter((row) => normalized(row.advertiser) === normalized(competitor));
-    return {
-      competitor,
-      collected: rows.length + manualRows.length,
-      accepted: rows.filter((ad) => ad.evidence?.status === "accepted").length
-        + manualRows.filter((row) => row.status === "accepted").length,
-      needsReview: rows.filter((ad) => ad.evidence?.status === "needs_review").length
-        + manualRows.filter((row) => row.status === "needs_review").length,
-    };
-  });
-  const evidenceSourceCount = Number(Boolean(evidence)) + Number(manualEvidence.length > 0);
-  const { canAnalyze, dockStatus } = competitorEvidenceReadiness({
-    hasCompetitors,
-    acceptedCount: analyzableCount,
-    acceptedManualCount: acceptedManual.length,
-    collectedCount: collectedAds.length,
-    setupRequired: !collectionAvailable,
-    collecting,
-    analyzing,
-  });
   const onboarding = !hasCompetitors && totalRecordCount === 0 && !result;
-  const workflowStage = !hasCompetitors
-    ? "setup"
-    : collecting
-      ? "collect"
-      : analyzing
-        ? "analyze"
-        : zeroMatchCollection
-          ? "recover"
-        : canAnalyze
-          ? "analyze"
-          : reviewCount > 0
-            ? "review"
-            : "collect";
-  const effectiveDockStatus = workflowStage === "setup" || workflowStage === "review" || workflowStage === "recover" ? "ready" : dockStatus;
   const evidenceReferences = new Map<string, { label: string; sourceUrl?: string; kind: "ad" | "manual" }>();
   collectedAds.forEach((ad) => {
     if (!ad.evidence) return;
     evidenceReferences.set(ad.id, {
       label: ad.evidence.advertiser || ad.evidence.requestedCompetitor,
-      sourceUrl: safeEvidenceSourceUrl(ad.evidence.sourceUrl),
+      sourceUrl: trustedMetaLibraryUrl(ad.evidence.sourceUrl),
       kind: "ad",
     });
   });
   manualEvidence.forEach((row) => {
     evidenceReferences.set(row.id, {
       label: row.advertiser || (isVietnamese ? "Note thủ công" : "Manual note"),
-      sourceUrl: safeEvidenceSourceUrl(row.sourceUrl),
+      sourceUrl: trustedMetaLibraryUrl(row.sourceUrl),
       kind: "manual",
     });
   });
@@ -823,7 +787,7 @@ export function CompetitorEvidenceWorkspace({
                 libraryView === "grid" ? "grid-cols-1 md:grid-cols-2" : "grid-cols-1",
               )}>
                 {visibleManual.map((row) => {
-                  const sourceUrl = safeEvidenceSourceUrl(row.sourceUrl);
+                  const sourceUrl = trustedMetaLibraryUrl(row.sourceUrl);
                   return (
                     <article key={row.id} className="col-span-full rounded-xl border bg-background/45 p-3" data-evidence-id={row.id}>
                       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -1293,7 +1257,7 @@ export function CompetitorEvidenceWorkspace({
                     className="mt-2 flex-wrap"
                     aria-labelledby={`${id}-review-status`}
                   >
-                    <ToggleGroupItem value="accepted" className="min-h-11" disabled={!selectedEvidenceSourceUrl || !selectedAd.evidence.matchedToCompetitor}>
+                    <ToggleGroupItem value="accepted" className="min-h-11" disabled={!canVerifyCompetitorEvidence(selectedAd.evidence)}>
                       <CheckIcon data-icon="inline-start" />{isVietnamese ? "Xác minh" : "Verify"}
                     </ToggleGroupItem>
                     <ToggleGroupItem value="needs_review" className="min-h-11">{isVietnamese ? "Cần duyệt" : "Needs review"}</ToggleGroupItem>

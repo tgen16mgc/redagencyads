@@ -1,3 +1,4 @@
+import type { DiagnosticSeverity } from "@/lib/diagnosis";
 import type { NormalizedRow } from "@/lib/types";
 
 export type CreativeVolumeStatus = "healthy" | "watch" | "constrained" | "insufficient_data";
@@ -8,13 +9,13 @@ export type CreativeVolumeAdset = {
   creativeCount: number;
   formatDiverse: boolean;
   status: Exclude<CreativeVolumeStatus, "insufficient_data">;
-  variant: "secondary" | "outline" | "destructive";
+  severity: DiagnosticSeverity;
   reason: { en: string; vi: string };
 };
 
 export type CreativeVolumeAssessment = {
   status: CreativeVolumeStatus;
-  variant: "secondary" | "outline" | "destructive";
+  severity: DiagnosticSeverity;
   label: { en: string; vi: string };
   summary: { en: string; vi: string };
   adsets: CreativeVolumeAdset[];
@@ -37,10 +38,10 @@ function classify(creativeCount: number): CreativeVolumeAdset["status"] {
   return "healthy";
 }
 
-function variant(status: CreativeVolumeAdset["status"]): CreativeVolumeAdset["variant"] {
-  if (status === "constrained") return "destructive";
-  if (status === "watch") return "outline";
-  return "secondary";
+function severity(status: CreativeVolumeAdset["status"]): DiagnosticSeverity {
+  if (status === "constrained") return "risk";
+  if (status === "watch") return "watch";
+  return "ok";
 }
 
 function reason(status: CreativeVolumeAdset["status"], creativeCount: number, formatDiverse: boolean) {
@@ -83,7 +84,7 @@ export function assessCreativeVolume(rows: NormalizedRow[]): CreativeVolumeAsses
   if (groups.size === 0) {
     return {
       status: "insufficient_data",
-      variant: "outline",
+      severity: "insufficient",
       label: labels.insufficient_data,
       summary: {
         en: "Need served ad rows before checking active creative volume per ad set.",
@@ -104,7 +105,7 @@ export function assessCreativeVolume(rows: NormalizedRow[]): CreativeVolumeAsses
       creativeCount,
       formatDiverse,
       status,
-      variant: variant(status),
+      severity: severity(status),
       reason: reason(status, creativeCount, formatDiverse),
     };
   }).sort((a, b) => a.creativeCount - b.creativeCount || a.adsetName.localeCompare(b.adsetName) || a.adsetId.localeCompare(b.adsetId));
@@ -113,7 +114,7 @@ export function assessCreativeVolume(rows: NormalizedRow[]): CreativeVolumeAsses
 
   return {
     status,
-    variant: status === "constrained" ? "destructive" : status === "watch" ? "outline" : "secondary",
+    severity: severity(status),
     label: labels[status],
     summary: {
       en: status === "healthy" ? "Active/spent creative count meets the standard minimum proxy across served ad sets." : "Some served ad sets may not have enough active/spent creatives for reliable Meta delivery exploration.",

@@ -1,3 +1,4 @@
+import type { DiagnosticSeverity } from "@/lib/diagnosis";
 import type { NormalizedRow } from "@/lib/types";
 import { SUFFICIENCY, hasFunnelClickVolume } from "@/lib/data-sufficiency";
 
@@ -11,7 +12,7 @@ export type FunnelLeakageStatus = "clean" | "leakage_detected" | "insufficient_d
 
 export type FunnelLeakage = {
   status: FunnelLeakageStatus;
-  variant: "secondary" | "outline" | "destructive";
+  severity: DiagnosticSeverity;
   score: number;
   label: { en: string; vi: string };
   summary: { en: string; vi: string };
@@ -39,7 +40,7 @@ export function assessFunnelLeakage(totals: NormalizedRow): FunnelLeakage {
   if (carts <= 0 && checkouts <= 0 && purchases <= 0) {
     return {
       status: "insufficient_data",
-      variant: "outline",
+      severity: "insufficient",
       score: 100,
       label: labels.insufficient_data,
       summary: {
@@ -55,7 +56,7 @@ export function assessFunnelLeakage(totals: NormalizedRow): FunnelLeakage {
   if (!hasFunnelClickVolume({ linkClicks: clicks, addToCart: carts, initiateCheckout: checkouts, purchases })) {
     return {
       status: "insufficient_data",
-      variant: "outline",
+      severity: "insufficient",
       score: 100,
       label: labels.insufficient_data,
       summary: {
@@ -97,7 +98,7 @@ export function assessFunnelLeakage(totals: NormalizedRow): FunnelLeakage {
   if (score < 70) {
     return {
       status: "leakage_detected",
-      variant: "destructive",
+      severity: "risk",
       score,
       label: labels.leakage_detected,
       summary: {
@@ -111,7 +112,7 @@ export function assessFunnelLeakage(totals: NormalizedRow): FunnelLeakage {
 
   return {
     status: "clean",
-    variant: "secondary",
+    severity: "ok",
     score,
     label: labels.clean,
     summary: {

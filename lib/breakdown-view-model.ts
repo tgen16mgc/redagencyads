@@ -1,5 +1,6 @@
 import type { KpiPack, NormalizedRow } from "@/lib/types";
 import { sumRows } from "@/lib/metric-aggregation";
+import { primaryResultSpec, signalVolumeValue } from "@/lib/primary-result";
 
 export type BreakdownMetricMode = "spend" | "results" | "efficiency";
 export type BreakdownDimension = "platform" | "age" | "gender" | "geography";
@@ -83,7 +84,7 @@ export function buildBreakdownViewModel(input: {
   const rows = sortBreakdownRows(buildBreakdownChartRows(activeDimension?.rows || [], input.pack), input.mode).slice(0, input.mode === "efficiency" ? 14 : 10);
   const chartType = chooseBreakdownChartType(rows, input.mode);
   const metricLabel = breakdownMetricLabel(input.mode, input.language);
-  const resultLabel = primaryResultLabel(input.pack, input.language);
+  const resultLabel = primaryResultSpec(input.pack).volumeLabel[input.language];
   const chartLabel = breakdownChartLabel(chartType, input.language);
   const diagnosis = buildBreakdownDiagnosis({
     rows,
@@ -113,7 +114,7 @@ export function buildBreakdownViewModel(input: {
 
 export function buildBreakdownChartRows(rows: NormalizedRow[], pack: KpiPack): BreakdownChartRow[] {
   const mapped = rows.map((row) => {
-    const results = primaryResultValue(row, pack);
+    const results = signalVolumeValue(row, pack);
     return {
       id: row.id,
       label: breakdownRowLabel(row),
@@ -161,15 +162,6 @@ export function chooseBreakdownChartType(rows: BreakdownChartRow[], mode: Breakd
   if (mode === "efficiency" && rows.length >= 6) return "scatter";
   if (mode === "efficiency") return "bar";
   return rows.length <= SMALL_PIE_ROW_LIMIT ? "pie" : "area";
-}
-
-export function primaryResultValue(row: NormalizedRow, pack: KpiPack) {
-  if (pack === "messages") return row.messages;
-  if (pack === "lead_gen") return row.leads;
-  if (pack === "sales_roas") return row.purchases;
-  if (pack === "traffic") return row.linkClicks;
-  if (pack === "awareness") return row.impressions;
-  return row.leads;
 }
 
 export function breakdownRowLabel(row: NormalizedRow) {
@@ -398,21 +390,6 @@ function breakdownConfidence(rowCount: number, totalResults: number, language: "
   if (rowCount >= 3 && totalResults >= 10) return language === "vi" ? "Độ tin cậy cao" : "High confidence";
   if (rowCount >= 2 && totalResults > 0) return language === "vi" ? "Độ tin cậy vừa" : "Medium confidence";
   return language === "vi" ? "Độ tin cậy thấp" : "Low confidence";
-}
-
-function primaryResultLabel(pack: KpiPack, language: "en" | "vi") {
-  if (language === "vi") {
-    if (pack === "messages") return "tin nhắn";
-    if (pack === "sales_roas") return "purchase";
-    if (pack === "traffic") return "link click";
-    if (pack === "awareness") return "impression";
-    return "lead";
-  }
-  if (pack === "messages") return "messages";
-  if (pack === "sales_roas") return "purchases";
-  if (pack === "traffic") return "link clicks";
-  if (pack === "awareness") return "impressions";
-  return "leads";
 }
 
 function formatPct(value: number) {

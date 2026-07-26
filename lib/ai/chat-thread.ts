@@ -1,5 +1,5 @@
 import type { DashboardView } from "@/lib/dashboard-access";
-import type { ChatRequestMessage } from "@/lib/ai/chat-contract";
+import { CHAT_LIMITS, type ChatRequestMessage } from "@/lib/ai/chat-contract";
 
 export type ChatDisplayMessage = {
   id: string;
@@ -71,6 +71,6 @@ export function clearChatThread(threads: ChatThreads, view: DashboardView, finge
 export function requestHistory(messages: ChatDisplayMessage[]): ChatRequestMessage[] {
   return messages
     .filter((message) => message.status === "complete")
-    .slice(-12)
+    .slice(-CHAT_LIMITS.historyMessages)
     .map(({ role, content }) => ({ role, content }));
 }

@@ -1,48 +1,53 @@
 import { describe, expect, it } from "vitest";
-import { getSchedulePresetDateTimeLocal, validatePagePostDraft } from "../page-publisher-validation";
+import { EN_PAGE_POST_VALIDATION_MESSAGES, getSchedulePresetDateTimeLocal, validatePagePostDraft } from "../page-publisher-validation";
+
+const MESSAGES = EN_PAGE_POST_VALIDATION_MESSAGES;
 
 describe("validatePagePostDraft", () => {
   it("requires a selected page and either message, link, or media", () => {
-    expect(validatePagePostDraft({ pageId: "", message: "Hello", link: "", mode: "publish_now", scheduledFor: "", target: "facebook" })).toBe(
+    expect(validatePagePostDraft({ pageId: "", message: "Hello", link: "", mode: "publish_now", scheduledFor: "", target: "facebook" }, MESSAGES)).toBe(
       "Choose a Page before publishing.",
     );
-    expect(validatePagePostDraft({ pageId: "page_1", message: " ", link: "", mode: "publish_now", scheduledFor: "", target: "facebook" })).toBe(
+    expect(validatePagePostDraft({ pageId: "page_1", message: " ", link: "", mode: "publish_now", scheduledFor: "", target: "facebook" }, MESSAGES)).toBe(
       "Add a message, link, or media before publishing.",
     );
     expect(
-      validatePagePostDraft({
-        pageId: "page_1",
-        message: " ",
-        link: "",
-        mode: "publish_now",
-        scheduledFor: "",
-        target: "facebook",
-        media: { type: "image", url: "https://cdn.example.com/photo.jpg" },
-      }),
+      validatePagePostDraft(
+        {
+          pageId: "page_1",
+          message: " ",
+          link: "",
+          mode: "publish_now",
+          scheduledFor: "",
+          target: "facebook",
+          media: { type: "image", url: "https://cdn.example.com/photo.jpg" },
+        },
+        MESSAGES,
+      ),
     ).toBeNull();
-    expect(validatePagePostDraft({ pageId: "page_1", message: "Hello", link: "", mode: "publish_now", scheduledFor: "", target: "facebook" })).toBeNull();
+    expect(validatePagePostDraft({ pageId: "page_1", message: "Hello", link: "", mode: "publish_now", scheduledFor: "", target: "facebook" }, MESSAGES)).toBeNull();
   });
 
   it("requires scheduled posts to be at least 10 minutes in the future", () => {
     const now = new Date("2026-07-02T12:00").getTime();
 
-    expect(validatePagePostDraft({ pageId: "page_1", message: "Hello", link: "", mode: "scheduled", scheduledFor: "", target: "facebook" }, now)).toBe(
+    expect(validatePagePostDraft({ pageId: "page_1", message: "Hello", link: "", mode: "scheduled", scheduledFor: "", target: "facebook" }, MESSAGES, now)).toBe(
       "Choose a schedule time.",
     );
     expect(
-      validatePagePostDraft({ pageId: "page_1", message: "Hello", link: "", mode: "scheduled", scheduledFor: "2026-07-02T12:05", target: "facebook" }, now),
+      validatePagePostDraft({ pageId: "page_1", message: "Hello", link: "", mode: "scheduled", scheduledFor: "2026-07-02T12:05", target: "facebook" }, MESSAGES, now),
     ).toBe("Schedule time must be at least 10 minutes in the future.");
     expect(
-      validatePagePostDraft({ pageId: "page_1", message: "Hello", link: "", mode: "scheduled", scheduledFor: "2026-07-02T12:15", target: "facebook" }, now),
+      validatePagePostDraft({ pageId: "page_1", message: "Hello", link: "", mode: "scheduled", scheduledFor: "2026-07-02T12:15", target: "facebook" }, MESSAGES, now),
     ).toBeNull();
   });
 
   it("requires media for Instagram targets", () => {
     expect(
-      validatePagePostDraft({ pageId: "page_1", message: "Text only", link: "", mode: "publish_now", scheduledFor: "", target: "instagram" }),
+      validatePagePostDraft({ pageId: "page_1", message: "Text only", link: "", mode: "publish_now", scheduledFor: "", target: "instagram" }, MESSAGES),
     ).toBe("Instagram posts require an image, video, or GIF attachment.");
     expect(
-      validatePagePostDraft({ pageId: "page_1", message: "Text only", link: "", mode: "publish_now", scheduledFor: "", target: "both" }),
+      validatePagePostDraft({ pageId: "page_1", message: "Text only", link: "", mode: "publish_now", scheduledFor: "", target: "both" }, MESSAGES),
     ).toBe("Instagram posts require an image, video, or GIF attachment.");
   });
 
@@ -50,15 +55,18 @@ describe("validatePagePostDraft", () => {
     const file = new File(["video"], "launch.mp4", { type: "video/mp4" });
 
     expect(
-      validatePagePostDraft({
-        pageId: "page_1",
-        message: "Launch",
-        link: "",
-        mode: "publish_now",
-        scheduledFor: "",
-        target: "both",
-        media: { type: "video", name: file.name, file },
-      }),
+      validatePagePostDraft(
+        {
+          pageId: "page_1",
+          message: "Launch",
+          link: "",
+          mode: "publish_now",
+          scheduledFor: "",
+          target: "both",
+          media: { type: "video", name: file.name, file },
+        },
+        MESSAGES,
+      ),
     ).toBe("Instagram publishing requires a public hosted media URL. Local file uploads are supported only for Facebook.");
   });
 
@@ -68,29 +76,32 @@ describe("validatePagePostDraft", () => {
       { type: "gif" as const, url: "https://cdn.example.com/second.gif" },
     ];
 
-    expect(validatePagePostDraft({ pageId: "page_1", message: "Photos", link: "", mode: "publish_now", scheduledFor: "", target: "facebook", mediaItems })).toBeNull();
-    expect(validatePagePostDraft({ pageId: "page_1", message: "Photos", link: "", mode: "publish_now", scheduledFor: "", target: "instagram", mediaItems })).toBe(
+    expect(validatePagePostDraft({ pageId: "page_1", message: "Photos", link: "", mode: "publish_now", scheduledFor: "", target: "facebook", mediaItems }, MESSAGES)).toBeNull();
+    expect(validatePagePostDraft({ pageId: "page_1", message: "Photos", link: "", mode: "publish_now", scheduledFor: "", target: "instagram", mediaItems }, MESSAGES)).toBe(
       "Multiple media attachments are only supported for Facebook posts right now.",
     );
-    expect(validatePagePostDraft({ pageId: "page_1", message: "Photos", link: "", mode: "publish_now", scheduledFor: "", target: "both", mediaItems })).toBe(
+    expect(validatePagePostDraft({ pageId: "page_1", message: "Photos", link: "", mode: "publish_now", scheduledFor: "", target: "both", mediaItems }, MESSAGES)).toBe(
       "Multiple media attachments are only supported for Facebook posts right now.",
     );
   });
 
   it("rejects Facebook multi-media posts containing video", () => {
     expect(
-      validatePagePostDraft({
-        pageId: "page_1",
-        message: "Mixed",
-        link: "",
-        mode: "publish_now",
-        scheduledFor: "",
-        target: "facebook",
-        mediaItems: [
-          { type: "image", url: "https://cdn.example.com/photo.jpg" },
-          { type: "video", url: "https://cdn.example.com/video.mp4" },
-        ],
-      }),
+      validatePagePostDraft(
+        {
+          pageId: "page_1",
+          message: "Mixed",
+          link: "",
+          mode: "publish_now",
+          scheduledFor: "",
+          target: "facebook",
+          mediaItems: [
+            { type: "image", url: "https://cdn.example.com/photo.jpg" },
+            { type: "video", url: "https://cdn.example.com/video.mp4" },
+          ],
+        },
+        MESSAGES,
+      ),
     ).toBe("Multiple media Facebook posts can only use images or GIFs.");
   });
 
@@ -108,6 +119,7 @@ describe("validatePagePostDraft", () => {
           target: "instagram",
           media: { type: "image", url: "https://cdn.example.com/photo.jpg" },
         },
+        MESSAGES,
         now,
       ),
     ).toBe("Instagram scheduling is not available here yet; use Facebook or publish now.");
@@ -122,6 +134,7 @@ describe("validatePagePostDraft", () => {
           target: "both",
           media: { type: "image", url: "https://cdn.example.com/photo.jpg" },
         },
+        MESSAGES,
         now,
       ),
     ).toBe("Instagram scheduling is not available here yet; use Facebook or publish now.");

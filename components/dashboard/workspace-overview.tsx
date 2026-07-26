@@ -144,7 +144,7 @@ export function WorkspaceOverview({
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="flex min-w-0 flex-col gap-1">
               <CardDescription>{language === "vi" ? "Client workspace" : "Client workspace"}</CardDescription>
-              <CardTitle className="text-2xl">{workspaceLabel || (language === "vi" ? "Workspace chưa gán client" : "Unassigned workspace")}</CardTitle>
+              <CardTitle className="text-2xl">{workspaceLabel || (language === "vi" ? "Chọn workspace của bạn" : "Choose your workspace")}</CardTitle>
               <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
                 {language === "vi"
                   ? "Chọn công việc cần hoàn thành. Mỗi workspace đưa evidence đến quyết định thay vì mở một dashboard chung chung."

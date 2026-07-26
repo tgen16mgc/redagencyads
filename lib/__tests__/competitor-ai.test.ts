@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
-import { generateCompetitorSpy } from "../ai";
+import { generateCompetitorSpy, type GenerateCompetitorSpyInput } from "../ai/competitor";
 import { buildCompetitorSpyPrompt } from "../metrics";
 
 function nineRouterResponse(content: string) {
@@ -19,6 +19,17 @@ const spyPayload = {
   assumptions: ["9router generated JSON."],
 };
 
+function spyInput(overrides: Partial<GenerateCompetitorSpyInput> = {}): GenerateCompetitorSpyInput {
+  return {
+    competitors: ["Seoul Spa"],
+    market: "premium beauty clinic",
+    platform: "meta",
+    notes: "",
+    extractedAds: [],
+    ...overrides,
+  };
+}
+
 describe("generateCompetitorSpy", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -29,10 +40,7 @@ describe("generateCompetitorSpy", () => {
   it("returns a usable local competitor brief when no AI provider key is configured", async () => {
     vi.stubEnv("NINEROUTER_KEY", "");
 
-    const prompt = buildCompetitorSpyPrompt({
-      competitors: ["Seoul Spa"],
-      market: "premium beauty clinic",
-      platform: "meta",
+    const result = await generateCompetitorSpy(spyInput({
       notes: "Seoul Spa pushes UGC-style videos, Send Message CTA, consultation offer, before/after proof.",
       extractedAds: [
         {
@@ -57,16 +65,28 @@ describe("generateCompetitorSpy", () => {
           },
         },
       ],
-    });
-
-    const result = await generateCompetitorSpy(prompt, "auto");
+      provider: "auto",
+    }));
 
     expect(result.provider).toBe("prompt");
     expect(result.summary).not.toContain("Copy the competitor prompt");
     expect(result.competitors[0]?.name).toBe("Seoul Spa");
+    expect(result.themes[0]?.evidence_ids).toEqual(["ad-1"]);
     expect(result.themes.length).toBeGreaterThan(0);
     expect(result.test_briefs.length).toBeGreaterThan(0);
     expect(result.next_actions.join(" ")).toContain("Open Meta Ad Library");
+  });
+
+  it("never fetches for the prompt provider", async () => {
+    vi.stubEnv("NINEROUTER_KEY", "test-key");
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const result = await generateCompetitorSpy(spyInput({ provider: "prompt" }));
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(result.provider).toBe("prompt");
+    expect(result.competitors[0]?.name).toBe("Seoul Spa");
   });
 
   it("keeps collected evidence out of the prompt until it is accepted", () => {
@@ -210,15 +230,12 @@ describe("generateCompetitorSpy", () => {
   it("does not refer to fetched cards when analysis uses verified notes only", async () => {
     vi.stubEnv("NINEROUTER_KEY", "");
 
-    const prompt = buildCompetitorSpyPrompt({
+    const result = await generateCompetitorSpy(spyInput({
       competitors: ["The Body Work"],
       market: "fitness studio Vietnam",
-      platform: "meta",
       notes: "Verified Meta Ad Library note: trainer-led proof, Learn More CTA, direct consultation offer.",
-      extractedAds: [],
-    });
-
-    const result = await generateCompetitorSpy(prompt, "auto");
+      provider: "auto",
+    }));
 
     expect(result.next_actions.join(" ")).not.toContain("fetched cards");
     expect(result.next_actions.join(" ")).toContain("pasted evidence");
@@ -229,25 +246,23 @@ describe("generateCompetitorSpy", () => {
     const wrapped = `Here is the competitor brief:\n\`\`\`json\n${JSON.stringify(spyPayload)}\n\`\`\`\nLet me know if you need more.`;
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(nineRouterResponse(wrapped)));
 
-    const result = await generateCompetitorSpy("x".repeat(120), "9router");
+    const result = await generateCompetitorSpy(spyInput({ provider: "9router" }));
 
     expect(result.provider).toBe("9router");
     expect(result.summary).toBe(spyPayload.summary);
     expect(result.competitors[0]?.name).toBe("Seoul Spa");
   });
 
-  it("drops model evidence references that were not supplied in the prompt", async () => {
+  it("drops model evidence references that were not supplied in the input", async () => {
     vi.stubEnv("NINEROUTER_KEY", "test-key");
     const response = {
       ...spyPayload,
       themes: [{ ...spyPayload.themes[0], evidence_ids: ["ad-1", "invented-ad"] }],
     };
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(nineRouterResponse(JSON.stringify(response))));
-    const prompt = buildCompetitorSpyPrompt({
-      competitors: ["Seoul Spa"],
+
+    const result = await generateCompetitorSpy(spyInput({
       market: "clinic",
-      platform: "meta",
-      notes: "",
       extractedAds: [{
         id: "ad-1",
         source: "apify",
@@ -263,9 +278,8 @@ describe("generateCompetitorSpy", () => {
           collectedAt: "2026-07-14T00:00:00.000Z",
         },
       }],
-    });
-
-    const result = await generateCompetitorSpy(prompt, "9router");
+      provider: "9router",
+    }));
 
     expect(result.themes[0]?.evidence_ids).toEqual(["ad-1"]);
   });
@@ -276,15 +290,7 @@ describe("generateCompetitorSpy", () => {
       .mockResolvedValueOnce(nineRouterResponse("no json here at all"))
       .mockResolvedValueOnce(nineRouterResponse("still no json")));
 
-    const prompt = buildCompetitorSpyPrompt({
-      competitors: ["Seoul Spa"],
-      market: "premium beauty clinic",
-      platform: "meta",
-      notes: "",
-      extractedAds: [],
-    });
-
-    const result = await generateCompetitorSpy(prompt, "9router");
+    const result = await generateCompetitorSpy(spyInput({ provider: "9router" }));
 
     expect(result.provider).toBe("prompt");
     expect(result.summary).toContain("prompt-only output returned");
@@ -301,15 +307,7 @@ describe("generateCompetitorSpy", () => {
     });
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(nineRouterResponse(modelResponse)));
 
-    const prompt = buildCompetitorSpyPrompt({
-      competitors: ["Seoul Spa"],
-      market: "premium beauty clinic",
-      platform: "meta",
-      notes: "",
-      extractedAds: [],
-    });
-
-    const result = await generateCompetitorSpy(prompt, "9router");
+    const result = await generateCompetitorSpy(spyInput({ provider: "9router" }));
 
     expect(result.provider).toBe("9router");
     expect(result.summary).toBe("Useful 9router summary with an incomplete response shape.");
@@ -338,7 +336,7 @@ describe("generateCompetitorSpy", () => {
       themes: [themeWithoutEvidenceIds],
     }))));
 
-    const result = await generateCompetitorSpy("x".repeat(120), "9router");
+    const result = await generateCompetitorSpy(spyInput({ provider: "9router" }));
 
     expect(result.provider).toBe("9router");
     expect(result.summary).toBe(spyPayload.summary);
@@ -353,14 +351,7 @@ describe("generateCompetitorSpy", () => {
     vi.stubEnv("NINEROUTER_KEY", "test-key");
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(nineRouterResponse("")));
 
-    const prompt = buildCompetitorSpyPrompt({
-      competitors: ["Seoul Spa"],
-      market: "premium beauty clinic",
-      platform: "meta",
-      notes: "",
-      extractedAds: [],
-    });
-    const result = await generateCompetitorSpy(prompt, "9router");
+    const result = await generateCompetitorSpy(spyInput({ provider: "9router" }));
 
     expect(result.provider).toBe("prompt");
     expect(result.competitors[0]?.name).toBe("Seoul Spa");

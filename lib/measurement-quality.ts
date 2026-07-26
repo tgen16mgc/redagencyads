@@ -1,10 +1,12 @@
-import type { DashboardReport, KpiPack, NormalizedRow } from "@/lib/types";
+import type { DiagnosticSeverity } from "@/lib/diagnosis";
+import type { DashboardReport } from "@/lib/types";
+import { signalVolumeValue } from "@/lib/primary-result";
 
 export type MeasurementQualityStatus = "good" | "limited" | "unverified" | "not_applicable";
 
 export type MeasurementQuality = {
   status: MeasurementQualityStatus;
-  variant: "secondary" | "outline" | "destructive";
+  severity: DiagnosticSeverity;
   label: { en: string; vi: string };
   reasons: { en: string[]; vi: string[] };
 };
@@ -16,20 +18,12 @@ const labels: Record<MeasurementQualityStatus, { en: string; vi: string }> = {
   not_applicable: { en: "Not applicable", vi: "Không áp dụng" },
 };
 
-function primaryResult(row: NormalizedRow, pack: KpiPack) {
-  if (pack === "messages") return row.messages;
-  if (pack === "lead_gen") return row.leads;
-  if (pack === "sales_roas") return row.purchases;
-  if (pack === "traffic") return row.linkClicks;
-  return row.impressions;
-}
-
 export function assessMeasurementQuality(report: DashboardReport): MeasurementQuality {
   const { totals, selectedPack } = report;
   if (totals.spend <= 0) {
     return {
       status: "not_applicable",
-      variant: "outline",
+      severity: "insufficient",
       label: labels.not_applicable,
       reasons: {
         en: ["No spend in the selected scope, so measurement quality is not applicable yet."],
@@ -38,11 +32,11 @@ export function assessMeasurementQuality(report: DashboardReport): MeasurementQu
     };
   }
 
-  const result = primaryResult(totals, selectedPack);
+  const result = signalVolumeValue(totals, selectedPack);
   if (result <= 0) {
     return {
       status: "unverified",
-      variant: "destructive",
+      severity: "risk",
       label: labels.unverified,
       reasons: {
         en: ["Tracking data is not available in the current dataset for the selected KPI pack."],
@@ -54,7 +48,7 @@ export function assessMeasurementQuality(report: DashboardReport): MeasurementQu
   if (selectedPack === "sales_roas" && totals.roas <= 0) {
     return {
       status: "limited",
-      variant: "outline",
+      severity: "watch",
       label: labels.limited,
       reasons: {
         en: ["Primary result signal is present, but Value or ROAS data is missing in the current dataset."],
@@ -65,7 +59,7 @@ export function assessMeasurementQuality(report: DashboardReport): MeasurementQu
 
   return {
     status: "good",
-    variant: "secondary",
+    severity: "ok",
     label: labels.good,
     reasons: {
       en: ["Primary result signal is present for the selected KPI pack."],

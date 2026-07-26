@@ -29,10 +29,3 @@ export function hasFunnelClickVolume(totals: { linkClicks: number; addToCart: nu
   return totals.linkClicks >= SUFFICIENCY.minFunnelClicks && (totals.addToCart > 0 || totals.initiateCheckout > 0 || totals.purchases > 0);
 }
 
-export function hasDatedHistory(count: number): boolean {
-  return count >= SUFFICIENCY.minDatedRows;
-}
-
-export function hasBaselineHistory(baselineDays: number, recentWindow: number): boolean {
-  return baselineDays >= SUFFICIENCY.minBaselineDays + recentWindow;
-}

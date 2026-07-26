@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { primaryResult, rowDecision } from "../row-decision";
+import { rowDecision } from "../row-decision";
 import type { NormalizedRow } from "../types";
 
 function row(overrides: Partial<NormalizedRow>): NormalizedRow {
@@ -33,22 +33,10 @@ function row(overrides: Partial<NormalizedRow>): NormalizedRow {
   };
 }
 
-describe("primaryResult", () => {
-  it("selects the selected KPI pack's primary result", () => {
-    const input = row({ messages: 3, leads: 4, purchases: 5, linkClicks: 6, reach: 7 });
-
-    expect(primaryResult(input, "messages")).toBe(3);
-    expect(primaryResult(input, "lead_gen")).toBe(4);
-    expect(primaryResult(input, "sales_roas")).toBe(5);
-    expect(primaryResult(input, "traffic")).toBe(6);
-    expect(primaryResult(input, "awareness")).toBe(7);
-  });
-});
-
 describe("rowDecision", () => {
-  it("flags fatigue when frequency crosses the pack guardrail and CTR is weak", () => {
-    expect(rowDecision(row({ frequency: 3, ctr: 0.9 }), "messages")).toMatchObject({ intent: "danger", label: "Fix creative" });
-    expect(rowDecision(row({ frequency: 4, ctr: 0.9 }), "awareness")).toMatchObject({ intent: "danger" });
+  it("flags creative fatigue through the baseline-aware fatigue classifier", () => {
+    expect(rowDecision(row({ spend: 50, impressions: 2000, messages: 2, frequency: 5, ctr: 0.7 }), "messages")).toMatchObject({ intent: "danger", label: "Fix creative" });
+    expect(rowDecision(row({ spend: 50, impressions: 2000, reach: 500, frequency: 5.5, ctr: 0.7 }), "awareness")).toMatchObject({ intent: "danger" });
   });
 
   it("marks rows with result, CTR, and frequency guardrails as healthy", () => {

@@ -1,3 +1,4 @@
+import type { DiagnosticSeverity } from "@/lib/diagnosis";
 import type { NormalizedRow } from "@/lib/types";
 
 export type CostCapDeliveryStatus = "healthy" | "warning" | "critical" | "no_cap_data";
@@ -13,7 +14,7 @@ export type CostCapUnderdelivering = {
 
 export type CostCapDeliveryAssessment = {
   status: CostCapDeliveryStatus;
-  variant: "secondary" | "outline" | "destructive";
+  severity: DiagnosticSeverity;
   label: { en: string; vi: string };
   summary: { en: string; vi: string };
   underdelivering: CostCapUnderdelivering[];
@@ -28,7 +29,7 @@ export function assessCostCapDelivery(
   if (!withBudget.length) {
     return {
       status: "no_cap_data",
-      variant: "outline",
+      severity: "insufficient",
       label: { en: "No cap data", vi: "Không có dữ liệu cap" },
       summary: {
         en: "No campaign daily budget data available to assess cost cap delivery efficiency.",
@@ -51,7 +52,7 @@ export function assessCostCapDelivery(
 
   const hasCritical = underdelivering.some((item) => item.spendRate < 0.6);
   const status: CostCapDeliveryStatus = hasCritical ? "critical" : underdelivering.length ? "warning" : "healthy";
-  const variant = status === "healthy" ? "secondary" : status === "warning" ? "outline" : "destructive";
+  const severity: DiagnosticSeverity = status === "healthy" ? "ok" : status === "warning" ? "watch" : "risk";
 
   const label = {
     healthy: { en: "Delivery healthy", vi: "Phân phối ổn định" },
@@ -79,5 +80,5 @@ export function assessCostCapDelivery(
     },
   }[status];
 
-  return { status, variant, label, summary, underdelivering };
+  return { status, severity, label, summary, underdelivering };
 }

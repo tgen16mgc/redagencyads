@@ -31,6 +31,7 @@ import {
   type FacebookGroupDestination,
 } from "@/lib/facebook-group-handoff";
 import {
+  EN_PAGE_POST_VALIDATION_MESSAGES,
   getSchedulePresetDateTimeLocal,
   validatePagePostDraft,
   type PagePostValidationMessages,
@@ -40,7 +41,7 @@ import { StickyActionDock } from "@/components/dashboard/sticky-action-dock";
 import { CONTEXT_CHAT_PANEL_ID } from "@/components/dashboard/context-chat-copy";
 import type { ChatContext } from "@/lib/ai/chat-contract";
 import { buildPublisherChatContext } from "@/lib/ai/chat-context";
-import { readPublisherJson, uploadFacebookVideo } from "@/lib/page-publisher-request";
+import { buildSubmitBody, readPublisherJson, reconcileScheduleQueue, uploadFacebookVideo } from "@/lib/page-publisher-request";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   AlertDialog,
@@ -280,17 +281,7 @@ const COPY: Record<InterfaceLanguage, Copy> = {
     groupCopiedOpened: "Post content copied and the Facebook Group opened in a new tab.",
     groupOpened: "Facebook Group opened. Add the media manually before posting.",
     groupCopyFailed: "The Group opened, but the browser could not copy the post. Copy the preview manually.",
-    validation: {
-      pageRequired: "Choose a Page before publishing.",
-      contentRequired: "Add a message, link, or media before publishing.",
-      scheduleRequired: "Choose a schedule time.",
-      scheduleTooSoon: "Schedule time must be at least 10 minutes in the future.",
-      instagramMediaRequired: "Instagram posts require an image, video, or GIF attachment.",
-      instagramHostedMediaRequired: "Instagram publishing requires a public hosted media URL. Local file uploads are supported only for Facebook.",
-      instagramScheduleUnsupported: "Instagram scheduling is not available here yet; use Facebook or publish now.",
-      multipleMediaInstagramUnsupported: "Multiple media attachments are only supported for Facebook posts right now.",
-      multipleVideoUnsupported: "Multiple media Facebook posts can only use images or GIFs.",
-    },
+    validation: EN_PAGE_POST_VALIDATION_MESSAGES,
   },
   vi: {
     title: "Studio đăng bài",
@@ -455,6 +446,25 @@ function readFacebookGroups() {
   }
 }
 
+function sanitizePagePostSubmissions(value: unknown): PagePostSubmission[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is PagePostSubmission => {
+      if (!item || typeof item !== "object") return false;
+      const raw = item as Partial<PagePostSubmission>;
+      return (
+        typeof raw.pageId === "string"
+        && typeof raw.pageName === "string"
+        && typeof raw.metaPostId === "string"
+        && typeof raw.createdAt === "string"
+        && (raw.mode === "publish_now" || raw.mode === "scheduled")
+        && (raw.target === "facebook" || raw.target === "instagram" || raw.target === "both")
+        && typeof raw.status === "string"
+      );
+    })
+    .slice(0, 6);
+}
+
 export type PagePublisherContextHandle = {
   getChatContext: () => Extract<ChatContext, { view: "publisher" }>;
 };
@@ -492,7 +502,7 @@ export const PagePublisherPanel = React.forwardRef<PagePublisherContextHandle, {
   const [groupError, setGroupError] = React.useState("");
   const [confirmOpen, setConfirmOpen] = React.useState(false);
   const selectedPage = pages.find((page) => page.id === pageId);
-  const draftValidation = validatePagePostDraft({ pageId, message, link, mode, scheduledFor, target, mediaItems }, Date.now(), copy.validation);
+  const draftValidation = validatePagePostDraft({ pageId, message, link, mode, scheduledFor, target, mediaItems }, copy.validation);
   const canReview = pages.length > 0 && !loadingPages && !submitting && !draftValidation;
 
   React.useImperativeHandle(ref, () => ({
@@ -511,10 +521,8 @@ export const PagePublisherPanel = React.forwardRef<PagePublisherContextHandle, {
 
   React.useEffect(() => {
     try {
-      const stored = window.localStorage.getItem(SUBMISSION_STORAGE_KEY);
-      if (!stored) return;
-      const parsed = JSON.parse(stored);
-      if (Array.isArray(parsed)) setSubmissions(parsed.slice(0, 6) as PagePostSubmission[]);
+      const parsed = sanitizePagePostSubmissions(JSON.parse(window.localStorage.getItem(SUBMISSION_STORAGE_KEY) || "[]"));
+      if (parsed.length) setSubmissions(parsed);
     } catch {
       window.localStorage.removeItem(SUBMISSION_STORAGE_KEY);
     }
@@ -565,7 +573,7 @@ export const PagePublisherPanel = React.forwardRef<PagePublisherContextHandle, {
     setError("");
     setSuccess(null);
 
-    const validation = validatePagePostDraft({ pageId, message, link, mode, scheduledFor, target, mediaItems }, Date.now(), copy.validation);
+    const validation = validatePagePostDraft({ pageId, message, link, mode, scheduledFor, target, mediaItems }, copy.validation);
     if (validation) {
       setError(validation);
       return;
@@ -639,7 +647,7 @@ export const PagePublisherPanel = React.forwardRef<PagePublisherContextHandle, {
       setError(copy.queueValidation);
       return;
     }
-    const validation = validatePagePostDraft({ pageId, message, link, mode, scheduledFor, target, mediaItems }, Date.now(), copy.validation);
+    const validation = validatePagePostDraft({ pageId, message, link, mode, scheduledFor, target, mediaItems }, copy.validation);
     if (validation) {
       setError(validation);
       return;
@@ -690,7 +698,7 @@ export const PagePublisherPanel = React.forwardRef<PagePublisherContextHandle, {
       const accepted = results.flatMap((result) => (result.submission ? [result.submission] : []));
       if (accepted.length) setSubmissions((current) => [...accepted, ...current].slice(0, 8));
       const failed = results.filter((result) => !result.ok).map((result) => result.error).filter(Boolean);
-      setQueue((current) => current.filter((_, index) => !results[index]?.ok));
+      setQueue((current) => reconcileScheduleQueue(current, results));
       if (failed.length) setError(failed.join(" "));
       else setSuccess(accepted[0] || null);
     } catch (err) {
@@ -1326,53 +1334,6 @@ function fileToMedia(file: File): MediaAttachment {
 
 function mediaLabel(media: MediaAttachment) {
   return media.name || media.url || media.type;
-}
-
-function clientMedia(mediaItems: MediaAttachment[]) {
-  return mediaItems.map((item) => ({ type: item.type, url: item.url, name: item.name }));
-}
-
-function buildSubmitBody(input: {
-  pageId: string;
-  message: string;
-  link: string;
-  mode: PagePostMode;
-  scheduledFor: string;
-  target: PublishTarget;
-  mediaItems: MediaAttachment[];
-}) {
-  if (input.mediaItems.some((item) => item.file)) {
-    const formData = new FormData();
-    const metadata = [];
-    let fileIndex = 0;
-    formData.set("pageId", input.pageId);
-    formData.set("message", input.message.trim());
-    formData.set("link", input.link.trim());
-    formData.set("mode", input.mode);
-    formData.set("target", input.target);
-    if (input.mode === "scheduled") formData.set("scheduledFor", new Date(input.scheduledFor).toISOString());
-    for (const item of input.mediaItems) {
-      if (item.file) {
-        formData.append("mediaFiles", item.file);
-        metadata.push({ type: item.type, name: item.name, fileIndex });
-        fileIndex += 1;
-      } else {
-        metadata.push({ type: item.type, url: item.url, name: item.name });
-      }
-    }
-    formData.set("mediaItems", JSON.stringify(metadata));
-    return formData;
-  }
-
-  return JSON.stringify({
-    pageId: input.pageId,
-    message: input.message.trim() || undefined,
-    link: input.link.trim() || undefined,
-    mode: input.mode,
-    scheduledFor: input.mode === "scheduled" ? new Date(input.scheduledFor).toISOString() : undefined,
-    target: input.target,
-    mediaItems: input.mediaItems.length ? clientMedia(input.mediaItems) : undefined,
-  });
 }
 
 function TargetBadges({ target, copy }: { target: PublishTarget; copy: Copy }) {

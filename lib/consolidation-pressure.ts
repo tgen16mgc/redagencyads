@@ -1,10 +1,12 @@
+import type { DiagnosticSeverity } from "@/lib/diagnosis";
 import type { KpiPack, NormalizedRow } from "@/lib/types";
+import { primaryResultSpec, primaryResultValue } from "@/lib/primary-result";
 
 export type ConsolidationPressureStatus = "healthy" | "warning" | "critical" | "insufficient_data";
 
 export type ConsolidationPressureAssessment = {
   status: ConsolidationPressureStatus;
-  variant: "secondary" | "outline" | "destructive";
+  severity: DiagnosticSeverity;
   label: { en: string; vi: string };
   summary: { en: string; vi: string };
   conversionsPerAdset: number;
@@ -12,13 +14,6 @@ export type ConsolidationPressureAssessment = {
   totalConversions: number;
   weeklyThreshold: number;
 };
-
-function primaryConversions(row: NormalizedRow, pack: KpiPack): number {
-  if (pack === "sales_roas") return row.purchases;
-  if (pack === "messages") return row.messages;
-  if (pack === "traffic") return row.linkClicks;
-  return row.leads;
-}
 
 export function assessConsolidationPressure(
   adsetRows: NormalizedRow[],
@@ -28,10 +23,26 @@ export function assessConsolidationPressure(
   const weeklyThreshold = 7;
   const active = adsetRows.filter((row) => row.spend > 0);
 
+  if (!primaryResultSpec(pack).resultKey) {
+    return {
+      status: "insufficient_data",
+      severity: "insufficient",
+      label: { en: "Insufficient data", vi: "Chưa đủ dữ liệu" },
+      summary: {
+        en: "The awareness pack has no conversion-scale primary result, so consolidation pressure is not assessed.",
+        vi: "Gói awareness không có kết quả chính theo quy mô chuyển đổi nên không đánh giá áp lực hợp nhất.",
+      },
+      conversionsPerAdset: 0,
+      activeAdsets: active.length,
+      totalConversions: 0,
+      weeklyThreshold,
+    };
+  }
+
   if (!active.length) {
     return {
       status: "insufficient_data",
-      variant: "outline",
+      severity: "insufficient",
       label: { en: "Insufficient data", vi: "Chưa đủ dữ liệu" },
       summary: {
         en: "No active ad sets with spend found to assess consolidation pressure.",
@@ -44,7 +55,7 @@ export function assessConsolidationPressure(
     };
   }
 
-  const totalConversions = active.reduce((sum, row) => sum + primaryConversions(row, pack), 0);
+  const totalConversions = active.reduce((sum, row) => sum + primaryResultValue(row, pack), 0);
   const weeks = Math.max(reportDays / 7, 1);
   const weeklyConversions = totalConversions / weeks;
   const conversionsPerAdset = weeklyConversions / active.length;
@@ -56,7 +67,7 @@ export function assessConsolidationPressure(
         ? "warning"
         : "critical";
 
-  const variant = status === "healthy" ? "secondary" : status === "warning" ? "outline" : "destructive";
+  const severity: DiagnosticSeverity = status === "healthy" ? "ok" : status === "warning" ? "watch" : "risk";
 
   const label = {
     healthy: { en: "Consolidation healthy", vi: "Cấu trúc ổn định" },
@@ -84,5 +95,5 @@ export function assessConsolidationPressure(
     },
   }[status];
 
-  return { status, variant, label, summary, conversionsPerAdset, activeAdsets: active.length, totalConversions, weeklyThreshold };
+  return { status, severity, label, summary, conversionsPerAdset, activeAdsets: active.length, totalConversions, weeklyThreshold };
 }

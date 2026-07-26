@@ -42,7 +42,7 @@ describe("assessAudienceOverlap", () => {
     ]);
 
     expect(result.status).toBe("overlap_risk");
-    expect(result.variant).toBe("destructive");
+    expect(result.severity).toBe("risk");
     expect(result.pairs[0].name1).toBe("Lookalike 1% - Purchase - VN");
     expect(result.pairs[0].name2).toBe("LAL 1% Purchases Vietnam");
     expect(result.summary.en).toContain("overlap");
@@ -56,7 +56,7 @@ describe("assessAudienceOverlap", () => {
     ]);
 
     expect(result.status).toBe("clean");
-    expect(result.variant).toBe("secondary");
+    expect(result.severity).toBe("ok");
     expect(result.pairs).toHaveLength(0);
   });
 
@@ -66,7 +66,7 @@ describe("assessAudienceOverlap", () => {
     ]);
 
     expect(result.status).toBe("insufficient_data");
-    expect(result.variant).toBe("outline");
+    expect(result.severity).toBe("insufficient");
     expect(result.summary.vi.toLowerCase()).toContain("tối thiểu");
   });
 });

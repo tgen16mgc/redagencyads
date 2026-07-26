@@ -1,5 +1,5 @@
 import { sumRows } from "@/lib/metric-aggregation";
-import type { CompareMode, CompetitorPlatform, CompetitorSpyAd, DashboardReport, InsightAction, InsightRow, KpiCard, KpiPack, MetaAccount, MetaCampaign, NormalizedRow } from "@/lib/types";
+import type { CompareMode, CompetitorPlatform, CompetitorSpyAd, DashboardReport, InsightAction, InsightRow, InterfaceLanguage, KpiCard, KpiPack, MetaAccount, MetaCampaign, NormalizedRow } from "@/lib/types";
 import { compareTotals } from "@/lib/metric-comparison";
 import { summarizeHealth } from "@/lib/health-score";
 
@@ -322,10 +322,16 @@ Input JSON:
 ${JSON.stringify(payload, null, 2)}`;
 }
 
+function languageRequirement(language: InterfaceLanguage | undefined, hint: string) {
+  if (language !== "vi") return "";
+  return `\n\nLanguage requirement:\n- Use Vietnamese for all user-facing values. ${hint}\n- Keep JSON keys exactly as requested; translate only string values.`;
+}
+
 export function buildInsightPrompt(args: {
   report: DashboardReport;
   previousReport?: DashboardReport | null;
   compareMode: CompareMode;
+  language?: InterfaceLanguage;
 }) {
   const comparison = args.compareMode !== "off" && args.previousReport
     ? {
@@ -377,10 +383,10 @@ Output schema:
 }
 
 Input JSON:
-${JSON.stringify(payload, null, 2)}`;
+${JSON.stringify(payload, null, 2)}${languageRequirement(args.language, "Keep insight/action text concise for dashboard cards.")}`;
 }
 
-export function buildCompetitorSpyPrompt(args: {
+export type CompetitorSpyPromptArgs = {
   competitors: string[];
   market: string;
   platform: CompetitorPlatform;
@@ -393,7 +399,9 @@ export function buildCompetitorSpyPrompt(args: {
   }[];
   extractedAds?: CompetitorSpyAd[];
   report?: DashboardReport | null;
-}) {
+};
+
+export function buildCompetitorSpyPayload(args: CompetitorSpyPromptArgs) {
   const compactEvidenceText = (value: string | undefined, maxLength: number) => {
     if (!value) return undefined;
     const normalized = value.replace(/[\u0000-\u001F\u007F]/g, " ").replace(/\s+/g, " ").trim();
@@ -445,8 +453,8 @@ export function buildCompetitorSpyPrompt(args: {
       snapshot_url: safeEvidenceUrl(row.sourceUrl),
     }))
     .filter((row) => row.evidence_id && row.competitor && row.snapshot_url);
-  const payload = {
-    competitors: args.competitors.map((value) => compactEvidenceText(value, 160)).filter(Boolean),
+  return {
+    competitors: args.competitors.map((value) => compactEvidenceText(value, 160)).filter((value): value is string => Boolean(value)),
     market_or_offer: compactEvidenceText(args.market, 800) || "Not specified",
     platform_focus: args.platform,
     pasted_ad_library_notes: compactEvidenceText(args.notes, 6000) || "No pasted competitor ad notes provided.",
@@ -454,7 +462,7 @@ export function buildCompetitorSpyPrompt(args: {
     extracted_ads: extractedAds,
     available_evidence_ids: [...manualEvidence, ...extractedAds]
       .map((row) => row.evidence_id)
-      .filter(Boolean),
+      .filter((value): value is string => Boolean(value)),
     current_account_context: args.report
       ? {
           account: args.report.account.name,
@@ -471,6 +479,10 @@ export function buildCompetitorSpyPrompt(args: {
         }
       : null,
   };
+}
+
+export function buildCompetitorSpyPrompt(args: CompetitorSpyPromptArgs & { language?: InterfaceLanguage }) {
+  const payload = buildCompetitorSpyPayload(args);
   return `You are a senior paid-social competitive intelligence strategist working from verified evidence.
 
 Use the competitor ads framework:
@@ -524,7 +536,7 @@ Output schema:
 }
 
 Input JSON:
-${JSON.stringify(payload, null, 2)}`;
+${JSON.stringify(payload, null, 2)}${languageRequirement(args.language, "Keep competitor themes, gaps, and test briefs concise.")}`;
 }
 
 export function comparisonDeltas(current: DashboardReport, previous: DashboardReport) {

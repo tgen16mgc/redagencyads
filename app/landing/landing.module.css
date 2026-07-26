@@ -436,6 +436,10 @@
   text-wrap: balance;
 }
 
+.evidenceCopy h2 {
+  font-size: clamp(2rem, 2.6vw, 3.25rem);
+}
+
 .sectionHeading p,
 .evidenceCopy > p,
 .finalCta p {

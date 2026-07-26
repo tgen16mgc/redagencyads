@@ -46,7 +46,7 @@ describe("assessBreakdownWaste", () => {
     ]);
 
     expect(result.status).toBe("waste_detected");
-    expect(result.variant).toBe("destructive");
+    expect(result.severity).toBe("risk");
     expect(result.rows[0].name).toBe("Facebook Feed");
     expect(result.rows[0].spendShare).toBeCloseTo(0.6);
     expect(result.summary.en).toContain("Facebook Feed");
@@ -60,7 +60,7 @@ describe("assessBreakdownWaste", () => {
     ]);
 
     expect(result.status).toBe("clean");
-    expect(result.variant).toBe("secondary");
+    expect(result.severity).toBe("ok");
     expect(result.rows).toHaveLength(0);
     expect(result.summary.en).toContain("No major breakdown waste");
   });
@@ -69,7 +69,7 @@ describe("assessBreakdownWaste", () => {
     const result = assess([row({ id: "fb", name: "Facebook Feed", spend: 100, messages: 10 })]);
 
     expect(result.status).toBe("insufficient_data");
-    expect(result.variant).toBe("outline");
+    expect(result.severity).toBe("insufficient");
     expect(result.summary.vi.toLowerCase()).toContain("chưa đủ");
   });
 

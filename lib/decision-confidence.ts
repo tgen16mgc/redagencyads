@@ -1,5 +1,7 @@
+import type { DiagnosticSeverity } from "@/lib/diagnosis";
 import type { InterfaceLanguage, KpiPack, NormalizedRow } from "@/lib/types";
 import { SUFFICIENCY } from "@/lib/data-sufficiency";
+import { signalVolumeValue } from "@/lib/primary-result";
 
 export type DecisionConfidenceStatus = "scale_candidate" | "kill_candidate" | "monitor" | "insufficient_data";
 
@@ -11,7 +13,7 @@ export type DecisionTargets = {
 export type DecisionConfidence = {
   status: DecisionConfidenceStatus;
   actionable: boolean;
-  variant: "secondary" | "outline" | "destructive";
+  severity: DiagnosticSeverity;
   label: { en: string; vi: string };
   reasons: { en: string[]; vi: string[] };
 };
@@ -23,16 +25,8 @@ const labels: Record<DecisionConfidenceStatus, { en: string; vi: string }> = {
   insufficient_data: { en: "Insufficient data", vi: "Chưa đủ dữ liệu" },
 };
 
-function primaryResult(row: NormalizedRow, pack: KpiPack) {
-  if (pack === "messages") return row.messages;
-  if (pack === "lead_gen") return row.leads;
-  if (pack === "sales_roas") return row.purchases;
-  if (pack === "traffic") return row.linkClicks;
-  return row.reach;
-}
-
 function primaryCost(row: NormalizedRow, pack: KpiPack) {
-  const result = primaryResult(row, pack);
+  const result = signalVolumeValue(row, pack);
   return result > 0 ? row.spend / result : 0;
 }
 
@@ -47,14 +41,14 @@ function lowDelivery(row: NormalizedRow) {
 }
 
 export function assessDecisionConfidence(row: NormalizedRow, pack: KpiPack, language: InterfaceLanguage = "en", targets: DecisionTargets = {}): DecisionConfidence {
-  const result = primaryResult(row, pack);
+  const result = signalVolumeValue(row, pack);
   const minResults = resultThreshold(pack);
 
   if (row.spend > 0 && lowDelivery(row)) {
     return {
       status: "insufficient_data",
       actionable: false,
-      variant: "outline",
+      severity: "insufficient",
       label: labels.insufficient_data,
       reasons: {
         en: ["Need at least 1,000 impressions before kill/scale decisions."],
@@ -69,7 +63,7 @@ export function assessDecisionConfidence(row: NormalizedRow, pack: KpiPack, lang
     return {
       status: "insufficient_data",
       actionable: false,
-      variant: "outline",
+      severity: "insufficient",
       label: labels.insufficient_data,
       reasons: {
         en: [targets.targetCpa && pack !== "sales_roas" ? "Need at least 5x target CPA spend before zero-result kill decisions." : "Spend is still below the minimum evidence threshold for a zero-result decision."],
@@ -82,7 +76,7 @@ export function assessDecisionConfidence(row: NormalizedRow, pack: KpiPack, lang
     return {
       status: "kill_candidate",
       actionable: true,
-      variant: "destructive",
+      severity: "risk",
       label: labels.kill_candidate,
       reasons: {
         en: ["Zero primary results after enough spend and delivery."],
@@ -98,7 +92,7 @@ export function assessDecisionConfidence(row: NormalizedRow, pack: KpiPack, lang
     return {
       status: "kill_candidate",
       actionable: true,
-      variant: "destructive",
+      severity: "risk",
       label: labels.kill_candidate,
       reasons: {
         en: [`CPA is ${multiple.toFixed(2)}x above target CPA after ${result.toLocaleString("en-US")} primary results.`],
@@ -112,7 +106,7 @@ export function assessDecisionConfidence(row: NormalizedRow, pack: KpiPack, lang
       return {
         status: "monitor",
         actionable: false,
-        variant: "outline",
+        severity: "watch",
         label: labels.monitor,
         reasons: {
           en: [`ROAS is below target: ${row.roas.toFixed(2)} vs ${targets.targetRoas.toFixed(2)}.`],
@@ -124,7 +118,7 @@ export function assessDecisionConfidence(row: NormalizedRow, pack: KpiPack, lang
       return {
         status: "monitor",
         actionable: false,
-        variant: "outline",
+        severity: "watch",
         label: labels.monitor,
         reasons: {
           en: [`CPA is above target: ${cost.toFixed(2)} vs ${targets.targetCpa.toFixed(2)}.`],
@@ -137,7 +131,7 @@ export function assessDecisionConfidence(row: NormalizedRow, pack: KpiPack, lang
     return {
       status: "scale_candidate",
       actionable: true,
-      variant: "secondary",
+      severity: "ok",
       label: labels.scale_candidate,
       reasons: {
         en: [`Has ${result.toLocaleString("en-US")} primary results with stable CTR and frequency${cost > 0 ? ` at ${cost.toFixed(2)} cost/result` : ""}.${targetReasonEn}`],
@@ -149,7 +143,7 @@ export function assessDecisionConfidence(row: NormalizedRow, pack: KpiPack, lang
   return {
     status: "monitor",
     actionable: false,
-    variant: "outline",
+    severity: "watch",
     label: labels.monitor,
     reasons: {
       en: ["Signal is directional, but not strong enough for a hard kill/scale decision."],

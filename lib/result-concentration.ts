@@ -1,5 +1,6 @@
+import type { DiagnosticSeverity } from "@/lib/diagnosis";
 import type { KpiPack, NormalizedRow } from "@/lib/types";
-import { SUFFICIENCY } from "@/lib/data-sufficiency";
+import { signalVolumeValue } from "@/lib/primary-result";
 
 export type ResultConcentrationStatus = "low_risk" | "medium_risk" | "high_risk" | "insufficient_data";
 
@@ -14,7 +15,7 @@ export type ResultConcentrationRow = {
 
 export type ResultConcentration = {
   status: ResultConcentrationStatus;
-  variant: "secondary" | "outline" | "destructive";
+  severity: DiagnosticSeverity;
   label: { en: string; vi: string };
   summary: { en: string; vi: string };
   topRows: ResultConcentrationRow[];
@@ -29,14 +30,6 @@ const labels: Record<ResultConcentrationStatus, { en: string; vi: string }> = {
 
 const MIN_CONCENTRATION_ROWS = 3;
 
-function primaryResult(row: NormalizedRow, pack: KpiPack) {
-  if (pack === "messages") return row.messages;
-  if (pack === "lead_gen") return row.leads;
-  if (pack === "sales_roas") return row.purchases;
-  if (pack === "traffic") return row.linkClicks;
-  return row.impressions;
-}
-
 function percent(value: number) {
   return `${(value * 100).toFixed(1)}%`;
 }
@@ -44,7 +37,7 @@ function percent(value: number) {
 function insufficientData(topRows: ResultConcentrationRow[]): ResultConcentration {
   return {
     status: "insufficient_data",
-    variant: "outline",
+    severity: "insufficient",
     label: labels.insufficient_data,
     summary: {
       en: `Need at least ${MIN_CONCENTRATION_ROWS} rows with spend or results to judge concentration.`,
@@ -55,21 +48,21 @@ function insufficientData(topRows: ResultConcentrationRow[]): ResultConcentratio
 }
 
 export function assessResultConcentration(rows: NormalizedRow[], pack: KpiPack): ResultConcentration {
-  const usableRows = rows.filter((row) => row.spend > 0 || primaryResult(row, pack) > 0);
-  const totalResult = usableRows.reduce((sum, row) => sum + primaryResult(row, pack), 0);
+  const usableRows = rows.filter((row) => row.spend > 0 || signalVolumeValue(row, pack) > 0);
+  const totalResult = usableRows.reduce((sum, row) => sum + signalVolumeValue(row, pack), 0);
   const totalSpend = usableRows.reduce((sum, row) => sum + row.spend, 0);
   const useResults = totalResult > 0;
   const denominator = useResults ? totalResult : totalSpend;
   const sorted = [...usableRows].sort((a, b) => {
-    const left = useResults ? primaryResult(b, pack) - primaryResult(a, pack) : b.spend - a.spend;
+    const left = useResults ? signalVolumeValue(b, pack) - signalVolumeValue(a, pack) : b.spend - a.spend;
     return left || b.spend - a.spend;
   });
   const topRows = sorted.slice(0, 3).map((row) => ({
     id: row.id,
     name: row.name,
-    result: primaryResult(row, pack),
+    result: signalVolumeValue(row, pack),
     spend: row.spend,
-    resultShare: totalResult > 0 ? primaryResult(row, pack) / totalResult : 0,
+    resultShare: totalResult > 0 ? signalVolumeValue(row, pack) / totalResult : 0,
     spendShare: totalSpend > 0 ? row.spend / totalSpend : 0,
   }));
 
@@ -85,7 +78,7 @@ export function assessResultConcentration(rows: NormalizedRow[], pack: KpiPack):
   if (topOneShare >= 0.6 || topThreeShare >= 0.85) {
     return {
       status: "high_risk",
-      variant: "destructive",
+      severity: "risk",
       label: labels.high_risk,
       summary: {
         en: `${topRows[0].name} drives ${percent(topOneShare)} of ${basis}; portfolio risk is concentrated in too few rows.`,
@@ -98,7 +91,7 @@ export function assessResultConcentration(rows: NormalizedRow[], pack: KpiPack):
   if (topOneShare >= 0.4 || topThreeShare >= 0.7) {
     return {
       status: "medium_risk",
-      variant: "outline",
+      severity: "watch",
       label: labels.medium_risk,
       summary: {
         en: `The top 3 rows drive ${percent(topThreeShare)} of ${basis}; scale carefully until more rows prove repeatable.`,
@@ -110,7 +103,7 @@ export function assessResultConcentration(rows: NormalizedRow[], pack: KpiPack):
 
   return {
     status: "low_risk",
-    variant: "secondary",
+    severity: "ok",
     label: labels.low_risk,
     summary: {
       en: `Primary ${basis} are distributed across multiple rows, so portfolio dependency is low.`,

@@ -2,6 +2,8 @@ import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { promisify } from "node:util";
 import { runApifyActor } from "@/lib/apify";
+import { matchAdvertiserName, trustedMetaLibraryUrl } from "@/lib/competitor-evidence";
+import { graphRequest } from "@/lib/meta-graph";
 import type { CompetitorEvidenceCoverage, CompetitorFetchResult, CompetitorFetchSource, CompetitorSpyAd } from "@/lib/types";
 
 type SpyFetchArgs = {
@@ -45,26 +47,27 @@ async function fetchMetaOfficialAds(args: SpyFetchArgs): Promise<CompetitorFetch
   const warnings = [
     "Meta official ads_archive can miss normal commercial competitor ads. Use Apify scraper for broader commercial spy data.",
   ];
-  const graphVersion = process.env.META_GRAPH_VERSION || "v22.0";
   const country = normalizeCountry(args.country);
   const ads: CompetitorSpyAd[] = [];
 
   for (const competitor of args.competitors) {
-    const url = new URL(`https://graph.facebook.com/${graphVersion}/ads_archive`);
-    url.searchParams.set("access_token", args.token);
-    url.searchParams.set("search_terms", competitor);
-    url.searchParams.set("ad_reached_countries", JSON.stringify([country]));
-    url.searchParams.set("ad_type", "ALL");
-    url.searchParams.set("fields", META_FIELDS);
-    url.searchParams.set("limit", String(Math.min(args.limit, 50)));
-    const response = await fetch(url.toString(), { cache: "no-store" });
-    const json = await response.json();
-    if (!response.ok) {
-      warnings.push(`${competitor}: ${json?.error?.message || "Meta Ad Library API failed."}`);
-      continue;
+    try {
+      const json = await graphRequest<{ data?: Record<string, unknown>[] }>({
+        path: "/ads_archive",
+        params: {
+          search_terms: competitor,
+          ad_reached_countries: JSON.stringify([country]),
+          ad_type: "ALL",
+          fields: META_FIELDS,
+          limit: Math.min(args.limit, 50),
+        },
+        token: args.token,
+      });
+      const rows = Array.isArray(json.data) ? json.data : [];
+      ads.push(...rows.map((row) => normalizeMetaAd(row, competitor)));
+    } catch (error) {
+      warnings.push(`${competitor}: ${error instanceof Error ? error.message : "Meta Ad Library API failed."}`);
     }
-    const rows = Array.isArray(json.data) ? json.data : [];
-    ads.push(...rows.map((row: Record<string, unknown>) => normalizeMetaAd(row, competitor)));
   }
 
   return {
@@ -181,13 +184,7 @@ function buildApifyTargets(args: SpyFetchArgs) {
 }
 
 function findAdvertiserCompetitor(advertiser: string | undefined, competitors: string[]) {
-  const advertiserKey = normalizedName(advertiser);
-  if (!advertiserKey) return undefined;
-  const matches = competitors.filter((competitor) => {
-    const competitorKey = normalizedName(competitor);
-    return advertiserKey === competitorKey
-      || (advertiserKey.includes(competitorKey) || competitorKey.includes(advertiserKey));
-  });
+  const matches = competitors.filter((competitor) => matchAdvertiserName(advertiser, competitor) !== "none");
   return matches.length === 1 ? matches[0] : undefined;
 }
 
@@ -454,7 +451,7 @@ function normalizeApifyAd(row: unknown, index: number): CompetitorSpyAd {
   const archiveId = pick(item, ["adArchiveId", "adArchiveID", "archiveId", "libraryId"]);
   const id = archiveId || pick(item, ["id", "adId", "ad_id"])
     || `apify-${index}`;
-  const snapshotUrl = metaLibraryEvidenceUrl(
+  const snapshotUrl = trustedMetaLibraryUrl(
     pick(item, ["snapshotUrl", "adSnapshotUrl", "ad_snapshot_url", "adLibraryUrl", "adUrl"]),
   ) || (archiveId ? `https://www.facebook.com/ads/library/?id=${encodeURIComponent(archiveId)}` : undefined);
   return {
@@ -488,9 +485,9 @@ function normalizeApifyAd(row: unknown, index: number): CompetitorSpyAd {
 function classifyEvidence(ad: CompetitorSpyAd, competitors: string[], collectedAt: string) {
   const requestedCompetitor = findRequestedCompetitor(ad, competitors);
   const advertiser = ad.pageName?.trim();
-  const requestedKey = normalizedName(requestedCompetitor);
   const advertiserKey = normalizedName(advertiser);
-  const sourceUrl = metaLibraryEvidenceUrl(ad.snapshotUrl);
+  const advertiserMatch = matchAdvertiserName(advertiser, requestedCompetitor);
+  const sourceUrl = trustedMetaLibraryUrl(ad.snapshotUrl);
   const hasUsableCreative = Boolean(sourceUrl && (
     ad.body?.trim()
     || ad.headline?.trim()
@@ -499,7 +496,7 @@ function classifyEvidence(ad: CompetitorSpyAd, competitors: string[], collectedA
     || ad.videoUrl
   ));
 
-  if (requestedKey && advertiserKey === requestedKey && sourceUrl) {
+  if (advertiserMatch === "exact" && sourceUrl) {
     return {
       status: "accepted" as const,
       match: "exact" as const,
@@ -513,7 +510,7 @@ function classifyEvidence(ad: CompetitorSpyAd, competitors: string[], collectedA
     };
   }
 
-  if (requestedKey && advertiserKey === requestedKey) {
+  if (advertiserMatch === "exact") {
     return {
       status: "needs_review" as const,
       match: "ambiguous" as const,
@@ -527,9 +524,7 @@ function classifyEvidence(ad: CompetitorSpyAd, competitors: string[], collectedA
     };
   }
 
-  if (requestedKey && advertiserKey && (
-    advertiserKey.includes(requestedKey) || requestedKey.includes(advertiserKey)
-  )) {
+  if (advertiserMatch === "similar") {
     return {
       status: "needs_review" as const,
       match: "ambiguous" as const,
@@ -561,35 +556,14 @@ function findRequestedCompetitor(ad: CompetitorSpyAd, competitors: string[]) {
   const explicitMatch = competitors.find((competitor) => normalizedName(competitor) === requestedKey);
   if (explicitMatch) return explicitMatch;
 
-  const advertiserKey = normalizedName(ad.pageName);
-  const advertiserMatches = competitors.filter((competitor) => {
-    const competitorKey = normalizedName(competitor);
-    return advertiserKey === competitorKey
-      || (advertiserKey && competitorKey && (advertiserKey.includes(competitorKey) || competitorKey.includes(advertiserKey)));
-  });
-  if (advertiserMatches.length === 1) return advertiserMatches[0];
+  const advertiserMatch = findAdvertiserCompetitor(ad.pageName, competitors);
+  if (advertiserMatch) return advertiserMatch;
 
   return ad.competitorName?.trim() || "Unattributed result";
 }
 
 function normalizedName(value: string | undefined) {
   return value?.trim().toLocaleLowerCase().replace(/\s+/g, " ") || "";
-}
-
-function metaLibraryEvidenceUrl(value: string | undefined) {
-  if (!value) return undefined;
-  try {
-    const url = new URL(value);
-    const host = url.hostname.toLocaleLowerCase();
-    const isFacebookHost = host === "facebook.com" || host.endsWith(".facebook.com");
-    const isLibraryPath = url.pathname === "/ads/library" || url.pathname === "/ads/library/";
-    if (url.protocol !== "https:" || !isFacebookHost || !isLibraryPath) {
-      return undefined;
-    }
-    return url.toString();
-  } catch {
-    return undefined;
-  }
 }
 
 function buildEvidenceCoverage(

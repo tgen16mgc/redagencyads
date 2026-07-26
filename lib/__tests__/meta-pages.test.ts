@@ -1,5 +1,18 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FACEBOOK_PAGE_PUBLISHING_SETUP_MESSAGE } from "../types";
+
+const { graphList, graphRequest } = vi.hoisted(() => ({
+  graphList: vi.fn(),
+  graphRequest: vi.fn(),
+}));
+
+vi.mock("@/lib/meta-graph", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../meta-graph")>()),
+  graphList,
+  graphRequest,
+}));
+
+import { MetaGraphRequestError } from "../meta-graph";
 import {
   finishFacebookVideoUpload,
   getPages,
@@ -8,50 +21,54 @@ import {
   transferFacebookVideoUpload,
 } from "../meta-pages";
 
-function graphResponse(body: unknown, ok = true, status = 200) {
-  return new Response(JSON.stringify(body), { status, statusText: ok ? "OK" : "Bad Request" });
-}
-
-function permissionsResponse(permissions: string[]) {
-  return graphResponse({
-    data: permissions.map((permission) => ({ permission, status: "granted" })),
-  });
-}
-
 const pagePermissions = ["pages_show_list", "pages_read_engagement", "pages_manage_posts"];
 const allPermissions = [...pagePermissions, "instagram_basic", "instagram_content_publish"];
+const readyPage = { id: "page_1", name: "Ready Page", tasks: ["CREATE_CONTENT"], access_token: "page-token-1" };
+
+function stubGraph(args: { permissions?: string[]; pages?: unknown[]; posts?: Array<unknown | Error> }) {
+  const posts = [...(args.posts || [])];
+  graphRequest.mockImplementation(async (request: { path: string }) => {
+    if (request.path === "/me/permissions") {
+      return { data: (args.permissions || []).map((permission) => ({ permission, status: "granted" })) };
+    }
+    const next = posts.shift();
+    if (next === undefined) throw new Error(`Unexpected graphRequest: ${request.path}`);
+    if (next instanceof Error) throw next;
+    return next;
+  });
+  graphList.mockResolvedValue(args.pages || []);
+}
+
+function postCalls() {
+  return graphRequest.mock.calls.map(([args]) => args).filter((args) => args.method === "POST");
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 describe("getPages", () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
   it("returns only content-capable Pages with publishing capabilities and without exposing access tokens", async () => {
-    const fetchSpy = vi
-      .fn()
-      .mockResolvedValueOnce(permissionsResponse(allPermissions))
-      .mockResolvedValueOnce(
-        graphResponse({
-          data: [
-            {
-              id: "page_1",
-              name: "Ready Page",
-              category: "Health/beauty",
-              tasks: ["CREATE_CONTENT", "MODERATE"],
-              access_token: "page-token-1",
-              instagram_business_account: { id: "ig_1", username: "ready_ig" },
-            },
-            {
-              id: "page_2",
-              name: "Read Only Page",
-              category: "Local service",
-              tasks: ["ANALYZE"],
-              access_token: "page-token-2",
-            },
-          ],
-        }),
-      );
-    vi.stubGlobal("fetch", fetchSpy);
+    stubGraph({
+      permissions: allPermissions,
+      pages: [
+        {
+          id: "page_1",
+          name: "Ready Page",
+          category: "Health/beauty",
+          tasks: ["CREATE_CONTENT", "MODERATE"],
+          access_token: "page-token-1",
+          instagram_business_account: { id: "ig_1", username: "ready_ig" },
+        },
+        {
+          id: "page_2",
+          name: "Read Only Page",
+          category: "Local service",
+          tasks: ["ANALYZE"],
+          access_token: "page-token-2",
+        },
+      ],
+    });
 
     const pages = await getPages("user-token");
 
@@ -69,59 +86,33 @@ describe("getPages", () => {
       },
     ]);
     expect(JSON.stringify(pages)).not.toContain("page-token");
-    expect(String(fetchSpy.mock.calls[0][0])).toContain("/v22.0/me/permissions");
-    expect(String(fetchSpy.mock.calls[1][0])).toContain("/v22.0/me/accounts");
-    expect(String(fetchSpy.mock.calls[1][0])).toContain("access_token=user-token");
+    expect(graphRequest).toHaveBeenCalledWith({ path: "/me/permissions", token: "user-token" });
+    expect(graphList).toHaveBeenCalledWith({
+      path: "/me/accounts",
+      params: { fields: "id,name,category,tasks,access_token,instagram_business_account{id,username}" },
+      token: "user-token",
+    });
   });
 
-  it("follows Meta pagination when discovering content-capable Pages", async () => {
-    const fetchSpy = vi
-      .fn()
-      .mockResolvedValueOnce(permissionsResponse(pagePermissions))
-      .mockResolvedValueOnce(
-        graphResponse({
-          data: [{ id: "page_1", name: "First Page", tasks: ["CREATE_CONTENT"], access_token: "page-token-1" }],
-          paging: { next: "https://graph.facebook.com/v22.0/me/accounts?after=cursor" },
-        }),
-      )
-      .mockResolvedValueOnce(
-        graphResponse({
-          data: [{ id: "page_2", name: "Second Page", tasks: ["CREATE_CONTENT"], access_token: "page-token-2" }],
-        }),
-      );
-    vi.stubGlobal("fetch", fetchSpy);
+  it("returns every content-capable Page from the paginated Graph listing", async () => {
+    stubGraph({
+      permissions: pagePermissions,
+      pages: [
+        { id: "page_1", name: "First Page", tasks: ["CREATE_CONTENT"], access_token: "page-token-1" },
+        { id: "page_2", name: "Second Page", tasks: ["CREATE_CONTENT"], access_token: "page-token-2" },
+      ],
+    });
 
     const pages = await getPages("user-token");
 
     expect(pages.map((page) => page.name)).toEqual(["First Page", "Second Page"]);
-    expect(fetchSpy).toHaveBeenCalledTimes(3);
-    expect(String(fetchSpy.mock.calls[2][0])).toContain("after=cursor");
+    expect(graphList).toHaveBeenCalledTimes(1);
   });
 });
 
 describe("publishPageFeedPost", () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
   it("publishes a Page feed post with the selected Page token", async () => {
-    const fetchSpy = vi
-      .fn()
-      .mockResolvedValueOnce(permissionsResponse(pagePermissions))
-      .mockResolvedValueOnce(
-        graphResponse({
-          data: [
-            {
-              id: "page_1",
-              name: "Ready Page",
-              tasks: ["CREATE_CONTENT"],
-              access_token: "page-token-1",
-            },
-          ],
-        }),
-      )
-      .mockResolvedValueOnce(graphResponse({ id: "page_1_123" }));
-    vi.stubGlobal("fetch", fetchSpy);
+    stubGraph({ permissions: pagePermissions, pages: [readyPage], posts: [{ id: "page_1_123" }] });
 
     const result = await publishPageFeedPost({
       token: "user-token",
@@ -142,8 +133,9 @@ describe("publishPageFeedPost", () => {
       status: "submitted",
       results: [{ target: "facebook", metaPostId: "page_1_123", status: "submitted" }],
     });
-    expect(String(fetchSpy.mock.calls[2][0])).toContain("/v22.0/page_1/feed");
-    const body = fetchSpy.mock.calls[2][1]?.body as URLSearchParams;
+    const [post] = postCalls();
+    expect(post).toMatchObject({ path: "/page_1/feed", method: "POST" });
+    const body = post.body as URLSearchParams;
     expect(body.get("access_token")).toBe("page-token-1");
     expect(body.get("message")).toBe("Launch post");
     expect(body.get("link")).toBe("https://example.com/offer");
@@ -151,23 +143,11 @@ describe("publishPageFeedPost", () => {
   });
 
   it("publishes when Page discovery succeeded without pages_show_list in granted permissions", async () => {
-    const fetchSpy = vi
-      .fn()
-      .mockResolvedValueOnce(permissionsResponse(["pages_read_engagement", "pages_manage_posts"]))
-      .mockResolvedValueOnce(
-        graphResponse({
-          data: [
-            {
-              id: "page_1",
-              name: "Ready Page",
-              tasks: ["CREATE_CONTENT"],
-              access_token: "page-token-1",
-            },
-          ],
-        }),
-      )
-      .mockResolvedValueOnce(graphResponse({ id: "page_1_123" }));
-    vi.stubGlobal("fetch", fetchSpy);
+    stubGraph({
+      permissions: ["pages_read_engagement", "pages_manage_posts"],
+      pages: [readyPage],
+      posts: [{ id: "page_1_123" }],
+    });
 
     await expect(
       publishPageFeedPost({
@@ -177,28 +157,12 @@ describe("publishPageFeedPost", () => {
         mode: "publish_now",
       }),
     ).resolves.toMatchObject({ metaPostId: "page_1_123" });
-    expect(String(fetchSpy.mock.calls[2][0])).toContain("/v22.0/page_1/feed");
+    expect(postCalls()[0]).toMatchObject({ path: "/page_1/feed" });
   });
 
   it("schedules a Page feed post with Meta scheduled_publish_time", async () => {
     const scheduledFor = new Date(Date.now() + 20 * 60 * 1000).toISOString();
-    const fetchSpy = vi
-      .fn()
-      .mockResolvedValueOnce(permissionsResponse(pagePermissions))
-      .mockResolvedValueOnce(
-        graphResponse({
-          data: [
-            {
-              id: "page_1",
-              name: "Ready Page",
-              tasks: ["CREATE_CONTENT"],
-              access_token: "page-token-1",
-            },
-          ],
-        }),
-      )
-      .mockResolvedValueOnce(graphResponse({ id: "page_1_456" }));
-    vi.stubGlobal("fetch", fetchSpy);
+    stubGraph({ permissions: pagePermissions, pages: [readyPage], posts: [{ id: "page_1_456" }] });
 
     const result = await publishPageFeedPost({
       token: "user-token",
@@ -208,16 +172,13 @@ describe("publishPageFeedPost", () => {
       scheduledFor,
     });
 
-    const body = fetchSpy.mock.calls[2][1]?.body as URLSearchParams;
+    const body = postCalls()[0].body as URLSearchParams;
     expect(result.status).toBe("scheduled");
     expect(body.get("published")).toBe("false");
     expect(body.get("scheduled_publish_time")).toBe(String(Math.floor(new Date(scheduledFor).getTime() / 1000)));
   });
 
-  it("rejects scheduled posts less than ten minutes in the future before calling Meta publish", async () => {
-    const fetchSpy = vi.fn();
-    vi.stubGlobal("fetch", fetchSpy);
-
+  it("rejects scheduled posts less than ten minutes in the future before calling Meta", async () => {
     await expect(
       publishPageFeedPost({
         token: "user-token",
@@ -228,50 +189,32 @@ describe("publishPageFeedPost", () => {
       }),
     ).rejects.toThrow("Schedule time must be at least 10 minutes in the future.");
 
-    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(graphRequest).not.toHaveBeenCalled();
+    expect(graphList).not.toHaveBeenCalled();
   });
 
   it("explains missing Page publishing permissions before calling the publish endpoint", async () => {
-    const fetchSpy = vi
-      .fn()
-      .mockResolvedValueOnce(permissionsResponse(["pages_read_engagement"]))
-      .mockResolvedValueOnce(
-        graphResponse({
-          data: [{ id: "page_1", name: "Ready Page", tasks: ["CREATE_CONTENT"], access_token: "page-token-1" }],
-        }),
-      );
-    vi.stubGlobal("fetch", fetchSpy);
+    stubGraph({ permissions: ["pages_read_engagement"], pages: [readyPage] });
 
     await expect(
       publishPageFeedPost({ token: "user-token", pageId: "page_1", message: "Hello", mode: "publish_now" }),
     ).rejects.toThrow(FACEBOOK_PAGE_PUBLISHING_SETUP_MESSAGE);
 
-    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(postCalls()).toHaveLength(0);
   });
 
   it("normalizes Meta #200 publish errors with Page permission guidance", async () => {
-    const fetchSpy = vi
-      .fn()
-      .mockResolvedValueOnce(permissionsResponse(pagePermissions))
-      .mockResolvedValueOnce(
-        graphResponse({
-          data: [{ id: "page_1", name: "Ready Page", tasks: ["CREATE_CONTENT"], access_token: "page-token-1" }],
+    stubGraph({
+      permissions: pagePermissions,
+      pages: [readyPage],
+      posts: [
+        new MetaGraphRequestError(400, {
+          code: 200,
+          message:
+            "(#200) If posting to a page, requires both pages_read_engagement and pages_manage_posts as an admin with sufficient administrative permission",
         }),
-      )
-      .mockResolvedValueOnce(
-        graphResponse(
-          {
-            error: {
-              code: 200,
-              message:
-                "(#200) If posting to a page, requires both pages_read_engagement and pages_manage_posts as an admin with sufficient administrative permission",
-            },
-          },
-          false,
-          400,
-        ),
-      );
-    vi.stubGlobal("fetch", fetchSpy);
+      ],
+    });
 
     await expect(
       publishPageFeedPost({ token: "user-token", pageId: "page_1", message: "Hello", mode: "publish_now" }),
@@ -279,16 +222,7 @@ describe("publishPageFeedPost", () => {
   });
 
   it("publishes image and GIF media through the Page photos endpoint", async () => {
-    const fetchSpy = vi
-      .fn()
-      .mockResolvedValueOnce(permissionsResponse(pagePermissions))
-      .mockResolvedValueOnce(
-        graphResponse({
-          data: [{ id: "page_1", name: "Ready Page", tasks: ["CREATE_CONTENT"], access_token: "page-token-1" }],
-        }),
-      )
-      .mockResolvedValueOnce(graphResponse({ id: "photo_1", post_id: "page_1_photo_123" }));
-    vi.stubGlobal("fetch", fetchSpy);
+    stubGraph({ permissions: pagePermissions, pages: [readyPage], posts: [{ id: "photo_1", post_id: "page_1_photo_123" }] });
 
     const result = await publishPageFeedPost({
       token: "user-token",
@@ -299,8 +233,9 @@ describe("publishPageFeedPost", () => {
       media: { type: "image", url: "https://cdn.example.com/photo.jpg" },
     });
 
-    expect(String(fetchSpy.mock.calls[2][0])).toContain("/v22.0/page_1/photos");
-    const body = fetchSpy.mock.calls[2][1]?.body as URLSearchParams;
+    const [post] = postCalls();
+    expect(post).toMatchObject({ path: "/page_1/photos", method: "POST" });
+    const body = post.body as URLSearchParams;
     expect(body.get("url")).toBe("https://cdn.example.com/photo.jpg");
     expect(body.get("caption")).toBe("Photo post");
     expect(result.metaPostId).toBe("page_1_photo_123");
@@ -309,16 +244,7 @@ describe("publishPageFeedPost", () => {
 
   it("uploads local Facebook media files with multipart Graph bodies", async () => {
     const file = new File(["photo-bytes"], "photo.jpg", { type: "image/jpeg" });
-    const fetchSpy = vi
-      .fn()
-      .mockResolvedValueOnce(permissionsResponse(pagePermissions))
-      .mockResolvedValueOnce(
-        graphResponse({
-          data: [{ id: "page_1", name: "Ready Page", tasks: ["CREATE_CONTENT"], access_token: "page-token-1" }],
-        }),
-      )
-      .mockResolvedValueOnce(graphResponse({ id: "photo_1", post_id: "page_1_photo_456" }));
-    vi.stubGlobal("fetch", fetchSpy);
+    stubGraph({ permissions: pagePermissions, pages: [readyPage], posts: [{ id: "photo_1", post_id: "page_1_photo_456" }] });
 
     const result = await publishPageFeedPost({
       token: "user-token",
@@ -329,8 +255,9 @@ describe("publishPageFeedPost", () => {
       media: { type: "image", name: "photo.jpg", file },
     });
 
-    expect(String(fetchSpy.mock.calls[2][0])).toContain("/v22.0/page_1/photos");
-    const body = fetchSpy.mock.calls[2][1]?.body as FormData;
+    const [post] = postCalls();
+    expect(post).toMatchObject({ path: "/page_1/photos" });
+    const body = post.body as FormData;
     expect(body.get("access_token")).toBe("page-token-1");
     expect(body.get("caption")).toBe("Local photo");
     expect(body.get("source")).toBe(file);
@@ -338,18 +265,11 @@ describe("publishPageFeedPost", () => {
   });
 
   it("publishes ordered multi-photo Facebook posts through unpublished photo attachments", async () => {
-    const fetchSpy = vi
-      .fn()
-      .mockResolvedValueOnce(permissionsResponse(pagePermissions))
-      .mockResolvedValueOnce(
-        graphResponse({
-          data: [{ id: "page_1", name: "Ready Page", tasks: ["CREATE_CONTENT"], access_token: "page-token-1" }],
-        }),
-      )
-      .mockResolvedValueOnce(graphResponse({ id: "photo_first" }))
-      .mockResolvedValueOnce(graphResponse({ id: "photo_second" }))
-      .mockResolvedValueOnce(graphResponse({ id: "feed_1" }));
-    vi.stubGlobal("fetch", fetchSpy);
+    stubGraph({
+      permissions: pagePermissions,
+      pages: [readyPage],
+      posts: [{ id: "photo_first" }, { id: "photo_second" }, { id: "feed_1" }],
+    });
 
     const result = await publishPageFeedPost({
       token: "user-token",
@@ -363,12 +283,11 @@ describe("publishPageFeedPost", () => {
       ],
     });
 
-    expect(String(fetchSpy.mock.calls[2][0])).toContain("/v22.0/page_1/photos");
-    expect(String(fetchSpy.mock.calls[3][0])).toContain("/v22.0/page_1/photos");
-    expect(String(fetchSpy.mock.calls[4][0])).toContain("/v22.0/page_1/feed");
-    const firstPhotoBody = fetchSpy.mock.calls[2][1]?.body as URLSearchParams;
-    const secondPhotoBody = fetchSpy.mock.calls[3][1]?.body as URLSearchParams;
-    const feedBody = fetchSpy.mock.calls[4][1]?.body as URLSearchParams;
+    const posts = postCalls();
+    expect(posts.map((post) => post.path)).toEqual(["/page_1/photos", "/page_1/photos", "/page_1/feed"]);
+    const firstPhotoBody = posts[0].body as URLSearchParams;
+    const secondPhotoBody = posts[1].body as URLSearchParams;
+    const feedBody = posts[2].body as URLSearchParams;
     expect(firstPhotoBody.get("published")).toBe("false");
     expect(firstPhotoBody.get("url")).toBe("https://cdn.example.com/first.jpg");
     expect(secondPhotoBody.get("url")).toBe("https://cdn.example.com/second.gif");
@@ -384,18 +303,11 @@ describe("publishPageFeedPost", () => {
 
   it("adds temporary photo uploads for scheduled multi-photo Facebook posts", async () => {
     const scheduledFor = new Date(Date.now() + 60 * 60 * 1000).toISOString();
-    const fetchSpy = vi
-      .fn()
-      .mockResolvedValueOnce(permissionsResponse(pagePermissions))
-      .mockResolvedValueOnce(
-        graphResponse({
-          data: [{ id: "page_1", name: "Ready Page", tasks: ["CREATE_CONTENT"], access_token: "page-token-1" }],
-        }),
-      )
-      .mockResolvedValueOnce(graphResponse({ id: "photo_first" }))
-      .mockResolvedValueOnce(graphResponse({ id: "photo_second" }))
-      .mockResolvedValueOnce(graphResponse({ id: "feed_1" }));
-    vi.stubGlobal("fetch", fetchSpy);
+    stubGraph({
+      permissions: pagePermissions,
+      pages: [readyPage],
+      posts: [{ id: "photo_first" }, { id: "photo_second" }, { id: "feed_1" }],
+    });
 
     await publishPageFeedPost({
       token: "user-token",
@@ -410,9 +322,10 @@ describe("publishPageFeedPost", () => {
       ],
     });
 
-    const firstPhotoBody = fetchSpy.mock.calls[2][1]?.body as URLSearchParams;
-    const secondPhotoBody = fetchSpy.mock.calls[3][1]?.body as URLSearchParams;
-    const feedBody = fetchSpy.mock.calls[4][1]?.body as URLSearchParams;
+    const posts = postCalls();
+    const firstPhotoBody = posts[0].body as URLSearchParams;
+    const secondPhotoBody = posts[1].body as URLSearchParams;
+    const feedBody = posts[2].body as URLSearchParams;
     expect(firstPhotoBody.get("temporary")).toBe("true");
     expect(secondPhotoBody.get("temporary")).toBe("true");
     expect(feedBody.get("published")).toBe("false");
@@ -420,9 +333,6 @@ describe("publishPageFeedPost", () => {
   });
 
   it("rejects multiple media with videos before calling Meta", async () => {
-    const fetchSpy = vi.fn();
-    vi.stubGlobal("fetch", fetchSpy);
-
     await expect(
       publishPageFeedPost({
         token: "user-token",
@@ -436,13 +346,10 @@ describe("publishPageFeedPost", () => {
         ],
       }),
     ).rejects.toThrow("Multiple media Facebook posts can only use images or GIFs.");
-    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(graphRequest).not.toHaveBeenCalled();
   });
 
   it("rejects scheduled both-target posts before any partial publish", async () => {
-    const fetchSpy = vi.fn();
-    vi.stubGlobal("fetch", fetchSpy);
-
     await expect(
       publishPageFeedPost({
         token: "user-token",
@@ -455,13 +362,10 @@ describe("publishPageFeedPost", () => {
       }),
     ).rejects.toThrow("Instagram scheduling is not available here yet; use Facebook or publish now.");
 
-    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(graphRequest).not.toHaveBeenCalled();
   });
 
   it("rejects local Instagram media before any partial Facebook publish", async () => {
-    const fetchSpy = vi.fn();
-    vi.stubGlobal("fetch", fetchSpy);
-
     await expect(
       publishPageFeedPost({
         token: "user-token",
@@ -473,29 +377,15 @@ describe("publishPageFeedPost", () => {
       }),
     ).rejects.toThrow("Instagram publishing requires a public hosted media URL");
 
-    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(graphRequest).not.toHaveBeenCalled();
   });
 
   it("publishes Instagram media through container and publish endpoints", async () => {
-    const fetchSpy = vi
-      .fn()
-      .mockResolvedValueOnce(permissionsResponse(allPermissions))
-      .mockResolvedValueOnce(
-        graphResponse({
-          data: [
-            {
-              id: "page_1",
-              name: "Ready Page",
-              tasks: ["CREATE_CONTENT"],
-              access_token: "page-token-1",
-              instagram_business_account: { id: "ig_1", username: "ready_ig" },
-            },
-          ],
-        }),
-      )
-      .mockResolvedValueOnce(graphResponse({ id: "container_1" }))
-      .mockResolvedValueOnce(graphResponse({ id: "ig_media_1" }));
-    vi.stubGlobal("fetch", fetchSpy);
+    stubGraph({
+      permissions: allPermissions,
+      pages: [{ ...readyPage, instagram_business_account: { id: "ig_1", username: "ready_ig" } }],
+      posts: [{ id: "container_1" }, { id: "ig_media_1" }],
+    });
 
     const result = await publishPageFeedPost({
       token: "user-token",
@@ -506,13 +396,14 @@ describe("publishPageFeedPost", () => {
       media: { type: "image", url: "https://cdn.example.com/ig.jpg" },
     });
 
-    expect(String(fetchSpy.mock.calls[2][0])).toContain("/v22.0/ig_1/media");
-    const createBody = fetchSpy.mock.calls[2][1]?.body as URLSearchParams;
+    const posts = postCalls();
+    expect(posts[0]).toMatchObject({ path: "/ig_1/media", method: "POST" });
+    const createBody = posts[0].body as URLSearchParams;
     expect(createBody.get("access_token")).toBe("user-token");
     expect(createBody.get("image_url")).toBe("https://cdn.example.com/ig.jpg");
     expect(createBody.get("caption")).toBe("IG post");
-    expect(String(fetchSpy.mock.calls[3][0])).toContain("/v22.0/ig_1/media_publish");
-    const publishBody = fetchSpy.mock.calls[3][1]?.body as URLSearchParams;
+    expect(posts[1]).toMatchObject({ path: "/ig_1/media_publish", method: "POST" });
+    const publishBody = posts[1].body as URLSearchParams;
     expect(publishBody.get("creation_id")).toBe("container_1");
     expect(result.metaPostId).toBe("ig_media_1");
     expect(result.results).toEqual([{ target: "instagram", metaPostId: "ig_media_1", status: "submitted" }]);
@@ -520,38 +411,26 @@ describe("publishPageFeedPost", () => {
 });
 
 describe("resumable Facebook video uploads", () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
   it("starts a graph-video upload with the selected Page token", async () => {
-    const fetchSpy = vi
-      .fn()
-      .mockResolvedValueOnce(permissionsResponse(pagePermissions))
-      .mockResolvedValueOnce(graphResponse({
-        data: [{ id: "page_1", name: "Ready Page", tasks: ["CREATE_CONTENT"], access_token: "page-token-1" }],
-      }))
-      .mockResolvedValueOnce(graphResponse({
-        upload_session_id: "upload_1",
-        video_id: "video_1",
-        start_offset: "0",
-        end_offset: "4194304",
-      }));
-    vi.stubGlobal("fetch", fetchSpy);
+    stubGraph({
+      permissions: pagePermissions,
+      pages: [readyPage],
+      posts: [{ upload_session_id: "upload_1", video_id: "video_1", start_offset: "0", end_offset: "4194304" }],
+    });
 
     const upload = await startFacebookVideoUpload({ token: "user-token", pageId: "page_1", fileSize: 12_000_000 });
 
     expect(upload).toMatchObject({ uploadSessionId: "upload_1", videoId: "video_1", startOffset: 0, endOffset: 4_194_304 });
-    expect(String(fetchSpy.mock.calls[2][0])).toContain("graph-video.facebook.com/v22.0/page_1/videos");
-    const body = fetchSpy.mock.calls[2][1]?.body as URLSearchParams;
+    const [post] = postCalls();
+    expect(post).toMatchObject({ path: "/page_1/videos", method: "POST", host: "graph-video.facebook.com" });
+    const body = post.body as URLSearchParams;
     expect(body.get("file_size")).toBe("12000000");
     expect(body.get("access_token")).toBe("page-token-1");
   });
 
   it("transfers the exact chunk and advances using Meta offsets", async () => {
     const chunk = new File([new Uint8Array(1024)], "launch.mp4", { type: "video/mp4" });
-    const fetchSpy = vi.fn().mockResolvedValueOnce(graphResponse({ start_offset: "1024", end_offset: "2048" }));
-    vi.stubGlobal("fetch", fetchSpy);
+    stubGraph({ posts: [{ start_offset: "1024", end_offset: "2048" }] });
 
     const progress = await transferFacebookVideoUpload({
       pageId: "page_1",
@@ -562,15 +441,16 @@ describe("resumable Facebook video uploads", () => {
     });
 
     expect(progress).toEqual({ startOffset: 1024, endOffset: 2048 });
-    const body = fetchSpy.mock.calls[0][1]?.body as FormData;
+    const [post] = postCalls();
+    expect(post).toMatchObject({ path: "/page_1/videos", host: "graph-video.facebook.com" });
+    const body = post.body as FormData;
     expect(body.get("upload_phase")).toBe("transfer");
     expect(body.get("video_file_chunk")).toMatchObject({ name: "launch.mp4", size: 1024, type: "video/mp4" });
   });
 
   it("finishes a scheduled video with the caption and schedule metadata", async () => {
     const scheduledFor = new Date(Date.now() + 60 * 60 * 1000).toISOString();
-    const fetchSpy = vi.fn().mockResolvedValueOnce(graphResponse({ success: true }));
-    vi.stubGlobal("fetch", fetchSpy);
+    stubGraph({ posts: [{ success: true }] });
 
     const submission = await finishFacebookVideoUpload({
       pageId: "page_1",
@@ -584,7 +464,9 @@ describe("resumable Facebook video uploads", () => {
       fileName: "launch.mp4",
     });
 
-    const body = fetchSpy.mock.calls[0][1]?.body as URLSearchParams;
+    const [post] = postCalls();
+    expect(post).toMatchObject({ path: "/page_1/videos", host: "graph-video.facebook.com" });
+    const body = post.body as URLSearchParams;
     expect(body.get("description")).toBe("Launch caption");
     expect(body.get("published")).toBe("false");
     expect(body.get("scheduled_publish_time")).toBe(String(Math.floor(new Date(scheduledFor).getTime() / 1000)));

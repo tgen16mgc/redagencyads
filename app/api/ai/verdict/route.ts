@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { generateVerdict } from "@/lib/ai";
+import { generateVerdict } from "@/lib/ai/verdict";
 import type { DashboardReport } from "@/lib/types";
 
 const providerSchema = z.enum(["auto", "9router", "prompt"]).default("auto");
@@ -17,19 +17,11 @@ function isDashboardReport(value: unknown): value is DashboardReport {
   );
 }
 
-const structuredBodySchema = z.object({
+const bodySchema = z.object({
   report: z.custom<DashboardReport>(isDashboardReport, "report is required."),
   language: languageSchema,
   provider: providerSchema,
 });
-
-const legacyBodySchema = z.object({
-  prompt: z.string().min(100),
-  language: languageSchema,
-  provider: providerSchema,
-});
-
-const bodySchema = z.union([structuredBodySchema, legacyBodySchema]);
 
 export async function POST(request: Request) {
   try {

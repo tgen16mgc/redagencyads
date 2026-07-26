@@ -67,7 +67,7 @@ describe("assessExperimentReadiness", () => {
     );
 
     expect(result.status).toBe("ready");
-    expect(result.variant).toBe("secondary");
+    expect(result.severity).toBe("ok");
     expect(result.label.en).toBe("Ready");
     expect(result.blockers.en).toHaveLength(0);
     expect(result.nextAction.en).toContain("Launch");
@@ -82,7 +82,7 @@ describe("assessExperimentReadiness", () => {
     );
 
     expect(result.status).toBe("not_ready");
-    expect(result.variant).toBe("destructive");
+    expect(result.severity).toBe("risk");
     expect(result.blockers.en.join(" ")).toContain("measurement");
     expect(result.nextAction.en).toContain("Fix");
   });
@@ -96,7 +96,7 @@ describe("assessExperimentReadiness", () => {
     );
 
     expect(result.status).toBe("needs_fix");
-    expect(result.variant).toBe("outline");
+    expect(result.severity).toBe("watch");
     expect(result.blockers.en.join(" ")).toContain("creative");
     expect(result.nextAction.en).toContain("Rotate");
   });

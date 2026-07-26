@@ -5,7 +5,6 @@ import {
   nineRouterChatCompletion,
   nineRouterCompletion,
   parseJsonObject,
-  promptInputJson,
   stringArray,
   stringValue,
 } from "../ai/transport";
@@ -65,26 +64,6 @@ describe("parseJsonObject", () => {
 
   it("throws when no valid JSON object is present", () => {
     expect(() => parseJsonObject("no json here")).toThrow();
-  });
-});
-
-describe("promptInputJson", () => {
-  it("parses JSON that follows the Input JSON marker", () => {
-    const prompt = 'Instructions here\n\nInput JSON:\n{"totals":{"spend":100}}';
-    expect(promptInputJson(prompt)).toEqual({ totals: { spend: 100 } });
-  });
-
-  it("returns null when the marker is absent", () => {
-    expect(promptInputJson('{"spend":1}')).toBeNull();
-  });
-
-  it("returns null when the content after the marker is not valid JSON", () => {
-    expect(promptInputJson("Input JSON:\nnot json")).toBeNull();
-  });
-
-  it("uses the last marker occurrence", () => {
-    const prompt = 'Input JSON:\n{"a":1}\nmore text\nInput JSON:\n{"b":2}';
-    expect(promptInputJson(prompt)).toEqual({ b: 2 });
   });
 });
 

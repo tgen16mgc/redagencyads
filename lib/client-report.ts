@@ -1,6 +1,7 @@
 import { buildKpiComparisons, comparisonFootnote, formatComparisonChangePct, metricMovementIsBad } from "@/lib/metric-comparison";
 import { summarizeHealth, type HealthScoreSummary } from "@/lib/health-score";
 import { formatMetric } from "@/lib/metrics";
+import { primaryResultSpec } from "@/lib/primary-result";
 import type { AiInsightTable, CompareMode, DashboardReport, InterfaceLanguage, KpiCard, NormalizedRow, Verdict } from "@/lib/types";
 
 export type ClientReportKpi = {
@@ -142,7 +143,7 @@ export function buildClientReportViewModel(args: {
     language: args.language,
   });
   const comparisonByKey = new Map(comparisons.map((comparison) => [comparison.key, comparison]));
-  const primaryKey = primaryMetricKey(report.selectedPack);
+  const primaryKey = primaryResultSpec(report.selectedPack).volumeKey;
 
   return {
     accountName: report.account.name,
@@ -244,14 +245,6 @@ export function downloadClientReportPdf(pdf: ClientReportPdfFile, runtime: PdfDo
   link.download = pdf.filename;
   link.click();
   runtime.revokeObjectUrl(url);
-}
-
-function primaryMetricKey(pack: DashboardReport["selectedPack"]): keyof NormalizedRow {
-  if (pack === "messages") return "messages";
-  if (pack === "sales_roas") return "purchases";
-  if (pack === "traffic") return "linkClicks";
-  if (pack === "awareness") return "reach";
-  return "leads";
 }
 
 function formatDateRange(range: DashboardReport["dateRange"], language: InterfaceLanguage) {

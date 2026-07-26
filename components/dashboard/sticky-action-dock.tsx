@@ -77,7 +77,7 @@ const STATUS_VARIANTS = {
   idle: "outline",
   ready: "success",
   working: "secondary",
-  blocked: "destructive",
+  blocked: "outline",
 } as const
 
 const POSITION_CLASSES = {

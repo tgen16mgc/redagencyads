@@ -1,5 +1,6 @@
 import type { InterfaceLanguage, NormalizedRow } from "@/lib/types";
 import type { ChartKey } from "@/lib/chart-spec";
+import { SUFFICIENCY } from "@/lib/data-sufficiency";
 
 export type AnomalyDirection = "up" | "down";
 export type AnomalySeverity = "info" | "warning" | "danger";
@@ -23,7 +24,7 @@ export type BaselineAnomalyResult = {
 };
 
 const RECENT_WINDOW = 7;
-const MIN_BASELINE_DAYS = 14;
+const MIN_BASELINE_DAYS = SUFFICIENCY.minBaselineDays;
 const WARNING_Z = 1.5;
 const DANGER_Z = 2.5;
 const MIN_CHANGE_PCT = 10;

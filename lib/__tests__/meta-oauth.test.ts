@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { validateToken } = vi.hoisted(() => ({
+const { graphRequest, validateToken } = vi.hoisted(() => ({
+  graphRequest: vi.fn(),
   validateToken: vi.fn(),
 }));
 
@@ -8,9 +9,12 @@ vi.mock("@/lib/meta", () => ({
   validateToken,
 }));
 
-function graphResponse(body: unknown, ok = true, status = 200) {
-  return new Response(JSON.stringify(body), { status, statusText: ok ? "OK" : "Bad Request" });
-}
+vi.mock("@/lib/meta-graph", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../meta-graph")>()),
+  graphRequest,
+}));
+
+import { MetaGraphRequestError } from "../meta-graph";
 
 describe("Facebook OAuth helpers", () => {
   beforeEach(() => {
@@ -20,16 +24,13 @@ describe("Facebook OAuth helpers", () => {
     process.env.META_APP_SECRET = "secret_123";
     process.env.META_LOGIN_CONFIG_ID = "config_123";
     delete process.env.META_OAUTH_REDIRECT_URI;
-    delete process.env.META_GRAPH_VERSION;
   });
 
   afterEach(() => {
-    vi.unstubAllGlobals();
     delete process.env.META_APP_ID;
     delete process.env.META_APP_SECRET;
     delete process.env.META_LOGIN_CONFIG_ID;
     delete process.env.META_OAUTH_REDIRECT_URI;
-    delete process.env.META_GRAPH_VERSION;
   });
 
   it("builds a Facebook Login for Business authorization URL", async () => {
@@ -87,21 +88,24 @@ describe("Facebook OAuth helpers", () => {
   });
 
   it("exchanges an authorization code for an access token", async () => {
-    const fetchSpy = vi.fn().mockResolvedValue(graphResponse({ access_token: "oauth-token" }));
-    vi.stubGlobal("fetch", fetchSpy);
+    graphRequest.mockResolvedValue({ access_token: "oauth-token" });
     const { exchangeFacebookCode } = await import("../meta-oauth");
 
     await expect(exchangeFacebookCode("code_123", "http://localhost:3000/api/auth/facebook/callback")).resolves.toBe("oauth-token");
 
-    const url = fetchSpy.mock.calls[0][0] as URL;
-    expect(url.pathname).toBe("/v22.0/oauth/access_token");
-    expect(url.searchParams.get("client_id")).toBe("app_123");
-    expect(url.searchParams.get("client_secret")).toBe("secret_123");
-    expect(url.searchParams.get("code")).toBe("code_123");
+    expect(graphRequest).toHaveBeenCalledWith({
+      path: "/oauth/access_token",
+      params: {
+        client_id: "app_123",
+        client_secret: "secret_123",
+        redirect_uri: "http://localhost:3000/api/auth/facebook/callback",
+        code: "code_123",
+      },
+    });
   });
 
   it("surfaces Meta token exchange errors", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(graphResponse({ error: { message: "Invalid code" } }, false, 400)));
+    graphRequest.mockRejectedValue(new MetaGraphRequestError(400, { message: "Invalid code" }));
     const { exchangeFacebookCode } = await import("../meta-oauth");
 
     await expect(exchangeFacebookCode("bad", "http://localhost/callback")).rejects.toThrow("Invalid code");
@@ -109,39 +113,30 @@ describe("Facebook OAuth helpers", () => {
 
   it("validates token identity and required granted permissions", async () => {
     validateToken.mockResolvedValue({ id: "user_1" });
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(
-        graphResponse({
-          data: [
-            { permission: "ads_read", status: "granted" },
-            { permission: "pages_show_list", status: "granted" },
-            { permission: "pages_read_engagement", status: "granted" },
-            { permission: "pages_manage_posts", status: "granted" },
-          ],
-        }),
-      ),
-    );
+    graphRequest.mockResolvedValue({
+      data: [
+        { permission: "ads_read", status: "granted" },
+        { permission: "pages_show_list", status: "granted" },
+        { permission: "pages_read_engagement", status: "granted" },
+        { permission: "pages_manage_posts", status: "granted" },
+      ],
+    });
     const { validateFacebookOAuthToken } = await import("../meta-oauth");
 
     await expect(validateFacebookOAuthToken("oauth-token")).resolves.toBeUndefined();
     expect(validateToken).toHaveBeenCalledWith("oauth-token");
+    expect(graphRequest).toHaveBeenCalledWith({ path: "/me/permissions", token: "oauth-token" });
   });
 
   it("rejects missing required Business Login permissions", async () => {
     validateToken.mockResolvedValue({ id: "user_1" });
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(
-        graphResponse({
-          data: [
-            { permission: "ads_read", status: "granted" },
-            { permission: "pages_show_list", status: "granted" },
-            { permission: "pages_read_engagement", status: "granted" },
-          ],
-        }),
-      ),
-    );
+    graphRequest.mockResolvedValue({
+      data: [
+        { permission: "ads_read", status: "granted" },
+        { permission: "pages_show_list", status: "granted" },
+        { permission: "pages_read_engagement", status: "granted" },
+      ],
+    });
     const { validateFacebookOAuthToken } = await import("../meta-oauth");
 
     await expect(validateFacebookOAuthToken("oauth-token")).rejects.toThrow("Facebook login is missing required permissions: pages_manage_posts.");

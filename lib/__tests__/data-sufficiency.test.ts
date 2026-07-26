@@ -1,12 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  SUFFICIENCY,
-  hasReportSignal,
-  hasRowDelivery,
-  hasFunnelClickVolume,
-  hasDatedHistory,
-  hasBaselineHistory,
-} from "../data-sufficiency";
+import { SUFFICIENCY, hasReportSignal, hasRowDelivery, hasFunnelClickVolume } from "../data-sufficiency";
 import type { NormalizedRow } from "../types";
 
 function row(overrides: Partial<NormalizedRow>): NormalizedRow {
@@ -71,19 +64,5 @@ describe("hasFunnelClickVolume", () => {
     expect(hasFunnelClickVolume({ linkClicks: 100, addToCart: 1, initiateCheckout: 0, purchases: 0 })).toBe(true);
     expect(hasFunnelClickVolume({ linkClicks: 99, addToCart: 1, initiateCheckout: 0, purchases: 0 })).toBe(false);
     expect(hasFunnelClickVolume({ linkClicks: 100, addToCart: 0, initiateCheckout: 0, purchases: 0 })).toBe(false);
-  });
-});
-
-describe("hasDatedHistory", () => {
-  it("requires at least the dated-row floor", () => {
-    expect(hasDatedHistory(6)).toBe(true);
-    expect(hasDatedHistory(5)).toBe(false);
-  });
-});
-
-describe("hasBaselineHistory", () => {
-  it("requires baseline days plus the recent window", () => {
-    expect(hasBaselineHistory(21, 7)).toBe(true);
-    expect(hasBaselineHistory(20, 7)).toBe(false);
   });
 });

@@ -1,4 +1,4 @@
-import type { PagePostMode, PagePostSubmission } from "@/lib/types";
+import type { MediaAttachment, PagePostMode, PagePostSubmission, PublishTarget } from "@/lib/types";
 import { PAGE_VIDEO_UPLOAD_CHUNK_BYTES } from "@/lib/page-video-upload-limits";
 
 const UPLOAD_ROUTE = "/api/meta/page-video-uploads";
@@ -40,6 +40,59 @@ export async function readPublisherJson<T extends JsonObject>(
 
   if (!json) throw new Error(fallback);
   return json as T;
+}
+
+type PagePostSubmitInput = {
+  pageId: string;
+  message: string;
+  link: string;
+  mode: PagePostMode;
+  scheduledFor: string;
+  target: PublishTarget;
+  mediaItems: MediaAttachment[];
+};
+
+function clientMedia(mediaItems: MediaAttachment[]) {
+  return mediaItems.map((item) => ({ type: item.type, url: item.url, name: item.name }));
+}
+
+export function buildSubmitBody(input: PagePostSubmitInput) {
+  if (input.mediaItems.some((item) => item.file)) {
+    const formData = new FormData();
+    const metadata = [];
+    let fileIndex = 0;
+    formData.set("pageId", input.pageId);
+    formData.set("message", input.message.trim());
+    formData.set("link", input.link.trim());
+    formData.set("mode", input.mode);
+    formData.set("target", input.target);
+    if (input.mode === "scheduled") formData.set("scheduledFor", new Date(input.scheduledFor).toISOString());
+    for (const item of input.mediaItems) {
+      if (item.file) {
+        formData.append("mediaFiles", item.file);
+        metadata.push({ type: item.type, name: item.name, fileIndex });
+        fileIndex += 1;
+      } else {
+        metadata.push({ type: item.type, url: item.url, name: item.name });
+      }
+    }
+    formData.set("mediaItems", JSON.stringify(metadata));
+    return formData;
+  }
+
+  return JSON.stringify({
+    pageId: input.pageId,
+    message: input.message.trim() || undefined,
+    link: input.link.trim() || undefined,
+    mode: input.mode,
+    scheduledFor: input.mode === "scheduled" ? new Date(input.scheduledFor).toISOString() : undefined,
+    target: input.target,
+    mediaItems: input.mediaItems.length ? clientMedia(input.mediaItems) : undefined,
+  });
+}
+
+export function reconcileScheduleQueue<T>(queue: T[], results: Array<{ ok: boolean }>) {
+  return queue.filter((_, index) => !results[index]?.ok);
 }
 
 type FacebookVideoUploadInput = {

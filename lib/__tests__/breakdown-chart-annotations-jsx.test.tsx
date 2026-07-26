@@ -2,32 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { buildBreakdownChartAnnotations } from "../breakdown-chart-annotations";
-
-// Replicas of the JSX used inside dashboard-shell chart components. Keeping them
-// here (rather than importing from dashboard-shell) lets us test the visible-text
-// contract without pulling the entire component tree and shadcn context into the
-// unit-test graph. If the dashboard JSX changes shape, these replicas must change
-// with it — the assertions below lock the visible-copy contract.
-
-function ChartAnnotationHeader({ annotations }: { annotations: { title: string; subtitle: string } }) {
-  return createElement(
-    "div",
-    { className: "chart-annotation-header" },
-    createElement("span", { className: "chart-title" }, annotations.title),
-    createElement("span", { className: "chart-subtitle" }, annotations.subtitle),
-  );
-}
-
-function ChartAnnotationLegend({ annotations }: { annotations: { legend: Array<{ label: string; color: string }> } }) {
-  if (!annotations.legend.length) return null;
-  return createElement(
-    "div",
-    { className: "chart-annotation-legend" },
-    annotations.legend.map((item) =>
-      createElement("span", { key: item.label, "data-label": item.label, "data-color": item.color }, item.label),
-    ),
-  );
-}
+import { ChartAnnotationHeader, ChartAnnotationLegend } from "@/components/dashboard/chart-annotations";
 
 const baseInput = {
   chartType: "pie" as const,
@@ -58,7 +33,7 @@ describe("Chart annotation JSX renders the visible copy the user sees", () => {
     expect(html).toContain("Total spend");
   });
 
-  it("area chart: legend lists spend share and result share, and y-axis label is visible", () => {
+  it("area chart: legend lists spend share and result share with their swatch colors, and y-axis label is visible", () => {
     const annotations = buildBreakdownChartAnnotations({ ...baseInput, chartType: "area", chartLabel: "Spend vs result share", chartExplanation: "Compares spend share with result share to expose allocation gaps." });
     const html = renderToStaticMarkup(
       createElement(
@@ -71,8 +46,10 @@ describe("Chart annotation JSX renders the visible copy the user sees", () => {
     );
     expect(html).toContain("Spend vs result share for Platform");
     expect(html).toContain("Compares spend share with result share to expose allocation gaps.");
-    expect(html).toContain('data-label="Spend share"');
-    expect(html).toContain('data-label="Result share"');
+    expect(html).toContain("Spend share");
+    expect(html).toContain("Result share");
+    expect(html).toContain("background-color:var(--color-spend)");
+    expect(html).toContain("background-color:var(--color-result)");
     expect(html).toContain("Share");
   });
 

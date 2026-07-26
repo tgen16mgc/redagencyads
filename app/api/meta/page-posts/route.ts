@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { publishPageFeedPost } from "@/lib/meta-pages";
-import { requireToken } from "@/lib/session";
+import { requireToken, sessionErrorStatus } from "@/lib/session";
 
 const mediaSchema = z.object({
   type: z.enum(["image", "video", "gif"]),
@@ -17,44 +17,22 @@ const mediaSchema = z.object({
 
 const mediaItemsSchema = z.array(mediaSchema).min(1);
 
-const pagePostItemSchema = z
-  .object({
-    pageId: z.string().min(1),
-    message: z.string().trim().optional(),
-    link: z
-      .string()
-      .trim()
-      .url()
-      .refine((value) => value.startsWith("http://") || value.startsWith("https://"), "Link must use http or https.")
-      .optional()
-      .or(z.literal("")),
-    mode: z.enum(["publish_now", "scheduled"]),
-    scheduledFor: z.string().optional(),
-    target: z.enum(["facebook", "instagram", "both"]).default("facebook"),
-    media: mediaSchema.optional(),
-    mediaItems: mediaItemsSchema.optional(),
-  })
-  .superRefine((value, ctx) => {
-    const mediaItems = normalizeMediaItems(value.mediaItems, value.media);
-    if (!value.message && !value.link && mediaItems.length === 0) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Message, link, or media is required." });
-    }
-    if ((value.target === "instagram" || value.target === "both") && mediaItems.length === 0) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Instagram posts require an image, video, or GIF attachment." });
-    }
-    if ((value.target === "instagram" || value.target === "both") && mediaItems.length > 1) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Multiple media attachments are only supported for Facebook posts right now." });
-    }
-    if ((value.target === "instagram" || value.target === "both") && mediaItems.some((item) => item.file)) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Instagram publishing requires a public hosted media URL. Local file uploads are supported only for Facebook." });
-    }
-    if (value.target === "facebook" && mediaItems.length > 1 && mediaItems.some((item) => item.type === "video")) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Multiple media Facebook posts can only use images or GIFs." });
-    }
-    if ((value.target === "instagram" || value.target === "both") && value.mode === "scheduled") {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Instagram scheduling is not available here yet; use Facebook or publish now." });
-    }
-  });
+const pagePostItemSchema = z.object({
+  pageId: z.string().min(1),
+  message: z.string().trim().optional(),
+  link: z
+    .string()
+    .trim()
+    .url()
+    .refine((value) => value.startsWith("http://") || value.startsWith("https://"), "Link must use http or https.")
+    .optional()
+    .or(z.literal("")),
+  mode: z.enum(["publish_now", "scheduled"]),
+  scheduledFor: z.string().optional(),
+  target: z.enum(["facebook", "instagram", "both"]).default("facebook"),
+  media: mediaSchema.optional(),
+  mediaItems: mediaItemsSchema.optional(),
+});
 
 const pagePostSchema = z.union([pagePostItemSchema, z.object({ items: z.array(pagePostItemSchema).min(1) })]);
 
@@ -64,10 +42,6 @@ type MediaMetadata = z.infer<typeof mediaSchema> & { fileIndex?: number };
 
 function errorMessage(error: unknown, fallback = "Unable to submit Page post.") {
   return error instanceof Error ? error.message : fallback;
-}
-
-function normalizeMediaItems(mediaItems?: Array<z.infer<typeof mediaSchema>>, media?: z.infer<typeof mediaSchema>) {
-  return (mediaItems?.length ? mediaItems : media ? [media] : []).filter((item) => item.url || item.file);
 }
 
 function parseMediaItemsMetadata(value: FormDataEntryValue | null): MediaMetadata[] | undefined {
@@ -103,7 +77,6 @@ async function parseBody(request: Request) {
 }
 
 function publishItem(token: string, item: PagePostItem) {
-  const mediaItems = item.mediaItems ? normalizeMediaItems(item.mediaItems, item.media) : undefined;
   return publishPageFeedPost({
     token,
     pageId: item.pageId,
@@ -113,7 +86,7 @@ function publishItem(token: string, item: PagePostItem) {
     scheduledFor: item.scheduledFor,
     target: item.target,
     media: item.media,
-    ...(mediaItems ? { mediaItems } : {}),
+    mediaItems: item.mediaItems,
   });
 }
 
@@ -138,6 +111,6 @@ export async function POST(request: Request) {
     const submission = await publishItem(token, body);
     return NextResponse.json({ submission });
   } catch (error) {
-    return NextResponse.json({ error: errorMessage(error) }, { status: 400 });
+    return NextResponse.json({ error: errorMessage(error) }, { status: sessionErrorStatus(error) });
   }
 }

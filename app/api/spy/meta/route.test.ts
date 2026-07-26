@@ -6,7 +6,14 @@ const { fetchCompetitorAds, requireToken } = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/competitor-spy", () => ({ fetchCompetitorAds }));
-vi.mock("@/lib/session", () => ({ requireToken }));
+vi.mock("@/lib/session", () => {
+  class SessionAuthError extends Error {}
+  return {
+    requireToken,
+    SessionAuthError,
+    sessionErrorStatus: (error: unknown) => (error instanceof SessionAuthError ? 401 : 400),
+  };
+});
 
 import { POST } from "./route";
 

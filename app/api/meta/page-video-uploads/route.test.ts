@@ -16,7 +16,14 @@ const {
   openMetaVideoUploadTicket: vi.fn(),
 }));
 
-vi.mock("@/lib/session", () => ({ requireToken }));
+vi.mock("@/lib/session", () => {
+  class SessionAuthError extends Error {}
+  return {
+    requireToken,
+    SessionAuthError,
+    sessionErrorStatus: (error: unknown) => (error instanceof SessionAuthError ? 401 : 400),
+  };
+});
 vi.mock("@/lib/meta-pages", () => ({
   startFacebookVideoUpload,
   transferFacebookVideoUpload,

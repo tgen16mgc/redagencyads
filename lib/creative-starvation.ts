@@ -1,3 +1,4 @@
+import type { DiagnosticSeverity } from "@/lib/diagnosis";
 import type { NormalizedRow } from "@/lib/types";
 import { classifyCreativeFatigue } from "./creative-fatigue";
 
@@ -20,7 +21,7 @@ export type FlaggedStarvationAdset = {
 
 export type CreativeStarvationAssessment = {
   status: "clean" | "warning" | "insufficient_data";
-  variant: "secondary" | "outline" | "destructive";
+  severity: DiagnosticSeverity;
   label: { en: string; vi: string };
   summary: { en: string; vi: string };
   adsets: FlaggedStarvationAdset[];
@@ -101,7 +102,7 @@ export function assessCreativeStarvation(rows: NormalizedRow[]): CreativeStarvat
   if (totalAdSpend <= 0) {
     return {
       status: "insufficient_data",
-      variant: "outline",
+      severity: "insufficient",
       label: labels.insufficient_data,
       summary: {
         en: "Need served ad rows with spend before checking creative spend starvation.",
@@ -115,7 +116,7 @@ export function assessCreativeStarvation(rows: NormalizedRow[]): CreativeStarvat
 
   return {
     status,
-    variant: status === "warning" ? "destructive" : "secondary",
+    severity: status === "warning" ? "risk" : "ok",
     label: labels[status],
     summary: {
       en: status === "warning"

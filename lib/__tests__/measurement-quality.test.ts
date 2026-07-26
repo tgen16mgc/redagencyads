@@ -62,7 +62,7 @@ describe("assessMeasurementQuality", () => {
     const result = assessMeasurementQuality(report());
 
     expect(result.status).toBe("not_applicable");
-    expect(result.variant).toBe("outline");
+    expect(result.severity).toBe("insufficient");
     expect(result.label.en).toBe("Not applicable");
   });
 
@@ -75,7 +75,7 @@ describe("assessMeasurementQuality", () => {
     );
 
     expect(result.status).toBe("good");
-    expect(result.variant).toBe("secondary");
+    expect(result.severity).toBe("ok");
     expect(result.reasons.en.join(" ")).toContain("Primary result signal is present");
   });
 
@@ -88,7 +88,7 @@ describe("assessMeasurementQuality", () => {
     );
 
     expect(result.status).toBe("unverified");
-    expect(result.variant).toBe("destructive");
+    expect(result.severity).toBe("risk");
     expect(result.reasons.en.join(" ")).toContain("Tracking data is not available in the current dataset");
   });
 
@@ -101,7 +101,7 @@ describe("assessMeasurementQuality", () => {
     );
 
     expect(result.status).toBe("limited");
-    expect(result.variant).toBe("outline");
+    expect(result.severity).toBe("watch");
     expect(result.reasons.en.join(" ")).toContain("Value or ROAS data is missing");
     expect(result.reasons.vi.join(" ")).toContain("thiếu dữ liệu giá trị hoặc ROAS");
   });

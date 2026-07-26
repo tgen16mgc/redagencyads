@@ -4,6 +4,12 @@ import crypto from "node:crypto";
 const COOKIE_NAME = "meta_ads_session";
 const COOKIE_MAX_AGE_SECONDS = 60 * 60 * 12;
 
+export class SessionAuthError extends Error {}
+
+export function sessionErrorStatus(error: unknown) {
+  return error instanceof SessionAuthError ? 401 : 400;
+}
+
 type SessionPayload = {
   token: string;
   issuedAt: number;
@@ -62,9 +68,9 @@ export async function clearTokenCookie() {
 export async function requireToken() {
   const store = await cookies();
   const encrypted = store.get(COOKIE_NAME)?.value;
-  if (!encrypted) throw new Error("Meta access token session missing.");
+  if (!encrypted) throw new SessionAuthError("Meta access token session missing.");
   const payload = decryptSession(encrypted);
-  if (!payload) throw new Error("Meta access token session expired.");
+  if (!payload) throw new SessionAuthError("Meta access token session expired.");
   return payload.token;
 }
 

@@ -91,7 +91,7 @@ describe("recommendBudgetMoves", () => {
   it("holds when the efficient target has fatigue risk", () => {
     const result = recommendBudgetMoves(report({
       adsetRows: [
-        row({ id: "fatigued", name: "Fatigued winner", spend: 300, leads: 30, ctr: 0.7, frequency: 4.2, impressions: 10000 }),
+        row({ id: "fatigued", name: "Fatigued winner", spend: 300, leads: 30, ctr: 0.7, frequency: 5.5, impressions: 10000 }),
         row({ id: "loser", name: "Loser", spend: 500, leads: 2, ctr: 0.4, frequency: 3.5, impressions: 12000 }),
         row({ id: "steady", name: "Steady", spend: 300, leads: 10, ctr: 1.1, frequency: 2.1, impressions: 9000 }),
       ],
@@ -100,6 +100,21 @@ describe("recommendBudgetMoves", () => {
     expect(result.status).toBe("hold");
     expect(result.recommendations).toHaveLength(0);
     expect(result.holdReasons.en.join(" ").toLowerCase()).toContain("fatigue");
+  });
+
+  it("holds conversion-scale budget moves for the awareness pack", () => {
+    const result = recommendBudgetMoves(report({
+      selectedPack: "awareness",
+      adsetRows: [
+        row({ id: "a", name: "A", spend: 300, reach: 40000, ctr: 0.8, frequency: 1.7, impressions: 60000 }),
+        row({ id: "b", name: "B", spend: 500, reach: 20000, ctr: 0.5, frequency: 3.5, impressions: 70000 }),
+        row({ id: "c", name: "C", spend: 300, reach: 30000, ctr: 0.7, frequency: 2.1, impressions: 63000 }),
+      ],
+    }));
+
+    expect(result.status).toBe("hold");
+    expect(result.recommendations).toHaveLength(0);
+    expect(result.holdReasons.en.join(" ")).toContain("CTR/CPM/frequency");
   });
 
   it("does not recommend sales budget moves when ROAS signal is missing", () => {

@@ -12,32 +12,11 @@ import {
 } from "@/lib/ai/transport";
 
 type VerdictRequestProvider = VerdictProvider | "auto";
-type StructuredVerdictInput = {
+export type GenerateVerdictInput = {
   report: DashboardReport;
   language?: InterfaceLanguage;
   provider?: VerdictRequestProvider;
-  prompt?: string;
 };
-type LegacyVerdictInput = {
-  prompt: string;
-  language?: InterfaceLanguage;
-  provider?: VerdictRequestProvider;
-};
-type GenerateVerdictInput = StructuredVerdictInput | LegacyVerdictInput;
-
-function fallback(prompt: string, reason = "AI provider key not configured. Use local prompt mode for deterministic Verdict generation."): Verdict {
-  return {
-    provider: "prompt",
-    verdict: reason,
-    risks: ["No live Verdict was generated."],
-    winners: [],
-    losers: [],
-    budget_moves: [],
-    tests: [],
-    confidence: "low",
-    assumptions: [reason, `Prompt length: ${prompt.length} chars.`],
-  };
-}
 
 function parseVerdictStrict(text: string, provider: VerdictProvider): Verdict | null {
   try {
@@ -73,22 +52,6 @@ function mergeEnhancedVerdict(localVerdict: Verdict, enhanced: Verdict): Verdict
   };
 }
 
-function parseVerdict(text: string, provider: VerdictProvider): Verdict {
-  const parsed = parseVerdictStrict(text, provider);
-  if (parsed) return parsed;
-  return {
-    provider,
-    verdict: "AI returned an unreadable verdict. Retry with a shorter campaign scope or switch provider.",
-    risks: ["Model output could not be parsed into the verdict schema."],
-    winners: [],
-    losers: [],
-    budget_moves: [],
-    tests: [],
-    confidence: "low",
-    assumptions: [`Raw output preview: ${text.slice(0, 220)}`],
-  };
-}
-
 function hasLargeBudgetMove(verdict: Verdict) {
   return verdict.budget_moves.some((move) => {
     const matches = Array.from(move.matchAll(/(\d+(?:\.\d+)?)\s*%/g));
@@ -103,10 +66,6 @@ function mergeProviderAssumption(verdict: Verdict, assumption: string): Verdict 
 function capConfidence(verdict: Verdict, max: Verdict["confidence"]): Verdict {
   const rank = { low: 0, medium: 1, high: 2 };
   return rank[verdict.confidence] > rank[max] ? { ...verdict, confidence: max } : verdict;
-}
-
-function isStructuredVerdictInput(input: GenerateVerdictInput): input is StructuredVerdictInput {
-  return typeof input === "object" && input !== null && "report" in input;
 }
 
 function buildVerdictEnhancementPrompt(args: {
@@ -165,41 +124,18 @@ async function enhanceVerdictWithNineRouter(args: {
   return capConfidence(mergeEnhancedVerdict(args.localVerdict, parsed), args.localVerdict.confidence);
 }
 
-async function generateLegacyVerdict(prompt: string, provider: VerdictRequestProvider): Promise<Verdict> {
-  if (provider === "prompt") return fallback(prompt);
-  if ((provider === "9router" || provider === "auto") && hasNineRouterCredentials()) {
-    try {
-      return parseVerdict(await nineRouterCompletion(prompt, { jsonMode: true }), "9router");
-    } catch (error) {
-      return fallback(prompt, `The AI assistant could not finish a live Verdict in time. Local prompt mode used instead. ${errorMessage(error)}`);
-    }
-  }
-  return fallback(prompt, "AI provider credentials missing. Use local prompt mode for deterministic Verdict generation.");
-}
-
-export async function generateVerdict(input: GenerateVerdictInput | string, legacyProvider: VerdictRequestProvider = "auto"): Promise<Verdict> {
-  if (typeof input === "string") return generateLegacyVerdict(input, legacyProvider);
-
-  const provider = input.provider || "auto";
+export async function generateVerdict(input: GenerateVerdictInput): Promise<Verdict> {
   const language = input.language || "en";
 
-  if (!isStructuredVerdictInput(input)) {
-    return generateLegacyVerdict(input.prompt, provider);
-  }
-
   const localVerdict = buildLocalVerdict(input.report, language);
-  if (provider === "prompt") return localVerdict;
+  if (input.provider === "prompt") return localVerdict;
 
-  if (provider === "9router" || provider === "auto") {
-    if (!hasNineRouterCredentials()) {
-      return mergeProviderAssumption(localVerdict, "AI provider credentials missing; local ads-rule Verdict used instead.");
-    }
-    try {
-      return await enhanceVerdictWithNineRouter({ report: input.report, localVerdict, language });
-    } catch (error) {
-      return mergeProviderAssumption(localVerdict, `AI enhancement failed; local ads-rule Verdict used instead. ${errorMessage(error)}`);
-    }
+  if (!hasNineRouterCredentials()) {
+    return mergeProviderAssumption(localVerdict, "AI provider credentials missing; local ads-rule Verdict used instead.");
   }
-
-  return localVerdict;
+  try {
+    return await enhanceVerdictWithNineRouter({ report: input.report, localVerdict, language });
+  } catch (error) {
+    return mergeProviderAssumption(localVerdict, `AI enhancement failed; local ads-rule Verdict used instead. ${errorMessage(error)}`);
+  }
 }

@@ -1,4 +1,5 @@
 import { classifyCreativeFatigue } from "@/lib/creative-fatigue";
+import type { DiagnosticSeverity } from "@/lib/diagnosis";
 import { assessMeasurementQuality } from "@/lib/measurement-quality";
 import type { DashboardReport } from "@/lib/types";
 
@@ -6,7 +7,7 @@ export type ExperimentReadinessStatus = "ready" | "needs_fix" | "not_ready";
 
 export type ExperimentReadiness = {
   status: ExperimentReadinessStatus;
-  variant: "secondary" | "outline" | "destructive";
+  severity: DiagnosticSeverity;
   label: { en: string; vi: string };
   blockers: { en: string[]; vi: string[] };
   nextAction: { en: string; vi: string };
@@ -37,7 +38,7 @@ export function assessExperimentReadiness(report: DashboardReport): ExperimentRe
   if (blockers.en.length > 0) {
     return {
       status: "not_ready",
-      variant: "destructive",
+      severity: "risk",
       label: labels.not_ready,
       blockers,
       nextAction: {
@@ -60,7 +61,7 @@ export function assessExperimentReadiness(report: DashboardReport): ExperimentRe
   if (blockers.en.length > 0) {
     return {
       status: "needs_fix",
-      variant: "outline",
+      severity: "watch",
       label: labels.needs_fix,
       blockers,
       nextAction: {
@@ -72,7 +73,7 @@ export function assessExperimentReadiness(report: DashboardReport): ExperimentRe
 
   return {
     status: "ready",
-    variant: "secondary",
+    severity: "ok",
     label: labels.ready,
     blockers,
     nextAction: {
