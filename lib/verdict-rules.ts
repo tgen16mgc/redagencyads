@@ -1,6 +1,6 @@
 import type { DashboardReport, InterfaceLanguage, Verdict } from "@/lib/types";
 import { recommendBudgetMoves } from "@/lib/budget-move-engine";
-import { localizeHealthCheck } from "@/lib/health-check-copy";
+import { runDiagnostics } from "@/lib/diagnosis";
 import { primaryResultSpec } from "@/lib/primary-result";
 
 const verdictText = {
@@ -65,12 +65,12 @@ export function buildLocalVerdict(report: DashboardReport, language: InterfaceLa
   const currency = report.account.currency || "USD";
   const totalSpend = Number(report.totals.spend || 0);
   const totalPrimary = spec.resultKey ? Number(report.totals[spec.resultKey] || 0) : 0;
-  const failingChecks = report.health.checks.filter((check) => check.status !== "pass");
+  const diagnostics = runDiagnostics(report);
+  const failingDiagnostics = diagnostics.filter((diagnostic) => diagnostic.severity === "watch" || diagnostic.severity === "risk");
   const assumptions = [t.localSource, t.trackingAssumption];
-  const risks = failingChecks.map((check) => {
-    const localized = localizeHealthCheck(check, language);
-    return `${localized.label}: ${localized.detail}`;
-  });
+  const risks = failingDiagnostics.slice(0, 4).map((diagnostic) =>
+    `${diagnostic.title[language]}: ${diagnostic.summary?.[language] || diagnostic.description[language]}`,
+  );
   const tests = new Set<string>();
   const winners: string[] = [];
   const losers: string[] = [];
@@ -111,8 +111,8 @@ export function buildLocalVerdict(report: DashboardReport, language: InterfaceLa
 
   if (!budgetMoves.length) budgetMoves.push(t.holdBudget);
 
-  if (report.adRows.length < 10 || failingChecks.some((check) => /creative|volume/i.test(check.label))) tests.add(t.testCreative);
-  if (report.totals.frequency > 3 || failingChecks.some((check) => /frequency/i.test(check.label))) tests.add(t.testFatigue);
+  if (report.adRows.length < 10 || diagnostics.some((diagnostic) => diagnostic.id === "creativeVolume" && diagnostic.severity !== "ok")) tests.add(t.testCreative);
+  if (report.totals.frequency > 3 || diagnostics.some((diagnostic) => diagnostic.id === "dailyDiagnosis" && diagnostic.daily.causes.some((cause) => cause.id === "creative_fatigue"))) tests.add(t.testFatigue);
   tests.add(t.testTracking);
   if (spec.resultKey && totalPrimary <= 0) tests.add(t.testKpi);
 
@@ -120,7 +120,7 @@ export function buildLocalVerdict(report: DashboardReport, language: InterfaceLa
   const confidence: Verdict["confidence"] =
     totalSpend > 0 && totalPrimary > 0 && hasWinnerOrLoser && report.health.checks.length
       ? "high"
-      : totalSpend > 0 && (totalPrimary > 0 || failingChecks.length)
+      : totalSpend > 0 && (totalPrimary > 0 || failingDiagnostics.length)
         ? "medium"
         : "low";
 

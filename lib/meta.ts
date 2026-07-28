@@ -228,6 +228,7 @@ export async function buildReport(params: {
   });
 
   return {
+    source: "meta_api",
     account,
     selectedCampaigns,
     dateRange: { since: params.since, until: params.until },

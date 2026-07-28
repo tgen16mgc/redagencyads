@@ -1,0 +1,9 @@
+# Client Report composition lives in the Client Report Layout Module
+
+`lib/client-report.ts` builds one canonical `ClientReportViewModel` from the loaded DashboardReport snapshot. `lib/client-report-layout.ts` owns the Client Report's section order, semantic blocks, real-Geist text measurement, pagination, continuation rules, and layout-height calculations. `lib/client-report-pdf.ts` is the jsPDF Adapter: its small external seam builds the layout, draws each block, embeds fonts, and returns the downloadable file.
+
+This exists because semantic report composition and drawing previously shared one large PDF Adapter. Changing which evidence appeared, how a long narrative continued, or how a table paginated required editing beside low-level drawing commands. The Interface exposed too much implementation knowledge, tests had to cross the renderer seam to inspect composition, and the same file could silently re-derive Verdict, Budget Move, or diagnostic meaning.
+
+The load-bearing consequences are locality and leverage. The Client Report Layout Module is the single place to change document order, page safety, and the mapping from canonical report data to printable blocks; layout tests cross that Module's interface directly. The PDF Adapter owns only concrete vector drawing and file I/O. Keep domain decisions in their existing Modules: Verdict Rules, Budget Move Engine, Primary Result, comparison analysis, Diagnosis Engine, and Custom Chart validation. The Layout Module consumes their output and must not recreate their rules.
+
+The deletion test is intentional: deleting the Layout Module would force semantic composition, text measurement, pagination, and continuation logic back into the PDF Adapter. Deleting the PDF Adapter would leave a complete, testable document layout and require only another concrete renderer. Do not add a hypothetical renderer interface while jsPDF is the only Adapter; one adapter does not justify another seam.

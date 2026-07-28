@@ -20,6 +20,7 @@ describe("buildSampleReport", () => {
   });
 
   it("detects a lead-driven pack and carries a full report surface", () => {
+    expect(report.source).toBe("sample");
     expect(report.detectedPack).toBe(report.selectedPack);
     expect(report.kpis.length).toBeGreaterThan(0);
     expect(report.dailyRows).toHaveLength(14);

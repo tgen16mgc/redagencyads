@@ -37,7 +37,7 @@ const STEPS: Record<DiagnosticId, Record<Exclude<DiagnosticSeverity, "insufficie
   budgetMove: {
     risk: { en: "Shift budget from the source to the target row as recommended.", vi: "Chuyển ngân sách từ dòng nguồn sang dòng đích theo đề xuất." },
     watch: { en: "Review the suggested move and apply it if it fits your guardrails.", vi: "Xem đề xuất chuyển ngân sách và áp dụng nếu phù hợp giới hạn của bạn." },
-    ok: { en: "Hold budgets — no reallocation is justified right now.", vi: "Giữ ngân sách — chưa cần phân bổ lại lúc này." },
+    ok: { en: "Apply the guarded source-to-target transfer, then review delivery before the next step.", vi: "Áp dụng điều chuyển có guardrail từ dòng nguồn sang dòng đích, rồi rà soát phân phối trước bước tiếp theo." },
   },
   funnelLeakage: {
     risk: { en: "Fix the leaking stage (landing page or checkout) before adding spend.", vi: "Khắc phục bước rò rỉ (landing page hoặc checkout) trước khi tăng chi tiêu." },

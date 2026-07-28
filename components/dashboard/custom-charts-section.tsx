@@ -10,21 +10,16 @@ import {
   type CustomChartSpec,
   type CustomChartType,
   CHART_PRESETS,
-  CUSTOM_CHARTS_STORAGE_KEY,
-  LEGACY_CUSTOM_CHARTS_STORAGE_KEY,
   addSeries,
   canAddSeries,
-  deserializeCharts,
   getMetricCatalog,
   metricFormat,
   metricLabel,
   presetToSpec,
   removeSeries,
-  serializeCharts,
   setSeriesAxis,
   validateSpec,
 } from "@/lib/custom-chart";
-import { readStorageSlot } from "@/lib/storage-slot";
 import { CustomChartCard } from "@/components/dashboard/custom-chart-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -145,9 +140,13 @@ function emptyDraft(): CustomChartSpec {
 export function CustomChartsSection({
   report,
   language,
+  saved,
+  onSavedChange,
 }: {
   report: DashboardReport;
   language: InterfaceLanguage;
+  saved: CustomChartSpec[];
+  onSavedChange: React.Dispatch<React.SetStateAction<CustomChartSpec[]>>;
 }) {
   const copy = COPY[language];
   const currency = report.account.currency || "VND";
@@ -157,26 +156,13 @@ export function CustomChartsSection({
   const [draft, setDraft] = React.useState<CustomChartSpec>(emptyDraft);
   const [dragKey, setDragKey] = React.useState<ChartKey | null>(null);
   const [dropAxis, setDropAxis] = React.useState<CustomAxis | null>(null);
-  const [saved, setSaved] = React.useState<CustomChartSpec[]>(() => {
-    if (typeof window === "undefined") return [];
-    return readStorageSlot(window.localStorage, {
-      key: CUSTOM_CHARTS_STORAGE_KEY,
-      legacyKey: LEGACY_CUSTOM_CHARTS_STORAGE_KEY,
-      deserialize: deserializeCharts,
-    });
-  });
-
-  React.useEffect(() => {
-    window.localStorage.setItem(CUSTOM_CHARTS_STORAGE_KEY, serializeCharts(saved));
-  }, [saved]);
-
   const draftValidation = validateSpec(draft);
   const addedKeys = new Set(draft.series.map((s) => s.key));
 
   function handleAddPreset(presetId: string) {
     const preset = CHART_PRESETS.find((p) => p.id === presetId);
     if (!preset) return;
-    setSaved((prev) => [...prev, presetToSpec(preset, language, newId())]);
+    onSavedChange((prev) => [...prev, presetToSpec(preset, language, newId())]);
   }
 
   function handleAddMetric(key: ChartKey) {
@@ -201,12 +187,12 @@ export function CustomChartsSection({
 
   function handleSaveDraft() {
     if (!draftValidation.ok) return;
-    setSaved((prev) => [...prev, { ...draft, id: newId() }]);
+    onSavedChange((prev) => [...prev, { ...draft, id: newId() }]);
     setDraft(emptyDraft());
   }
 
   function handleRemoveSaved(id: string) {
-    setSaved((prev) => prev.filter((spec) => spec.id !== id));
+    onSavedChange((prev) => prev.filter((spec) => spec.id !== id));
   }
 
   return (

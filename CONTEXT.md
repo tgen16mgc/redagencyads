@@ -96,6 +96,10 @@ _Avoid_: badge variant, tone, destructive/outline/secondary
 The registry that runs every diagnostic rule over a DashboardReport in pinned order and returns the uniform diagnostic list (severity, bilingual copy, detail items, next step). Report-slice wiring lives here, not in cards.
 _Avoid_: card list, per-card wiring, diagnostic components
 
+**Client Report**:
+The client-facing, reviewable document generated from one loaded DashboardReport snapshot. It preserves the current Verdict, Selected KPI Pack, Primary Result, Budget Moves, comparison evidence, Diagnosis Engine output, and saved Custom Charts in the current Interface Language.
+_Avoid_: dashboard printout, PDF screenshot, generic export summary
+
 **Trusted Ad Library Source**:
 An evidence source URL accepted for verification: https, a facebook.com host, and an /ads/library path, with trailing punctuation stripped. One predicate serves the spy path, manual notes, and the workspace.
 _Avoid_: any facebook link, http library URL, per-path URL check
@@ -120,6 +124,8 @@ _Avoid_: matched-only acceptance, UI-only verification
 - A **Verdict**'s Budget Moves and winner/loser claims come from the Budget Move Engine — one implementation of the Budget Move rule.
 - A **Primary Result** is selected from the report's KPI pack; the awareness pack has no conversion-scale Primary Result and reach serves only as signal volume.
 - A **Diagnostic Severity** is produced by every diagnostic rule; the **Diagnosis Engine** owns which rules run and in what order.
+- A **Client Report** consumes the same canonical Verdict, Budget Move, Primary Result, comparison, Diagnosis Engine, and Custom Chart data used by the workspace; it never re-derives those claims in its renderer.
+- A **Client Report** uses the current **Interface Language** and separately discloses when its source data was pulled and when the document was generated.
 - **Verified Competitor Evidence** requires an **Advertiser Match** and a **Trusted Ad Library Source**.
 - A **Verdict** respects the **Selected KPI Pack** even when other signals look stronger.
 - A **Verdict Enhancement** cannot raise **Verdict Confidence** above the local **Verdict**.

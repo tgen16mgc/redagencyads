@@ -34,7 +34,7 @@ import {
   type AdsWorkspaceState,
   type Provider,
 } from "@/components/dashboard/ads-workspace";
-import { assertClientReportHealthParity, buildClientReportViewModel, downloadClientReportPdf } from "@/lib/client-report";
+import { buildClientReportViewModel, downloadClientReportPdf } from "@/lib/client-report";
 import { buildClientReportPdf } from "@/lib/client-report-pdf";
 import { PagePublisherPanel, type PagePublisherContextHandle } from "@/components/dashboard/page-publisher-panel";
 import type { ChatContext } from "@/lib/ai/chat-contract";
@@ -730,15 +730,15 @@ export function DashboardShell() {
       await new Promise((resolve) => requestAnimationFrame(() => window.setTimeout(resolve, 0)));
       const model = buildClientReportViewModel({
         report,
-        healthSummary,
         previousReport: adsWorkspace.previousReport,
         compareMode: adsWorkspace.compareMode,
         verdict: adsWorkspace.verdict,
         insights: adsWorkspace.insights,
         language,
         kpis: effectiveKpis,
+        decisionTargets,
+        customCharts: adsWorkspace.customCharts,
       });
-      assertClientReportHealthParity(model, healthSummary);
       downloadClientReportPdf(await buildClientReportPdf(model), {
         createObjectUrl: (blob) => URL.createObjectURL(blob),
         revokeObjectUrl: (url) => URL.revokeObjectURL(url),

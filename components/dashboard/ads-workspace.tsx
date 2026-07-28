@@ -57,6 +57,13 @@ import {
   deserializeCustomKpiSet,
   getCustomKpiCatalogGroups,
 } from "@/lib/custom-kpi-set";
+import {
+  CUSTOM_CHARTS_STORAGE_KEY,
+  LEGACY_CUSTOM_CHARTS_STORAGE_KEY,
+  deserializeCharts,
+  serializeCharts,
+  type CustomChartSpec,
+} from "@/lib/custom-chart";
 import type { DecisionTargets } from "@/lib/decision-confidence";
 import { runDiagnostics } from "@/lib/diagnosis";
 import type { HealthScoreSummary } from "@/lib/health-score";
@@ -64,6 +71,7 @@ import { buildKpiComparisons, formatComparisonChangePct, metricMovementIsBad } f
 import { formatMetric } from "@/lib/metrics";
 import { getCompareRange } from "@/lib/report-ranges";
 import { rowDecision } from "@/lib/row-decision";
+import { readStorageSlot } from "@/lib/storage-slot";
 import type {
   AdSetWithPreviews,
   AiInsightTable,
@@ -293,6 +301,7 @@ export type AdsWorkspaceState = {
   scopeExpanded: boolean;
   diagnosticsOpen: boolean;
   customKpiKeys: CustomKpiKey[] | null;
+  customCharts: CustomChartSpec[];
 };
 
 export function initialAdsWorkspaceState(): AdsWorkspaceState {
@@ -315,6 +324,13 @@ export function initialAdsWorkspaceState(): AdsWorkspaceState {
     scopeExpanded: false,
     diagnosticsOpen: false,
     customKpiKeys: null,
+    customCharts: typeof window === "undefined"
+      ? []
+      : readStorageSlot(window.localStorage, {
+          key: CUSTOM_CHARTS_STORAGE_KEY,
+          legacyKey: LEGACY_CUSTOM_CHARTS_STORAGE_KEY,
+          deserialize: deserializeCharts,
+        }),
   };
 }
 
@@ -436,6 +452,7 @@ export function AdsWorkspace({
     scopeExpanded,
     diagnosticsOpen,
     customKpiKeys,
+    customCharts,
   } = state;
   const copy = adsCopy[language];
   const reportStartRef = React.useRef<HTMLDivElement>(null);
@@ -458,6 +475,10 @@ export function AdsWorkspace({
   }, [comparisonReport, previousReport, compareMode, language]);
   const diagnostics = React.useMemo(() => (report ? runDiagnostics(report, decisionTargets) : []), [report, decisionTargets]);
   const reportCurrency = report?.account.currency || "VND";
+
+  React.useEffect(() => {
+    window.localStorage.setItem(CUSTOM_CHARTS_STORAGE_KEY, serializeCharts(customCharts));
+  }, [customCharts]);
 
   async function fetchReportForRange(range: { since: string; until: string }) {
     const url = new URL("/api/meta/report", window.location.origin);
@@ -770,7 +791,17 @@ export function AdsWorkspace({
 
           <BreakdownAnalysisSection report={report} language={language} />
 
-          <CustomChartsSection report={report} language={language} />
+          <CustomChartsSection
+            report={report}
+            language={language}
+            saved={customCharts}
+            onSavedChange={(update) => {
+              onStateChange((current) => ({
+                ...current,
+                customCharts: typeof update === "function" ? update(current.customCharts) : update,
+              }));
+            }}
+          />
 
           {previousReport ? <ComparisonPanel current={report} previous={previousReport} mode={compareMode} language={language} /> : null}
 

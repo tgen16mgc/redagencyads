@@ -222,6 +222,7 @@ export type KpiCard = {
 };
 
 export type DashboardReport = {
+  source?: "meta_api" | "sample";
   account: MetaAccount;
   selectedCampaigns: MetaCampaign[];
   dateRange: { since: string; until: string };

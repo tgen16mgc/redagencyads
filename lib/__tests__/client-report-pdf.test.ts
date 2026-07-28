@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { buildClientReportViewModel } from "../client-report";
-import { buildClientReportPdf, buildClientReportPdfLayout, type ClientReportPdfFontData } from "../client-report-pdf";
+import { buildClientReportPdf } from "../client-report-pdf";
+import { buildClientReportPdfLayout, type ClientReportPdfFontData } from "../client-report-layout";
+import { CHART_PRESETS, presetToSpec } from "../custom-chart";
+import { buildSampleReport } from "../sample-report";
 import type { DashboardReport, KpiCard, NormalizedRow, Verdict } from "../types";
 
 function row(overrides: Partial<NormalizedRow>): NormalizedRow {
@@ -141,8 +144,8 @@ function model() {
 }
 
 describe("client report PDF rebuild", () => {
-  it("keeps every rendered block inside printable page bounds", () => {
-    const layout = buildClientReportPdfLayout(model());
+  it("keeps every rendered block inside printable page bounds", async () => {
+    const layout = await buildClientReportPdfLayout(model(), fonts);
 
     expect(layout.pages.length).toBeGreaterThan(7);
     for (const page of layout.pages) {
@@ -155,7 +158,7 @@ describe("client report PDF rebuild", () => {
     }
   });
 
-  it("continues very long executive verdict text within printable page bounds", () => {
+  it("continues very long executive verdict text within printable page bounds", async () => {
     const longVerdictModel = buildClientReportViewModel({
       report: report(),
       compareMode: "off",
@@ -166,7 +169,7 @@ describe("client report PDF rebuild", () => {
         verdict: Array.from({ length: 250 }, () => longCopy).join(" "),
       },
     });
-    const layout = buildClientReportPdfLayout(longVerdictModel);
+    const layout = await buildClientReportPdfLayout(longVerdictModel, fonts);
     const verdictBlocks = layout.pages.flatMap((page) => page.blocks.filter((block) => block.kind === "narrative" && block.title?.startsWith("Decision brief")));
 
     for (const page of layout.pages) {
@@ -180,8 +183,8 @@ describe("client report PDF rebuild", () => {
     expect(new Set(verdictBlocks.map((block) => block.pageNumber)).size).toBeGreaterThan(1);
   });
 
-  it("continues long table sections across pages instead of clipping rows", () => {
-    const layout = buildClientReportPdfLayout(model());
+  it("continues long table sections across pages instead of clipping rows", async () => {
+    const layout = await buildClientReportPdfLayout(model(), fonts);
     const campaignTableRows = layout.pages.flatMap((page) => page.blocks.filter((block) => block.kind === "table-row" && block.section === "Campaigns"));
 
     expect(campaignTableRows).toHaveLength(12);
@@ -201,6 +204,64 @@ describe("client report PDF rebuild", () => {
     expect(text).toContain("%%EOF");
   });
 
+  it("includes saved Custom Charts as vector layout blocks", async () => {
+    const chartModel = buildClientReportViewModel({
+      report: report(),
+      compareMode: "off",
+      language: "en",
+      kpis,
+      verdict: verdict(),
+      customCharts: [presetToSpec(CHART_PRESETS[0], "en", "saved-chart")],
+    });
+    const layout = await buildClientReportPdfLayout(chartModel, fonts);
+    const chartBlocks = layout.pages.flatMap((page) => page.blocks.filter((block) => block.kind === "custom-chart"));
+
+    expect(chartBlocks).toHaveLength(1);
+    expect(chartBlocks[0].customChart?.title).toBe("Lead volume vs CPL");
+    expect(chartBlocks[0].customChart?.data).toHaveLength(26);
+  });
+
+  it("keeps the Budget Move and action grid concise, then keeps breakdown evidence together", async () => {
+    const sample = buildSampleReport();
+    const sampleModel = buildClientReportViewModel({
+      report: sample,
+      compareMode: "off",
+      language: "en",
+      kpis: sample.kpis,
+      customCharts: [presetToSpec(CHART_PRESETS[0], "en", "saved-chart")],
+      insights: {
+        summary: "Scope includes 3 campaigns, 6 ad sets, and 8 ads.",
+        rows: [],
+        confidence: "medium",
+        assumptions: [],
+        provider: "9router",
+      },
+    });
+    const layout = await buildClientReportPdfLayout(sampleModel, fonts);
+    const recommendationPages = layout.pages.filter((page) => page.section === sampleModel.copy.recommendations);
+    const recommendationBlocks = recommendationPages.flatMap((page) => page.blocks);
+    const actionBlocks = recommendationBlocks.filter((block) => block.kind === "action-row");
+    const budgetEvidence = recommendationBlocks.find((block) => block.kind === "signal-list" && block.title.startsWith("Budget Move evidence"));
+    const breakdownBlocks = layout.pages.flatMap((page) => page.blocks.filter((block) => block.kind === "breakdown-list"));
+    const noChartModel = buildClientReportViewModel({
+      report: sample,
+      compareMode: "off",
+      language: "en",
+      kpis: sample.kpis,
+    });
+    const noChartLayout = await buildClientReportPdfLayout(noChartModel, fonts);
+    const noChartAppendixPages = noChartLayout.pages.filter((page) => page.section === noChartModel.copy.appendixCharts);
+
+    expect(recommendationPages).toHaveLength(1);
+    expect(actionBlocks).toHaveLength(4);
+    expect(new Set(actionBlocks.map((block) => block.pageNumber)).size).toBe(1);
+    expect(budgetEvidence?.kind === "signal-list" ? budgetEvidence.items[0] : null).toBe(sampleModel.budgetMove.summary);
+    expect(recommendationBlocks.some((block) => block.kind === "narrative" && block.title.startsWith("Budget Move evidence"))).toBe(false);
+    expect(new Set(breakdownBlocks.map((block) => block.pageNumber)).size).toBe(1);
+    expect(noChartAppendixPages).toHaveLength(1);
+    expect(noChartAppendixPages[0].blocks.filter((block) => block.kind === "breakdown-list")).toHaveLength(3);
+  });
+
   it("keeps Vietnamese copy in the layout and embeds a Unicode font", async () => {
     const vietnameseModel = buildClientReportViewModel({
       report: report({
@@ -214,7 +275,7 @@ describe("client report PDF rebuild", () => {
         verdict: "Điều chỉnh ngân sách ₫",
       },
     });
-    const layout = buildClientReportPdfLayout(vietnameseModel);
+    const layout = await buildClientReportPdfLayout(vietnameseModel, fonts);
     const pdf = await buildClientReportPdf(vietnameseModel, fonts);
     const bytes = new Uint8Array(await pdf.blob.arrayBuffer());
     const text = new TextDecoder("latin1").decode(bytes);

@@ -141,8 +141,9 @@ export function comparisonFootnote(args: {
   }
 
   const mode = args.compareMode === "wow" ? "WoW" : args.compareMode === "mom" ? "MoM" : "YoY";
-  const current = `${args.report.dateRange.since} to ${args.report.dateRange.until}`;
-  const previous = `${args.previousReport.dateRange.since} to ${args.previousReport.dateRange.until}`;
+  const separator = language === "vi" ? " đến " : " to ";
+  const current = `${args.report.dateRange.since}${separator}${args.report.dateRange.until}`;
+  const previous = `${args.previousReport.dateRange.since}${separator}${args.previousReport.dateRange.until}`;
   return language === "vi"
     ? `So sánh ${mode}: kỳ hiện tại ${current}; kỳ trước ${previous}.`
     : `${mode} comparison: current ${current}; previous ${previous}.`;

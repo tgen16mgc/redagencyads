@@ -250,6 +250,7 @@ export function buildSampleReport(): DashboardReport {
   });
 
   return {
+    source: "sample",
     account: SAMPLE_ACCOUNT,
     selectedCampaigns: SAMPLE_CAMPAIGNS,
     dateRange,

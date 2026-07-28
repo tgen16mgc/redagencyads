@@ -1,83 +1,24 @@
 import { jsPDF } from "jspdf";
 import { formatMetric } from "@/lib/metrics";
-import type { ClientReportAction, ClientReportPdfFile, ClientReportTable, ClientReportViewModel } from "@/lib/client-report";
+import type {
+  ClientReportPdfFile,
+  ClientReportViewModel,
+} from "@/lib/client-report";
 import type { NormalizedRow } from "@/lib/types";
-
-export type { ClientReportPdfFile };
-
-type ReportTone = "neutral" | "primary" | "good" | "warning" | "bad";
-
-export type ClientReportPdfFontData = {
-  regular: string;
-  semibold: string;
-};
-
-export type ClientReportPdfBlock = {
-  kind:
-    | "cover"
-    | "header"
-    | "footer"
-    | "section-title"
-    | "subsection"
-    | "provenance"
-    | "metric-grid"
-    | "health-strip"
-    | "narrative"
-    | "signal-list"
-    | "trend-chart"
-    | "ranking-list"
-    | "action-row"
-    | "breakdown-list"
-    | "table-header"
-    | "table-row"
-    | "diagnostic-row"
-    | "creative-row"
-    | "note";
-  section: string;
-  pageNumber: number;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  title?: string;
-  text?: string;
-  footnote?: string;
-  label?: string;
-  tone?: ReportTone;
-  index?: number;
-  items?: string[];
-  meta?: Array<{ label: string; value: string }>;
-  kpis?: ClientReportViewModel["kpis"];
-  trend?: ClientReportViewModel["dailyTrend"];
-  rows?: NormalizedRow[];
-  action?: ClientReportAction;
-  row?: NormalizedRow;
-  diagnostic?: ClientReportViewModel["diagnostics"][number];
-  creative?: ClientReportViewModel["creativeDetails"][number];
-};
-
-export type ClientReportPdfPage = {
-  pageNumber: number;
-  section: string;
-  blocks: ClientReportPdfBlock[];
-};
-
-export type ClientReportPdfLayout = {
-  width: number;
-  height: number;
-  margin: { top: number; right: number; bottom: number; left: number };
-  pages: ClientReportPdfPage[];
-};
+import {
+  buildClientReportPdfLayout,
+  clientReportPdfCopy as reportCopy,
+  createClientReportTypesetter,
+  registerClientReportPdfFonts,
+  safePdfText,
+  type ClientReportPdfBlock,
+  type ClientReportPdfFontData,
+  type ClientReportTypesetter,
+  type ReportTone,
+} from "@/lib/client-report-layout";
 
 type Rgb = readonly [number, number, number];
-
-const pageWidth = 595.28;
-const pageHeight = 841.89;
-const margin = { top: 34, right: 42, bottom: 34, left: 42 };
-const contentWidth = pageWidth - margin.left - margin.right;
-const contentTop = 80;
-const contentBottom = pageHeight - margin.bottom - 42;
-const gap = 14;
+type PdfBlock<Kind extends ClientReportPdfBlock["kind"]> = Extract<ClientReportPdfBlock, { kind: Kind }>;
 
 const colors = {
   canvas: [12, 13, 15] as Rgb,
@@ -95,80 +36,15 @@ const colors = {
   warningTint: [58, 45, 18] as Rgb,
   destructive: [255, 92, 108] as Rgb,
   destructiveTint: [60, 28, 34] as Rgb,
-} as const;
-
-const reportCopy = {
-  en: {
-    coverLabel: "CLIENT PERFORMANCE REPORT",
-    executiveDescription: "The current decision, account health, and highest-priority evidence.",
-    performanceDescription: "Spend, results, and the rows that explain the outcome.",
-    recommendationsDescription: "Reviewed actions for the next optimization cycle.",
-    chartsDescription: "Distribution views that preserve the source rows behind the decision.",
-    tablesDescription: "Comparable records for audit, handoff, and follow-up analysis.",
-    diagnosticsDescription: "Account checks and printable creative metadata.",
-    accountHealth: "Account health",
-    decisionBrief: "Decision brief",
-    evidenceSummary: "Evidence summary",
-    dataSource: "Data source",
-    decisionSource: "Decision source",
-    generated: "Generated",
-    reportingPeriod: "Reporting period",
-    whatWorked: "What is working",
-    watchItems: "What needs attention",
-    spendTrend: "Spend and primary-result trend",
-    spend: "Spend",
-    primaryResult: "Primary result",
-    topCampaigns: "Campaign drivers",
-    topAdsets: "Ad set drivers",
-    priorityActions: "Priority actions",
-    performanceRows: "Performance records",
-    diagnostics: "Diagnostic checks",
-    creativeDetail: "Creative detail",
-    noCreativeDetail: "No printable creative detail is available in the selected scope.",
-    status: "Status",
-    result: "Result",
-    cost: "Cost",
-    continued: "continued",
-    page: "Page",
-  },
-  vi: {
-    coverLabel: "BÁO CÁO HIỆU QUẢ KHÁCH HÀNG",
-    executiveDescription: "Kết luận hiện tại, sức khỏe tài khoản và bằng chứng cần ưu tiên.",
-    performanceDescription: "Chi tiêu, kết quả và các dòng dữ liệu giải thích hiệu quả.",
-    recommendationsDescription: "Các hành động đã rà soát cho chu kỳ tối ưu tiếp theo.",
-    chartsDescription: "Phân bổ dữ liệu giúp giữ nguyên các dòng nguồn phía sau quyết định.",
-    tablesDescription: "Các bản ghi có thể đối chiếu để kiểm tra, bàn giao và phân tích tiếp.",
-    diagnosticsDescription: "Kiểm tra tài khoản và metadata quảng cáo có thể in.",
-    accountHealth: "Sức khỏe tài khoản",
-    decisionBrief: "Kết luận quyết định",
-    evidenceSummary: "Tóm tắt bằng chứng",
-    dataSource: "Nguồn dữ liệu",
-    decisionSource: "Nguồn quyết định",
-    generated: "Ngày tạo",
-    reportingPeriod: "Kỳ báo cáo",
-    whatWorked: "Điểm đang hiệu quả",
-    watchItems: "Điểm cần theo dõi",
-    spendTrend: "Xu hướng chi tiêu và kết quả chính",
-    spend: "Chi tiêu",
-    primaryResult: "Kết quả chính",
-    topCampaigns: "Động lực từ chiến dịch",
-    topAdsets: "Động lực từ nhóm quảng cáo",
-    priorityActions: "Hành động ưu tiên",
-    performanceRows: "Bản ghi hiệu quả",
-    diagnostics: "Kiểm tra chẩn đoán",
-    creativeDetail: "Chi tiết quảng cáo",
-    noCreativeDetail: "Không có chi tiết quảng cáo có thể in trong phạm vi đã chọn.",
-    status: "Trạng thái",
-    result: "Kết quả",
-    cost: "Chi phí",
-    continued: "tiếp theo",
-    page: "Trang",
-  },
+  info: [86, 165, 255] as Rgb,
+  chartCyan: [72, 190, 214] as Rgb,
+  chartSteel: [116, 138, 169] as Rgb,
+  chartLight: [174, 198, 228] as Rgb,
 } as const;
 
 let fontPromise: Promise<ClientReportPdfFontData> | null = null;
 
-export async function loadClientReportPdfFonts(): Promise<ClientReportPdfFontData> {
+async function loadClientReportPdfFonts(): Promise<ClientReportPdfFontData> {
   if (!fontPromise) {
     fontPromise = Promise.all([
       fetchFont("/fonts/geist/Geist-Regular.ttf"),
@@ -182,7 +58,8 @@ export async function buildClientReportPdf(
   model: ClientReportViewModel,
   fonts?: ClientReportPdfFontData,
 ): Promise<ClientReportPdfFile> {
-  const layout = buildClientReportPdfLayout(model);
+  const fontData = fonts || await loadClientReportPdfFonts();
+  const layout = await buildClientReportPdfLayout(model, fontData);
   const doc = new jsPDF({
     orientation: "portrait",
     unit: "pt",
@@ -190,7 +67,8 @@ export async function buildClientReportPdf(
     compress: true,
     putOnlyUsedFonts: true,
   });
-  registerFonts(doc, fonts || await loadClientReportPdfFonts());
+  registerClientReportPdfFonts(doc, fontData);
+  const renderTypesetter = createClientReportTypesetter(doc);
   doc.setProperties({
     title: `${model.copy.title} - ${model.accountName}`,
     subject: model.copy.subtitle,
@@ -202,7 +80,7 @@ export async function buildClientReportPdf(
     if (pageIndex > 0) doc.addPage("a4", "portrait");
     fill(doc, colors.canvas);
     doc.rect(0, 0, layout.width, layout.height, "F");
-    page.blocks.forEach((block) => drawBlock(doc, model, block));
+    page.blocks.forEach((block) => drawBlock(doc, model, block, renderTypesetter));
   });
 
   return {
@@ -211,294 +89,10 @@ export async function buildClientReportPdf(
   };
 }
 
-export function buildClientReportPdfLayout(model: ClientReportViewModel): ClientReportPdfLayout {
-  const t = reportCopy[model.language];
-  const layout: ClientReportPdfLayout = { width: pageWidth, height: pageHeight, margin, pages: [] };
-  let page: ClientReportPdfPage;
-  let cursor = contentTop;
-
-  const addBlock = (block: Omit<ClientReportPdfBlock, "pageNumber">) => {
-    page.blocks.push({ ...block, pageNumber: page.pageNumber });
-  };
-
-  const addCover = () => {
-    page = { pageNumber: 1, section: "Cover", blocks: [] };
-    layout.pages.push(page);
-    addBlock({
-      kind: "cover",
-      section: "Cover",
-      x: margin.left,
-      y: margin.top,
-      width: contentWidth,
-      height: pageHeight - margin.top - margin.bottom,
-    });
-  };
-
-  const addContentPage = (section: string) => {
-    page = { pageNumber: layout.pages.length + 1, section, blocks: [] };
-    layout.pages.push(page);
-    addBlock({ kind: "header", section, x: margin.left, y: margin.top, width: contentWidth, height: 28, title: section });
-    addBlock({ kind: "footer", section, x: margin.left, y: pageHeight - margin.bottom - 20, width: contentWidth, height: 20 });
-    cursor = contentTop;
-  };
-
-  const ensureSpace = (height: number, section: string) => {
-    if (cursor + height > contentBottom) addContentPage(section);
-  };
-
-  const startSection = (section: string, description: string) => {
-    addContentPage(section);
-    const titleLines = wrapForLayout(section, contentWidth - 34, 24).length;
-    const descriptionLines = wrapForLayout(description, contentWidth - 34, 9.5).length;
-    const titleHeight = 28 + titleLines * 30 + descriptionLines * 13;
-    addBlock({
-      kind: "section-title",
-      section,
-      x: margin.left,
-      y: cursor,
-      width: contentWidth,
-      height: titleHeight,
-      title: section,
-      text: description,
-    });
-    cursor += titleHeight + 16;
-  };
-
-  const addNote = (section: string, text: string) => {
-    const height = 28 + textHeight(text, contentWidth - 28, 8, 11);
-    ensureSpace(height, section);
-    addBlock({ kind: "note", section, x: margin.left, y: cursor, width: contentWidth, height, text });
-    cursor += height + gap;
-  };
-
-  const addNarrativeFlow = (section: string, title: string, text: string, footnote?: string) => {
-    const lineHeight = 14;
-    let lines = wrapForLayout(text, contentWidth - 40, 10.25);
-    let first = true;
-
-    while (lines.length) {
-      if (contentBottom - cursor < 110) addContentPage(section);
-      const available = contentBottom - cursor;
-      const titleReserve = 48;
-      const maxLines = Math.max(1, Math.floor((available - titleReserve) / lineHeight));
-      const chunk = lines.slice(0, maxLines);
-      const height = titleReserve + chunk.length * lineHeight;
-      addBlock({
-        kind: "narrative",
-        section,
-        x: margin.left,
-        y: cursor,
-        width: contentWidth,
-        height,
-        title: first ? title : `${title} (${t.continued})`,
-        text: chunk.join("\n"),
-      });
-      cursor += height + gap;
-      lines = lines.slice(chunk.length);
-      first = false;
-    }
-
-    if (footnote) addNote(section, footnote);
-  };
-
-  const addPairedLists = (
-    section: string,
-    left: { title: string; items: string[]; tone: ReportTone },
-    right: { title: string; items: string[]; tone: ReportTone },
-  ) => {
-    const columnGap = 16;
-    const width = (contentWidth - columnGap) / 2;
-    const leftHeight = signalListHeight(left.items, width);
-    const rightHeight = signalListHeight(right.items, width);
-    const height = Math.max(leftHeight, rightHeight);
-    ensureSpace(height, section);
-    addBlock({ kind: "signal-list", section, x: margin.left, y: cursor, width, height, title: left.title, items: left.items, tone: left.tone });
-    addBlock({ kind: "signal-list", section, x: margin.left + width + columnGap, y: cursor, width, height, title: right.title, items: right.items, tone: right.tone });
-    cursor += height + gap;
-  };
-
-  const addPairedRankings = (section: string) => {
-    const columnGap = 16;
-    const width = (contentWidth - columnGap) / 2;
-    const height = Math.max(rankingHeight(model.topCampaigns), rankingHeight(model.topAdsets));
-    ensureSpace(height, section);
-    addBlock({ kind: "ranking-list", section, x: margin.left, y: cursor, width, height, title: t.topCampaigns, rows: model.topCampaigns });
-    addBlock({ kind: "ranking-list", section, x: margin.left + width + columnGap, y: cursor, width, height, title: t.topAdsets, rows: model.topAdsets });
-    cursor += height + gap;
-  };
-
-  const addBreakdown = (section: string, title: string, rows: NormalizedRow[], x: number, width: number, height: number) => {
-    addBlock({ kind: "breakdown-list", section, x, y: cursor, width, height, title, rows });
-  };
-
-  const addTable = (section: string, table: ClientReportTable) => {
-    const addTableHeading = (continued = false) => {
-      const headingHeight = 44;
-      ensureSpace(headingHeight + 32 + tableRowHeight(table.rows[0]), section);
-      addBlock({
-        kind: "subsection",
-        section,
-        x: margin.left,
-        y: cursor,
-        width: contentWidth,
-        height: headingHeight,
-        title: continued ? `${table.title} (${t.continued})` : table.title,
-      });
-      cursor += headingHeight;
-      addBlock({ kind: "table-header", section: table.title, x: margin.left, y: cursor, width: contentWidth, height: 32, title: table.title });
-      cursor += 32;
-    };
-
-    addTableHeading();
-    table.rows.forEach((row) => {
-      const height = tableRowHeight(row);
-      if (cursor + height > contentBottom) {
-        addContentPage(section);
-        addTableHeading(true);
-      }
-      addBlock({ kind: "table-row", section: table.title, x: margin.left, y: cursor, width: contentWidth, height, row });
-      cursor += height;
-    });
-    cursor += 20;
-  };
-
-  addCover();
-
-  startSection(model.copy.executiveSummary, t.executiveDescription);
-  const provenanceHeight = 66;
-  addBlock({
-    kind: "provenance",
-    section: model.copy.executiveSummary,
-    x: margin.left,
-    y: cursor,
-    width: contentWidth,
-    height: provenanceHeight,
-    meta: [
-      { label: t.dataSource, value: model.copy.source },
-      { label: t.decisionSource, value: model.decisionProviderLabel },
-      { label: t.generated, value: model.generatedLabel },
-    ],
-  });
-  cursor += provenanceHeight + gap;
-
-  const healthHeight = 88 + textHeight(model.healthSummaryText, contentWidth - 170, 9.5, 13);
-  ensureSpace(healthHeight, model.copy.executiveSummary);
-  addBlock({
-    kind: "health-strip",
-    section: model.copy.executiveSummary,
-    x: margin.left,
-    y: cursor,
-    width: contentWidth,
-    height: healthHeight,
-    title: t.accountHealth,
-    text: model.healthSummaryText,
-    label: model.healthStatusLabel,
-    tone: healthTone(model.healthStatus),
-  });
-  cursor += healthHeight + gap;
-
-  const metricHeight = metricGridHeight(model.kpis.length);
-  ensureSpace(metricHeight, model.copy.executiveSummary);
-  addBlock({ kind: "metric-grid", section: model.copy.executiveSummary, x: margin.left, y: cursor, width: contentWidth, height: metricHeight, kpis: model.kpis });
-  cursor += metricHeight + gap;
-
-  addNarrativeFlow(model.copy.executiveSummary, t.decisionBrief, model.verdictText);
-  addPairedLists(
-    model.copy.executiveSummary,
-    { title: t.whatWorked, items: model.wins, tone: "good" },
-    { title: t.watchItems, items: model.risks, tone: "warning" },
-  );
-
-  startSection(model.copy.performanceStory, t.performanceDescription);
-  const trendHeight = 238;
-  addBlock({
-    kind: "trend-chart",
-    section: model.copy.performanceStory,
-    x: margin.left,
-    y: cursor,
-    width: contentWidth,
-    height: trendHeight,
-    title: t.spendTrend,
-    text: `${t.spend} / ${model.primaryResultLabel}`,
-    trend: model.dailyTrend,
-  });
-  cursor += trendHeight + gap;
-  addPairedRankings(model.copy.performanceStory);
-  addNote(model.copy.performanceStory, model.copy.footnoteComparison);
-
-  startSection(model.copy.recommendations, t.recommendationsDescription);
-  addNote(model.copy.recommendations, model.copy.footnoteRecommendations);
-  addNarrativeFlow(model.copy.recommendations, t.evidenceSummary, model.insightSummary);
-  const subsectionHeight = 44;
-  addBlock({ kind: "subsection", section: model.copy.recommendations, x: margin.left, y: cursor, width: contentWidth, height: subsectionHeight, title: t.priorityActions });
-  cursor += subsectionHeight;
-  model.actions.forEach((action, index) => {
-    const height = actionHeight(action, contentWidth);
-    ensureSpace(height, model.copy.recommendations);
-    addBlock({ kind: "action-row", section: model.copy.recommendations, x: margin.left, y: cursor, width: contentWidth, height, action, index: index + 1 });
-    cursor += height;
-  });
-
-  startSection(model.copy.appendixCharts, t.chartsDescription);
-  const platformHeight = breakdownHeight(model.breakdowns.platforms);
-  ensureSpace(platformHeight, model.copy.appendixCharts);
-  addBreakdown(model.copy.appendixCharts, model.language === "vi" ? "Nền tảng" : "Platform", model.breakdowns.platforms, margin.left, contentWidth, platformHeight);
-  cursor += platformHeight + gap;
-  const pairGap = 16;
-  const pairWidth = (contentWidth - pairGap) / 2;
-  const pairHeight = Math.max(breakdownHeight(model.breakdowns.regions), breakdownHeight(model.breakdowns.ageGender));
-  ensureSpace(pairHeight, model.copy.appendixCharts);
-  addBreakdown(model.copy.appendixCharts, model.language === "vi" ? "Khu vực" : "Geography", model.breakdowns.regions, margin.left, pairWidth, pairHeight);
-  addBreakdown(model.copy.appendixCharts, model.language === "vi" ? "Tuổi và giới tính" : "Age and gender", model.breakdowns.ageGender, margin.left + pairWidth + pairGap, pairWidth, pairHeight);
-  cursor += pairHeight + gap;
-  addNote(model.copy.appendixCharts, model.copy.footnoteSource);
-
-  startSection(model.copy.appendixTables, t.tablesDescription);
-  addBlock({ kind: "subsection", section: model.copy.appendixTables, x: margin.left, y: cursor, width: contentWidth, height: 44, title: t.performanceRows });
-  cursor += 44;
-  model.tables.forEach((table) => addTable(model.copy.appendixTables, table));
-
-  startSection(model.copy.appendixDiagnostics, t.diagnosticsDescription);
-  addBlock({ kind: "subsection", section: model.copy.appendixDiagnostics, x: margin.left, y: cursor, width: contentWidth, height: 44, title: t.diagnostics });
-  cursor += 44;
-  model.diagnostics.forEach((diagnostic) => {
-    const height = diagnosticHeight(diagnostic.detail, contentWidth);
-    ensureSpace(height, model.copy.appendixDiagnostics);
-    addBlock({
-      kind: "diagnostic-row",
-      section: model.copy.appendixDiagnostics,
-      x: margin.left,
-      y: cursor,
-      width: contentWidth,
-      height,
-      diagnostic,
-      tone: diagnostic.status === "pass" ? "good" : diagnostic.status === "warning" ? "warning" : "bad",
-    });
-    cursor += height;
-  });
-  cursor += gap;
-  const firstCreativeHeight = model.creativeDetails[0] ? creativeHeight(model.creativeDetails[0], contentWidth) : 0;
-  ensureSpace(44 + firstCreativeHeight, model.copy.appendixDiagnostics);
-  addBlock({ kind: "subsection", section: model.copy.appendixDiagnostics, x: margin.left, y: cursor, width: contentWidth, height: 44, title: t.creativeDetail });
-  cursor += 44;
-  if (!model.creativeDetails.length) {
-    addNote(model.copy.appendixDiagnostics, t.noCreativeDetail);
-  } else {
-    model.creativeDetails.forEach((creative) => {
-      const height = creativeHeight(creative, contentWidth);
-      ensureSpace(height, model.copy.appendixDiagnostics);
-      addBlock({ kind: "creative-row", section: model.copy.appendixDiagnostics, x: margin.left, y: cursor, width: contentWidth, height, creative });
-      cursor += height;
-    });
-  }
-
-  return layout;
-}
-
-function drawBlock(doc: jsPDF, model: ClientReportViewModel, block: ClientReportPdfBlock) {
+function drawBlock(doc: jsPDF, model: ClientReportViewModel, block: ClientReportPdfBlock, typesetter: ClientReportTypesetter) {
   switch (block.kind) {
     case "cover":
-      drawCover(doc, model, block);
+      drawCover(doc, model, block, typesetter);
       return;
     case "header":
       drawHeader(doc, model, block);
@@ -507,56 +101,59 @@ function drawBlock(doc: jsPDF, model: ClientReportViewModel, block: ClientReport
       drawFooter(doc, model, block);
       return;
     case "section-title":
-      drawSectionTitle(doc, block);
+      drawSectionTitle(doc, block, typesetter);
       return;
     case "subsection":
       drawSubsection(doc, block);
       return;
     case "provenance":
-      drawProvenance(doc, block);
+      drawProvenance(doc, block, typesetter);
       return;
     case "metric-grid":
       drawMetricGrid(doc, block);
       return;
     case "health-strip":
-      drawHealthStrip(doc, model, block);
+      drawHealthStrip(doc, model, block, typesetter);
       return;
     case "narrative":
       drawNarrative(doc, block);
       return;
     case "signal-list":
-      drawSignalList(doc, block);
+      drawSignalList(doc, block, typesetter);
       return;
     case "trend-chart":
       drawTrendChart(doc, model, block);
       return;
     case "ranking-list":
-      drawRankingList(doc, model, block);
+      drawRankingList(doc, model, block, typesetter);
       return;
     case "action-row":
-      drawActionRow(doc, block);
+      drawActionRow(doc, block, typesetter);
+      return;
+    case "custom-chart":
+      drawCustomChart(doc, model, block);
       return;
     case "breakdown-list":
       drawBreakdownList(doc, model, block);
       return;
     case "table-header":
-      drawTableHeader(doc, model, block);
+      drawTableHeader(doc, block, typesetter);
       return;
     case "table-row":
-      drawTableRow(doc, model, block);
+      drawTableRow(doc, block, typesetter);
       return;
     case "diagnostic-row":
-      drawDiagnosticRow(doc, model, block);
+      drawDiagnosticRow(doc, model, block, typesetter);
       return;
     case "creative-row":
-      drawCreativeRow(doc, block);
+      drawCreativeRow(doc, block, typesetter);
       return;
     case "note":
-      drawNote(doc, block);
+      drawNote(doc, block, typesetter);
   }
 }
 
-function drawCover(doc: jsPDF, model: ClientReportViewModel, block: ClientReportPdfBlock) {
+function drawCover(doc: jsPDF, model: ClientReportViewModel, block: PdfBlock<"cover">, typesetter: ClientReportTypesetter) {
   const t = reportCopy[model.language];
   setFont(doc, "semibold", 10);
   textColor(doc, colors.foreground);
@@ -570,10 +167,10 @@ function drawCover(doc: jsPDF, model: ClientReportViewModel, block: ClientReport
 
   setFont(doc, "semibold", 34);
   textColor(doc, colors.foreground);
-  drawLines(doc, wrapForLayout(model.copy.title, block.width - 30, 34).slice(0, 3), block.x, block.y + 126, 38);
+  drawLines(doc, typesetter.wrap(model.copy.title, block.width - 30, 34, "semibold").slice(0, 3), block.x, block.y + 126, 38);
   setFont(doc, "normal", 11);
   textColor(doc, colors.muted);
-  drawLines(doc, wrapForLayout(model.copy.subtitle, block.width - 46, 11).slice(0, 4), block.x, block.y + 224, 16);
+  drawLines(doc, typesetter.wrap(model.copy.subtitle, block.width - 46, 11).slice(0, 4), block.x, block.y + 224, 16);
 
   drawColor(doc, colors.border);
   doc.line(block.x, block.y + 302, block.x + block.width, block.y + 302);
@@ -603,27 +200,28 @@ function drawCover(doc: jsPDF, model: ClientReportViewModel, block: ClientReport
   doc.text(t.decisionBrief.toUpperCase(), block.x + 24, panelY + 28);
   setFont(doc, "semibold", 15);
   textColor(doc, colors.foreground);
-  drawLines(doc, wrapForLayout(model.verdictText, block.width - 48, 15).slice(0, 7), block.x + 24, panelY + 58, 21);
+  drawLines(doc, typesetter.wrap(model.verdictText, block.width - 48, 15, "semibold").slice(0, 7), block.x + 24, panelY + 58, 21);
 
   drawColor(doc, colors.border);
   doc.line(block.x, block.y + block.height - 72, block.x + block.width, block.y + block.height - 72);
   const metadata = [
-    [t.dataSource, model.copy.source],
-    [t.decisionSource, model.decisionProviderLabel],
+    [t.selectedPack, model.selectedPackLabel],
+    [t.verdictConfidence, model.verdictConfidenceLabel],
+    [t.dataPulled, model.pulledLabel],
     [t.generated, model.generatedLabel],
   ];
   metadata.forEach(([label, value], index) => {
-    const x = block.x + index * (block.width / 3);
+    const x = block.x + index * (block.width / 4);
     setFont(doc, "semibold", 7.25);
     textColor(doc, colors.muted);
     doc.text(label.toUpperCase(), x, block.y + block.height - 46);
     setFont(doc, "normal", 8.5);
     textColor(doc, colors.foreground);
-    doc.text(safeText(value), x, block.y + block.height - 25, { maxWidth: block.width / 3 - 18 });
+    doc.text(safeText(value), x, block.y + block.height - 25, { maxWidth: block.width / 4 - 18 });
   });
 }
 
-function drawHeader(doc: jsPDF, model: ClientReportViewModel, block: ClientReportPdfBlock) {
+function drawHeader(doc: jsPDF, model: ClientReportViewModel, block: PdfBlock<"header">) {
   setFont(doc, "semibold", 8.5);
   textColor(doc, colors.foreground);
   doc.text("Decision Workspace", block.x, block.y + 10);
@@ -635,7 +233,7 @@ function drawHeader(doc: jsPDF, model: ClientReportViewModel, block: ClientRepor
   doc.line(block.x, block.y + block.height, block.x + block.width, block.y + block.height);
 }
 
-function drawFooter(doc: jsPDF, model: ClientReportViewModel, block: ClientReportPdfBlock) {
+function drawFooter(doc: jsPDF, model: ClientReportViewModel, block: PdfBlock<"footer">) {
   const t = reportCopy[model.language];
   drawColor(doc, colors.border);
   doc.line(block.x, block.y, block.x + block.width, block.y);
@@ -646,8 +244,8 @@ function drawFooter(doc: jsPDF, model: ClientReportViewModel, block: ClientRepor
   doc.text(`${t.page} ${block.pageNumber}`, block.x + block.width, block.y + 15, { align: "right" });
 }
 
-function drawSectionTitle(doc: jsPDF, block: ClientReportPdfBlock) {
-  const titleLines = wrapForLayout(block.title || block.section, block.width - 36, 24);
+function drawSectionTitle(doc: jsPDF, block: PdfBlock<"section-title">, typesetter: ClientReportTypesetter) {
+  const titleLines = typesetter.wrap(block.title || block.section, block.width - 36, 24, "semibold");
   fill(doc, colors.primary);
   doc.roundedRect(block.x, block.y + 2, 4, Math.max(42, titleLines.length * 30), 2, 2, "F");
   setFont(doc, "semibold", 24);
@@ -655,10 +253,10 @@ function drawSectionTitle(doc: jsPDF, block: ClientReportPdfBlock) {
   drawLines(doc, titleLines, block.x + 20, block.y + 26, 30);
   setFont(doc, "normal", 9.5);
   textColor(doc, colors.muted);
-  drawLines(doc, wrapForLayout(block.text || "", block.width - 36, 9.5), block.x + 20, block.y + 22 + titleLines.length * 30, 13);
+  drawLines(doc, typesetter.wrap(block.text || "", block.width - 36, 9.5), block.x + 20, block.y + 22 + titleLines.length * 30, 13);
 }
 
-function drawSubsection(doc: jsPDF, block: ClientReportPdfBlock) {
+function drawSubsection(doc: jsPDF, block: PdfBlock<"subsection">) {
   drawColor(doc, colors.border);
   doc.line(block.x, block.y + block.height - 8, block.x + block.width, block.y + block.height - 8);
   setFont(doc, "semibold", 14);
@@ -666,7 +264,7 @@ function drawSubsection(doc: jsPDF, block: ClientReportPdfBlock) {
   doc.text(safeText(block.title || ""), block.x, block.y + 22, { maxWidth: block.width });
 }
 
-function drawProvenance(doc: jsPDF, block: ClientReportPdfBlock) {
+function drawProvenance(doc: jsPDF, block: PdfBlock<"provenance">, typesetter: ClientReportTypesetter) {
   surface(doc, block.x, block.y, block.width, block.height, colors.surface);
   const items = block.meta || [];
   const columnWidth = block.width / Math.max(1, items.length);
@@ -681,11 +279,11 @@ function drawProvenance(doc: jsPDF, block: ClientReportPdfBlock) {
     doc.text(safeText(item.label).toUpperCase(), x + 14, block.y + 22);
     setFont(doc, "semibold", 9);
     textColor(doc, colors.foreground);
-    drawLines(doc, wrapForLayout(item.value, columnWidth - 28, 9).slice(0, 2), x + 14, block.y + 44, 12);
+    drawLines(doc, typesetter.wrap(item.value, columnWidth - 28, 9, "semibold").slice(0, 2), x + 14, block.y + 44, 12);
   });
 }
 
-function drawMetricGrid(doc: jsPDF, block: ClientReportPdfBlock) {
+function drawMetricGrid(doc: jsPDF, block: PdfBlock<"metric-grid">) {
   const kpis = block.kpis || [];
   const columns = 3;
   const rows = Math.max(1, Math.ceil(kpis.length / columns));
@@ -719,7 +317,7 @@ function drawMetricGrid(doc: jsPDF, block: ClientReportPdfBlock) {
   });
 }
 
-function drawHealthStrip(doc: jsPDF, model: ClientReportViewModel, block: ClientReportPdfBlock) {
+function drawHealthStrip(doc: jsPDF, model: ClientReportViewModel, block: PdfBlock<"health-strip">, typesetter: ClientReportTypesetter) {
   surface(doc, block.x, block.y, block.width, block.height, colors.raised);
   setFont(doc, "semibold", 7.5);
   textColor(doc, colors.muted);
@@ -729,13 +327,13 @@ function drawHealthStrip(doc: jsPDF, model: ClientReportViewModel, block: Client
   doc.text(safeText(model.healthLabel), block.x + 18, block.y + 62);
   drawStatus(doc, block.label || model.healthStatusLabel, block.x + 18, block.y + 74, block.tone || "neutral");
   drawColor(doc, colors.border);
-  doc.line(block.x + 146, block.y + 16, block.x + 146, block.y + block.height - 16);
+  doc.line(block.x + 210, block.y + 16, block.x + 210, block.y + block.height - 16);
   setFont(doc, "normal", 9.5);
   textColor(doc, colors.foreground);
-  drawLines(doc, wrapForLayout(block.text || "", block.width - 184, 9.5), block.x + 166, block.y + 35, 13);
+  drawLines(doc, typesetter.wrap(block.text || "", block.width - 248, 9.5), block.x + 230, block.y + 35, 13);
 }
 
-function drawNarrative(doc: jsPDF, block: ClientReportPdfBlock) {
+function drawNarrative(doc: jsPDF, block: PdfBlock<"narrative">) {
   surface(doc, block.x, block.y, block.width, block.height, colors.raised);
   fill(doc, colors.primary);
   doc.roundedRect(block.x, block.y, 4, block.height, 2, 2, "F");
@@ -747,7 +345,7 @@ function drawNarrative(doc: jsPDF, block: ClientReportPdfBlock) {
   drawLines(doc, safeText(block.text || "").split("\n"), block.x + 20, block.y + 49, 14);
 }
 
-function drawSignalList(doc: jsPDF, block: ClientReportPdfBlock) {
+function drawSignalList(doc: jsPDF, block: PdfBlock<"signal-list">, typesetter: ClientReportTypesetter) {
   const tone = block.tone || "neutral";
   const accent = toneColor(tone);
   drawColor(doc, colors.border);
@@ -757,7 +355,7 @@ function drawSignalList(doc: jsPDF, block: ClientReportPdfBlock) {
   doc.text(safeText(block.title || ""), block.x, block.y + 24, { maxWidth: block.width });
   let y = block.y + 46;
   (block.items || []).forEach((item, index) => {
-    const lines = wrapForLayout(item, block.width - 34, 8.8);
+    const lines = typesetter.wrap(item, block.width - 34, 8.8);
     setFont(doc, "semibold", 7.25);
     textColor(doc, colors.muted);
     doc.text(String(index + 1).padStart(2, "0"), block.x, y + 2);
@@ -768,7 +366,7 @@ function drawSignalList(doc: jsPDF, block: ClientReportPdfBlock) {
   });
 }
 
-function drawTrendChart(doc: jsPDF, model: ClientReportViewModel, block: ClientReportPdfBlock) {
+function drawTrendChart(doc: jsPDF, model: ClientReportViewModel, block: PdfBlock<"trend-chart">) {
   const t = reportCopy[model.language];
   const rows = block.trend || [];
   surface(doc, block.x, block.y, block.width, block.height, colors.surface);
@@ -779,6 +377,9 @@ function drawTrendChart(doc: jsPDF, model: ClientReportViewModel, block: ClientR
   textColor(doc, colors.muted);
   doc.text(`${t.spend}: ${formatMetric(Math.max(0, ...rows.map((row) => row.spend)), "currency", model.currency)}`, block.x + 18, block.y + 46);
   doc.text(`${model.primaryResultLabel}: ${formatMetric(Math.max(0, ...rows.map((row) => row.primary)), "number", model.currency)}`, block.x + block.width - 18, block.y + 46, { align: "right" });
+  setFont(doc, "normal", 7.5);
+  textColor(doc, colors.info);
+  doc.text(`${model.efficiencyLabel}: ${formatMetric(rows.at(-1)?.efficiency || 0, model.selectedPack === "sales_roas" ? "ratio" : "currency", model.currency)}`, block.x + block.width / 2, block.y + 46, { align: "center" });
 
   const chartX = block.x + 24;
   const chartY = block.y + 66;
@@ -786,6 +387,7 @@ function drawTrendChart(doc: jsPDF, model: ClientReportViewModel, block: ClientR
   const chartHeight = block.height - 104;
   const maxSpend = Math.max(1, ...rows.map((row) => row.spend));
   const maxPrimary = Math.max(1, ...rows.map((row) => row.primary));
+  const maxEfficiency = Math.max(1, ...rows.map((row) => row.efficiency));
   drawColor(doc, colors.border);
   [0, 1, 2, 3].forEach((step) => {
     const y = chartY + (step * chartHeight) / 3;
@@ -816,6 +418,22 @@ function drawTrendChart(doc: jsPDF, model: ClientReportViewModel, block: ClientR
     fill(doc, colors.primary);
     doc.circle(chartX + (rows.length - 1) * slot + slot / 2, chartY + chartHeight - (last.primary / maxPrimary) * chartHeight, 3, "F");
 
+    drawColor(doc, colors.info);
+    doc.setLineDashPattern([3, 2], 0);
+    doc.setLineWidth(1.4);
+    rows.forEach((row, index) => {
+      if (!index) return;
+      const previous = rows[index - 1];
+      doc.line(
+        chartX + (index - 1) * slot + slot / 2,
+        chartY + chartHeight - (previous.efficiency / maxEfficiency) * chartHeight,
+        chartX + index * slot + slot / 2,
+        chartY + chartHeight - (row.efficiency / maxEfficiency) * chartHeight,
+      );
+    });
+    doc.setLineDashPattern([], 0);
+    doc.setLineWidth(0.75);
+
     setFont(doc, "normal", 7);
     textColor(doc, colors.muted);
     const labelIndexes = Array.from(new Set([0, Math.floor((rows.length - 1) / 2), rows.length - 1]));
@@ -826,8 +444,8 @@ function drawTrendChart(doc: jsPDF, model: ClientReportViewModel, block: ClientR
   }
 }
 
-function drawRankingList(doc: jsPDF, model: ClientReportViewModel, block: ClientReportPdfBlock) {
-  const rows = block.rows || [];
+function drawRankingList(doc: jsPDF, model: ClientReportViewModel, block: PdfBlock<"ranking-list">, typesetter: ClientReportTypesetter) {
+  const rows = block.drivers || [];
   surface(doc, block.x, block.y, block.width, block.height, colors.surface);
   setFont(doc, "semibold", 11);
   textColor(doc, colors.foreground);
@@ -843,15 +461,86 @@ function drawRankingList(doc: jsPDF, model: ClientReportViewModel, block: Client
     doc.text(String(index + 1).padStart(2, "0"), block.x + 16, y + 2);
     setFont(doc, "normal", 8.3);
     textColor(doc, colors.foreground);
-    drawLines(doc, wrapForLayout(reportRowLabel(row), block.width - 128, 8.3).slice(0, 2), block.x + 43, y + 2, 11);
+    drawLines(doc, typesetter.wrap(row.name, block.width - 82, 8.3).slice(0, 2), block.x + 43, y + 2, 11);
     setFont(doc, "semibold", 8.1);
     textColor(doc, index === 0 ? colors.primary : colors.muted);
-    doc.text(safeText(formatMetric(row.spend, "currency", model.currency)), block.x + block.width - 16, y + 2, { align: "right", maxWidth: 86 });
-    y += 45;
+    doc.text(safeText(row.primaryLabel), block.x + block.width - 16, y + 2, { align: "right", maxWidth: 58 });
+    setFont(doc, "normal", 7.2);
+    textColor(doc, colors.muted);
+    doc.text(`${row.primaryShare.toFixed(0)}% ${model.primaryResultLabel}`, block.x + 43, y + 29, { maxWidth: block.width - 110 });
+    doc.text(`${row.efficiencyLabel} ${safeText(row.efficiencyValue)}`, block.x + block.width - 16, y + 29, { align: "right", maxWidth: 100 });
+    y += 62;
   });
 }
 
-function drawActionRow(doc: jsPDF, block: ClientReportPdfBlock) {
+function drawCustomChart(doc: jsPDF, model: ClientReportViewModel, block: PdfBlock<"custom-chart">) {
+  const chart = block.customChart;
+  if (!chart) return;
+  surface(doc, block.x, block.y, block.width, block.height, colors.surface);
+  setFont(doc, "semibold", 12);
+  textColor(doc, colors.foreground);
+  doc.text(safeText(chart.title), block.x + 18, block.y + 26, { maxWidth: block.width - 36 });
+
+  const palette = [colors.primary, colors.info, colors.chartCyan, colors.chartSteel, colors.chartLight] as const;
+  let legendX = block.x + 18;
+  chart.series.forEach((series, index) => {
+    fill(doc, palette[index % palette.length]);
+    doc.circle(legendX + 3, block.y + 47, 3, "F");
+    setFont(doc, "normal", 7.2);
+    textColor(doc, colors.muted);
+    const label = `${series.label} (${series.axis === "left" ? "L" : "R"})`;
+    doc.text(safeText(label), legendX + 10, block.y + 50);
+    legendX += Math.min(118, 22 + label.length * 4.2);
+  });
+
+  const chartX = block.x + 24;
+  const chartY = block.y + 68;
+  const chartWidth = block.width - 48;
+  const chartHeight = block.height - 104;
+  drawColor(doc, colors.border);
+  [0, 1, 2, 3].forEach((step) => doc.line(chartX, chartY + (step * chartHeight) / 3, chartX + chartWidth, chartY + (step * chartHeight) / 3));
+  if (!chart.data.length) {
+    setFont(doc, "normal", 9);
+    textColor(doc, colors.muted);
+    doc.text(model.language === "vi" ? "Chưa có dữ liệu theo ngày." : "No daily chart data available.", chartX + chartWidth / 2, chartY + chartHeight / 2, { align: "center" });
+    return;
+  }
+
+  const maxima = { left: 1, right: 1 };
+  chart.series.forEach((series) => {
+    maxima[series.axis] = Math.max(maxima[series.axis], ...chart.data.map((point) => Number(point[series.key] || 0)));
+  });
+  const slot = chartWidth / chart.data.length;
+  chart.series.forEach((series, seriesIndex) => {
+    const color = palette[seriesIndex % palette.length];
+    const points = chart.data.map((point, index) => ({
+      x: chartX + index * slot + slot / 2,
+      y: chartY + chartHeight - (Number(point[series.key] || 0) / maxima[series.axis]) * chartHeight,
+    }));
+    const drawBars = chart.type === "bar" || (chart.type === "composed" && seriesIndex === 0);
+    if (drawBars) {
+      points.forEach((point, index) => {
+        const value = Number(chart.data[index][series.key] || 0);
+        const height = Math.max(1, (value / maxima[series.axis]) * chartHeight);
+        fill(doc, color);
+        doc.roundedRect(point.x - Math.max(2, slot / (chart.series.length + 2)) / 2 + seriesIndex * 2, chartY + chartHeight - height, Math.max(2, slot / (chart.series.length + 2)), height, 1, 1, "F");
+      });
+    } else {
+      drawColor(doc, color);
+      doc.setLineWidth(1.7);
+      points.forEach((point, index) => {
+        if (index) doc.line(points[index - 1].x, points[index - 1].y, point.x, point.y);
+      });
+      doc.setLineWidth(0.75);
+    }
+  });
+  setFont(doc, "normal", 7);
+  textColor(doc, colors.muted);
+  const labelIndexes = Array.from(new Set([0, Math.floor((chart.data.length - 1) / 2), chart.data.length - 1]));
+  labelIndexes.forEach((index) => doc.text(safeText(String(chart.data[index].x || "")), chartX + index * slot + slot / 2, chartY + chartHeight + 17, { align: "center" }));
+}
+
+function drawActionRow(doc: jsPDF, block: PdfBlock<"action-row">, typesetter: ClientReportTypesetter) {
   if (!block.action) return;
   drawColor(doc, colors.border);
   doc.line(block.x, block.y + block.height, block.x + block.width, block.y + block.height);
@@ -862,14 +551,14 @@ function drawActionRow(doc: jsPDF, block: ClientReportPdfBlock) {
   doc.roundedRect(block.x + 48, block.y + 14, 3, block.height - 28, 1.5, 1.5, "F");
   setFont(doc, "semibold", 11.5);
   textColor(doc, colors.foreground);
-  const titleLines = wrapForLayout(block.action.title, block.width - 92, 11.5);
+  const titleLines = typesetter.wrap(block.action.title, block.width - 92, 11.5, "semibold");
   drawLines(doc, titleLines, block.x + 70, block.y + 25, 15);
   setFont(doc, "normal", 8.8);
   textColor(doc, colors.muted);
-  drawLines(doc, wrapForLayout(block.action.detail, block.width - 92, 8.8), block.x + 70, block.y + 30 + titleLines.length * 15, 12);
+  drawLines(doc, typesetter.wrap(block.action.detail, block.width - 92, 8.8), block.x + 70, block.y + 30 + titleLines.length * 15, 12);
 }
 
-function drawBreakdownList(doc: jsPDF, model: ClientReportViewModel, block: ClientReportPdfBlock) {
+function drawBreakdownList(doc: jsPDF, model: ClientReportViewModel, block: PdfBlock<"breakdown-list">) {
   const rows = block.rows || [];
   const maxSpend = Math.max(1, ...rows.map((row) => row.spend));
   surface(doc, block.x, block.y, block.width, block.height, colors.surface);
@@ -892,50 +581,62 @@ function drawBreakdownList(doc: jsPDF, model: ClientReportViewModel, block: Clie
   });
 }
 
-function drawTableHeader(doc: jsPDF, model: ClientReportViewModel, block: ClientReportPdfBlock) {
-  const t = reportCopy[model.language];
+function drawTableHeader(doc: jsPDF, block: PdfBlock<"table-header">, typesetter: ClientReportTypesetter) {
+  if (!block.table) return;
   fill(doc, colors.raised);
   doc.roundedRect(block.x, block.y, block.width, block.height, 7, 7, "F");
-  const columns = tableColumns(block);
+  const columns = tableColumns(block, block.table);
   setFont(doc, "semibold", 7.1);
   textColor(doc, colors.muted);
-  doc.text(safeText(block.title || "").toUpperCase(), block.x + 14, block.y + 20, { maxWidth: columns.nameWidth });
-  doc.text(t.spend.toUpperCase(), columns.spend, block.y + 20, { align: "right" });
-  doc.text(safeText(model.primaryResultLabel).toUpperCase(), columns.result, block.y + 20, { align: "right" });
-  doc.text((model.primaryCostKey ? safeText(model.primaryCostLabel) : t.cost).toUpperCase(), columns.cost, block.y + 20, { align: "right" });
-  doc.text("CTR", columns.ctr, block.y + 20, { align: "right" });
+  columns.forEach((column) => {
+    const lines = typesetter.wrap(column.label.toUpperCase(), column.width - 8, 7.1, "semibold").slice(0, 2);
+    lines.forEach((line, index) => {
+      doc.text(safeText(line), column.align === "left" ? column.x : column.x + column.width, block.y + 17 + index * 8.5, { align: column.align });
+    });
+  });
 }
 
-function drawTableRow(doc: jsPDF, model: ClientReportViewModel, block: ClientReportPdfBlock) {
-  if (!block.row) return;
-  const columns = tableColumns(block);
+function drawTableRow(doc: jsPDF, block: PdfBlock<"table-row">, typesetter: ClientReportTypesetter) {
+  if (!block.row || !block.table) return;
+  const columns = tableColumns(block, block.table);
   drawColor(doc, colors.border);
   doc.line(block.x + 14, block.y + block.height, block.x + block.width - 14, block.y + block.height);
   setFont(doc, "normal", 8.1);
-  textColor(doc, colors.foreground);
-  drawLines(doc, wrapForLayout(reportRowLabel(block.row), columns.nameWidth, 8.1), block.x + 14, block.y + 19, 11);
-  setFont(doc, "normal", 7.9);
-  textColor(doc, colors.muted);
-  doc.text(safeText(formatMetric(block.row.spend, "currency", model.currency)), columns.spend, block.y + 19, { align: "right" });
-  doc.text(safeText(formatMetric(Number(block.row[model.primaryResultKey] || 0), "number", model.currency)), columns.result, block.y + 19, { align: "right" });
-  doc.text(model.primaryCostKey ? safeText(formatMetric(Number(block.row[model.primaryCostKey] || 0), "currency", model.currency)) : "n/a", columns.cost, block.y + 19, { align: "right" });
-  doc.text(safeText(formatMetric(block.row.ctr, "percent", model.currency)), columns.ctr, block.y + 19, { align: "right" });
+  columns.forEach((column) => {
+    textColor(doc, column.align === "left" ? colors.foreground : colors.muted);
+    const value = block.row?.cells[column.key] || "";
+    if (column.align === "left") {
+      drawLines(doc, typesetter.wrap(value, column.width - 8, 8.1), column.x, block.y + 19, 11);
+    } else {
+      doc.text(safeText(value), column.x + column.width, block.y + 19, { align: "right", maxWidth: column.width - 6 });
+    }
+  });
 }
 
-function drawDiagnosticRow(doc: jsPDF, model: ClientReportViewModel, block: ClientReportPdfBlock) {
+function drawDiagnosticRow(doc: jsPDF, model: ClientReportViewModel, block: PdfBlock<"diagnostic-row">, typesetter: ClientReportTypesetter) {
   if (!block.diagnostic) return;
   drawColor(doc, colors.border);
   doc.line(block.x, block.y + block.height, block.x + block.width, block.y + block.height);
-  drawStatus(doc, diagnosticLabel(block.diagnostic.status, model.language), block.x, block.y + 16, block.tone || "neutral");
+  drawStatus(doc, diagnosticLabel(block.diagnostic.severity, model.language), block.x, block.y + 16, block.tone || "neutral");
   setFont(doc, "semibold", 10.5);
   textColor(doc, colors.foreground);
-  doc.text(safeText(block.diagnostic.label), block.x + 92, block.y + 29, { maxWidth: block.width - 108 });
+  doc.text(safeText(block.diagnostic.title), block.x + 92, block.y + 29, { maxWidth: block.width - 108 });
   setFont(doc, "normal", 8.5);
   textColor(doc, colors.muted);
-  drawLines(doc, wrapForLayout(block.diagnostic.detail, block.width - 108, 8.5), block.x + 92, block.y + 50, 11.5);
+  const summaryLines = typesetter.wrap(block.diagnostic.summary, block.width - 108, 8.5);
+  drawLines(doc, summaryLines, block.x + 92, block.y + 50, 11.5);
+  const evidenceY = block.y + 57 + summaryLines.length * 11.5;
+  setFont(doc, "normal", 7.8);
+  textColor(doc, colors.foreground);
+  const evidenceLines = block.diagnostic.evidence.flatMap((line) => typesetter.wrap(`- ${line}`, block.width - 108, 7.8));
+  drawLines(doc, evidenceLines, block.x + 92, evidenceY, 10.5);
+  setFont(doc, "semibold", 7.8);
+  textColor(doc, block.tone === "bad" ? colors.destructive : block.tone === "warning" ? colors.warning : colors.primary);
+  const nextStepY = evidenceY + Math.max(1, evidenceLines.length) * 10.5 + 10;
+  drawLines(doc, typesetter.wrap(`${model.language === "vi" ? "Bước tiếp theo" : "Next step"}: ${block.diagnostic.nextStep}`, block.width - 108, 7.8, "semibold"), block.x + 92, nextStepY, 10.5);
 }
 
-function drawCreativeRow(doc: jsPDF, block: ClientReportPdfBlock) {
+function drawCreativeRow(doc: jsPDF, block: PdfBlock<"creative-row">, typesetter: ClientReportTypesetter) {
   if (!block.creative) return;
   drawColor(doc, colors.border);
   doc.line(block.x, block.y + block.height, block.x + block.width, block.y + block.height);
@@ -947,15 +648,28 @@ function drawCreativeRow(doc: jsPDF, block: ClientReportPdfBlock) {
   textColor(doc, colors.muted);
   doc.text(safeText(block.creative.summary), block.x + 92, block.y + 48, { maxWidth: block.width - 108 });
   const items = block.creative.ads.map((item) => `- ${item}`).join("\n");
-  drawLines(doc, wrapForLayout(items, block.width - 108, 8.1), block.x + 92, block.y + 70, 11);
+  drawLines(doc, typesetter.wrap(items, block.width - 108, 8.1), block.x + 92, block.y + 70, 11);
 }
 
-function drawNote(doc: jsPDF, block: ClientReportPdfBlock) {
+function drawNote(doc: jsPDF, block: PdfBlock<"note">, typesetter: ClientReportTypesetter) {
   drawColor(doc, colors.border);
   doc.line(block.x, block.y + 2, block.x + block.width, block.y + 2);
   setFont(doc, "normal", 7.8);
   textColor(doc, colors.muted);
-  drawLines(doc, wrapForLayout(block.text || "", block.width - 10, 7.8), block.x, block.y + 20, 10.5);
+  drawLines(doc, typesetter.wrap(block.text || "", block.width - 10, 7.8), block.x, block.y + 20, 10.5);
+}
+
+function tableColumns(block: Pick<ClientReportPdfBlock, "x" | "width">, table: PdfBlock<"table-header">["table"]) {
+  const innerX = block.x + 14;
+  const innerWidth = block.width - 28;
+  const totalWeight = table.columns.reduce((sum, column) => sum + column.weight, 0);
+  let x = innerX;
+  return table.columns.map((column) => {
+    const width = (innerWidth * column.weight) / totalWeight;
+    const positioned = { ...column, x, width };
+    x += width;
+    return positioned;
+  });
 }
 
 function surface(doc: jsPDF, x: number, y: number, width: number, height: number, color: Rgb) {
@@ -972,14 +686,6 @@ function drawStatus(doc: jsPDF, label: string, x: number, y: number, tone: Repor
   setFont(doc, "semibold", 6.8);
   textColor(doc, toneColor(tone));
   doc.text(text, x + width / 2, y + 13, { align: "center", maxWidth: width - 10 });
-}
-
-function registerFonts(doc: jsPDF, fonts: ClientReportPdfFontData) {
-  doc.addFileToVFS("Geist-Regular.ttf", fonts.regular);
-  doc.addFont("Geist-Regular.ttf", "Geist", "normal", "Identity-H");
-  doc.addFileToVFS("Geist-SemiBold.ttf", fonts.semibold);
-  doc.addFont("Geist-SemiBold.ttf", "Geist", "semibold", "Identity-H");
-  doc.setFont("Geist", "normal");
 }
 
 function setFont(doc: jsPDF, style: "normal" | "semibold", size: number) {
@@ -1004,85 +710,6 @@ function drawLines(doc: jsPDF, lines: string[], x: number, y: number, lineHeight
   lines.forEach((line, index) => doc.text(safeText(line), x, y + index * lineHeight));
 }
 
-function metricGridHeight(kpiCount: number) {
-  return Math.max(88, Math.ceil(Math.max(1, kpiCount) / 3) * 80);
-}
-
-function signalListHeight(items: string[], width: number) {
-  return Math.max(112, 50 + items.reduce((height, item) => height + wrapForLayout(item, width - 34, 8.8).length * 12 + 16, 0));
-}
-
-function rankingHeight(rows: NormalizedRow[]) {
-  return Math.max(112, 58 + rows.length * 45);
-}
-
-function actionHeight(action: ClientReportAction, width: number) {
-  const titleLines = wrapForLayout(action.title, width - 92, 11.5).length;
-  const detailLines = wrapForLayout(action.detail, width - 92, 8.8).length;
-  return Math.max(86, 44 + titleLines * 15 + detailLines * 12);
-}
-
-function breakdownHeight(rows: NormalizedRow[]) {
-  return Math.max(118, 58 + rows.length * 32);
-}
-
-function tableRowHeight(row: NormalizedRow | undefined) {
-  if (!row) return 40;
-  return Math.max(40, 18 + wrapForLayout(reportRowLabel(row), contentWidth - 306, 8.1).length * 11);
-}
-
-function diagnosticHeight(detail: string, width: number) {
-  return Math.max(78, 58 + textHeight(detail, width - 108, 8.5, 11.5));
-}
-
-function creativeHeight(creative: ClientReportViewModel["creativeDetails"][number], width: number) {
-  const ads = creative.ads.map((item) => `- ${item}`).join("\n");
-  return Math.max(96, 76 + textHeight(ads, width - 108, 8.1, 11));
-}
-
-function textHeight(value: string, width: number, fontSize: number, lineHeight = fontSize + 3) {
-  return wrapForLayout(value, width, fontSize).length * lineHeight;
-}
-
-function wrapForLayout(value: string, width: number, fontSize: number) {
-  const charsPerLine = Math.max(10, Math.floor(width / (fontSize * 0.52)));
-  return safeText(value).split("\n").flatMap((paragraph) => {
-    const words = paragraph.split(/\s+/).filter(Boolean);
-    if (!words.length) return [""];
-    const lines: string[] = [];
-    let current = "";
-    for (const word of words) {
-      if (word.length > charsPerLine) {
-        if (current) {
-          lines.push(current);
-          current = "";
-        }
-        for (let start = 0; start < word.length; start += charsPerLine) lines.push(word.slice(start, start + charsPerLine));
-        continue;
-      }
-      const next = current ? `${current} ${word}` : word;
-      if (next.length > charsPerLine && current) {
-        lines.push(current);
-        current = word;
-      } else {
-        current = next;
-      }
-    }
-    if (current) lines.push(current);
-    return lines;
-  });
-}
-
-function tableColumns(block: Pick<ClientReportPdfBlock, "x" | "width">) {
-  return {
-    nameWidth: block.width - 306,
-    spend: block.x + block.width - 220,
-    result: block.x + block.width - 146,
-    cost: block.x + block.width - 66,
-    ctr: block.x + block.width - 14,
-  };
-}
-
 function reportRowLabel(row: NormalizedRow) {
   if (row.level === "daily") return row.date || row.name;
   if (row.platform) return row.platform;
@@ -1099,15 +726,17 @@ function healthTone(status: ClientReportViewModel["healthStatus"]): ReportTone {
   return "bad";
 }
 
-function diagnosticLabel(status: "pass" | "warning" | "fail", language: ClientReportViewModel["language"]) {
+function diagnosticLabel(status: ClientReportViewModel["diagnostics"][number]["severity"], language: ClientReportViewModel["language"]) {
   if (language === "vi") {
-    if (status === "pass") return "Đạt";
-    if (status === "warning") return "Theo dõi";
-    return "Xử lý";
+    if (status === "ok") return "Ổn";
+    if (status === "watch") return "Theo dõi";
+    if (status === "risk") return "Rủi ro";
+    return "Chưa đủ";
   }
-  if (status === "pass") return "Pass";
-  if (status === "warning") return "Watch";
-  return "Action";
+  if (status === "ok") return "OK";
+  if (status === "watch") return "Watch";
+  if (status === "risk") return "Risk";
+  return "Insufficient";
 }
 
 function toneColor(tone: ReportTone): Rgb {
@@ -1127,7 +756,7 @@ function toneTint(tone: ReportTone): Rgb {
 }
 
 function safeText(value: string) {
-  return value.replace(/[–—]/g, "-").replace(/₫/g, " VND").replace(/\u00a0/g, " ").normalize("NFC");
+  return safePdfText(value);
 }
 
 function slugify(value: string) {
