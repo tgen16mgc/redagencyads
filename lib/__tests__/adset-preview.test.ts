@@ -32,7 +32,7 @@ const adsets: MetaAdSet[] = [
 ];
 
 const ads = [
-  { id: "a1", name: "Image creative", adset_id: "1", status: "ACTIVE" },
+  { id: "a1", name: "Image creative", adset_id: "1", status: "ACTIVE", previewImageUrl: "https://scontent.example.fbcdn.net/a1.jpg" },
   { id: "a2", name: "Video creative", adset_id: "1", status: "ACTIVE" },
   { id: "a3", name: "Inactive ad", adset_id: "2", status: "PAUSED" },
 ];
@@ -115,7 +115,7 @@ describe("buildAdSetPreviewsWithCreatives", () => {
         dailyBudget: 250000,
         lifetimeBudget: 0,
         ads: [
-          { id: "a1", name: "Image creative", adsetId: "1", previewHtml: "<iframe>image preview</iframe>" },
+          { id: "a1", name: "Image creative", adsetId: "1", previewHtml: "<iframe>image preview</iframe>", previewImageUrl: "https://scontent.example.fbcdn.net/a1.jpg" },
           { id: "a2", name: "Video creative", adsetId: "1", previewHtml: "<iframe>video preview</iframe>" },
         ],
       },

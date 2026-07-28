@@ -120,6 +120,7 @@ export type AdPreview = {
   name: string;
   adsetId: string;
   previewHtml: string;
+  previewImageUrl?: string;
 };
 
 export type AdSetWithPreviews = {

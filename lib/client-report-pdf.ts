@@ -3,9 +3,10 @@ import type {
   ClientReportPdfFile,
   ClientReportViewModel,
 } from "@/lib/client-report";
-import { formatClientReportMetric } from "@/lib/client-report";
+import { formatClientReportCompactMetric, formatClientReportMetric } from "@/lib/client-report";
 import {
   buildClientReportPdfLayout,
+  clientReportMetricGridColumns,
   clientReportPdfCopy as reportCopy,
   createClientReportTypesetter,
   registerClientReportPdfFonts,
@@ -15,9 +16,11 @@ import {
   type ClientReportTypesetter,
   type ReportTone,
 } from "@/lib/client-report-layout";
+import { supportedPdfImageFormat } from "@/lib/meta-preview-image";
 
 type Rgb = readonly [number, number, number];
 type PdfBlock<Kind extends ClientReportPdfBlock["kind"]> = Extract<ClientReportPdfBlock, { kind: Kind }>;
+type LoadedPreviewImage = { data: Uint8Array; format: "JPEG" | "PNG" };
 
 const colors = {
   canvas: [12, 13, 15] as Rgb,
@@ -58,6 +61,7 @@ export async function buildClientReportPdf(
   fonts?: ClientReportPdfFontData,
 ): Promise<ClientReportPdfFile> {
   const fontData = fonts || await loadClientReportPdfFonts();
+  const previewImages = await loadClientReportPreviewImages(model);
   const layout = await buildClientReportPdfLayout(model, fontData);
   const doc = new jsPDF({
     orientation: "portrait",
@@ -79,7 +83,7 @@ export async function buildClientReportPdf(
     if (pageIndex > 0) doc.addPage("a4", "portrait");
     fill(doc, colors.canvas);
     doc.rect(0, 0, layout.width, layout.height, "F");
-    page.blocks.forEach((block) => drawBlock(doc, model, block, renderTypesetter));
+    page.blocks.forEach((block) => drawBlock(doc, model, block, renderTypesetter, previewImages));
   });
 
   return {
@@ -88,7 +92,13 @@ export async function buildClientReportPdf(
   };
 }
 
-function drawBlock(doc: jsPDF, model: ClientReportViewModel, block: ClientReportPdfBlock, typesetter: ClientReportTypesetter) {
+function drawBlock(
+  doc: jsPDF,
+  model: ClientReportViewModel,
+  block: ClientReportPdfBlock,
+  typesetter: ClientReportTypesetter,
+  previewImages: ReadonlyMap<string, LoadedPreviewImage>,
+) {
   switch (block.kind) {
     case "cover":
       drawCover(doc, model, block, typesetter);
@@ -109,7 +119,7 @@ function drawBlock(doc: jsPDF, model: ClientReportViewModel, block: ClientReport
       drawProvenance(doc, block, typesetter);
       return;
     case "metric-grid":
-      drawMetricGrid(doc, block);
+      drawMetricGrid(doc, block, typesetter);
       return;
     case "health-strip":
       drawHealthStrip(doc, model, block, typesetter);
@@ -145,7 +155,7 @@ function drawBlock(doc: jsPDF, model: ClientReportViewModel, block: ClientReport
       drawDiagnosticRow(doc, model, block, typesetter);
       return;
     case "creative-row":
-      drawCreativeRow(doc, block, typesetter);
+      drawCreativeRow(doc, model, block, typesetter, previewImages.get(block.creative.id));
       return;
     case "note":
       drawNote(doc, block, typesetter);
@@ -285,9 +295,9 @@ function drawProvenance(doc: jsPDF, block: PdfBlock<"provenance">, typesetter: C
   });
 }
 
-function drawMetricGrid(doc: jsPDF, block: PdfBlock<"metric-grid">) {
+function drawMetricGrid(doc: jsPDF, block: PdfBlock<"metric-grid">, typesetter: ClientReportTypesetter) {
   const kpis = block.kpis || [];
-  const columns = Math.min(5, Math.max(1, kpis.length));
+  const columns = clientReportMetricGridColumns(kpis.length);
   const rows = Math.max(1, Math.ceil(kpis.length / columns));
   const cellWidth = block.width / columns;
   const cellHeight = block.height / rows;
@@ -310,11 +320,15 @@ function drawMetricGrid(doc: jsPDF, block: PdfBlock<"metric-grid">) {
     doc.text(safeText(kpi.label).toUpperCase(), x, y + 24, { maxWidth: cellWidth - 32 });
     setFont(doc, "semibold", 19);
     textColor(doc, colors.foreground);
-    doc.text(safeText(kpi.value), x, y + 52, { maxWidth: cellWidth - 30 });
+    const value = safeText(kpi.value);
+    const valueFontSize = fitTextSize(doc, value, cellWidth - 30, 19, 11, "semibold");
+    setFont(doc, "semibold", valueFontSize);
+    doc.text(value, x, y + 51);
     if (kpi.delta) {
       setFont(doc, "normal", 7.5);
       textColor(doc, kpi.movement === "good" ? colors.success : kpi.movement === "bad" ? colors.destructive : colors.muted);
-      doc.text(safeText(kpi.delta), x, y + 70, { maxWidth: cellWidth - 30 });
+      const deltaLines = typesetter.wrap(kpi.delta, cellWidth - 30, 7.5).slice(0, 2);
+      drawLines(doc, deltaLines, x, y + 70, 9);
     }
   });
 }
@@ -324,10 +338,10 @@ function drawHealthStrip(doc: jsPDF, model: ClientReportViewModel, block: PdfBlo
   setFont(doc, "semibold", 7.5);
   textColor(doc, colors.muted);
   doc.text(safeText(block.title || "").toUpperCase(), block.x + 18, block.y + 24);
-  setFont(doc, "semibold", 32);
+  setFont(doc, "semibold", 29);
   textColor(doc, colors.foreground);
-  doc.text(safeText(model.healthLabel), block.x + 18, block.y + 55);
-  drawStatus(doc, block.label || model.healthStatusLabel, block.x + 18, block.y + block.height - 28, block.tone || "neutral");
+  doc.text(safeText(model.healthLabel), block.x + 18, block.y + 53);
+  drawStatus(doc, block.label || model.healthStatusLabel, block.x + 18, block.y + 66, block.tone || "neutral");
   drawColor(doc, colors.border);
   doc.line(block.x + 210, block.y + 16, block.x + 210, block.y + block.height - 16);
   setFont(doc, "normal", 9.5);
@@ -371,56 +385,92 @@ function drawSignalList(doc: jsPDF, block: PdfBlock<"signal-list">, typesetter: 
 function drawTrendChart(doc: jsPDF, model: ClientReportViewModel, block: PdfBlock<"trend-chart">) {
   const t = reportCopy[model.language];
   const rows = block.trend || [];
+  const maxSpend = Math.max(0, ...rows.map((row) => row.spend));
+  const maxPrimary = Math.max(0, ...rows.map((row) => row.primary));
+  const maxEfficiency = Math.max(0, ...rows.map((row) => row.efficiency));
+  const efficiencyFormat = model.selectedPack === "sales_roas" ? "ratio" : "currency";
+  const legendValues = [
+    `${t.maximum}: ${formatClientReportCompactMetric(maxSpend, "currency", model.currency, model.language)}`,
+    `${t.maximum}: ${formatClientReportCompactMetric(maxPrimary, "number", model.currency, model.language)}`,
+    `${t.latest}: ${formatClientReportCompactMetric(rows.at(-1)?.efficiency || 0, efficiencyFormat, model.currency, model.language)}`,
+  ];
   surface(doc, block.x, block.y, block.width, block.height, colors.surface);
   setFont(doc, "semibold", 12);
   textColor(doc, colors.foreground);
   doc.text(safeText(block.title || ""), block.x + 18, block.y + 26);
-  setFont(doc, "normal", 8);
-  textColor(doc, colors.muted);
-  doc.text(`${t.spend}: ${formatClientReportMetric(Math.max(0, ...rows.map((row) => row.spend)), "currency", model.currency, model.language)}`, block.x + 18, block.y + 46);
-  doc.text(`${model.primaryResultLabel}: ${formatClientReportMetric(Math.max(0, ...rows.map((row) => row.primary)), "number", model.currency, model.language)}`, block.x + block.width - 18, block.y + 46, { align: "right" });
-  setFont(doc, "normal", 7.5);
-  textColor(doc, colors.info);
-  doc.text(`${model.efficiencyLabel}: ${formatClientReportMetric(rows.at(-1)?.efficiency || 0, model.selectedPack === "sales_roas" ? "ratio" : "currency", model.currency, model.language)}`, block.x + block.width / 2, block.y + 46, { align: "center" });
 
-  const chartX = block.x + 24;
-  const chartY = block.y + 66;
-  const chartWidth = block.width - 48;
-  const chartHeight = block.height - 104;
-  const maxSpend = Math.max(1, ...rows.map((row) => row.spend));
-  const maxPrimary = Math.max(1, ...rows.map((row) => row.primary));
-  const maxEfficiency = Math.max(1, ...rows.map((row) => row.efficiency));
+  const legendX = block.x + 18;
+  const legendY = block.y + 45;
+  const legendWidth = (block.width - 36) / 3;
+  (block.legend || []).forEach((item, index) => {
+    const x = legendX + index * legendWidth;
+    const sampleY = legendY + 4;
+    if (item.kind === "bar") {
+      fill(doc, colors.chartSteel);
+      doc.roundedRect(x, sampleY - 6, 12, 10, 2, 2, "F");
+    } else {
+      drawColor(doc, item.kind === "line" ? colors.chartCyan : colors.chartLight);
+      doc.setLineWidth(item.kind === "line" ? 1.8 : 1.3);
+      if (item.kind === "dashed") doc.setLineDashPattern([3, 2], 0);
+      doc.line(x, sampleY - 1, x + 13, sampleY - 1);
+      doc.setLineDashPattern([], 0);
+      doc.setLineWidth(0.75);
+    }
+    setFont(doc, "semibold", 7.4);
+    textColor(doc, colors.foreground);
+    doc.text(safeText(item.label), x + 19, legendY + 3, { maxWidth: legendWidth - 23 });
+    setFont(doc, "normal", 6.8);
+    textColor(doc, colors.muted);
+    doc.text(safeText(legendValues[index] || ""), x + 19, legendY + 15, { maxWidth: legendWidth - 23 });
+  });
+
+  setFont(doc, "normal", 7.2);
+  textColor(doc, colors.muted);
+  doc.text(safeText(block.text || ""), block.x + 18, block.y + 82, { maxWidth: block.width - 36 });
+
+  const chartX = block.x + 28;
+  const chartY = block.y + 98;
+  const chartWidth = block.width - 56;
+  const chartHeight = block.height - 137;
+  const spendScale = Math.max(1, maxSpend);
+  const primaryScale = Math.max(1, maxPrimary);
+  const efficiencyScale = Math.max(1, maxEfficiency);
   drawColor(doc, colors.border);
   [0, 1, 2, 3].forEach((step) => {
     const y = chartY + (step * chartHeight) / 3;
     doc.line(chartX, y, chartX + chartWidth, y);
   });
+  setFont(doc, "normal", 6.5);
+  textColor(doc, colors.muted);
+  doc.text(safeText(t.maximum).toUpperCase(), chartX - 5, chartY + 2, { align: "right" });
+  doc.text("0", chartX - 5, chartY + chartHeight + 2, { align: "right" });
 
   if (rows.length) {
     const slot = chartWidth / rows.length;
     rows.forEach((row, index) => {
-      const barHeight = Math.max(2, (row.spend / maxSpend) * chartHeight);
-      fill(doc, index === rows.length - 1 ? colors.primaryTint : colors.raised);
+      const barHeight = Math.max(2, (row.spend / spendScale) * chartHeight);
+      fill(doc, index === rows.length - 1 ? colors.chartLight : colors.chartSteel);
       doc.roundedRect(chartX + index * slot + 2, chartY + chartHeight - barHeight, Math.max(2, slot - 5), barHeight, 2, 2, "F");
     });
 
-    drawColor(doc, colors.primary);
+    drawColor(doc, colors.chartCyan);
     doc.setLineWidth(2);
     rows.forEach((row, index) => {
       if (!index) return;
       const previous = rows[index - 1];
       const x1 = chartX + (index - 1) * slot + slot / 2;
-      const y1 = chartY + chartHeight - (previous.primary / maxPrimary) * chartHeight;
+      const y1 = chartY + chartHeight - (previous.primary / primaryScale) * chartHeight;
       const x2 = chartX + index * slot + slot / 2;
-      const y2 = chartY + chartHeight - (row.primary / maxPrimary) * chartHeight;
+      const y2 = chartY + chartHeight - (row.primary / primaryScale) * chartHeight;
       doc.line(x1, y1, x2, y2);
     });
     doc.setLineWidth(0.75);
-    const last = rows[rows.length - 1];
-    fill(doc, colors.primary);
-    doc.circle(chartX + (rows.length - 1) * slot + slot / 2, chartY + chartHeight - (last.primary / maxPrimary) * chartHeight, 3, "F");
+    fill(doc, colors.chartCyan);
+    rows.forEach((row, index) => {
+      doc.circle(chartX + index * slot + slot / 2, chartY + chartHeight - (row.primary / primaryScale) * chartHeight, index === rows.length - 1 ? 3 : 1.7, "F");
+    });
 
-    drawColor(doc, colors.info);
+    drawColor(doc, colors.chartLight);
     doc.setLineDashPattern([3, 2], 0);
     doc.setLineWidth(1.4);
     rows.forEach((row, index) => {
@@ -428,13 +478,16 @@ function drawTrendChart(doc: jsPDF, model: ClientReportViewModel, block: PdfBloc
       const previous = rows[index - 1];
       doc.line(
         chartX + (index - 1) * slot + slot / 2,
-        chartY + chartHeight - (previous.efficiency / maxEfficiency) * chartHeight,
+        chartY + chartHeight - (previous.efficiency / efficiencyScale) * chartHeight,
         chartX + index * slot + slot / 2,
-        chartY + chartHeight - (row.efficiency / maxEfficiency) * chartHeight,
+        chartY + chartHeight - (row.efficiency / efficiencyScale) * chartHeight,
       );
     });
     doc.setLineDashPattern([], 0);
     doc.setLineWidth(0.75);
+    const last = rows[rows.length - 1];
+    fill(doc, colors.chartLight);
+    doc.circle(chartX + (rows.length - 1) * slot + slot / 2, chartY + chartHeight - (last.efficiency / efficiencyScale) * chartHeight, 2.4, "F");
 
     setFont(doc, "normal", 7);
     textColor(doc, colors.muted);
@@ -712,19 +765,49 @@ function drawDiagnosticRow(doc: jsPDF, model: ClientReportViewModel, block: PdfB
   drawLines(doc, typesetter.wrap(`${model.language === "vi" ? "Bước tiếp theo" : "Next step"}: ${block.diagnostic.nextStep}`, block.width - 108, 7.8, "semibold"), block.x + 92, nextStepY, 10.5);
 }
 
-function drawCreativeRow(doc: jsPDF, block: PdfBlock<"creative-row">, typesetter: ClientReportTypesetter) {
+function drawCreativeRow(
+  doc: jsPDF,
+  model: ClientReportViewModel,
+  block: PdfBlock<"creative-row">,
+  typesetter: ClientReportTypesetter,
+  previewImage?: LoadedPreviewImage,
+) {
   if (!block.creative) return;
+  const t = reportCopy[model.language];
+  const imageX = block.x;
+  const imageY = block.y + 12;
+  const imageWidth = 136;
+  const imageHeight = block.height - 28;
+  fill(doc, colors.raised);
+  drawColor(doc, colors.border);
+  doc.roundedRect(imageX, imageY, imageWidth, imageHeight, 7, 7, "FD");
+  const imageDrawn = previewImage
+    ? drawContainedImage(doc, previewImage, imageX + 3, imageY + 3, imageWidth - 6, imageHeight - 6)
+    : false;
+  if (!imageDrawn) {
+    setFont(doc, "semibold", 7.2);
+    textColor(doc, colors.muted);
+    doc.text(safeText(t.previewUnavailable), imageX + imageWidth / 2, imageY + imageHeight / 2, {
+      align: "center",
+      maxWidth: imageWidth - 22,
+    });
+  }
+  doc.link(imageX, imageY, imageWidth, imageHeight, { url: block.creative.previewUrl });
+
+  const textX = block.x + 156;
+  const textWidth = block.width - 156;
   drawColor(doc, colors.border);
   doc.line(block.x, block.y + block.height, block.x + block.width, block.y + block.height);
-  drawStatus(doc, block.creative.status || "UNKNOWN", block.x, block.y + 16, "neutral");
+  drawStatus(doc, block.creative.status || "UNKNOWN", textX, block.y + 12, "neutral");
   setFont(doc, "semibold", 10.5);
   textColor(doc, colors.foreground);
-  doc.text(safeText(block.creative.name), block.x + 92, block.y + 29, { maxWidth: block.width - 108 });
+  doc.text(safeText(block.creative.name), textX, block.y + 48, { maxWidth: textWidth });
   setFont(doc, "normal", 8.3);
   textColor(doc, colors.muted);
-  doc.text(safeText(block.creative.summary), block.x + 92, block.y + 48, { maxWidth: block.width - 108 });
-  const items = block.creative.ads.map((item) => `- ${item}`).join("\n");
-  drawLines(doc, typesetter.wrap(items, block.width - 108, 8.1), block.x + 92, block.y + 70, 11);
+  drawLines(doc, typesetter.wrap(block.creative.summary, textWidth, 8.3).slice(0, 3), textX, block.y + 68, 11);
+  setFont(doc, "semibold", 8.3);
+  textColor(doc, colors.primary);
+  doc.textWithLink(safeText(`${t.openInMeta} ->`), textX, block.y + block.height - 20, { url: block.creative.previewUrl });
 }
 
 function drawNote(doc: jsPDF, block: PdfBlock<"note">, typesetter: ClientReportTypesetter) {
@@ -733,6 +816,78 @@ function drawNote(doc: jsPDF, block: PdfBlock<"note">, typesetter: ClientReportT
   setFont(doc, "normal", 7.8);
   textColor(doc, colors.muted);
   drawLines(doc, typesetter.wrap(block.text || "", block.width - 10, 7.8), block.x, block.y + 20, 10.5);
+}
+
+async function loadClientReportPreviewImages(model: ClientReportViewModel) {
+  const entries = await Promise.all(
+    model.creativeDetails.map(async (creative) => {
+      if (!creative.previewImageUrl) return null;
+      try {
+        const image = await loadPreviewImage(creative.previewImageUrl);
+        return image ? ([creative.id, image] as const) : null;
+      } catch {
+        return null;
+      }
+    }),
+  );
+  return new Map(entries.filter((entry): entry is readonly [string, LoadedPreviewImage] => Boolean(entry)));
+}
+
+async function loadPreviewImage(source: string): Promise<LoadedPreviewImage | null> {
+  if (source.startsWith("data:image/")) return decodeDataImage(source);
+  const response = await fetch(`/api/meta/ad-preview-image?url=${encodeURIComponent(source)}`);
+  if (!response.ok) return null;
+  const format = supportedPdfImageFormat(response.headers.get("content-type") || "");
+  if (!format) return null;
+  return { data: new Uint8Array(await response.arrayBuffer()), format };
+}
+
+function decodeDataImage(source: string): LoadedPreviewImage | null {
+  const match = /^data:(image\/(?:jpeg|jpg|png));base64,([a-z0-9+/=]+)$/i.exec(source);
+  if (!match) return null;
+  const format = supportedPdfImageFormat(match[1]);
+  if (!format) return null;
+  const binary = atob(match[2]);
+  return { data: Uint8Array.from(binary, (character) => character.charCodeAt(0)), format };
+}
+
+function drawContainedImage(doc: jsPDF, image: LoadedPreviewImage, x: number, y: number, width: number, height: number) {
+  try {
+    const properties = doc.getImageProperties(image.data);
+    const scale = Math.min(width / properties.width, height / properties.height);
+    const renderedWidth = properties.width * scale;
+    const renderedHeight = properties.height * scale;
+    doc.addImage(
+      image.data,
+      image.format,
+      x + (width - renderedWidth) / 2,
+      y + (height - renderedHeight) / 2,
+      renderedWidth,
+      renderedHeight,
+      undefined,
+      "FAST",
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function fitTextSize(
+  doc: jsPDF,
+  value: string,
+  maxWidth: number,
+  preferredSize: number,
+  minimumSize: number,
+  weight: "normal" | "semibold",
+) {
+  let size = preferredSize;
+  while (size > minimumSize) {
+    setFont(doc, weight, size);
+    if (doc.getTextWidth(value) <= maxWidth) return size;
+    size -= 0.5;
+  }
+  return minimumSize;
 }
 
 function tableColumns(block: Pick<ClientReportPdfBlock, "x" | "width">, table: PdfBlock<"table-header">["table"]) {

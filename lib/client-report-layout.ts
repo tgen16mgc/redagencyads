@@ -36,6 +36,9 @@ export const clientReportPdfCopy = {
     whatWorked: "What is working",
     watchItems: "What needs attention",
     spendTrend: "Spend and primary-result trend",
+    trendGuide: "Each series uses its own 0-to-maximum scale. Compare direction over time, not relative height.",
+    maximum: "Max",
+    latest: "Latest",
     spend: "Spend",
     primaryResult: "Primary result",
     efficiency: "Efficiency",
@@ -52,6 +55,8 @@ export const clientReportPdfCopy = {
     diagnostics: "Diagnostic checks",
     creativeDetail: "Creative detail",
     noCreativeDetail: "Creative previews were not available for this report.",
+    openInMeta: "Open in Meta",
+    previewUnavailable: "Preview image unavailable",
     why: "Why this matters",
     monitor: "What to monitor next",
     leftAxis: "Left axis",
@@ -81,6 +86,9 @@ export const clientReportPdfCopy = {
     whatWorked: "Điểm đang hiệu quả",
     watchItems: "Điểm cần theo dõi",
     spendTrend: "Xu hướng chi tiêu và kết quả chính",
+    trendGuide: "Mỗi chuỗi dùng thang 0 đến mức cao nhất riêng. Hãy so sánh xu hướng theo thời gian, không so chiều cao giữa các chuỗi.",
+    maximum: "Cao nhất",
+    latest: "Mới nhất",
     spend: "Chi tiêu",
     primaryResult: "Kết quả chính",
     efficiency: "Hiệu quả",
@@ -97,6 +105,8 @@ export const clientReportPdfCopy = {
     diagnostics: "Kiểm tra chẩn đoán",
     creativeDetail: "Chi tiết quảng cáo",
     noCreativeDetail: "Báo cáo này không có bản xem trước mẫu quảng cáo.",
+    openInMeta: "Mở trong Meta",
+    previewUnavailable: "Không tải được ảnh xem trước",
     why: "Vì sao quan trọng",
     monitor: "Cần theo dõi tiếp",
     leftAxis: "Trục trái",
@@ -129,7 +139,13 @@ export type ClientReportPdfBlock =
   | (ClientReportPdfBlockBase & { kind: "health-strip"; title: string; text: string; label: string; tone: ReportTone })
   | (ClientReportPdfBlockBase & { kind: "narrative"; title: string; text: string })
   | (ClientReportPdfBlockBase & { kind: "signal-list"; title: string; items: string[]; tone: ReportTone })
-  | (ClientReportPdfBlockBase & { kind: "trend-chart"; title: string; text: string; trend: ClientReportViewModel["dailyTrend"] })
+  | (ClientReportPdfBlockBase & {
+      kind: "trend-chart";
+      title: string;
+      text: string;
+      legend: Array<{ kind: "bar" | "line" | "dashed"; label: string }>;
+      trend: ClientReportViewModel["dailyTrend"];
+    })
   | (ClientReportPdfBlockBase & { kind: "ranking-list"; title: string; drivers: ClientReportDriver[] })
   | (ClientReportPdfBlockBase & { kind: "action-row"; action: ClientReportAction; index: number })
   | (ClientReportPdfBlockBase & { kind: "custom-chart"; title: string; customChart: ClientReportCustomChart })
@@ -396,7 +412,7 @@ export async function buildClientReportPdfLayout(
   });
   composer.cursor += provenanceHeight + gap;
 
-  const healthHeight = Math.max(78, 50 + typesetter.height(model.healthSummaryText, contentWidth - 248, 9.5, 13));
+  const healthHeight = Math.max(92, 36 + typesetter.height(model.healthSummaryText, contentWidth - 248, 9.5, 13));
   composer.ensureSpace(healthHeight, model.copy.executiveSummary);
   composer.addBlock({
     kind: "health-strip",
@@ -430,7 +446,7 @@ export async function buildClientReportPdfLayout(
 
   const comparisonContext = model.comparison.status === "off" ? ` ${model.comparison.summary}` : "";
   composer.startSection(model.copy.performanceStory, `${t.performanceDescription} ${model.primaryResultExplanation}${comparisonContext}`);
-  const trendHeight = 208;
+  const trendHeight = 232;
   composer.addBlock({
     kind: "trend-chart",
     section: model.copy.performanceStory,
@@ -439,7 +455,12 @@ export async function buildClientReportPdfLayout(
     width: contentWidth,
     height: trendHeight,
     title: t.spendTrend,
-    text: `${t.spend} / ${model.primaryResultLabel} / ${model.efficiencyLabel}`,
+    text: t.trendGuide,
+    legend: [
+      { kind: "bar", label: t.spend },
+      { kind: "line", label: sentenceCase(model.primaryResultLabel) },
+      { kind: "dashed", label: model.efficiencyLabel },
+    ],
     trend: model.dailyTrend,
   });
   composer.cursor += trendHeight + gap;
@@ -619,13 +640,18 @@ export async function buildClientReportPdfLayout(
   return composer.layout;
 }
 
+export function clientReportMetricGridColumns(kpiCount: number) {
+  if (kpiCount <= 5) return Math.max(1, kpiCount);
+  return 3;
+}
+
 function metricGridHeight(kpiCount: number) {
-  if (kpiCount <= 5) return 88;
-  return Math.max(88, Math.ceil(Math.max(1, kpiCount) / 3) * 80);
+  const rows = Math.ceil(Math.max(1, kpiCount) / clientReportMetricGridColumns(kpiCount));
+  return rows * 88;
 }
 
 function signalListHeight(items: string[], width: number, typesetter: ClientReportTypesetter) {
-  return Math.max(84, 46 + items.reduce((height, item) => height + typesetter.wrap(item, width - 34, 8.8).length * 12 + 10, 0));
+  return Math.max(78, 46 + items.reduce((height, item) => height + typesetter.wrap(item, width - 34, 8.8).length * 12 + 10, 0));
 }
 
 function provenanceBlockHeight(meta: Array<{ label: string; value: string }>, width: number, typesetter: ClientReportTypesetter) {
@@ -680,8 +706,7 @@ function diagnosticHeight(
 }
 
 function creativeHeight(creative: ClientReportViewModel["creativeDetails"][number], width: number, typesetter: ClientReportTypesetter) {
-  const ads = creative.ads.map((item) => `- ${item}`).join("\n");
-  return Math.max(96, 76 + typesetter.height(ads, width - 108, 8.1, 11));
+  return Math.max(126, 78 + typesetter.height(creative.summary, width - 184, 8.3, 11));
 }
 
 function healthTone(status: ClientReportViewModel["healthStatus"]): ReportTone {
@@ -692,4 +717,8 @@ function healthTone(status: ClientReportViewModel["healthStatus"]): ReportTone {
 
 export function safePdfText(value: string) {
   return value.replace(/₫/g, "VND").replace(/\u00a0/g, " ").normalize("NFC");
+}
+
+function sentenceCase(value: string) {
+  return value ? value.charAt(0).toLocaleUpperCase() + value.slice(1) : value;
 }

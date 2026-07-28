@@ -92,7 +92,13 @@ function report(overrides: Partial<DashboardReport> = {}): DashboardReport {
         status: "ACTIVE",
         dailyBudget: 1000000,
         lifetimeBudget: 0,
-        ads: [{ id: "ad1", name: "Testimonial ad", adsetId: "as1", previewHtml: "<iframe></iframe>" }],
+        ads: [{
+          id: "ad1",
+          name: "Testimonial ad",
+          adsetId: "as1",
+          previewHtml: '<iframe src="https://www.facebook.com/ads/api/preview_iframe.php?d=proof&amp;t=1"></iframe>',
+          previewImageUrl: "https://scontent.example.fbcdn.net/ad1.jpg",
+        }],
       },
     ],
     ...overrides,
@@ -176,12 +182,32 @@ describe("buildClientReportViewModel", () => {
     expect(model.kpis.every((kpi) => !kpi.delta)).toBe(true);
     expect(model.tables[0].rows[0].cells.name).toBe("Lead campaign - HCM");
     expect(model.creativeDetails[0]).toMatchObject({
-      name: "Consult retargeting",
-      adCount: 1,
-      adCountLabel: "1 ad",
-      ads: ["Testimonial ad"],
-      summary: "Lead campaign - HCM / ACTIVE / 1 ad",
+      id: "ad1",
+      name: "Testimonial ad",
+      adsetName: "Consult retargeting",
+      summary: "Lead campaign - HCM / Consult retargeting",
+      previewUrl: "https://www.facebook.com/ads/api/preview_iframe.php?d=proof&t=1",
+      previewImageUrl: "https://scontent.example.fbcdn.net/ad1.jpg",
     });
+  });
+
+  it("keeps every available ad in creative detail", () => {
+    const ads = Array.from({ length: 9 }, (_, index) => ({
+      id: `ad-${index + 1}`,
+      name: `Creative ${index + 1}`,
+      adsetId: "as1",
+      previewHtml: "",
+    }));
+    const model = buildClientReportViewModel({
+      report: report({ adsetPreviews: [{ ...report().adsetPreviews![0], ads }] }),
+      compareMode: "off",
+      language: "en",
+      kpis,
+    });
+
+    expect(model.creativeDetails).toHaveLength(9);
+    expect(model.creativeDetails.at(-1)?.name).toBe("Creative 9");
+    expect(model.creativeDetails.every((creative) => creative.previewUrl.includes("selected_ad_ids="))).toBe(true);
   });
 
   it("limits dense chart rows so PDF cards have enough vertical space", () => {

@@ -70,16 +70,25 @@ export async function getActiveAdsForCampaigns(token: string, accountId: string,
   const filtering = campaignIds.length
     ? JSON.stringify([{ field: "campaign.id", operator: "IN", value: campaignIds }])
     : undefined;
-  const ads = await graphList<{ id: string; name: string; adset_id: string; status: string; effective_status: string }>({
+  const ads = await graphList<{
+    id: string;
+    name: string;
+    adset_id: string;
+    status: string;
+    effective_status: string;
+    creative?: { thumbnail_url?: string };
+  }>({
     path: `/${id}/ads`,
     params: {
-      fields: "id,name,adset_id,status,effective_status",
+      fields: "id,name,adset_id,status,effective_status,creative{thumbnail_url}",
       filtering,
       limit: 100,
     },
     token,
   });
-  return ads.filter((ad) => (ad.effective_status || ad.status) === "ACTIVE");
+  return ads
+    .filter((ad) => (ad.effective_status || ad.status) === "ACTIVE")
+    .map((ad) => ({ ...ad, previewImageUrl: ad.creative?.thumbnail_url?.trim() || "" }));
 }
 
 export async function getAdPreviews(token: string, adIds: string[]): Promise<Record<string, string>> {

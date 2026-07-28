@@ -56,7 +56,7 @@ export function activeAdSetPreviews(
 
 export function buildAdSetPreviewsWithCreatives(
   adsets: MetaAdSet[],
-  ads: { id: string; name: string; adset_id: string; status?: string; effective_status?: string }[],
+  ads: { id: string; name: string; adset_id: string; status?: string; effective_status?: string; previewImageUrl?: string }[],
   previews: Record<string, string>,
   campaignNames?: CampaignNameSource
 ): AdSetWithPreviews[] {
@@ -72,6 +72,7 @@ export function buildAdSetPreviewsWithCreatives(
           name: ad.name,
           adsetId: ad.adset_id,
           previewHtml: previews[ad.id] || "",
+          previewImageUrl: ad.previewImageUrl || undefined,
         }));
 
       return {

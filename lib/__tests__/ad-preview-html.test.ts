@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sanitizeAdPreviewHtml } from "@/lib/ad-preview-html";
+import { extractMetaAdPreviewUrl, sanitizeAdPreviewHtml } from "@/lib/ad-preview-html";
 
 const META_PREVIEW =
   '<iframe src="https://www.facebook.com/ads/api/preview_iframe.php?d=abc&t=1" width="540" height="690" scrolling="yes" style="border:none;"></iframe>';
@@ -92,5 +92,19 @@ describe("sanitizeAdPreviewHtml", () => {
     expect(
       sanitizeAdPreviewHtml('<form action="javascript:alert(1)"><button formaction="javascript:alert(2)">x</button></form>'),
     ).toBe("<form ><button >x</button></form>");
+  });
+});
+
+describe("extractMetaAdPreviewUrl", () => {
+  it("extracts and decodes a legitimate Meta preview link", () => {
+    expect(extractMetaAdPreviewUrl(META_PREVIEW)).toBe(
+      "https://www.facebook.com/ads/api/preview_iframe.php?d=abc&t=1",
+    );
+  });
+
+  it("rejects relative, non-Meta, and non-preview iframe links", () => {
+    expect(extractMetaAdPreviewUrl('<iframe src="/relative"></iframe>')).toBeNull();
+    expect(extractMetaAdPreviewUrl('<iframe src="https://example.com/ads/api/preview_iframe.php"></iframe>')).toBeNull();
+    expect(extractMetaAdPreviewUrl('<iframe src="https://www.facebook.com/profile.php"></iframe>')).toBeNull();
   });
 });

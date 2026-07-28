@@ -4,7 +4,13 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { buildClientReportViewModel } from "../client-report";
 import { buildClientReportPdf } from "../client-report-pdf";
-import { buildClientReportPdfLayout, createClientReportTypesetter, registerClientReportPdfFonts, type ClientReportPdfFontData } from "../client-report-layout";
+import {
+  buildClientReportPdfLayout,
+  clientReportMetricGridColumns,
+  createClientReportTypesetter,
+  registerClientReportPdfFonts,
+  type ClientReportPdfFontData,
+} from "../client-report-layout";
 import { CHART_PRESETS, presetToSpec } from "../custom-chart";
 import { buildSampleReport } from "../sample-report";
 import type { DashboardReport, KpiCard, NormalizedRow, Verdict } from "../types";
@@ -53,6 +59,8 @@ const fonts: ClientReportPdfFontData = {
   regular: readFileSync(resolve(process.cwd(), "public/fonts/geist/Geist-Regular.ttf")).toString("base64"),
   semibold: readFileSync(resolve(process.cwd(), "public/fonts/geist/Geist-SemiBold.ttf")).toString("base64"),
 };
+
+const TINY_PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 
 function report(overrides: Partial<DashboardReport> = {}): DashboardReport {
   const longRows = Array.from({ length: 34 }, (_, index) =>
@@ -203,6 +211,69 @@ describe("client report PDF rebuild", () => {
     expect(text).toContain("/ToUnicode");
     expect(text).not.toContain("/Subtype /Image");
     expect(text).toContain("%%EOF");
+  });
+
+  it("reserves collision-safe metric and health space and explains every trend series", async () => {
+    const stressedModel = {
+      ...model(),
+      healthLabel: "B · 85/100",
+      healthStatusLabel: "Watch",
+      kpis: [
+        { key: "spend", label: "Spend", value: "10.21M VND", delta: "↑ 12.4% vs previous period", movement: "bad" as const },
+        { key: "leads", label: "Leads", value: "121", delta: "↑ 8.2% vs previous period", movement: "good" as const },
+        { key: "cpl", label: "Cost per lead", value: "84,420 VND", delta: "↓ 3.1% vs previous period", movement: "good" as const },
+        { key: "ctr", label: "CTR", value: "1.24%", delta: "→ 0% vs previous period", movement: "neutral" as const },
+        { key: "impressions", label: "Impressions", value: "742K", delta: "↑ 6.8% vs previous period", movement: "good" as const },
+      ],
+    };
+    const layout = await buildClientReportPdfLayout(stressedModel, fonts);
+    const blocks = layout.pages.flatMap((page) => page.blocks);
+    const health = blocks.find((block) => block.kind === "health-strip");
+    const metrics = blocks.find((block) => block.kind === "metric-grid");
+    const trend = blocks.find((block) => block.kind === "trend-chart");
+
+    expect(health?.height).toBeGreaterThanOrEqual(92);
+    expect(metrics?.height).toBeGreaterThanOrEqual(88);
+    expect(clientReportMetricGridColumns(stressedModel.kpis.length)).toBe(5);
+    expect(trend?.kind === "trend-chart" ? trend.legend : []).toEqual([
+      { kind: "bar", label: "Spend" },
+      { kind: "line", label: "Leads" },
+      { kind: "dashed", label: "CPL" },
+    ]);
+    expect(trend?.kind === "trend-chart" ? trend.text : "").toContain("own 0-to-maximum scale");
+  });
+
+  it("renders every ad as a paginated linked preview card and embeds available thumbnails", async () => {
+    const previewReport = report({
+      adsetPreviews: [{
+        ...report().adsetPreviews![0],
+        ads: Array.from({ length: 9 }, (_, index) => ({
+          id: `preview-${index + 1}`,
+          name: `Preview creative ${index + 1}`,
+          adsetId: "as1",
+          previewHtml: `<iframe src="https://www.facebook.com/ads/api/preview_iframe.php?d=preview-${index + 1}&amp;t=1"></iframe>`,
+          previewImageUrl: index === 0 ? TINY_PNG : undefined,
+        })),
+      }],
+    });
+    const previewModel = buildClientReportViewModel({
+      report: previewReport,
+      compareMode: "off",
+      language: "en",
+      kpis,
+      verdict: verdict(),
+    });
+    const layout = await buildClientReportPdfLayout(previewModel, fonts);
+    const creativeBlocks = layout.pages.flatMap((page) => page.blocks.filter((block) => block.kind === "creative-row"));
+    const pdf = await buildClientReportPdf(previewModel, fonts);
+    const bytes = new Uint8Array(await pdf.blob.arrayBuffer());
+    const text = new TextDecoder("latin1").decode(bytes);
+
+    expect(creativeBlocks).toHaveLength(9);
+    expect(new Set(creativeBlocks.map((block) => block.pageNumber)).size).toBeGreaterThan(1);
+    expect(text).toContain("/Subtype /Image");
+    expect(text).toContain("/Annots");
+    expect(text).toContain("/URI");
   });
 
   it("includes saved Custom Charts as vector layout blocks", async () => {

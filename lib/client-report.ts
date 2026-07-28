@@ -1,4 +1,5 @@
 import { analyzeComparisonRootCauses, type ComparisonRootCauseStatus } from "@/lib/comparison-root-cause";
+import { extractMetaAdPreviewUrl } from "@/lib/ad-preview-html";
 import { buildCustomChartData, metricFormat, metricLabel, type CustomChartSpec } from "@/lib/custom-chart";
 import { type DecisionTargets } from "@/lib/decision-confidence";
 import { runDiagnostics, type Diagnostic, type DiagnosticSeverity } from "@/lib/diagnosis";
@@ -208,13 +209,14 @@ export type ClientReportViewModel = {
   tableGuide: ClientReportTableGuide;
   diagnostics: ClientReportDiagnostic[];
   creativeDetails: Array<{
+    id: string;
     name: string;
+    adsetName: string;
     campaignName: string;
     status: string;
-    adCount: number;
-    adCountLabel: string;
     summary: string;
-    ads: string[];
+    previewUrl: string;
+    previewImageUrl: string | null;
   }>;
 };
 
@@ -429,19 +431,18 @@ export function buildClientReportViewModel(args: {
       evidence: projectDiagnosticEvidence(diagnostic, args.language, currency),
       nextStep: clientFacingText(diagnostic.nextStep[args.language], args.language),
     })),
-    creativeDetails: (report.adsetPreviews || []).map((adset) => {
-      const adCount = adset.ads.length;
-      const adCountLabel = args.language === "vi" ? `${adCount} quảng cáo` : `${adCount} ${adCount === 1 ? "ad" : "ads"}`;
-      return {
-        name: adset.name,
+    creativeDetails: (report.adsetPreviews || []).flatMap((adset) =>
+      adset.ads.map((ad) => ({
+        id: ad.id,
+        name: ad.name || ad.id,
+        adsetName: adset.name,
         campaignName: adset.campaignName,
         status: adset.status,
-        adCount,
-        adCountLabel,
-        summary: `${adset.campaignName} / ${adset.status} / ${adCountLabel}`,
-        ads: adset.ads.map((ad) => ad.name || ad.id).slice(0, 6),
-      };
-    }),
+        summary: `${adset.campaignName} / ${adset.name}`,
+        previewUrl: extractMetaAdPreviewUrl(ad.previewHtml) || metaAdManagerUrl(report.account.id, ad.id),
+        previewImageUrl: ad.previewImageUrl?.trim() || null,
+      })),
+    ),
   };
 }
 
@@ -1049,7 +1050,7 @@ function formatClientReportKpiMetric(
   return formatClientReportMetric(value, format, currency, language);
 }
 
-function formatClientReportCompactMetric(
+export function formatClientReportCompactMetric(
   value: number,
   format: KpiCard["format"],
   currency: string,
@@ -1148,6 +1149,12 @@ function clientFacingText(value: string, language: InterfaceLanguage) {
     .replace(/scale/g, "increase budget")
     .replace(/guardrails?/gi, "safety limits")
     .replace(/guarded/gi, "controlled");
+}
+
+function metaAdManagerUrl(accountId: string, adId: string) {
+  const account = accountId.replace(/^act_/, "");
+  const params = new URLSearchParams({ act: account, selected_ad_ids: adId });
+  return `https://www.facebook.com/adsmanager/manage/ads/edit/standalone?${params.toString()}`;
 }
 
 function localizeComparisonEvidence(value: string, language: InterfaceLanguage) {

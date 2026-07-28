@@ -17,7 +17,14 @@ type Fixture = {
   campaigns?: MetaCampaign[];
   campaignInsights?: InsightRow[];
   adsets?: MetaAdSet[];
-  ads?: Array<{ id: string; name: string; adset_id: string; status: string; effective_status: string }>;
+  ads?: Array<{
+    id: string;
+    name: string;
+    adset_id: string;
+    status: string;
+    effective_status: string;
+    creative?: { thumbnail_url?: string };
+  }>;
 };
 
 const account: MetaAccount = { id: "act_123", account_id: "123", name: "Main account", currency: "VND" };
@@ -162,7 +169,14 @@ describe("buildReport", () => {
         { id: "as2", name: "Paused set", campaign_id: "c1", effective_status: "PAUSED" },
       ],
       ads: [
-        { id: "ad1", name: "Live ad", adset_id: "as1", status: "ACTIVE", effective_status: "ACTIVE" },
+        {
+          id: "ad1",
+          name: "Live ad",
+          adset_id: "as1",
+          status: "ACTIVE",
+          effective_status: "ACTIVE",
+          creative: { thumbnail_url: "https://scontent.example.fbcdn.net/ad1.jpg" },
+        },
         { id: "ad2", name: "Orphaned ad", adset_id: "as2", status: "ACTIVE", effective_status: "ACTIVE" },
         { id: "ad3", name: "Paused ad", adset_id: "as1", status: "PAUSED", effective_status: "PAUSED" },
       ],
@@ -176,9 +190,15 @@ describe("buildReport", () => {
       expect.objectContaining({
         id: "as1",
         campaignName: "Leads always-on",
-        ads: [expect.objectContaining({ id: "ad1", previewHtml: '<iframe src="/ad1/previews"></iframe>' })],
+        ads: [expect.objectContaining({
+          id: "ad1",
+          previewHtml: '<iframe src="/ad1/previews"></iframe>',
+          previewImageUrl: "https://scontent.example.fbcdn.net/ad1.jpg",
+        })],
       }),
     ]);
+    const adCall = graphList.mock.calls.find(([args]) => String(args.path).endsWith("/ads"))?.[0];
+    expect(adCall.params.fields).toContain("creative{thumbnail_url}");
   });
 
   it("uses the detected KPI pack when no override is provided", async () => {

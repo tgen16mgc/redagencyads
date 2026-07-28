@@ -4,6 +4,7 @@ const BLOCKED_ELEMENT_TAG = /<\/?(?:object|embed)\b[^>]*>?/gi;
 const BLOCKED_ATTRIBUTE = /[\s\/](?:on\w+|srcdoc)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*)/gi;
 const URL_ATTRIBUTE = /([\s\/])((?:href|src|action|formaction|data|xlink:href)\s*=\s*)("[^"]*"|'[^']*'|[^\s>]*)/gi;
 const DANGEROUS_SCHEME = /^(?:javascript|vbscript|data|blob|file):/;
+const IFRAME_SRC = /<iframe\b[^>]*\bsrc\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s>]+))/i;
 
 function decodedCodePoint(value: number): string {
   return Number.isFinite(value) && value >= 0 && value <= 0x10ffff ? String.fromCodePoint(value) : "�";
@@ -40,4 +41,27 @@ export function sanitizeAdPreviewHtml(html: string): string {
     current = next;
   }
   return "";
+}
+
+export function extractMetaAdPreviewUrl(html: string): string | null {
+  const match = IFRAME_SRC.exec(html);
+  const rawValue = match?.[1] || match?.[2] || match?.[3];
+  if (!rawValue) return null;
+
+  const decoded = rawValue
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .trim();
+  const absolute = decoded.startsWith("//") ? `https:${decoded}` : decoded;
+
+  try {
+    const url = new URL(absolute);
+    const hostname = url.hostname.toLowerCase();
+    const isFacebookHost = hostname === "facebook.com" || hostname.endsWith(".facebook.com");
+    if (url.protocol !== "https:" || !isFacebookHost || !url.pathname.startsWith("/ads/api/preview")) return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
 }
