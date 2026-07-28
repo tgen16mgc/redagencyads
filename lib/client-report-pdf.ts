@@ -1,10 +1,9 @@
 import { jsPDF } from "jspdf";
-import { formatMetric } from "@/lib/metrics";
 import type {
   ClientReportPdfFile,
   ClientReportViewModel,
 } from "@/lib/client-report";
-import type { NormalizedRow } from "@/lib/types";
+import { formatClientReportMetric } from "@/lib/client-report";
 import {
   buildClientReportPdfLayout,
   clientReportPdfCopy as reportCopy,
@@ -128,10 +127,10 @@ function drawBlock(doc: jsPDF, model: ClientReportViewModel, block: ClientReport
       drawRankingList(doc, model, block, typesetter);
       return;
     case "action-row":
-      drawActionRow(doc, block, typesetter);
+      drawActionRow(doc, model, block, typesetter);
       return;
     case "custom-chart":
-      drawCustomChart(doc, model, block);
+      drawCustomChart(doc, model, block, typesetter);
       return;
     case "breakdown-list":
       drawBreakdownList(doc, model, block);
@@ -197,10 +196,13 @@ function drawCover(doc: jsPDF, model: ClientReportViewModel, block: PdfBlock<"co
   doc.roundedRect(block.x, panelY, 5, panelH, 2, 2, "F");
   setFont(doc, "semibold", 9);
   textColor(doc, colors.primary);
-  doc.text(t.decisionBrief.toUpperCase(), block.x + 24, panelY + 28);
-  setFont(doc, "semibold", 15);
+  doc.text(t.primaryResult.toUpperCase(), block.x + 24, panelY + 28);
+  setFont(doc, "semibold", 17);
   textColor(doc, colors.foreground);
-  drawLines(doc, typesetter.wrap(model.verdictText, block.width - 48, 15, "semibold").slice(0, 7), block.x + 24, panelY + 58, 21);
+  doc.text(safeText(`${model.primaryResultLabel} / ${model.primaryCostLabel}`), block.x + 24, panelY + 61, { maxWidth: block.width - 48 });
+  setFont(doc, "normal", 10.5);
+  textColor(doc, colors.muted);
+  drawLines(doc, typesetter.wrap(model.primaryResultExplanation, block.width - 48, 10.5).slice(0, 5), block.x + 24, panelY + 91, 15);
 
   drawColor(doc, colors.border);
   doc.line(block.x, block.y + block.height - 72, block.x + block.width, block.y + block.height - 72);
@@ -279,13 +281,13 @@ function drawProvenance(doc: jsPDF, block: PdfBlock<"provenance">, typesetter: C
     doc.text(safeText(item.label).toUpperCase(), x + 14, block.y + 22);
     setFont(doc, "semibold", 9);
     textColor(doc, colors.foreground);
-    drawLines(doc, typesetter.wrap(item.value, columnWidth - 28, 9, "semibold").slice(0, 2), x + 14, block.y + 44, 12);
+    drawLines(doc, typesetter.wrap(item.value, columnWidth - 28, 9, "semibold"), x + 14, block.y + 44, 12);
   });
 }
 
 function drawMetricGrid(doc: jsPDF, block: PdfBlock<"metric-grid">) {
   const kpis = block.kpis || [];
-  const columns = 3;
+  const columns = Math.min(5, Math.max(1, kpis.length));
   const rows = Math.max(1, Math.ceil(kpis.length / columns));
   const cellWidth = block.width / columns;
   const cellHeight = block.height / rows;
@@ -324,13 +326,13 @@ function drawHealthStrip(doc: jsPDF, model: ClientReportViewModel, block: PdfBlo
   doc.text(safeText(block.title || "").toUpperCase(), block.x + 18, block.y + 24);
   setFont(doc, "semibold", 32);
   textColor(doc, colors.foreground);
-  doc.text(safeText(model.healthLabel), block.x + 18, block.y + 62);
-  drawStatus(doc, block.label || model.healthStatusLabel, block.x + 18, block.y + 74, block.tone || "neutral");
+  doc.text(safeText(model.healthLabel), block.x + 18, block.y + 55);
+  drawStatus(doc, block.label || model.healthStatusLabel, block.x + 18, block.y + block.height - 28, block.tone || "neutral");
   drawColor(doc, colors.border);
   doc.line(block.x + 210, block.y + 16, block.x + 210, block.y + block.height - 16);
   setFont(doc, "normal", 9.5);
   textColor(doc, colors.foreground);
-  drawLines(doc, typesetter.wrap(block.text || "", block.width - 248, 9.5), block.x + 230, block.y + 35, 13);
+  drawLines(doc, typesetter.wrap(block.text || "", block.width - 248, 9.5), block.x + 230, block.y + 30, 13);
 }
 
 function drawNarrative(doc: jsPDF, block: PdfBlock<"narrative">) {
@@ -362,7 +364,7 @@ function drawSignalList(doc: jsPDF, block: PdfBlock<"signal-list">, typesetter: 
     setFont(doc, "normal", 8.8);
     textColor(doc, colors.foreground);
     drawLines(doc, lines, block.x + 28, y + 2, 12);
-    y += lines.length * 12 + 16;
+    y += lines.length * 12 + 10;
   });
 }
 
@@ -375,11 +377,11 @@ function drawTrendChart(doc: jsPDF, model: ClientReportViewModel, block: PdfBloc
   doc.text(safeText(block.title || ""), block.x + 18, block.y + 26);
   setFont(doc, "normal", 8);
   textColor(doc, colors.muted);
-  doc.text(`${t.spend}: ${formatMetric(Math.max(0, ...rows.map((row) => row.spend)), "currency", model.currency)}`, block.x + 18, block.y + 46);
-  doc.text(`${model.primaryResultLabel}: ${formatMetric(Math.max(0, ...rows.map((row) => row.primary)), "number", model.currency)}`, block.x + block.width - 18, block.y + 46, { align: "right" });
+  doc.text(`${t.spend}: ${formatClientReportMetric(Math.max(0, ...rows.map((row) => row.spend)), "currency", model.currency, model.language)}`, block.x + 18, block.y + 46);
+  doc.text(`${model.primaryResultLabel}: ${formatClientReportMetric(Math.max(0, ...rows.map((row) => row.primary)), "number", model.currency, model.language)}`, block.x + block.width - 18, block.y + 46, { align: "right" });
   setFont(doc, "normal", 7.5);
   textColor(doc, colors.info);
-  doc.text(`${model.efficiencyLabel}: ${formatMetric(rows.at(-1)?.efficiency || 0, model.selectedPack === "sales_roas" ? "ratio" : "currency", model.currency)}`, block.x + block.width / 2, block.y + 46, { align: "center" });
+  doc.text(`${model.efficiencyLabel}: ${formatClientReportMetric(rows.at(-1)?.efficiency || 0, model.selectedPack === "sales_roas" ? "ratio" : "currency", model.currency, model.language)}`, block.x + block.width / 2, block.y + 46, { align: "center" });
 
   const chartX = block.x + 24;
   const chartY = block.y + 66;
@@ -473,30 +475,40 @@ function drawRankingList(doc: jsPDF, model: ClientReportViewModel, block: PdfBlo
   });
 }
 
-function drawCustomChart(doc: jsPDF, model: ClientReportViewModel, block: PdfBlock<"custom-chart">) {
+function drawCustomChart(doc: jsPDF, model: ClientReportViewModel, block: PdfBlock<"custom-chart">, typesetter: ClientReportTypesetter) {
   const chart = block.customChart;
   if (!chart) return;
+  const t = reportCopy[model.language];
   surface(doc, block.x, block.y, block.width, block.height, colors.surface);
   setFont(doc, "semibold", 12);
   textColor(doc, colors.foreground);
   doc.text(safeText(chart.title), block.x + 18, block.y + 26, { maxWidth: block.width - 36 });
 
+  let headerY = block.y + 48;
+  if (chart.referenceNote) {
+    setFont(doc, "normal", 7.6);
+    textColor(doc, colors.warning);
+    const noteLines = typesetter.wrap(chart.referenceNote, block.width - 36, 7.6).slice(0, 2);
+    drawLines(doc, noteLines, block.x + 18, headerY, 10.5);
+    headerY += noteLines.length * 10.5 + 10;
+  }
+
   const palette = [colors.primary, colors.info, colors.chartCyan, colors.chartSteel, colors.chartLight] as const;
   let legendX = block.x + 18;
   chart.series.forEach((series, index) => {
     fill(doc, palette[index % palette.length]);
-    doc.circle(legendX + 3, block.y + 47, 3, "F");
+    doc.circle(legendX + 3, headerY - 3, 3, "F");
     setFont(doc, "normal", 7.2);
     textColor(doc, colors.muted);
-    const label = `${series.label} (${series.axis === "left" ? "L" : "R"})`;
-    doc.text(safeText(label), legendX + 10, block.y + 50);
-    legendX += Math.min(118, 22 + label.length * 4.2);
+    const label = `${series.label} — ${series.axis === "left" ? t.leftAxis : t.rightAxis}`;
+    doc.text(safeText(label), legendX + 10, headerY);
+    legendX += Math.min(170, 22 + label.length * 4.1);
   });
 
-  const chartX = block.x + 24;
-  const chartY = block.y + 68;
-  const chartWidth = block.width - 48;
-  const chartHeight = block.height - 104;
+  const chartX = block.x + 58;
+  const chartY = headerY + 18;
+  const chartWidth = block.width - 116;
+  const chartHeight = block.y + block.height - chartY - 36;
   drawColor(doc, colors.border);
   [0, 1, 2, 3].forEach((step) => doc.line(chartX, chartY + (step * chartHeight) / 3, chartX + chartWidth, chartY + (step * chartHeight) / 3));
   if (!chart.data.length) {
@@ -510,6 +522,12 @@ function drawCustomChart(doc: jsPDF, model: ClientReportViewModel, block: PdfBlo
   chart.series.forEach((series) => {
     maxima[series.axis] = Math.max(maxima[series.axis], ...chart.data.map((point) => Number(point[series.key] || 0)));
   });
+  const leftSeries = chart.series.find((series) => series.axis === "left");
+  const rightSeries = chart.series.find((series) => series.axis === "right");
+  drawAxisScale(doc, model, chartX, chartY, chartHeight, maxima.left, leftSeries?.format || "number", "left");
+  if (rightSeries) {
+    drawAxisScale(doc, model, chartX + chartWidth, chartY, chartHeight, maxima.right, rightSeries.format, "right");
+  }
   const slot = chartWidth / chart.data.length;
   chart.series.forEach((series, seriesIndex) => {
     const color = palette[seriesIndex % palette.length];
@@ -540,7 +558,45 @@ function drawCustomChart(doc: jsPDF, model: ClientReportViewModel, block: PdfBlo
   labelIndexes.forEach((index) => doc.text(safeText(String(chart.data[index].x || "")), chartX + index * slot + slot / 2, chartY + chartHeight + 17, { align: "center" }));
 }
 
-function drawActionRow(doc: jsPDF, block: PdfBlock<"action-row">, typesetter: ClientReportTypesetter) {
+function drawAxisScale(
+  doc: jsPDF,
+  model: ClientReportViewModel,
+  x: number,
+  y: number,
+  height: number,
+  maximum: number,
+  format: ClientReportViewModel["customCharts"][number]["series"][number]["format"],
+  side: "left" | "right",
+) {
+  setFont(doc, "normal", 6.4);
+  textColor(doc, colors.muted);
+  const align = side === "left" ? "right" : "left";
+  const labelX = x + (side === "left" ? -8 : 8);
+  [maximum, maximum / 2, 0].forEach((value, index) => {
+    doc.text(formatAxisValue(value, format, model.currency, model.language), labelX, y + (index * height) / 2 + 2, { align });
+  });
+}
+
+function formatAxisValue(
+  value: number,
+  format: ClientReportViewModel["customCharts"][number]["series"][number]["format"],
+  currency: string,
+  language: ClientReportViewModel["language"],
+) {
+  if (format !== "currency" && format !== "number") {
+    return formatClientReportMetric(value, format, currency, language);
+  }
+  const locale = language === "vi" ? "vi-VN" : "en-US";
+  const absolute = Math.abs(value);
+  const compact = absolute >= 1_000_000
+    ? `${(value / 1_000_000).toLocaleString(locale, { maximumFractionDigits: 1 })}m`
+    : absolute >= 1_000
+      ? `${(value / 1_000).toLocaleString(locale, { maximumFractionDigits: 1 })}k`
+      : value.toLocaleString(locale, { maximumFractionDigits: 0 });
+  return format === "currency" ? `${compact} ${currency}` : compact;
+}
+
+function drawActionRow(doc: jsPDF, model: ClientReportViewModel, block: PdfBlock<"action-row">, typesetter: ClientReportTypesetter) {
   if (!block.action) return;
   drawColor(doc, colors.border);
   doc.line(block.x, block.y + block.height, block.x + block.width, block.y + block.height);
@@ -553,31 +609,51 @@ function drawActionRow(doc: jsPDF, block: PdfBlock<"action-row">, typesetter: Cl
   textColor(doc, colors.foreground);
   const titleLines = typesetter.wrap(block.action.title, block.width - 92, 11.5, "semibold");
   drawLines(doc, titleLines, block.x + 70, block.y + 25, 15);
-  setFont(doc, "normal", 8.8);
+  const bodyX = block.x + 70;
+  const bodyWidth = block.width - 92;
+  let bodyY = block.y + 34 + titleLines.length * 15;
+  setFont(doc, "semibold", 7.1);
   textColor(doc, colors.muted);
-  drawLines(doc, typesetter.wrap(block.action.detail, block.width - 92, 8.8), block.x + 70, block.y + 30 + titleLines.length * 15, 12);
+  doc.text(reportCopy[model.language].why.toUpperCase(), bodyX, bodyY);
+  bodyY += 12;
+  setFont(doc, "normal", 8.5);
+  textColor(doc, colors.foreground);
+  const whyLines = typesetter.wrap(block.action.why, bodyWidth, 8.5);
+  drawLines(doc, whyLines, bodyX, bodyY, 11.5);
+  bodyY += whyLines.length * 11.5 + 10;
+  setFont(doc, "semibold", 7.1);
+  textColor(doc, colors.muted);
+  doc.text(reportCopy[model.language].monitor.toUpperCase(), bodyX, bodyY);
+  bodyY += 12;
+  setFont(doc, "normal", 8.5);
+  textColor(doc, colors.foreground);
+  drawLines(doc, typesetter.wrap(block.action.monitor, bodyWidth, 8.5), bodyX, bodyY, 11.5);
 }
 
 function drawBreakdownList(doc: jsPDF, model: ClientReportViewModel, block: PdfBlock<"breakdown-list">) {
   const rows = block.rows || [];
   const maxSpend = Math.max(1, ...rows.map((row) => row.spend));
+  const compact = block.width < 220;
   surface(doc, block.x, block.y, block.width, block.height, colors.surface);
   setFont(doc, "semibold", 11);
   textColor(doc, colors.foreground);
   doc.text(safeText(block.title || ""), block.x + 16, block.y + 25);
   let y = block.y + 52;
   rows.forEach((row, index) => {
-    const label = reportRowLabel(row);
-    const barWidth = Math.max(3, ((block.width - 132) * row.spend) / maxSpend);
+    const barWidth = Math.max(3, ((block.width - 32) * row.spend) / maxSpend);
     setFont(doc, "normal", 8.2);
     textColor(doc, colors.foreground);
-    doc.text(safeText(label), block.x + 16, y, { maxWidth: block.width - 118 });
+    doc.text(safeText(row.name), block.x + 16, y, { maxWidth: compact ? block.width - 32 : block.width - 168 });
     setFont(doc, "semibold", 7.8);
     textColor(doc, colors.muted);
-    doc.text(safeText(formatMetric(row.spend, "currency", model.currency)), block.x + block.width - 16, y, { align: "right", maxWidth: 92 });
+    if (compact) {
+      doc.text(safeText(`${row.spendLabel} · ${row.spendShareLabel}`), block.x + 16, y + 13, { maxWidth: block.width - 32 });
+    } else {
+      doc.text(safeText(`${row.spendLabel} · ${row.spendShareLabel}`), block.x + block.width - 16, y, { align: "right", maxWidth: 142 });
+    }
     fill(doc, index === 0 ? colors.primary : colors.border);
-    doc.roundedRect(block.x + 16, y + 10, barWidth, 4, 2, 2, "F");
-    y += 32;
+    doc.roundedRect(block.x + 16, y + (compact ? 23 : 10), barWidth, 4, 2, 2, "F");
+    y += compact ? 40 : 32;
   });
 }
 
@@ -708,16 +784,6 @@ function drawColor(doc: jsPDF, rgb: Rgb) {
 
 function drawLines(doc: jsPDF, lines: string[], x: number, y: number, lineHeight: number) {
   lines.forEach((line, index) => doc.text(safeText(line), x, y + index * lineHeight));
-}
-
-function reportRowLabel(row: NormalizedRow) {
-  if (row.level === "daily") return row.date || row.name;
-  if (row.platform) return row.platform;
-  if (row.placement) return row.placement;
-  if (row.region) return row.region;
-  if (row.country) return row.country;
-  if (row.age && row.gender) return `${row.age} ${row.gender}`;
-  return row.name;
 }
 
 function healthTone(status: ClientReportViewModel["healthStatus"]): ReportTone {

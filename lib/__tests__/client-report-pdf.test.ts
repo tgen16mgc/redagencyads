@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { jsPDF } from "jspdf";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { buildClientReportViewModel } from "../client-report";
 import { buildClientReportPdf } from "../client-report-pdf";
-import { buildClientReportPdfLayout, type ClientReportPdfFontData } from "../client-report-layout";
+import { buildClientReportPdfLayout, createClientReportTypesetter, registerClientReportPdfFonts, type ClientReportPdfFontData } from "../client-report-layout";
 import { CHART_PRESETS, presetToSpec } from "../custom-chart";
 import { buildSampleReport } from "../sample-report";
 import type { DashboardReport, KpiCard, NormalizedRow, Verdict } from "../types";
@@ -170,7 +171,7 @@ describe("client report PDF rebuild", () => {
       },
     });
     const layout = await buildClientReportPdfLayout(longVerdictModel, fonts);
-    const verdictBlocks = layout.pages.flatMap((page) => page.blocks.filter((block) => block.kind === "narrative" && block.title?.startsWith("Decision brief")));
+    const verdictBlocks = layout.pages.flatMap((page) => page.blocks.filter((block) => block.kind === "narrative" && block.title?.startsWith("Performance decision")));
 
     for (const page of layout.pages) {
       const top = layout.margin.top;
@@ -219,6 +220,7 @@ describe("client report PDF rebuild", () => {
     expect(chartBlocks).toHaveLength(1);
     expect(chartBlocks[0].customChart?.title).toBe("Lead volume vs CPL");
     expect(chartBlocks[0].customChart?.data).toHaveLength(26);
+    expect(chartBlocks[0].customChart?.referenceNote).toBeNull();
   });
 
   it("keeps the Budget Move and action grid concise, then keeps breakdown evidence together", async () => {
@@ -241,7 +243,7 @@ describe("client report PDF rebuild", () => {
     const recommendationPages = layout.pages.filter((page) => page.section === sampleModel.copy.recommendations);
     const recommendationBlocks = recommendationPages.flatMap((page) => page.blocks);
     const actionBlocks = recommendationBlocks.filter((block) => block.kind === "action-row");
-    const budgetEvidence = recommendationBlocks.find((block) => block.kind === "signal-list" && block.title.startsWith("Budget Move evidence"));
+    const budgetEvidence = recommendationBlocks.find((block) => block.kind === "signal-list" && block.title.startsWith("Budget evidence"));
     const breakdownBlocks = layout.pages.flatMap((page) => page.blocks.filter((block) => block.kind === "breakdown-list"));
     const noChartModel = buildClientReportViewModel({
       report: sample,
@@ -256,10 +258,74 @@ describe("client report PDF rebuild", () => {
     expect(actionBlocks).toHaveLength(4);
     expect(new Set(actionBlocks.map((block) => block.pageNumber)).size).toBe(1);
     expect(budgetEvidence?.kind === "signal-list" ? budgetEvidence.items[0] : null).toBe(sampleModel.budgetMove.summary);
-    expect(recommendationBlocks.some((block) => block.kind === "narrative" && block.title.startsWith("Budget Move evidence"))).toBe(false);
+    expect(recommendationBlocks.some((block) => block.kind === "narrative" && block.title.startsWith("Budget evidence"))).toBe(false);
     expect(new Set(breakdownBlocks.map((block) => block.pageNumber)).size).toBe(1);
     expect(noChartAppendixPages).toHaveLength(1);
     expect(noChartAppendixPages[0].blocks.filter((block) => block.kind === "breakdown-list")).toHaveLength(3);
+  });
+
+  it("keeps the client summary sections dense and prints the comparison-off disclosure once", async () => {
+    const sample = buildSampleReport();
+    const sampleModel = buildClientReportViewModel({
+      report: sample,
+      compareMode: "off",
+      language: "en",
+      kpis: sample.kpis,
+      customCharts: [presetToSpec(CHART_PRESETS[0], "en", "saved-chart")],
+    });
+    const layout = await buildClientReportPdfLayout(sampleModel, fonts);
+    const sections = [sampleModel.copy.executiveSummary, sampleModel.copy.performanceStory, sampleModel.copy.recommendations, sampleModel.copy.appendixCharts];
+
+    sections.forEach((section) => expect(layout.pages.filter((page) => page.section === section)).toHaveLength(1));
+    const savedChart = layout.pages.flatMap((page) => page.blocks).find((block) => block.kind === "custom-chart");
+    expect(savedChart?.kind === "custom-chart" ? savedChart.customChart.referenceNote : null).toContain("primary KPI remains messages");
+    const comparisonDisclosures = JSON.stringify(layout).match(/No comparison selected for this report\./g) || [];
+    expect(comparisonDisclosures).toHaveLength(1);
+    expect(JSON.stringify(layout)).not.toContain("Pack benchmark pass");
+    expect(JSON.stringify(layout)).toContain("Target for this KPI pack");
+    expect(layout.pages.filter((page) => sections.includes(page.section)).every((page) => {
+      const content = page.blocks.filter((block) => block.kind !== "header" && block.kind !== "footer");
+      return Math.max(...content.map((block) => block.y + block.height)) >= 650;
+    })).toBe(true);
+  });
+
+  it("uses the final table-page space for client reading guidance", async () => {
+    const sample = buildSampleReport();
+    const sampleModel = buildClientReportViewModel({
+      report: sample,
+      compareMode: "off",
+      language: "en",
+      kpis: sample.kpis,
+    });
+    const layout = await buildClientReportPdfLayout(sampleModel, fonts);
+    const tablePages = layout.pages.filter((page) => page.section === sampleModel.copy.appendixTables);
+    const guideBlocks = tablePages.flatMap((page) => page.blocks).filter((block) => block.kind === "signal-list" && block.title === sampleModel.tableGuide.title);
+    const lastPageContent = tablePages.at(-1)?.blocks.filter((block) => block.kind !== "header" && block.kind !== "footer") || [];
+
+    expect(guideBlocks).toHaveLength(1);
+    expect(Math.max(...lastPageContent.map((block) => block.y + block.height))).toBeGreaterThanOrEqual(650);
+  });
+
+  it("preserves the full KPI-pack explanation and reserves room below diagnostic next steps", async () => {
+    const reportModel = model();
+    const layout = await buildClientReportPdfLayout(reportModel, fonts);
+    const provenance = layout.pages.flatMap((page) => page.blocks).find((block) => block.kind === "provenance" && block.meta.some((item) => item.label === "Selected KPI Pack"));
+
+    expect(provenance?.kind === "provenance" ? provenance.meta.find((item) => item.label === "Selected KPI Pack")?.value : null)
+      .toContain(reportModel.selectedPackReason);
+
+    const measurementDoc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4", putOnlyUsedFonts: true });
+    registerClientReportPdfFonts(measurementDoc, fonts);
+    const typesetter = createClientReportTypesetter(measurementDoc);
+    const diagnosticBlocks = layout.pages.flatMap((page) => page.blocks.filter((block) => block.kind === "diagnostic-row"));
+    for (const block of diagnosticBlocks) {
+      if (block.kind !== "diagnostic-row") continue;
+      const summaryLines = typesetter.wrap(block.diagnostic.summary, block.width - 108, 8.5).length;
+      const evidenceLines = block.diagnostic.evidence.reduce((count, line) => count + typesetter.wrap(`- ${line}`, block.width - 108, 7.8).length, 0);
+      const nextStepLines = typesetter.wrap(`Next step: ${block.diagnostic.nextStep}`, block.width - 108, 7.8, "semibold").length;
+      const lastTextBaseline = block.y + 56.5 + summaryLines * 11.5 + Math.max(1, evidenceLines) * 10.5 + nextStepLines * 10.5;
+      expect(lastTextBaseline).toBeLessThanOrEqual(block.y + block.height - 10);
+    }
   });
 
   it("keeps Vietnamese copy in the layout and embeds a Unicode font", async () => {

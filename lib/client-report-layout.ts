@@ -1,12 +1,13 @@
 import { jsPDF } from "jspdf";
 import type {
   ClientReportAction,
+  ClientReportBreakdownRow,
   ClientReportCustomChart,
   ClientReportDriver,
   ClientReportTable,
   ClientReportViewModel,
 } from "@/lib/client-report";
-import type { NormalizedRow } from "@/lib/types";
+import type { InterfaceLanguage } from "@/lib/types";
 
 export type ReportTone = "neutral" | "primary" | "good" | "warning" | "bad";
 
@@ -21,11 +22,11 @@ export const clientReportPdfCopy = {
     executiveDescription: "The current decision, account health, and highest-priority evidence.",
     performanceDescription: "Spend, results, and the rows that explain the outcome.",
     recommendationsDescription: "Reviewed actions for the next optimization cycle.",
-    chartsDescription: "Distribution views that preserve the source rows behind the decision.",
-    tablesDescription: "Comparable records for audit, handoff, and follow-up analysis.",
-    diagnosticsDescription: "Account checks and printable creative metadata.",
+    chartsDescription: "Saved reference views and spend distribution across the selected scope.",
+    tablesDescription: "Detailed performance records for review and follow-up analysis.",
+    diagnosticsDescription: "The checks behind the decision, followed by available ad details.",
     accountHealth: "Account health",
-    decisionBrief: "Decision brief",
+    decisionBrief: "Performance decision",
     evidenceSummary: "Evidence summary",
     dataSource: "Data source",
     decisionSource: "Decision source",
@@ -39,10 +40,10 @@ export const clientReportPdfCopy = {
     primaryResult: "Primary result",
     efficiency: "Efficiency",
     selectedPack: "Selected KPI Pack",
-    verdictConfidence: "Verdict Confidence",
+    verdictConfidence: "Decision confidence",
     dailyDiagnosis: "Daily diagnosis",
     comparisonDrivers: "Period-over-period drivers",
-    budgetEvidence: "Budget Move evidence",
+    budgetEvidence: "Budget evidence",
     customCharts: "Saved Custom Charts",
     topCampaigns: "Campaign drivers",
     topAdsets: "Ad set drivers",
@@ -50,7 +51,11 @@ export const clientReportPdfCopy = {
     performanceRows: "Performance records",
     diagnostics: "Diagnostic checks",
     creativeDetail: "Creative detail",
-    noCreativeDetail: "No printable creative detail is available in the selected scope.",
+    noCreativeDetail: "Creative previews were not available for this report.",
+    why: "Why this matters",
+    monitor: "What to monitor next",
+    leftAxis: "Left axis",
+    rightAxis: "Right axis",
     status: "Status",
     result: "Result",
     cost: "Cost",
@@ -62,11 +67,11 @@ export const clientReportPdfCopy = {
     executiveDescription: "Kết luận hiện tại, sức khỏe tài khoản và bằng chứng cần ưu tiên.",
     performanceDescription: "Chi tiêu, kết quả và các dòng dữ liệu giải thích hiệu quả.",
     recommendationsDescription: "Các hành động đã rà soát cho chu kỳ tối ưu tiếp theo.",
-    chartsDescription: "Phân bổ dữ liệu giúp giữ nguyên các dòng nguồn phía sau quyết định.",
-    tablesDescription: "Các bản ghi có thể đối chiếu để kiểm tra, bàn giao và phân tích tiếp.",
-    diagnosticsDescription: "Kiểm tra tài khoản và metadata quảng cáo có thể in.",
+    chartsDescription: "Biểu đồ tham khảo đã lưu và phân bổ chi tiêu trong phạm vi được chọn.",
+    tablesDescription: "Bản ghi hiệu quả chi tiết để rà soát và phân tích tiếp.",
+    diagnosticsDescription: "Các kiểm tra phía sau quyết định, kèm chi tiết quảng cáo hiện có.",
     accountHealth: "Sức khỏe tài khoản",
-    decisionBrief: "Kết luận quyết định",
+    decisionBrief: "Kết luận hiệu quả",
     evidenceSummary: "Tóm tắt bằng chứng",
     dataSource: "Nguồn dữ liệu",
     decisionSource: "Nguồn quyết định",
@@ -80,10 +85,10 @@ export const clientReportPdfCopy = {
     primaryResult: "Kết quả chính",
     efficiency: "Hiệu quả",
     selectedPack: "Gói KPI đã chọn",
-    verdictConfidence: "Độ tin cậy Verdict",
+    verdictConfidence: "Độ tin cậy quyết định",
     dailyDiagnosis: "Chẩn đoán theo ngày",
     comparisonDrivers: "Động lực giữa hai kỳ",
-    budgetEvidence: "Bằng chứng Budget Move",
+    budgetEvidence: "Bằng chứng ngân sách",
     customCharts: "Biểu đồ tùy chỉnh đã lưu",
     topCampaigns: "Động lực từ chiến dịch",
     topAdsets: "Động lực từ nhóm quảng cáo",
@@ -91,7 +96,11 @@ export const clientReportPdfCopy = {
     performanceRows: "Bản ghi hiệu quả",
     diagnostics: "Kiểm tra chẩn đoán",
     creativeDetail: "Chi tiết quảng cáo",
-    noCreativeDetail: "Không có chi tiết quảng cáo có thể in trong phạm vi đã chọn.",
+    noCreativeDetail: "Báo cáo này không có bản xem trước mẫu quảng cáo.",
+    why: "Vì sao quan trọng",
+    monitor: "Cần theo dõi tiếp",
+    leftAxis: "Trục trái",
+    rightAxis: "Trục phải",
     status: "Trạng thái",
     result: "Kết quả",
     cost: "Chi phí",
@@ -124,7 +133,7 @@ export type ClientReportPdfBlock =
   | (ClientReportPdfBlockBase & { kind: "ranking-list"; title: string; drivers: ClientReportDriver[] })
   | (ClientReportPdfBlockBase & { kind: "action-row"; action: ClientReportAction; index: number })
   | (ClientReportPdfBlockBase & { kind: "custom-chart"; title: string; customChart: ClientReportCustomChart })
-  | (ClientReportPdfBlockBase & { kind: "breakdown-list"; title: string; rows: NormalizedRow[] })
+  | (ClientReportPdfBlockBase & { kind: "breakdown-list"; title: string; rows: ClientReportBreakdownRow[] })
   | (ClientReportPdfBlockBase & { kind: "table-header"; title: string; table: ClientReportTable })
   | (ClientReportPdfBlockBase & { kind: "table-row"; table: ClientReportTable; row: ClientReportTable["rows"][number] })
   | (ClientReportPdfBlockBase & { kind: "diagnostic-row"; diagnostic: ClientReportViewModel["diagnostics"][number]; tone: ReportTone })
@@ -161,7 +170,7 @@ const clientReportPage = {
   margin: { top: 34, right: 42, bottom: 34, left: 42 },
   contentTop: 80,
   footerReserve: 42,
-  gap: 14,
+  gap: 12,
 } as const;
 
 export function createClientReportTypesetter(doc: jsPDF): ClientReportTypesetter {
@@ -322,14 +331,16 @@ export async function buildClientReportPdfLayout(
   const addPairedRankings = (section: string) => {
     const columnGap = 16;
     const width = (contentWidth - columnGap) / 2;
-    const height = Math.max(rankingHeight(model.topCampaigns), rankingHeight(model.topAdsets));
+    const campaigns = model.topCampaigns.slice(0, 3);
+    const adsets = model.topAdsets.slice(0, 3);
+    const height = Math.max(rankingHeight(campaigns), rankingHeight(adsets));
     composer.ensureSpace(height, section);
-    composer.addBlock({ kind: "ranking-list", section, x: margin.left, y: composer.cursor, width, height, title: t.topCampaigns, drivers: model.topCampaigns });
-    composer.addBlock({ kind: "ranking-list", section, x: margin.left + width + columnGap, y: composer.cursor, width, height, title: t.topAdsets, drivers: model.topAdsets });
+    composer.addBlock({ kind: "ranking-list", section, x: margin.left, y: composer.cursor, width, height, title: t.topCampaigns, drivers: campaigns });
+    composer.addBlock({ kind: "ranking-list", section, x: margin.left + width + columnGap, y: composer.cursor, width, height, title: t.topAdsets, drivers: adsets });
     composer.cursor += height + gap;
   };
 
-  const addBreakdown = (section: string, title: string, rows: NormalizedRow[], x: number, width: number, height: number) => {
+  const addBreakdown = (section: string, title: string, rows: ClientReportBreakdownRow[], x: number, width: number, height: number) => {
     composer.addBlock({ kind: "breakdown-list", section, x, y: composer.cursor, width, height, title, rows });
   };
 
@@ -367,7 +378,13 @@ export async function buildClientReportPdfLayout(
   composer.addCover();
 
   composer.startSection(model.copy.executiveSummary, t.executiveDescription);
-  const provenanceHeight = 72;
+  const executiveMeta = [
+    { label: t.dataSource, value: model.copy.source },
+    { label: t.decisionSource, value: model.decisionProviderLabel },
+    { label: t.selectedPack, value: `${model.selectedPackLabel}\n${model.selectedPackReason}` },
+    { label: t.primaryResult, value: `${model.primaryResultLabel}\n${model.primaryCostLabel}` },
+  ];
+  const provenanceHeight = provenanceBlockHeight(executiveMeta, contentWidth, typesetter);
   composer.addBlock({
     kind: "provenance",
     section: model.copy.executiveSummary,
@@ -375,32 +392,11 @@ export async function buildClientReportPdfLayout(
     y: composer.cursor,
     width: contentWidth,
     height: provenanceHeight,
-    meta: [
-      { label: t.dataSource, value: model.copy.source },
-      { label: t.decisionSource, value: model.decisionProviderLabel },
-      { label: t.generated, value: model.generatedLabel },
-      { label: t.dataPulled, value: model.pulledLabel },
-    ],
+    meta: executiveMeta,
   });
   composer.cursor += provenanceHeight + gap;
 
-  const contextHeight = 78;
-  composer.addBlock({
-    kind: "provenance",
-    section: model.copy.executiveSummary,
-    x: margin.left,
-    y: composer.cursor,
-    width: contentWidth,
-    height: contextHeight,
-    meta: [
-      { label: t.selectedPack, value: `${model.selectedPackLabel}\n${model.selectedPackReason}` },
-      { label: t.primaryResult, value: `${model.primaryResultLabel}\n${model.primaryCostLabel}` },
-      { label: t.verdictConfidence, value: model.verdictConfidenceLabel },
-    ],
-  });
-  composer.cursor += contextHeight + gap;
-
-  const healthHeight = 88 + typesetter.height(model.healthSummaryText, contentWidth - 248, 9.5, 13);
+  const healthHeight = Math.max(78, 50 + typesetter.height(model.healthSummaryText, contentWidth - 248, 9.5, 13));
   composer.ensureSpace(healthHeight, model.copy.executiveSummary);
   composer.addBlock({
     kind: "health-strip",
@@ -423,18 +419,18 @@ export async function buildClientReportPdfLayout(
   addNarrativeFlow(model.copy.executiveSummary, t.decisionBrief, model.verdictText);
   addPairedLists(
     model.copy.executiveSummary,
-    { title: model.copy.wins, items: model.wins, tone: "good" },
-    { title: model.copy.losers, items: model.losers, tone: "bad" },
+    { title: model.copy.wins, items: model.wins.slice(0, 1), tone: "good" },
+    { title: model.copy.losers, items: model.losers.slice(0, 1), tone: "bad" },
   );
   addPairedLists(
     model.copy.executiveSummary,
-    { title: model.copy.risks, items: model.risks, tone: "warning" },
-    { title: model.copy.assumptions, items: model.assumptions, tone: "neutral" },
+    { title: model.copy.risks, items: model.risks.slice(0, 1), tone: "warning" },
+    { title: model.copy.assumptions, items: model.assumptions.slice(0, 1), tone: "neutral" },
   );
 
-  composer.startSection(model.copy.performanceStory, t.performanceDescription);
-  addNarrativeFlow(model.copy.performanceStory, `${model.copy.primaryResult}: ${model.primaryResultLabel}`, model.primaryResultExplanation);
-  const trendHeight = 238;
+  const comparisonContext = model.comparison.status === "off" ? ` ${model.comparison.summary}` : "";
+  composer.startSection(model.copy.performanceStory, `${t.performanceDescription} ${model.primaryResultExplanation}${comparisonContext}`);
+  const trendHeight = 208;
   composer.addBlock({
     kind: "trend-chart",
     section: model.copy.performanceStory,
@@ -456,15 +452,19 @@ export async function buildClientReportPdfLayout(
     );
   }
   addPairedRankings(model.copy.performanceStory);
-  addNarrativeFlow(model.copy.performanceStory, t.comparisonDrivers, model.comparison.summary);
-  if (model.comparison.drivers.length) {
+  if (model.comparison.status !== "off") {
+    addNarrativeFlow(model.copy.performanceStory, t.comparisonDrivers, model.comparison.summary);
+  }
+  if (model.comparison.status !== "off" && model.comparison.drivers.length) {
     addPairedLists(
       model.copy.performanceStory,
       { title: model.language === "vi" ? "Bằng chứng" : "Evidence", items: model.comparison.drivers.map((driver) => `${driver.name}: ${driver.evidence.join("; ")}`), tone: "primary" },
       { title: model.language === "vi" ? "Hàm ý" : "Implication", items: model.comparison.drivers.map((driver) => driver.action), tone: "neutral" },
     );
   }
-  addNote(model.copy.performanceStory, model.copy.footnoteComparison);
+  if (model.comparison.status !== "off" && model.copy.footnoteComparison !== model.comparison.summary) {
+    addNote(model.copy.performanceStory, model.copy.footnoteComparison);
+  }
 
   const recommendationInsight = model.insightSummary ? `${t.evidenceSummary}: ${model.insightSummary}` : null;
   const inlineRecommendationInsight = recommendationInsight
@@ -473,15 +473,14 @@ export async function buildClientReportPdfLayout(
     : null;
   composer.startSection(
     model.copy.recommendations,
-    inlineRecommendationInsight ? `${t.recommendationsDescription} ${inlineRecommendationInsight}` : t.recommendationsDescription,
+    `${inlineRecommendationInsight ? `${t.recommendationsDescription} ${inlineRecommendationInsight}` : t.recommendationsDescription} ${model.copy.footnoteRecommendations}`,
   );
-  addNote(model.copy.recommendations, model.copy.footnoteRecommendations);
   if (model.insightSummary && !inlineRecommendationInsight) {
     addNarrativeFlow(model.copy.recommendations, t.evidenceSummary, model.insightSummary);
   }
   const budgetEvidence = model.budgetMove.recommendations.flatMap((recommendation) => [recommendation.summary, ...recommendation.evidence]);
   const supportingBudgetEvidence = budgetEvidence.length ? budgetEvidence : model.budgetMove.holdReasons;
-  const evidence = [model.budgetMove.summary, ...supportingBudgetEvidence].filter(
+  const evidence = [model.budgetMove.summary, ...supportingBudgetEvidence.slice(0, 2)].filter(
     (item, index, items) => Boolean(item) && items.indexOf(item) === index,
   );
   if (evidence.length) {
@@ -494,7 +493,7 @@ export async function buildClientReportPdfLayout(
       y: composer.cursor,
       width: contentWidth,
       height,
-      title: `${t.budgetEvidence}: ${model.budgetMove.label}`,
+      title: t.budgetEvidence,
       items: evidence,
       tone: model.budgetMove.status === "moves_recommended" ? "good" : "warning",
     });
@@ -531,39 +530,63 @@ export async function buildClientReportPdfLayout(
     composer.addBlock({ kind: "subsection", section: model.copy.appendixCharts, x: margin.left, y: composer.cursor, width: contentWidth, height: 44, title: t.customCharts });
     composer.cursor += 44;
     model.customCharts.forEach((chart) => {
-      const height = 360;
+      const height = 300;
       composer.ensureSpace(height, model.copy.appendixCharts);
       composer.addBlock({ kind: "custom-chart", section: model.copy.appendixCharts, x: margin.left, y: composer.cursor, width: contentWidth, height, customChart: chart, title: chart.title });
       composer.cursor += height + gap;
     });
   }
-  const platformHeight = breakdownHeight(model.breakdowns.platforms);
-  const regionHeight = breakdownHeight(model.breakdowns.regions);
-  const ageGenderHeight = breakdownHeight(model.breakdowns.ageGender);
   const breakdownGap = 8;
-  const sourceNoteHeight = noteHeight(model.copy.footnoteSource, contentWidth, typesetter);
-  composer.ensureSpace(
-    platformHeight + breakdownGap + regionHeight + breakdownGap + ageGenderHeight + breakdownGap + sourceNoteHeight,
-    model.copy.appendixCharts,
-  );
-  addBreakdown(model.copy.appendixCharts, model.language === "vi" ? "Nền tảng" : "Platform", model.breakdowns.platforms, margin.left, contentWidth, platformHeight);
-  composer.cursor += platformHeight + breakdownGap;
-  addBreakdown(model.copy.appendixCharts, model.language === "vi" ? "Khu vực" : "Geography", model.breakdowns.regions, margin.left, contentWidth, regionHeight);
-  composer.cursor += regionHeight + breakdownGap;
-  addBreakdown(model.copy.appendixCharts, model.language === "vi" ? "Tuổi và giới tính" : "Age and gender", model.breakdowns.ageGender, margin.left, contentWidth, ageGenderHeight);
-  composer.cursor += ageGenderHeight + breakdownGap;
-  addNote(model.copy.appendixCharts, model.copy.footnoteSource);
+  if (model.customCharts.length) {
+    const breakdownWidth = (contentWidth - breakdownGap * 2) / 3;
+    const breakdownHeightValue = Math.max(
+      breakdownHeight(model.breakdowns.platforms, true),
+      breakdownHeight(model.breakdowns.regions, true),
+      breakdownHeight(model.breakdowns.ageGender, true),
+    );
+    composer.ensureSpace(breakdownHeightValue, model.copy.appendixCharts);
+    addBreakdown(model.copy.appendixCharts, model.language === "vi" ? "Nền tảng" : "Platform", model.breakdowns.platforms, margin.left, breakdownWidth, breakdownHeightValue);
+    addBreakdown(model.copy.appendixCharts, model.language === "vi" ? "Khu vực" : "Geography", model.breakdowns.regions, margin.left + breakdownWidth + breakdownGap, breakdownWidth, breakdownHeightValue);
+    addBreakdown(model.copy.appendixCharts, model.language === "vi" ? "Tuổi và giới tính" : "Age and gender", model.breakdowns.ageGender, margin.left + (breakdownWidth + breakdownGap) * 2, breakdownWidth, breakdownHeightValue);
+    composer.cursor += breakdownHeightValue + breakdownGap;
+  } else {
+    const breakdowns = [
+      { title: model.language === "vi" ? "Nền tảng" : "Platform", rows: model.breakdowns.platforms },
+      { title: model.language === "vi" ? "Khu vực" : "Geography", rows: model.breakdowns.regions },
+      { title: model.language === "vi" ? "Tuổi và giới tính" : "Age and gender", rows: model.breakdowns.ageGender },
+    ];
+    breakdowns.forEach(({ title, rows }) => {
+      const height = breakdownHeight(rows);
+      composer.ensureSpace(height, model.copy.appendixCharts);
+      addBreakdown(model.copy.appendixCharts, title, rows, margin.left, contentWidth, height);
+      composer.cursor += height + breakdownGap;
+    });
+  }
 
   composer.startSection(model.copy.appendixTables, t.tablesDescription);
   composer.addBlock({ kind: "subsection", section: model.copy.appendixTables, x: margin.left, y: composer.cursor, width: contentWidth, height: 44, title: t.performanceRows });
   composer.cursor += 44;
   model.tables.forEach((table) => addTable(model.copy.appendixTables, table));
+  const tableGuideHeight = signalListHeight(model.tableGuide.items, contentWidth, typesetter);
+  composer.ensureSpace(tableGuideHeight, model.copy.appendixTables);
+  composer.addBlock({
+    kind: "signal-list",
+    section: model.copy.appendixTables,
+    x: margin.left,
+    y: composer.cursor,
+    width: contentWidth,
+    height: tableGuideHeight,
+    title: model.tableGuide.title,
+    items: model.tableGuide.items,
+    tone: "neutral",
+  });
+  composer.cursor += tableGuideHeight + gap;
 
   composer.startSection(model.copy.appendixDiagnostics, t.diagnosticsDescription);
   composer.addBlock({ kind: "subsection", section: model.copy.appendixDiagnostics, x: margin.left, y: composer.cursor, width: contentWidth, height: 44, title: t.diagnostics });
   composer.cursor += 44;
   model.diagnostics.forEach((diagnostic) => {
-    const height = diagnosticHeight(diagnostic, contentWidth, typesetter);
+    const height = diagnosticHeight(diagnostic, contentWidth, typesetter, model.language);
     composer.ensureSpace(height, model.copy.appendixDiagnostics);
     composer.addBlock({
       kind: "diagnostic-row",
@@ -597,11 +620,18 @@ export async function buildClientReportPdfLayout(
 }
 
 function metricGridHeight(kpiCount: number) {
+  if (kpiCount <= 5) return 88;
   return Math.max(88, Math.ceil(Math.max(1, kpiCount) / 3) * 80);
 }
 
 function signalListHeight(items: string[], width: number, typesetter: ClientReportTypesetter) {
-  return Math.max(112, 50 + items.reduce((height, item) => height + typesetter.wrap(item, width - 34, 8.8).length * 12 + 16, 0));
+  return Math.max(84, 46 + items.reduce((height, item) => height + typesetter.wrap(item, width - 34, 8.8).length * 12 + 10, 0));
+}
+
+function provenanceBlockHeight(meta: Array<{ label: string; value: string }>, width: number, typesetter: ClientReportTypesetter) {
+  const columnWidth = width / Math.max(1, meta.length);
+  const valueLines = Math.max(1, ...meta.map((item) => typesetter.wrap(item.value, columnWidth - 28, 9, "semibold").length));
+  return Math.max(72, 48 + valueLines * 12);
 }
 
 function noteHeight(text: string, width: number, typesetter: ClientReportTypesetter) {
@@ -614,12 +644,13 @@ function rankingHeight(rows: ClientReportDriver[]) {
 
 function actionHeight(action: ClientReportAction, width: number, typesetter: ClientReportTypesetter) {
   const titleLines = typesetter.wrap(action.title, width - 92, 11.5, "semibold").length;
-  const detailLines = typesetter.wrap(action.detail, width - 92, 8.8).length;
-  return Math.max(86, 44 + titleLines * 15 + detailLines * 12);
+  const whyLines = typesetter.wrap(action.why, width - 92, 8.5).length;
+  const monitorLines = typesetter.wrap(action.monitor, width - 92, 8.5).length;
+  return Math.max(124, 74 + titleLines * 15 + whyLines * 11.5 + monitorLines * 11.5);
 }
 
-function breakdownHeight(rows: NormalizedRow[]) {
-  return Math.max(118, 58 + rows.length * 32);
+function breakdownHeight(rows: ClientReportBreakdownRow[], compact = false) {
+  return Math.max(compact ? 138 : 118, 58 + rows.length * (compact ? 40 : 32));
 }
 
 function tableRowHeight(
@@ -635,11 +666,17 @@ function tableRowHeight(
   return Math.max(40, 18 + typesetter.wrap(row.cells[nameColumn.key] || "", nameWidth - 8, 8.1).length * 11);
 }
 
-function diagnosticHeight(diagnostic: ClientReportViewModel["diagnostics"][number], width: number, typesetter: ClientReportTypesetter) {
-  const summary = typesetter.height(diagnostic.summary, width - 108, 8.5, 11.5);
-  const evidence = diagnostic.evidence.reduce((height, line) => height + typesetter.height(`- ${line}`, width - 108, 7.8, 10.5), 0);
-  const nextStep = typesetter.height(diagnostic.nextStep, width - 108, 7.8, 10.5, "semibold");
-  return Math.max(102, 68 + summary + evidence + nextStep);
+function diagnosticHeight(
+  diagnostic: ClientReportViewModel["diagnostics"][number],
+  width: number,
+  typesetter: ClientReportTypesetter,
+  language: InterfaceLanguage,
+) {
+  const summaryLines = typesetter.wrap(diagnostic.summary, width - 108, 8.5).length;
+  const evidenceLines = diagnostic.evidence.reduce((count, line) => count + typesetter.wrap(`- ${line}`, width - 108, 7.8).length, 0);
+  const nextStepText = `${language === "vi" ? "Bước tiếp theo" : "Next step"}: ${diagnostic.nextStep}`;
+  const nextStepLines = typesetter.wrap(nextStepText, width - 108, 7.8, "semibold").length;
+  return Math.max(96, 68 + summaryLines * 11.5 + Math.max(1, evidenceLines) * 10.5 + nextStepLines * 10.5);
 }
 
 function creativeHeight(creative: ClientReportViewModel["creativeDetails"][number], width: number, typesetter: ClientReportTypesetter) {
@@ -654,5 +691,5 @@ function healthTone(status: ClientReportViewModel["healthStatus"]): ReportTone {
 }
 
 export function safePdfText(value: string) {
-  return value.replace(/[–—]/g, "-").replace(/₫/g, "VND").replace(/\u00a0/g, " ").normalize("NFC");
+  return value.replace(/₫/g, "VND").replace(/\u00a0/g, " ").normalize("NFC");
 }

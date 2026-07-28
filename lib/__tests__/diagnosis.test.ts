@@ -193,7 +193,7 @@ describe("runDiagnostics", () => {
   it("does not tell the user to hold when the Budget Move Engine supports a guarded transfer", () => {
     const diagnostic = runDiagnostics(richReport()).find((item) => item.id === "budgetMove");
     expect(diagnostic?.severity).toBe("ok");
-    expect(diagnostic?.nextStep.en).toContain("guarded source-to-target transfer");
+    expect(diagnostic?.nextStep.en).toContain("recommended budget shift");
     expect(diagnostic?.nextStep.en).not.toContain("Hold budgets");
   });
 

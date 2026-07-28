@@ -4,8 +4,8 @@ import type { DiagnosticId, DiagnosticSeverity } from "@/lib/diagnosis";
 type Bilingual = { en: string; vi: string };
 
 const COLLECT_MORE: Bilingual = {
-  en: "Not enough data yet — keep the setup running and revisit once more spend and conversions accumulate.",
-  vi: "Chưa đủ dữ liệu — giữ nguyên cấu hình và xem lại khi đã tích lũy thêm chi tiêu và chuyển đổi.",
+  en: "Keep the setup unchanged and review again after more spend and results accumulate.",
+  vi: "Giữ nguyên cấu hình và xem lại khi có thêm chi tiêu và kết quả.",
 };
 
 const STEPS: Record<DiagnosticId, Record<Exclude<DiagnosticSeverity, "insufficient">, Bilingual>> = {
@@ -25,24 +25,24 @@ const STEPS: Record<DiagnosticId, Record<Exclude<DiagnosticSeverity, "insufficie
     ok: { en: "Launch the planned experiment — readiness checks pass.", vi: "Khởi chạy thử nghiệm đã lên kế hoạch — các kiểm tra đã đạt." },
   },
   decisionConfidence: {
-    risk: { en: "Do not kill or scale the downgraded rows yet — let them gather more evidence.", vi: "Chưa kill hoặc scale các dòng bị hạ cấp — để chúng tích lũy thêm bằng chứng." },
+    risk: { en: "Do not pause or increase budget on downgraded rows until they gather more evidence.", vi: "Chưa dừng hoặc tăng ngân sách ở các dòng bị hạ cấp; cần tích lũy thêm bằng chứng." },
     watch: { en: "Treat downgraded rows as watch-only until delivery stabilizes.", vi: "Xem các dòng bị hạ cấp là chỉ theo dõi đến khi phân phối ổn định." },
     ok: { en: "Act on these rows with confidence — the evidence is strong enough.", vi: "Hành động với các dòng này một cách tự tin — bằng chứng đã đủ mạnh." },
   },
   creativeVolume: {
-    risk: { en: "Add fresh creatives to the constrained ad sets to widen the testing pool.", vi: "Thêm creative mới vào các ad set bị hạn chế để mở rộng nguồn test." },
-    watch: { en: "Queue a few new creatives for the ad sets running thin.", vi: "Chuẩn bị thêm vài creative mới cho các ad set đang ít mẫu." },
-    ok: { en: "Creative supply is adequate — keep rotating as performance dictates.", vi: "Nguồn creative đủ — tiếp tục xoay mẫu theo hiệu quả." },
+    risk: { en: "Add new ad concepts to constrained ad sets to widen the testing pool.", vi: "Thêm mẫu quảng cáo mới vào các nhóm quảng cáo bị hạn chế để mở rộng nguồn thử nghiệm." },
+    watch: { en: "Prepare a few new ad concepts for ad sets with limited variety.", vi: "Chuẩn bị thêm vài mẫu quảng cáo cho các nhóm đang ít phương án." },
+    ok: { en: "Ad variety is adequate — rotate only when performance calls for it.", vi: "Số lượng mẫu quảng cáo đã đủ; chỉ xoay mẫu khi hiệu quả yêu cầu." },
   },
   budgetMove: {
     risk: { en: "Shift budget from the source to the target row as recommended.", vi: "Chuyển ngân sách từ dòng nguồn sang dòng đích theo đề xuất." },
-    watch: { en: "Review the suggested move and apply it if it fits your guardrails.", vi: "Xem đề xuất chuyển ngân sách và áp dụng nếu phù hợp giới hạn của bạn." },
-    ok: { en: "Apply the guarded source-to-target transfer, then review delivery before the next step.", vi: "Áp dụng điều chuyển có guardrail từ dòng nguồn sang dòng đích, rồi rà soát phân phối trước bước tiếp theo." },
+    watch: { en: "Review the suggested budget shift and apply it only within the stated limits.", vi: "Rà soát đề xuất chuyển ngân sách và chỉ áp dụng trong giới hạn đã nêu." },
+    ok: { en: "Apply the recommended budget shift, then review delivery before changing it again.", vi: "Áp dụng điều chuyển đề xuất rồi kiểm tra độ ổn định phân phối." },
   },
   funnelLeakage: {
-    risk: { en: "Fix the leaking stage (landing page or checkout) before adding spend.", vi: "Khắc phục bước rò rỉ (landing page hoặc checkout) trước khi tăng chi tiêu." },
+    risk: { en: "Fix the leaking stage (landing page or checkout) before adding spend.", vi: "Khắc phục bước rò rỉ ở trang đích hoặc thanh toán trước khi tăng chi tiêu." },
     watch: { en: "Investigate the weakest funnel stage against its benchmark.", vi: "Kiểm tra bước phễu yếu nhất so với mốc chuẩn." },
-    ok: { en: "Funnel conversion is healthy — focus effort upstream on traffic quality.", vi: "Tỷ lệ chuyển đổi phễu tốt — tập trung vào chất lượng traffic đầu phễu." },
+    ok: { en: "Funnel conversion is healthy — focus on the quality of incoming traffic.", vi: "Tỷ lệ chuyển đổi phễu tốt; tập trung vào chất lượng lưu lượng đầu vào." },
   },
   audienceOverlap: {
     risk: { en: "Consolidate or exclude the overlapping ad sets to stop bidding against yourself.", vi: "Hợp nhất hoặc loại trừ các ad set trùng nhau để tránh tự cạnh tranh giá thầu." },
@@ -55,9 +55,9 @@ const STEPS: Record<DiagnosticId, Record<Exclude<DiagnosticSeverity, "insufficie
     ok: { en: "Exclusions look clean — no targeting overlap to fix.", vi: "Loại trừ ổn — không có trùng lắp nhắm mục tiêu cần sửa." },
   },
   creativeStarvation: {
-    risk: { en: "Redistribute spend so starved creatives get enough delivery to prove out.", vi: "Phân bổ lại chi tiêu để các creative bị bỏ đói có đủ phân phối để chứng minh." },
-    watch: { en: "Give the under-delivered creatives a budget floor or separate ad set.", vi: "Cấp ngân sách tối thiểu hoặc tách ad set riêng cho các creative ít phân phối." },
-    ok: { en: "Spend is spread fairly across creatives — no action needed.", vi: "Chi tiêu được phân bổ hợp lý giữa các creative — không cần hành động." },
+    risk: { en: "Redistribute spend so under-delivered ads receive enough exposure to evaluate.", vi: "Phân bổ lại chi tiêu để các mẫu quảng cáo ít phân phối có đủ dữ liệu đánh giá." },
+    watch: { en: "Set a minimum budget or separate ad set for under-delivered ads.", vi: "Đặt ngân sách tối thiểu hoặc tách nhóm riêng cho các mẫu quảng cáo ít phân phối." },
+    ok: { en: "Spend is distributed fairly across ads — no action is needed.", vi: "Chi tiêu được phân bổ hợp lý giữa các mẫu quảng cáo; chưa cần hành động." },
   },
   breakdownWaste: {
     risk: { en: "Exclude or cut budget on the high-spend, low-result segments.", vi: "Loại trừ hoặc cắt ngân sách ở các phân khúc chi nhiều nhưng kết quả thấp." },
@@ -65,28 +65,28 @@ const STEPS: Record<DiagnosticId, Record<Exclude<DiagnosticSeverity, "insufficie
     ok: { en: "Spend maps to results across segments — leave allocation as is.", vi: "Chi tiêu tương xứng kết quả giữa các phân khúc — giữ nguyên phân bổ." },
   },
   resultConcentration: {
-    risk: { en: "De-risk by proving repeatability in more rows before scaling the top performer.", vi: "Giảm rủi ro bằng cách chứng minh độ lặp lại ở nhiều dòng trước khi scale dòng dẫn đầu." },
-    watch: { en: "Scale cautiously and develop backup winners alongside the top rows.", vi: "Scale thận trọng và phát triển thêm dòng thắng dự phòng bên cạnh dòng dẫn đầu." },
-    ok: { en: "Results are spread across rows — portfolio risk is low.", vi: "Kết quả phân bổ trên nhiều dòng — rủi ro portfolio thấp." },
+    risk: { en: "Prove repeatable results in more rows before increasing budget on the top performer.", vi: "Chứng minh kết quả có thể lặp lại ở nhiều dòng trước khi tăng ngân sách dòng dẫn đầu." },
+    watch: { en: "Increase budget cautiously and develop backup performers alongside the top rows.", vi: "Tăng ngân sách thận trọng và phát triển thêm dòng hiệu quả dự phòng." },
+    ok: { en: "Results are spread across rows, so dependency risk is low.", vi: "Kết quả được phân bổ trên nhiều dòng nên rủi ro phụ thuộc thấp." },
   },
   spendPacing: {
-    risk: { en: "Diagnose why severely underpacing campaigns can't spend — bid, audience, or schedule.", vi: "Tìm hiểu vì sao campaign tiêu quá chậm không tiêu được — giá thầu, đối tượng hoặc lịch chạy." },
-    watch: { en: "Loosen bids or widen targeting on the underpacing campaigns.", vi: "Nới giá thầu hoặc mở rộng nhắm mục tiêu cho các campaign tiêu chậm." },
+    risk: { en: "Identify whether bids, audience size, or schedule are preventing campaigns from spending.", vi: "Xác định giá thầu, quy mô đối tượng hay lịch chạy đang cản chiến dịch chi tiêu." },
+    watch: { en: "Review bids or audience breadth on campaigns spending below plan.", vi: "Rà soát giá thầu hoặc độ rộng đối tượng ở các chiến dịch chi tiêu dưới kế hoạch." },
     ok: { en: "Spend is on pace with the budget — no pacing action needed.", vi: "Chi tiêu đúng nhịp ngân sách — không cần điều chỉnh." },
   },
   consolidationPressure: {
-    risk: { en: "Consolidate ad sets so each clears the weekly conversion threshold to exit learning.", vi: "Hợp nhất ad set để mỗi cái đạt ngưỡng chuyển đổi tuần và thoát learning." },
-    watch: { en: "Consider merging the thinnest ad sets to speed up learning-phase exit.", vi: "Cân nhắc gộp các ad set mỏng nhất để thoát learning nhanh hơn." },
-    ok: { en: "Ad sets clear the learning threshold — keep the current structure.", vi: "Các ad set vượt ngưỡng learning — giữ nguyên cấu trúc hiện tại." },
+    risk: { en: "Consolidate ad sets so each can reach the weekly conversion threshold.", vi: "Hợp nhất nhóm quảng cáo để mỗi nhóm có thể đạt ngưỡng chuyển đổi hằng tuần." },
+    watch: { en: "Consider merging the thinnest ad sets to gather learning data faster.", vi: "Cân nhắc gộp các nhóm ít dữ liệu để tích lũy tín hiệu nhanh hơn." },
+    ok: { en: "Ad sets clear the learning threshold — keep the current structure.", vi: "Các nhóm quảng cáo vượt ngưỡng học; giữ nguyên cấu trúc hiện tại." },
   },
   costCapDelivery: {
-    risk: { en: "Raise the cost cap or bid on constrained campaigns so they can spend the budget.", vi: "Tăng cost cap hoặc giá thầu cho campaign bị hạn chế để tiêu hết ngân sách." },
-    watch: { en: "Review the underdelivering campaigns and ease the cap if results allow.", vi: "Xem các campaign phân phối thiếu và nới cap nếu kết quả cho phép." },
-    ok: { en: "Caps aren't throttling delivery — leave them in place.", vi: "Cap không kìm phân phối — giữ nguyên." },
+    risk: { en: "Raise the cost or bid limit on constrained campaigns so they can spend.", vi: "Tăng giới hạn chi phí hoặc giá thầu cho chiến dịch bị hạn chế để cải thiện phân phối." },
+    watch: { en: "Review under-delivering campaigns and ease the limit if results support it.", vi: "Rà soát chiến dịch phân phối thấp và nới giới hạn nếu kết quả hỗ trợ." },
+    ok: { en: "Current limits are not restricting delivery — keep them unchanged.", vi: "Các giới hạn hiện tại không kìm phân phối; giữ nguyên." },
   },
   measurementQuality: {
-    risk: { en: "Fix tracking (pixel/CAPI) before trusting these conversion numbers.", vi: "Sửa tracking (pixel/CAPI) trước khi tin vào các con số chuyển đổi này." },
-    watch: { en: "Verify event setup so attribution gaps don't skew decisions.", vi: "Kiểm tra thiết lập sự kiện để khoảng trống attribution không làm lệch quyết định." },
+    risk: { en: "Fix Pixel/CAPI measurement before relying on these conversion numbers.", vi: "Khắc phục đo lường Pixel/CAPI trước khi dựa vào các số liệu chuyển đổi này." },
+    watch: { en: "Verify event setup so attribution gaps do not distort decisions.", vi: "Kiểm tra thiết lập sự kiện để thiếu hụt phân bổ không làm lệch quyết định." },
     ok: { en: "Measurement looks reliable — decisions can lean on these numbers.", vi: "Đo lường đáng tin — có thể dựa vào các con số này để quyết định." },
   },
 };

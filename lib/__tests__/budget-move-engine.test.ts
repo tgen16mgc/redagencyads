@@ -114,7 +114,7 @@ describe("recommendBudgetMoves", () => {
 
     expect(result.status).toBe("hold");
     expect(result.recommendations).toHaveLength(0);
-    expect(result.holdReasons.en.join(" ")).toContain("CTR/CPM/frequency");
+    expect(result.holdReasons.en.join(" ")).toContain("CTR, CPM, and frequency");
   });
 
   it("does not recommend sales budget moves when ROAS signal is missing", () => {

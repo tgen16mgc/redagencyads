@@ -195,7 +195,7 @@ describe("buildLocalVerdict", () => {
 
     expect(verdict.provider).toBe("prompt");
     expect(verdict.verdict).toContain("Tài khoản Test Account");
-    expect(verdict.verdict).toContain("gói KPI tin nhắn");
+    expect(verdict.verdict).toContain("mục tiêu tin nhắn");
     expect(verdict.verdict).toContain("VND");
     expect(verdict.risks.join(" ")).toContain("Điểm sức khỏe & ưu tiên");
     expect(verdict.risks.join(" ")).not.toContain("ads found in selected scope");

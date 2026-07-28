@@ -136,10 +136,10 @@ describe("buildClientReportViewModel", () => {
     });
 
     expect(healthSummary).toMatchObject({ score: 73, grade: "C" });
-    expect(model.healthLabel).toBe("C / 73/100");
+    expect(model.healthLabel).toBe("C · 73/100");
     expect(model.healthStatusLabel).toBe("Needs attention");
     expect(model.kpis.find((kpi) => kpi.key === "healthScore")?.value).toBe("C");
-    expect(model.verdictText).toContain("lead_gen KPI pack");
+    expect(model.verdictText).toContain("lead generation objective");
     expect(model.generatedLabel).not.toBe(model.pulledLabel);
     expect(model.copy.footnoteComparison).toBe("No comparison selected for this report.");
     expect(model.kpis.every((kpi) => !kpi.delta)).toBe(true);
@@ -156,7 +156,7 @@ describe("buildClientReportViewModel", () => {
     });
 
     expect(model.accountName).toBe("Seoul Beauty Clinic");
-    expect(model.verdictText).toBe("Scale carefully while protecting CPA.");
+    expect(model.verdictText).toBe("Increase budget carefully while protecting CPA.");
     expect(model.kpis.find((kpi) => kpi.key === "spend")?.delta).toContain("vs MoM");
     expect(model.kpis.find((kpi) => kpi.key === "healthScore")?.value).toBe("B");
     expect(model.copy.footnoteComparison).toContain("current 2026-06-01 to 2026-06-26");
@@ -235,12 +235,14 @@ describe("buildClientReportViewModel", () => {
         ],
       },
     })).map((diagnostic) => diagnostic.id));
-    expect(model.diagnostics.find((diagnostic) => diagnostic.id === "creativeVolume")?.title).toBe("Khối lượng creative");
+    expect(model.diagnostics.find((diagnostic) => diagnostic.id === "creativeVolume")?.title).toBe("Số lượng mẫu quảng cáo");
     expect(model.diagnostics.find((diagnostic) => diagnostic.id === "dailyDiagnosis")?.severity).toBe("insufficient");
-    expect(model.selectedPackReason).toBe("Hành động lead là tín hiệu kết quả đầy đủ mạnh nhất trong phạm vi này.");
+    expect(model.selectedPackReason).toBe("Hành động của khách hàng tiềm năng là tín hiệu kết quả đầy đủ mạnh nhất trong phạm vi này.");
     expect(model.primaryCostLabel).toBe("CPL");
     expect(model.breakdowns.platforms[0].name).toBe("Instagram");
     expect(model.breakdowns.ageGender[0].name).toBe("Nữ 25-34");
+    expect(model.tableGuide.title).toBe("Cách đọc các bảng này");
+    expect(model.tableGuide.items.join(" ")).toContain("Không cộng tổng giữa các bảng");
   });
 
   it("preserves Verdict evidence, comparison drivers, ranked Primary Result rows, and saved Custom Charts", () => {
@@ -303,7 +305,7 @@ describe("buildClientReportViewModel", () => {
 
     expect(model.wins.join(" ")).not.toContain("Unsupported insight winner");
     expect(model.risks.join(" ")).not.toContain("Unsupported insight risk evidence");
-    expect(model.decisionProviderLabel).toBe("Local Verdict + 9router insights");
+    expect(model.decisionProviderLabel).toBe("Local decision rules + 9router insights");
     expect(model.insightSummary).toBe("9router-generated recommendation summary.");
   });
 
@@ -318,6 +320,77 @@ describe("buildClientReportViewModel", () => {
     expect(model.diagnostics.find((diagnostic) => diagnostic.id === "healthTriage")?.evidence.join(" ")).toContain("CTR benchmark: CTR is above benchmark.");
     expect(model.diagnostics.find((diagnostic) => diagnostic.id === "resultConcentration")?.evidence.join(" ")).toContain("Testimonial ad");
     expect(model.diagnostics.find((diagnostic) => diagnostic.id === "creativeVolume")?.evidence.join(" ")).toContain("Unknown ad set");
+    expect(model.diagnostics.find((diagnostic) => diagnostic.id === "budgetMove")?.title).toBe("Budget recommendation");
+    expect(model.diagnostics.find((diagnostic) => diagnostic.id === "creativeStarvation")?.title).toBe("Creative distribution");
+    expect([model.verdictText, ...model.diagnostics.flatMap((diagnostic) => [diagnostic.title, diagnostic.summary, ...diagnostic.evidence, diagnostic.nextStep])].join(" "))
+      .not.toMatch(/ad-creative risks|active\/spent creatives|creative-volume constraint|downgraded rows?|Creative starvation| - Monitor - |Conv\/adset\/week|daily budget data available/i);
+  });
+
+  it("projects client-readable Vietnamese diagnostics without known internal English labels", () => {
+    const model = buildClientReportViewModel({
+      report: report({
+        health: {
+          score: 82,
+          grade: "B",
+          checks: [
+            { id: "M-CR4", label: "CTR benchmark", status: "pass", detail: "CTR 1.40%. Pack benchmark pass >= 1%." },
+            { id: "M-CR2", label: "Prospecting frequency", status: "pass", detail: "Average frequency 2.10." },
+            { id: "M25", label: "Creative/ad volume proxy", status: "warning", detail: "8 ads found in selected scope. Target: 10+ diverse creatives where budget supports it." },
+            { id: "M11", label: "Campaign consolidation", status: "pass", detail: "3 selected campaigns. Meta prefers fewer campaigns per goal." },
+          ],
+        },
+      }),
+      compareMode: "off",
+      language: "vi",
+      kpis,
+      customCharts: [presetToSpec(CHART_PRESETS[0], "vi", "saved-chart")],
+    });
+    const diagnosticText = model.diagnostics.map((diagnostic) => [diagnostic.title, diagnostic.summary, ...diagnostic.evidence, diagnostic.nextStep].join(" ")).join(" ");
+
+    expect(diagnosticText).not.toMatch(/Creative\/ad volume proxy|CTR benchmark|Prospecting frequency|Campaign consolidation|guardrail|delivery|learning phase|portfolio|dataset|hạ cấp|khám phá phân phối/i);
+    expect(diagnosticText).not.toContain("thử nghiệmimonial");
+    expect(diagnosticText).toContain("Testimonial ad");
+    expect(diagnosticText).toContain("Mốc tham chiếu CTR");
+    expect(diagnosticText).toContain("Số lượng mẫu quảng cáo");
+    expect(model.customCharts[0].title).toBe("Lượng lead vs CPL");
+    expect(model.customCharts[0].series[0].label).toBe("Khách hàng tiềm năng");
+  });
+
+  it("uses locale-consistent VND formatting, spend shares, and not-applicable cost cells", () => {
+    const zeroResult = row({ id: "zero", name: "No result", spend: 2_000_000, leads: 0, cpl: 0 });
+    const english = buildClientReportViewModel({
+      report: report({ campaignRows: [zeroResult] }),
+      compareMode: "off",
+      language: "en",
+      kpis,
+    });
+    const vietnamese = buildClientReportViewModel({
+      report: report({ campaignRows: [zeroResult] }),
+      compareMode: "off",
+      language: "vi",
+      kpis,
+    });
+
+    expect(english.tables[0].rows[0].cells.spend).toBe("2,000,000 VND");
+    expect(vietnamese.tables[0].rows[0].cells.spend).toBe("2.000.000 VND");
+    expect(english.tables[0].rows[0].cells.cpl).toBe("—");
+    expect(english.breakdowns.platforms[0].spendShareLabel).toBe("100%");
+    expect(english.tableGuide.items.join(" ")).toContain("not applicable");
+  });
+
+  it("structures each priority action around evidence and the next metric check", () => {
+    const model = buildClientReportViewModel({
+      report: report(),
+      compareMode: "off",
+      language: "en",
+      kpis,
+      verdict: verdict(),
+    });
+
+    expect(model.actions.length).toBeGreaterThan(0);
+    expect(model.actions.every((action) => action.why && action.monitor)).toBe(true);
+    expect(model.actions[0].monitor).toContain("leads");
+    expect(model.actions[0].monitor).toContain("CPL");
   });
 
   it("discloses sample data and explains a Selected KPI Pack override in the Interface Language", () => {

@@ -4,7 +4,6 @@ import { type DecisionTargets } from "@/lib/decision-confidence";
 import { runDiagnostics, type Diagnostic, type DiagnosticSeverity } from "@/lib/diagnosis";
 import { summarizeHealth, type HealthScoreSummary } from "@/lib/health-score";
 import { buildKpiComparisons, comparisonFootnote, formatComparisonChangePct, metricMovementIsBad } from "@/lib/metric-comparison";
-import { formatMetric } from "@/lib/metrics";
 import { primaryResultSpec } from "@/lib/primary-result";
 import { recommendBudgetMoves, type BudgetMoveEngineStatus } from "@/lib/budget-move-engine";
 import { buildLocalVerdict } from "@/lib/verdict-rules";
@@ -21,7 +20,8 @@ export type ClientReportKpi = {
 export type ClientReportAction = {
   kind: "budget" | "test" | "insight";
   title: string;
-  detail: string;
+  why: string;
+  monitor: string;
 };
 
 export type ClientReportTableColumn = {
@@ -40,6 +40,11 @@ export type ClientReportTable = {
   title: string;
   columns: ClientReportTableColumn[];
   rows: ClientReportTableRow[];
+};
+
+export type ClientReportTableGuide = {
+  title: string;
+  items: string[];
 };
 
 export type ClientReportDriver = {
@@ -91,6 +96,16 @@ export type ClientReportCustomChart = {
     format: ReturnType<typeof metricFormat>;
   }>;
   data: Array<Record<string, number | string>>;
+  referenceNote: string | null;
+};
+
+export type ClientReportBreakdownRow = {
+  id: string;
+  name: string;
+  spend: number;
+  spendLabel: string;
+  spendShare: number;
+  spendShareLabel: string;
 };
 
 export type ClientReportBudgetMove = {
@@ -185,11 +200,12 @@ export type ClientReportViewModel = {
   comparison: ClientReportComparison;
   customCharts: ClientReportCustomChart[];
   breakdowns: {
-    platforms: NormalizedRow[];
-    regions: NormalizedRow[];
-    ageGender: NormalizedRow[];
+    platforms: ClientReportBreakdownRow[];
+    regions: ClientReportBreakdownRow[];
+    ageGender: ClientReportBreakdownRow[];
   };
   tables: ClientReportTable[];
+  tableGuide: ClientReportTableGuide;
   diagnostics: ClientReportDiagnostic[];
   creativeDetails: Array<{
     name: string;
@@ -205,7 +221,7 @@ export type ClientReportViewModel = {
 const copy = {
   en: {
     title: "Meta Ads Performance Report",
-    subtitle: "A client-ready decision record: outcomes, drivers, evidence quality, and the next guarded moves.",
+    subtitle: "A clear view of performance, the evidence behind it, and the decisions to make next.",
     preparedBy: "Prepared in Decision Workspace",
     source: "Meta Ads API",
     verdictLabel: "Performance verdict",
@@ -216,25 +232,25 @@ const copy = {
     appendixCharts: "Appendix A: Charts and breakdowns",
     appendixTables: "Appendix B: Performance tables",
     appendixDiagnostics: "Appendix C: Diagnostics and creative detail",
-    wins: "Winners",
-    losers: "Losers",
+    wins: "Strong signals",
+    losers: "Needs improvement",
     risks: "Risks",
     assumptions: "Assumptions",
     nextMoves: "Next moves",
     selectedPack: "Selected KPI Pack",
     primaryResult: "Primary Result",
-    confidence: "Verdict Confidence",
+    confidence: "Decision confidence",
     dataPulled: "Data pulled",
     comparisonDrivers: "Period-over-period drivers",
     dailyDiagnosis: "Daily diagnosis",
     customCharts: "Saved Custom Charts",
     footnoteSource: "Values use the selected dashboard reporting period and campaign scope. Data source: Meta Ads API.",
     footnoteComparison: "Comparison deltas appear when a previous report is available.",
-    footnoteRecommendations: "Budget Moves come from the guarded Budget Move Engine; generated wording cannot expand those claims.",
+    footnoteRecommendations: "Budget recommendations are limited to changes supported by this report. Generated wording does not add new claims.",
   },
   vi: {
     title: "Báo cáo hiệu quả Meta Ads",
-    subtitle: "Hồ sơ quyết định dành cho khách hàng: kết quả, động lực, chất lượng bằng chứng và bước đi có guardrail tiếp theo.",
+    subtitle: "Góc nhìn rõ ràng về hiệu quả, bằng chứng phía sau và các quyết định tiếp theo.",
     preparedBy: "Chuẩn bị trong Decision Workspace",
     source: "Meta Ads API",
     verdictLabel: "Kết luận hiệu quả",
@@ -245,21 +261,21 @@ const copy = {
     appendixCharts: "Phụ lục A: Biểu đồ và phân tích nhóm",
     appendixTables: "Phụ lục B: Bảng hiệu quả",
     appendixDiagnostics: "Phụ lục C: Chẩn đoán và chi tiết quảng cáo",
-    wins: "Nhóm thắng",
-    losers: "Nhóm thua",
+    wins: "Tín hiệu tích cực",
+    losers: "Điểm cần cải thiện",
     risks: "Rủi ro",
     assumptions: "Giả định",
     nextMoves: "Bước tiếp theo",
     selectedPack: "Gói KPI đã chọn",
     primaryResult: "Kết quả chính",
-    confidence: "Độ tin cậy Verdict",
+    confidence: "Độ tin cậy quyết định",
     dataPulled: "Thời điểm kéo dữ liệu",
     comparisonDrivers: "Động lực giữa hai kỳ",
     dailyDiagnosis: "Chẩn đoán theo ngày",
     customCharts: "Biểu đồ tùy chỉnh đã lưu",
     footnoteSource: "Số liệu dùng kỳ báo cáo và phạm vi chiến dịch đang chọn. Nguồn dữ liệu: Meta Ads API.",
     footnoteComparison: "Chênh lệch so sánh hiển thị khi có báo cáo kỳ trước.",
-    footnoteRecommendations: "Budget Move đến từ Budget Move Engine có guardrail; diễn giải tạo sinh không được mở rộng các kết luận này.",
+    footnoteRecommendations: "Khuyến nghị ngân sách chỉ bao gồm thay đổi được dữ liệu trong báo cáo hỗ trợ. Nội dung tạo sinh không bổ sung kết luận mới.",
   },
 } as const;
 
@@ -316,11 +332,11 @@ export function buildClientReportViewModel(args: {
       }),
     },
     verdict,
-    verdictText: verdict.verdict,
+    verdictText: clientFacingText(verdict.verdict, args.language),
     verdictConfidenceLabel: confidenceLabel(verdict.confidence, args.language),
     healthScore: healthSummary.score,
     healthGrade: healthSummary.grade,
-    healthLabel: `${healthSummary.grade} / ${healthSummary.score}/100`,
+    healthLabel: `${healthSummary.grade} · ${healthSummary.score}/100`,
     healthStatus: healthSummary.severity,
     healthStatusLabel: healthSummary.label[args.language],
     healthSummaryText: healthSummary.summary[args.language],
@@ -339,7 +355,7 @@ export function buildClientReportViewModel(args: {
       const key = kpi.key as keyof NormalizedRow;
       const value = kpi.key === "healthScore"
         ? healthSummary.grade
-        : formatMetric(Number(report.totals[key] || 0), kpi.format, currency);
+        : formatClientReportKpiMetric(Number(report.totals[key] || 0), kpi.format, currency, args.language);
       const comparison = kpi.key === "healthScore" ? undefined : comparisonByKey.get(key);
       return {
         key: kpi.key,
@@ -353,9 +369,16 @@ export function buildClientReportViewModel(args: {
     losers: reportSignalList(verdict.losers, "losers", args.language),
     risks: reportSignalList(verdict.risks, "risks", args.language),
     assumptions: reportSignalList(verdict.assumptions, "assumptions", args.language),
-    actions: buildActions(verdict, args.insights, budgetMove, args.language),
+    actions: buildActions(
+      verdict,
+      args.insights,
+      budgetMove,
+      args.language,
+      primarySpec.volumeLabel[args.language],
+      primarySpec.costLabel[args.language],
+    ),
     budgetMove: localizeBudgetMove(budgetMove, args.language, currency, report.selectedPack),
-    insightSummary: args.insights?.summary || null,
+    insightSummary: args.insights?.summary ? clientFacingText(args.insights.summary, args.language) : null,
     dailyDiagnosis: dailyDiagnostic && dailyDiagnostic.id === "dailyDiagnosis"
       ? {
           severity: dailyDiagnostic.severity,
@@ -382,27 +405,29 @@ export function buildClientReportViewModel(args: {
       type: spec.type,
       series: spec.series.map((series) => ({
         key: series.key,
-        label: metricLabel(series.key, args.language),
+        label: clientReportMetricLabel(series.key, args.language),
         axis: series.axis,
         format: metricFormat(series.key),
       })),
       data: buildCustomChartData(report.dailyRows, spec),
+      referenceNote: customChartReferenceNote(spec, primaryKey, primarySpec.volumeLabel[args.language], args.language),
     })),
     breakdowns: {
-      platforms: report.platformRows.slice(0, 4).map((row) => localizeBreakdownRow(row, "platform", args.language)),
-      regions: (report.regionRows.length ? report.regionRows : report.countryRows || []).slice(0, 4),
-      ageGender: report.ageGenderRows.slice(0, 4).map((row) => localizeBreakdownRow(row, "ageGender", args.language)),
+      platforms: buildBreakdownRows(report.platformRows, "platform", args.language, currency),
+      regions: buildBreakdownRows(report.regionRows.length ? report.regionRows : report.countryRows || [], "geography", args.language, currency),
+      ageGender: buildBreakdownRows(report.ageGenderRows, "ageGender", args.language, currency),
     },
     tables: buildReportTables(report, args.language, currency),
+    tableGuide: buildTableGuide(args.language),
     diagnostics: diagnostics.map((diagnostic) => ({
       id: diagnostic.id,
       severity: diagnostic.severity,
-      title: diagnostic.title[args.language],
-      description: diagnostic.description[args.language],
-      badge: diagnostic.badge[args.language],
-      summary: diagnostic.summary?.[args.language] || diagnostic.description[args.language],
+      title: clientFacingText(diagnostic.title[args.language], args.language),
+      description: clientFacingText(diagnostic.description[args.language], args.language),
+      badge: clientFacingText(diagnostic.badge[args.language], args.language),
+      summary: clientFacingText(diagnostic.summary?.[args.language] || diagnostic.description[args.language], args.language),
       evidence: projectDiagnosticEvidence(diagnostic, args.language, currency),
-      nextStep: diagnostic.nextStep[args.language],
+      nextStep: clientFacingText(diagnostic.nextStep[args.language], args.language),
     })),
     creativeDetails: (report.adsetPreviews || []).map((adset) => {
       const adCount = adset.ads.length;
@@ -476,14 +501,14 @@ function rankDrivers(
         name: row.name,
         level: row.level,
         spend: row.spend,
-        spendLabel: formatMetric(row.spend, "currency", currency),
+        spendLabel: formatClientReportMetric(row.spend, "currency", currency, language),
         spendShare: (row.spend / totalSpend) * 100,
         primary,
-        primaryLabel: formatMetric(primary, "number", currency),
+        primaryLabel: formatClientReportMetric(primary, "number", currency, language),
         primaryShare: (primary / totalPrimary) * 100,
         efficiency: efficiencyValue,
         efficiencyLabel: efficiency.label[language],
-        efficiencyValue: formatMetric(efficiencyValue, efficiency.format, currency),
+        efficiencyValue: formatClientReportCompactMetric(efficiencyValue, efficiency.format, currency, language),
       };
     });
 }
@@ -524,18 +549,18 @@ function localizeBudgetMove(
   return {
     status: result.status,
     severity: result.severity,
-    label: result.label[language],
-    summary: result.summary[language],
-    holdReasons: result.holdReasons[language],
+    label: clientFacingText(result.label[language], language),
+    summary: clientFacingText(result.summary[language], language),
+    holdReasons: result.holdReasons[language].map((reason) => clientFacingText(reason, language)),
     recommendations: result.recommendations.map((recommendation) => ({
       id: recommendation.id,
-      summary: recommendation.summary[language],
+      summary: clientFacingText(recommendation.summary[language], language),
       sourceName: recommendation.sourceRowName,
       targetName: recommendation.targetRowName,
       movePercent: recommendation.suggestedMovePercent,
       evidence: [
-        `${recommendation.targetRowName}: ${formatMetric(recommendation.targetReasons[0]?.metrics.result || 0, "number", currency)} ${spec.volumeLabel[language]}, ${formatMetric(recommendation.targetReasons[0]?.metrics.costPerResult || 0, "currency", currency)} ${spec.costLabel[language]}`,
-        `${recommendation.sourceRowName}: ${formatMetric(recommendation.sourceReasons[0]?.metrics.spend || 0, "currency", currency)} ${language === "vi" ? "chi tiêu" : "spend"}`,
+        `${recommendation.targetRowName}: ${formatClientReportMetric(recommendation.targetReasons[0]?.metrics.result || 0, "number", currency, language)} ${spec.volumeLabel[language]}, ${formatClientReportMetric(recommendation.targetReasons[0]?.metrics.costPerResult || 0, "currency", currency, language)} ${spec.costLabel[language]}`,
+        `${recommendation.sourceRowName}: ${formatClientReportMetric(recommendation.sourceReasons[0]?.metrics.spend || 0, "currency", currency, language)} ${language === "vi" ? "chi tiêu" : "spend"}`,
       ],
     })),
   };
@@ -546,44 +571,89 @@ function buildActions(
   insights: AiInsightTable | null | undefined,
   budgetMove: ReturnType<typeof recommendBudgetMoves>,
   language: InterfaceLanguage,
+  primaryResultLabel: string,
+  primaryCostLabel: string,
 ): ClientReportAction[] {
   const recommendation = budgetMove.recommendations[0];
   const budgetDetails = recommendation
     ? language === "vi"
       ? [
           recommendation.summary.vi,
-          `Giữ mức tăng và giảm trong giới hạn ${recommendation.maxIncreasePercent}% mỗi bước để bảo vệ learning phase.`,
+          `Giữ mức tăng và giảm trong giới hạn ${recommendation.maxIncreasePercent}% ở mỗi bước để hạn chế biến động phân phối.`,
         ]
       : [
           recommendation.summary.en,
-          `Keep increases and reductions within ${recommendation.maxIncreasePercent}% per step to protect the learning phase.`,
+          `Keep increases and reductions within ${recommendation.maxIncreasePercent}% per step to limit delivery disruption.`,
         ]
     : budgetMove.holdReasons[language];
   const budgetActions = verdict.budget_moves.map((title, index) => ({
     kind: "budget" as const,
-    title,
-    detail: budgetDetails[index] || budgetDetails[0] || budgetMove.summary[language],
+    title: conciseActionTitle(clientFacingText(title, language), language),
+    why: clientFacingText(budgetDetails[index] || budgetDetails[0] || budgetMove.summary[language], language),
+    monitor: actionMonitor(primaryResultLabel, primaryCostLabel, language),
   }));
   const testActions = verdict.tests.map((title, index) => ({
     kind: "test" as const,
-    title,
-    detail: verdict.risks[index] || verdict.assumptions[index] || (language === "vi" ? "Đặt KPI thành công và ngày rà soát trước khi chạy." : "Set the success metric and review date before launch."),
+    title: conciseActionTitle(clientFacingText(title, language), language),
+    why: clientFacingText(actionEvidence(title, index, verdict, language), language),
+    monitor: actionMonitor(primaryResultLabel, primaryCostLabel, language),
   }));
   const fromVerdict = [...budgetActions, ...testActions];
-  const fromInsights = (insights?.rows || []).map((row) => ({ kind: "insight" as const, title: row.action, detail: `${row.area}: ${row.evidence}` }));
+  const fromInsights = (insights?.rows || []).map((row) => ({
+    kind: "insight" as const,
+    title: conciseActionTitle(clientFacingText(row.action, language), language),
+    why: clientFacingText(`${row.area}: ${row.evidence}`, language),
+    monitor: actionMonitor(primaryResultLabel, primaryCostLabel, language),
+  }));
   return (fromVerdict.length ? fromVerdict : fromInsights).filter((item) => item.title).slice(0, 6);
+}
+
+function actionEvidence(title: string, index: number, verdict: Verdict, language: InterfaceLanguage) {
+  const evidence = [...verdict.risks, ...verdict.assumptions].filter(Boolean);
+  const isCreativeAction = /creative|ad concepts?|mẫu quảng cáo|ý tưởng quảng cáo/i.test(title);
+  const isMeasurementAction = /measurement|tracking|pixel|capi|đo lường/i.test(title);
+  const matched = isCreativeAction
+    ? evidence.find((item) => /creative|ad sets?|mẫu quảng cáo|nhóm quảng cáo/i.test(item))
+    : isMeasurementAction
+      ? evidence.find((item) => /measurement|tracking|pixel|capi|crm|đo lường/i.test(item))
+      : undefined;
+  return matched
+    || verdict.risks[index]
+    || verdict.assumptions[index]
+    || (language === "vi" ? "Cần xác nhận tín hiệu kết quả trước khi thay đổi ngân sách." : "The result signal needs validation before the next budget change.");
+}
+
+function actionMonitor(primaryResultLabel: string, primaryCostLabel: string, language: InterfaceLanguage) {
+  return language === "vi"
+    ? `Theo dõi ${primaryResultLabel}, ${primaryCostLabel} và độ ổn định phân phối.`
+    : `Track ${primaryResultLabel}, ${primaryCostLabel}, and delivery stability.`;
+}
+
+function conciseActionTitle(value: string, language: InterfaceLanguage) {
+  if (language === "vi") {
+    return value
+      .replace(/^Có thể tăng (.+?) tối đa (\d+%) sau khi.+$/i, "Tăng $1 tối đa $2")
+      .replace(/^(Giảm hoặc giữ trần [^;]+);.+$/i, "$1")
+      .replace(/^Chuẩn bị ít nhất 3-5 ý tưởng quảng cáo khác biệt.+$/i, "Chuẩn bị 3-5 ý tưởng quảng cáo khác biệt")
+      .replace(/^Kiểm tra chất lượng đo lường trước khi tăng ngân sách:.+$/i, "Xác nhận chất lượng đo lường");
+  }
+  return value
+    .replace(/^Consider increasing (.+?) by up to (\d+%) after.+$/i, "Increase $1 by up to $2")
+    .replace(/^(Reduce or cap [^;]+);.+$/i, "$1")
+    .replace(/^Prepare at least 3-5 distinct ad concepts.+$/i, "Prepare 3-5 distinct ad concepts")
+    .replace(/^Check measurement quality before increasing budget:.+$/i, "Confirm measurement quality");
 }
 
 function generationSourceLabel(verdictProvider: AiProvider, insightProvider: AiProvider | undefined, language: InterfaceLanguage) {
   const hasInsightEnhancement = insightProvider === "9router";
   if (verdictProvider === "9router" && hasInsightEnhancement) {
-    return language === "vi" ? "Luật cục bộ + diễn giải và insight 9router" : "Local rules + 9router wording and insights";
+    return language === "vi" ? "Luật quyết định cục bộ + diễn giải và nhận định 9router" : "Local rules + 9router wording and insights";
   }
   if (verdictProvider === "9router") {
-    return language === "vi" ? "Luật cục bộ + diễn giải 9router" : "Local rules + 9router wording";
+    return language === "vi" ? "Luật quyết định cục bộ + diễn giải 9router" : "Local rules + 9router wording";
   }
   if (hasInsightEnhancement) {
-    return language === "vi" ? "Verdict cục bộ + insight 9router" : "Local Verdict + 9router insights";
+    return language === "vi" ? "Luật quyết định cục bộ + nhận định 9router" : "Local decision rules + 9router insights";
   }
   return language === "vi" ? "Luật quyết định cục bộ" : "Deterministic local rules";
 }
@@ -624,7 +694,7 @@ function selectedPackReason(report: DashboardReport, language: InterfaceLanguage
     },
     lead_gen: {
       en: "Lead actions are the strongest complete outcome signal in this scope.",
-      vi: "Hành động lead là tín hiệu kết quả đầy đủ mạnh nhất trong phạm vi này.",
+      vi: "Hành động của khách hàng tiềm năng là tín hiệu kết quả đầy đủ mạnh nhất trong phạm vi này.",
     },
     sales_roas: {
       en: "Purchase and revenue signals support sales-efficiency evaluation.",
@@ -632,7 +702,7 @@ function selectedPackReason(report: DashboardReport, language: InterfaceLanguage
     },
     traffic: {
       en: "Link-click activity is the strongest available optimization signal.",
-      vi: "Hoạt động click link là tín hiệu tối ưu mạnh nhất hiện có.",
+      vi: "Lượt nhấp liên kết là tín hiệu tối ưu mạnh nhất hiện có.",
     },
     awareness: {
       en: "No complete lower-funnel signal is available, so delivery quality is the evaluation lens.",
@@ -643,20 +713,20 @@ function selectedPackReason(report: DashboardReport, language: InterfaceLanguage
 }
 
 function reportSignalList(values: string[] | undefined, kind: "wins" | "losers" | "risks" | "assumptions", language: InterfaceLanguage) {
-  const selected = (values || []).filter(Boolean).slice(0, 4);
+  const selected = (values || []).filter(Boolean).slice(0, 4).map((value) => clientFacingText(value, language));
   if (selected.length) return selected;
   const emptyCopy = {
     en: {
-      wins: "No supported winner claim is available in the current scope.",
-      losers: "No supported loser claim is available in the current scope.",
-      risks: "No additional Verdict risk was identified in the current scope.",
-      assumptions: "No additional assumptions were added to the Verdict.",
+      wins: "No positive performance claim has enough evidence in the current scope.",
+      losers: "No underperforming segment has enough evidence for a firm conclusion.",
+      risks: "No additional risk was identified in the current scope.",
+      assumptions: "No additional assumptions were added to this decision.",
     },
     vi: {
-      wins: "Chưa có kết luận nhóm thắng đủ bằng chứng trong phạm vi hiện tại.",
-      losers: "Chưa có kết luận nhóm thua đủ bằng chứng trong phạm vi hiện tại.",
-      risks: "Không có rủi ro Verdict bổ sung trong phạm vi hiện tại.",
-      assumptions: "Verdict không bổ sung giả định nào khác.",
+      wins: "Chưa có tín hiệu tích cực đủ bằng chứng trong phạm vi hiện tại.",
+      losers: "Chưa có phân khúc kém hiệu quả đủ bằng chứng để kết luận chắc chắn.",
+      risks: "Không có rủi ro bổ sung trong phạm vi hiện tại.",
+      assumptions: "Không có giả định bổ sung cho quyết định này.",
     },
   } as const;
   return [emptyCopy[language][kind]];
@@ -707,6 +777,7 @@ function reportTableMetrics(pack: KpiPack): ReportTableMetric[] {
 
 function buildReportTables(report: DashboardReport, language: InterfaceLanguage, currency: string): ClientReportTable[] {
   const metrics = reportTableMetrics(report.selectedPack);
+  const primarySpec = primaryResultSpec(report.selectedPack);
   const columns: ClientReportTableColumn[] = [
     { key: "name", label: language === "vi" ? "Tên" : "Name", weight: 2.6, align: "left" },
     ...metrics.map((metric) => ({ key: metric.key, label: metric.label[language], weight: 1, align: "right" as const })),
@@ -718,7 +789,16 @@ function buildReportTables(report: DashboardReport, language: InterfaceLanguage,
       id: row.id,
       cells: {
         name: reportRowLabel(row),
-        ...Object.fromEntries(metrics.map((metric) => [metric.key, formatMetric(Number(row[metric.key] || 0), metric.format, currency)])),
+        ...Object.fromEntries(metrics.map((metric) => {
+          const hasNoPrimaryResult = Number(row[primarySpec.volumeKey] || 0) <= 0;
+          const isPrimaryCost = primarySpec.costKey === metric.key;
+          return [
+            metric.key,
+            hasNoPrimaryResult && isPrimaryCost
+              ? "—"
+              : formatClientReportMetric(Number(row[metric.key] || 0), metric.format, currency, language),
+          ];
+        })),
       },
     })),
   });
@@ -728,6 +808,27 @@ function buildReportTables(report: DashboardReport, language: InterfaceLanguage,
     buildTable(language === "vi" ? "Quảng cáo" : "Ads", report.adRows),
     buildTable(language === "vi" ? "Theo ngày" : "Daily", report.dailyRows),
   ];
+}
+
+function buildTableGuide(language: InterfaceLanguage): ClientReportTableGuide {
+  if (language === "vi") {
+    return {
+      title: "Cách đọc các bảng này",
+      items: [
+        "Chiến dịch, nhóm quảng cáo và quảng cáo là các cấp khác nhau của cùng tài khoản. Không cộng tổng giữa các bảng.",
+        "Dấu gạch ngang (—) nghĩa là chưa ghi nhận kết quả chính, nên chỉ số chi phí liên quan không áp dụng.",
+        "Các dòng theo ngày thuộc kỳ báo cáo đã chọn và hỗ trợ biểu đồ xu hướng; xem phần Khuyến nghị để quyết định hành động tiếp theo.",
+      ],
+    };
+  }
+  return {
+    title: "How to read these tables",
+    items: [
+      "Campaign, ad set, and ad rows are different levels of the same account. Do not add totals across the tables.",
+      "A dash (—) means no primary result was recorded, so the related cost metric is not applicable.",
+      "Daily rows cover the selected reporting period and support the trend view; use Recommendations for the next action.",
+    ],
+  };
 }
 
 function reportRowLabel(row: NormalizedRow) {
@@ -743,14 +844,14 @@ function reportRowLabel(row: NormalizedRow) {
 function projectDiagnosticEvidence(diagnostic: Diagnostic, language: InterfaceLanguage, currency: string) {
   const itemEvidence = diagnostic.items.map((item) => [
     item.title?.[language],
-    item.value?.[language],
-    item.badge?.text[language],
-    ...item.lines.map((line) => line[language]),
+    item.value?.[language] ? clientFacingText(item.value[language], language) : undefined,
+    item.badge?.text[language] ? clientFacingText(item.badge.text[language], language) : undefined,
+    ...item.lines.map((line) => clientFacingText(line[language], language)),
   ].filter(Boolean).join(" - "));
   const typedEvidence: string[] = [];
 
   if (diagnostic.id === "healthTriage") {
-    typedEvidence.push(...diagnostic.health.items.slice(0, 4).map((item) => `${item.title[language]}: ${item.detail[language]}`));
+    typedEvidence.push(...diagnostic.health.items.slice(0, 4).map((item) => projectHealthEvidence(item.id, item.title[language], item.detail[language], language)));
   } else if (diagnostic.id === "dailyDiagnosis") {
     typedEvidence.push(...diagnostic.daily.causes.slice(0, 4).map((cause) => `${cause.title[language]}: ${cause.evidence.map((line) => line[language]).join("; ")}`));
   } else if (diagnostic.id === "creativeStarvation") {
@@ -761,13 +862,36 @@ function projectDiagnosticEvidence(diagnostic: Diagnostic, language: InterfaceLa
     typedEvidence.push(...diagnostic.leakage.blockers[language]);
     typedEvidence.push(...diagnostic.stages.map((stage) => {
       const benchmark = stage.benchmark === null ? "" : ` / ${language === "vi" ? "mốc" : "benchmark"} ${(stage.benchmark * 100).toFixed(0)}%`;
-      return `${stage.label[language]}: ${formatMetric(stage.value, "number", currency)}${benchmark}`;
+      return `${stage.label[language]}: ${formatClientReportMetric(stage.value, "number", currency, language)}${benchmark}`;
     }));
   } else if (diagnostic.id === "breakdownWaste") {
     typedEvidence.push(diagnostic.waste.summary[language]);
   }
 
-  return Array.from(new Set([...itemEvidence, ...typedEvidence].filter(Boolean))).slice(0, 6);
+  return Array.from(new Set([...itemEvidence, ...typedEvidence].filter(Boolean).map((value) => clientFacingText(value, language)))).slice(0, 6);
+}
+
+function projectHealthEvidence(id: string, fallbackTitle: string, fallbackDetail: string, language: InterfaceLanguage) {
+  const healthCopy: Record<string, { en: [string, string]; vi: [string, string] }> = {
+    "health-M-CR4": {
+      en: ["CTR benchmark", fallbackDetail.replace("Pack benchmark pass >=", "Target for this KPI pack: at least")],
+      vi: ["Mốc tham chiếu CTR", fallbackDetail.replace("Pack benchmark pass >=", "Mức đạt của gói KPI >=").replace(/(\d+)\.(\d+)/g, "$1,$2")],
+    },
+    "health-M-CR2": {
+      en: ["New-audience frequency", fallbackDetail],
+      vi: ["Tần suất tìm khách hàng mới", fallbackDetail.replace("Average frequency", "Tần suất trung bình").replace(/(\d+)\.(\d+)/g, "$1,$2")],
+    },
+    "health-M25": {
+      en: ["Creative volume", fallbackDetail.replace(/(\d+) ads found in selected scope\. Target: 10\+ diverse creatives where budget supports it\./, "$1 ads in the selected scope. Guideline: at least 10 varied ads when budget allows.")],
+      vi: ["Số lượng mẫu quảng cáo", fallbackDetail.replace(/(\d+) ads found in selected scope\. Target: 10\+ diverse creatives where budget supports it\./, "$1 mẫu quảng cáo trong phạm vi đã chọn. Mục tiêu: từ 10 mẫu đa dạng khi ngân sách cho phép.")],
+    },
+    "health-M11": {
+      en: ["Campaign structure", fallbackDetail.replace(/(\d+) selected campaigns\. Meta prefers fewer campaigns per goal\./, "$1 selected campaigns. Fewer campaigns per objective can help Meta learn.")],
+      vi: ["Cấu trúc chiến dịch", fallbackDetail.replace(/(\d+) selected campaigns\. Meta prefers fewer campaigns per goal\./, "$1 chiến dịch đã chọn. Meta ưu tiên ít chiến dịch hơn cho mỗi mục tiêu.")],
+    },
+  };
+  const [title, detail] = healthCopy[id]?.[language] || [fallbackTitle, fallbackDetail];
+  return `${title}: ${detail}`;
 }
 
 function formatDateRange(range: DashboardReport["dateRange"], language: InterfaceLanguage) {
@@ -801,12 +925,12 @@ function packLabel(pack: KpiPack, language: InterfaceLanguage) {
 function primaryResultExplanation(pack: KpiPack, result: string, cost: string, language: InterfaceLanguage) {
   if (pack === "awareness") {
     return language === "vi"
-      ? `${result} là tín hiệu quy mô; Budget Move được giữ lại vì awareness được đánh giá bằng CTR, CPM và frequency.`
-      : `${result} is signal volume; Budget Moves stay on hold because awareness is judged through CTR, CPM, and frequency.`;
+      ? `${result} cho biết quy mô tiếp cận. Báo cáo chưa đề xuất tăng ngân sách vì hiệu quả nhận biết cần được đọc cùng CTR, CPM và tần suất.`
+      : `${result} shows delivery scale. The report does not recommend a budget increase until CTR, CPM, and frequency support it.`;
   }
   return language === "vi"
-    ? `${result} là kết quả dùng để xếp hạng đóng góp; ${cost} thể hiện hiệu quả chi phí.`
-    : `${result} is the outcome used to rank contribution; ${cost} expresses cost efficiency.`;
+    ? `Báo cáo dùng ${result} để xác định nơi tạo ra kết quả và dùng ${cost} để so sánh hiệu quả chi phí.`
+    : `The report uses ${result} to show where results came from and ${cost} to compare cost efficiency.`;
 }
 
 function confidenceLabel(confidence: Verdict["confidence"], language: InterfaceLanguage) {
@@ -833,7 +957,7 @@ function localizeKpiLabel(key: string, fallback: string, language: InterfaceLang
   return labels[key] || fallback;
 }
 
-function localizeBreakdownRow(row: NormalizedRow, kind: "platform" | "ageGender", language: InterfaceLanguage): NormalizedRow {
+function localizeBreakdownRow(row: NormalizedRow, kind: "platform" | "ageGender" | "geography", language: InterfaceLanguage): NormalizedRow {
   if (kind === "platform") {
     const platformLabels: Record<string, string> = {
       facebook: "Facebook",
@@ -846,6 +970,184 @@ function localizeBreakdownRow(row: NormalizedRow, kind: "platform" | "ageGender"
   if (language !== "vi") return row;
   const localizedGender = row.gender === "female" ? "Nữ" : row.gender === "male" ? "Nam" : row.gender;
   return { ...row, name: [localizedGender, row.age].filter(Boolean).join(" ") || row.name, age: undefined, gender: undefined };
+}
+
+function buildBreakdownRows(
+  rows: NormalizedRow[],
+  kind: "platform" | "ageGender" | "geography",
+  language: InterfaceLanguage,
+  currency: string,
+): ClientReportBreakdownRow[] {
+  const totalSpend = Math.max(1, rows.reduce((sum, row) => sum + row.spend, 0));
+  return rows.slice(0, 4).map((row) => {
+    const localized = localizeBreakdownRow(row, kind, language);
+    const spendShare = (row.spend / totalSpend) * 100;
+    return {
+      id: row.id,
+      name: reportRowLabel(localized),
+      spend: row.spend,
+      spendLabel: formatClientReportMetric(row.spend, "currency", currency, language),
+      spendShare,
+      spendShareLabel: `${spendShare.toLocaleString(language === "vi" ? "vi-VN" : "en-US", { maximumFractionDigits: 1 })}%`,
+    };
+  });
+}
+
+function customChartReferenceNote(
+  spec: CustomChartSpec,
+  primaryKey: keyof NormalizedRow,
+  primaryResultLabel: string,
+  language: InterfaceLanguage,
+) {
+  if (spec.series.some((series) => series.key === primaryKey)) return null;
+  const metrics = spec.series.map((series) => clientReportMetricLabel(series.key, language)).join(language === "vi" ? " và " : " and ");
+  return language === "vi"
+    ? `Biểu đồ tham khảo đã lưu dùng ${metrics}. KPI chính của báo cáo vẫn là ${primaryResultLabel}.`
+    : `Saved reference view using ${metrics}. The report's primary KPI remains ${primaryResultLabel}.`;
+}
+
+function clientReportMetricLabel(key: CustomChartSpec["series"][number]["key"], language: InterfaceLanguage) {
+  if (language === "vi" && key === "leads") return "Khách hàng tiềm năng";
+  return metricLabel(key, language);
+}
+
+export function formatClientReportMetric(
+  value: number,
+  format: KpiCard["format"],
+  currency: string,
+  language: InterfaceLanguage,
+) {
+  const locale = language === "vi" ? "vi-VN" : "en-US";
+  const numericValue = value || 0;
+  if (format === "currency") {
+    if (currency === "VND") {
+      return `${numericValue.toLocaleString(locale, { maximumFractionDigits: 0 })} VND`;
+    }
+    return new Intl.NumberFormat(locale, { style: "currency", currency, maximumFractionDigits: 0 }).format(numericValue);
+  }
+  if (format === "percent") return `${numericValue.toLocaleString(locale, { maximumFractionDigits: 2 })}%`;
+  if (format === "ratio") return `${numericValue.toLocaleString(locale, { maximumFractionDigits: 2 })}x`;
+  return numericValue.toLocaleString(locale, { maximumFractionDigits: 0 });
+}
+
+function formatClientReportKpiMetric(
+  value: number,
+  format: KpiCard["format"],
+  currency: string,
+  language: InterfaceLanguage,
+) {
+  if (format === "number" || (format === "currency" && currency === "VND")) {
+    const absolute = Math.abs(value);
+    const locale = language === "vi" ? "vi-VN" : "en-US";
+    const compact = absolute >= 1_000_000
+      ? `${(value / 1_000_000).toLocaleString(locale, { maximumFractionDigits: 2 })}M`
+      : absolute >= 100_000
+        ? `${(value / 1_000).toLocaleString(locale, { maximumFractionDigits: 0 })}K`
+        : null;
+    if (compact) return format === "currency" ? `${compact} VND` : compact;
+  }
+  return formatClientReportMetric(value, format, currency, language);
+}
+
+function formatClientReportCompactMetric(
+  value: number,
+  format: KpiCard["format"],
+  currency: string,
+  language: InterfaceLanguage,
+) {
+  if ((format === "currency" && currency === "VND") || format === "number") {
+    const absolute = Math.abs(value);
+    const locale = language === "vi" ? "vi-VN" : "en-US";
+    if (absolute >= 1_000_000) {
+      const compact = `${(value / 1_000_000).toLocaleString(locale, { maximumFractionDigits: 2 })}M`;
+      return format === "currency" ? `${compact} VND` : compact;
+    }
+  }
+  return formatClientReportMetric(value, format, currency, language);
+}
+
+function clientFacingText(value: string, language: InterfaceLanguage) {
+  if (!value) return value;
+  if (language === "vi") {
+    return value
+      .replace(/(\d+) dòng đang bị hạ cấp vì chưa đủ bằng chứng quyết định\./gi, "$1 dòng chỉ nên theo dõi vì bằng chứng chưa đủ mạnh để thay đổi ngân sách.")
+      .replace(/Xem các dòng bị hạ cấp là chỉ theo dõi đến khi phân phối ổn định\./gi, "Giữ nguyên các dòng chỉ theo dõi cho đến khi phân phối ổn định.")
+      .replace(/Chưa dừng hoặc tăng ngân sách ở các dòng bị hạ cấp; cần tích lũy thêm bằng chứng\./gi, "Chưa dừng hoặc tăng ngân sách ở các dòng chỉ theo dõi; cần tích lũy thêm bằng chứng.")
+      .replace(/để Meta khám phá (?:delivery|phân phối) ổn định/gi, "để Meta phân phối ổn định hơn")
+      .replace(/Meta retrieval/gi, "hệ thống phân phối của Meta")
+      .replace(/learning phase/gi, "giai đoạn học")
+      .replace(/cost cap/gi, "giới hạn chi phí")
+      .replace(/bid cap/gi, "giới hạn giá thầu")
+      .replace(/CRM matchback/gi, "đối soát CRM")
+      .replace(/event deduplication/gi, "kiểm tra sự kiện trùng lặp")
+      .replace(/kill\/scale/gi, "dừng hoặc tăng ngân sách")
+      .replace(/guardrails?/gi, "giới hạn an toàn")
+      .replace(/prospecting/gi, "tìm khách hàng mới")
+      .replace(/retargeting/gi, "tiếp thị lại")
+      .replace(/delivery/gi, "phân phối")
+      .replace(/tracking/gi, "đo lường")
+      .replace(/creatives?/gi, "mẫu quảng cáo")
+      .replace(/campaigns?/gi, "chiến dịch")
+      .replace(/ad sets?/gi, "nhóm quảng cáo")
+      .replace(/learning/gi, "giai đoạn học")
+      .replace(/portfolio/gi, "tổng danh mục")
+      .replace(/dataset/gi, "dữ liệu")
+      .replace(/checkout/gi, "thanh toán")
+      .replace(/click link/gi, "lượt nhấp liên kết")
+      .replace(/\bactive\b/gi, "đang hoạt động")
+      .replace(/\bvolume\b/gi, "số lượng")
+      .replace(/\bCV\b/g, "Chuyển đổi")
+      .replace(/benchmarks?/gi, "mốc tham chiếu")
+      .replace(/breakdown/gi, "phân nhóm")
+      .replace(/insights?/gi, "nhận định")
+      .replace(/Verdict/gi, "kết luận")
+      .replace(/scale/gi, "tăng ngân sách")
+      .replace(/\btests?\b/gi, "thử nghiệm")
+      .replace(/launch/gi, "khởi chạy");
+  }
+  const exactEnglish = {
+    "budget move engine": "Budget recommendation",
+    "creative starvation": "Creative distribution",
+    "cost cap delivery": "Cost-control delivery",
+    "consolidation pressure": "Campaign consolidation",
+  } as const;
+  const exactReplacement = exactEnglish[value.trim().toLowerCase() as keyof typeof exactEnglish];
+  if (exactReplacement) return exactReplacement;
+  return value
+    .replace(/Rolls key checks into one prioritized action queue\./gi, "Summarizes the checks that need attention first.")
+    .replace(/Combines measurement, account health, and creative signals before launch decisions\./gi, "Checks measurement, account health, and creative coverage before an experiment starts.")
+    .replace(/Some served ad sets may not have enough active\/spent creatives for reliable Meta delivery exploration\./gi, "Some served ad sets may not have enough ads with delivery or spend to support stable Meta delivery.")
+    .replace(/Only 1 active\/spent creatives/gi, "Only 1 ad has delivery or spend")
+    .replace(/Only (\d+) active\/spent creatives/gi, "Only $1 ads have delivery or spend")
+    .replace(/(\d+) active\/spent creatives/gi, "$1 ads with delivery or spend")
+    .replace(/fewer than 3 is a creative-volume constraint/gi, "fewer than 3 limits creative variety")
+    .replace(/Creative spend is distributed reasonably, or dominant creatives are not fatigued\./gi, "Spend is distributed across ads, and no dominant ad shows clear fatigue.")
+    .replace(/(\d+) row is downgraded because decision evidence is not strong enough\./gi, "$1 row remains watch-only because decision evidence is not strong enough.")
+    .replace(/(\d+) rows are downgraded because decision evidence is not strong enough\./gi, "$1 rows remain watch-only because decision evidence is not strong enough.")
+    .replace(/Treat downgraded rows as watch-only until delivery stabilizes\./gi, "Keep watch-only rows unchanged until delivery stabilizes.")
+    .replace(/Do not pause or increase budget on downgraded rows until they gather more evidence\./gi, "Do not pause or increase budget on watch-only rows until they gather more evidence.")
+    .replace(/hard pause or increase budget decision/gi, "firm pause or budget-increase decision")
+    .replace(/ - Monitor - /g, " - Watch - ")
+    .replace(/Conv\/adset\/week/gi, "Conversions/ad set/week")
+    .replace(/No campaign daily budget data available/gi, "No campaign daily budget data is available")
+    .replace(/cost cap delivery efficiency/gi, "cost-control efficiency")
+    .replace(/ad-creative risks/gi, "creative coverage risks")
+    .replace(/Budget Move Engine/gi, "budget recommendation logic")
+    .replace(/Budget Moves?/gi, "budget recommendations")
+    .replace(/budget-owning rows?/gi, "campaigns or ad sets with budget")
+    .replace(/Meta retrieval/gi, "Meta's delivery system")
+    .replace(/CRM matchback/gi, "CRM reconciliation")
+    .replace(/event deduplication/gi, "duplicate-event checks")
+    .replace(/kill\/scale/gi, "pause or increase budget")
+    .replace(/source-to-target transfer/gi, "budget shift")
+    .replace(/portfolio risk/gi, "dependency risk")
+    .replace(/dataset/gi, "available data")
+    .replace(/Scaling/g, "Increasing budget")
+    .replace(/scaling/g, "increasing budget")
+    .replace(/Scale/g, "Increase budget")
+    .replace(/scale/g, "increase budget")
+    .replace(/guardrails?/gi, "safety limits")
+    .replace(/guarded/gi, "controlled");
 }
 
 function localizeComparisonEvidence(value: string, language: InterfaceLanguage) {

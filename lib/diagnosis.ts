@@ -146,7 +146,7 @@ function experimentReadinessDiagnostic(report: DashboardReport): Diagnostic {
     title: { en: "Experiment readiness", vi: "Sẵn sàng thử nghiệm" },
     description: {
       en: "Combines measurement, account health, and creative signals before launch decisions.",
-      vi: "Kết hợp đo lường, sức khỏe tài khoản và creative trước quyết định launch.",
+      vi: "Kết hợp đo lường, sức khỏe tài khoản và tín hiệu mẫu quảng cáo trước quyết định khởi chạy.",
     },
     badge: readiness.label,
     summary: null,
@@ -166,14 +166,14 @@ function decisionConfidenceDiagnostic(report: DashboardReport, targets: Decision
     title: { en: "Decision confidence", vi: "Độ tin cậy quyết định" },
     description: {
       en: "Downgrades kill/scale advice when evidence is thin or delivery is unstable.",
-      vi: "Chặn kill/scale khi dữ liệu còn mỏng hoặc delivery chưa đủ ổn định.",
+      vi: "Chặn khuyến nghị dừng hoặc tăng ngân sách khi dữ liệu còn mỏng hoặc phân phối chưa ổn định.",
     },
-    badge: both(`${actionable.length}/${rows.length || 0} actionable`),
+    badge: { en: `${actionable.length}/${rows.length || 0} actionable`, vi: `${actionable.length}/${rows.length || 0} có thể hành động` },
     summary:
       rows.length === 0
         ? { en: "No spent rows are available for confidence checks.", vi: "Chưa có dòng có chi tiêu để đánh giá." }
         : {
-            en: `${blocked.length} rows are downgraded because decision evidence is not strong enough.`,
+            en: `${blocked.length} ${blocked.length === 1 ? "row is" : "rows are"} downgraded because decision evidence is not strong enough.`,
             vi: `${blocked.length} dòng đang bị hạ cấp vì chưa đủ bằng chứng quyết định.`,
           },
     items: blocked.slice(0, 3).map(({ row, confidence }) => ({
@@ -250,7 +250,7 @@ function consolidationPressureDiagnostic(report: DashboardReport, currency: stri
     title: { en: "Consolidation pressure", vi: "Áp lực hợp nhất" },
     description: {
       en: "Checks if conversions per ad set per week are sufficient to exit the learning phase.",
-      vi: "Kiểm tra xem số chuyển đổi/ad set/tuần có đủ để thoát learning phase không.",
+      vi: "Kiểm tra số chuyển đổi trên mỗi nhóm quảng cáo mỗi tuần có đủ để thoát giai đoạn học hay không.",
     },
     badge: assessment.label,
     summary: assessment.summary,
@@ -264,10 +264,10 @@ function costCapDeliveryDiagnostic(report: DashboardReport, currency: string): D
     id: "costCapDelivery",
     severity: assessment.severity,
     eyebrow: null,
-    title: { en: "Cost cap delivery", vi: "Phân phối cost cap" },
+    title: { en: "Cost cap delivery", vi: "Phân phối theo giới hạn chi phí" },
     description: {
       en: "Detects campaigns constrained by an overly restrictive cost cap or bid cap.",
-      vi: "Phát hiện campaign bị hạn chế phân phối bởi cost cap hoặc bid cap quá thấp.",
+      vi: "Phát hiện chiến dịch bị hạn chế phân phối do giới hạn chi phí hoặc giá thầu quá thấp.",
     },
     badge: assessment.label,
     summary: assessment.summary,
@@ -292,11 +292,11 @@ function creativeVolumeDiagnostic(report: DashboardReport): Diagnostic {
   return withNextStep({
     id: "creativeVolume",
     severity: assessment.severity,
-    eyebrow: { en: "Creative Capacity", vi: "Năng lực creative" },
-    title: { en: "Creative volume", vi: "Khối lượng creative" },
+    eyebrow: { en: "Creative Capacity", vi: "Năng lực mẫu quảng cáo" },
+    title: { en: "Creative volume", vi: "Số lượng mẫu quảng cáo" },
     description: {
       en: "Proxy for active/spent creative count per ad set; does not measure similarity or Advantage+ type yet.",
-      vi: "Proxy số creative có chạy/chi tiêu trong mỗi ad set; chưa đo similarity hoặc Advantage+.",
+      vi: "Ước tính số mẫu quảng cáo có phân phối hoặc chi tiêu trong mỗi nhóm quảng cáo; chưa đo mức độ tương đồng hoặc loại Advantage+.",
     },
     badge: assessment.label,
     summary: assessment.summary,
@@ -315,10 +315,10 @@ function creativeStarvationDiagnostic(report: DashboardReport): Diagnostic {
     id: "creativeStarvation",
     severity: starvation.severity,
     eyebrow: null,
-    title: { en: "Creative starvation", vi: "Đói ngân sách creative" },
+    title: { en: "Creative starvation", vi: "Mẫu quảng cáo thiếu phân phối" },
     description: {
       en: "Checks if a fatigued creative dominates spend and blocks fresh creative testing.",
-      vi: "Kiểm tra nếu creative mỏi chiếm đa số ngân sách và chặn thử nghiệm creative mới.",
+      vi: "Kiểm tra liệu mẫu quảng cáo đã suy giảm có chiếm phần lớn ngân sách và cản trở thử nghiệm mẫu mới hay không.",
     },
     badge: starvation.label,
     summary: starvation.summary,
@@ -444,7 +444,7 @@ function measurementQualityDiagnostic(report: DashboardReport): Diagnostic {
     title: { en: "Measurement quality", vi: "Chất lượng đo lường" },
     description: {
       en: "Checks whether the current dataset supports confident optimization decisions.",
-      vi: "Kiểm tra dataset hiện tại có đủ tin cậy để ra quyết định tối ưu hay không.",
+      vi: "Kiểm tra dữ liệu hiện tại có đủ tin cậy để ra quyết định tối ưu hay không.",
     },
     badge: quality.label,
     summary: null,
@@ -468,7 +468,7 @@ export function breakdownWasteDiagnostic({
     id: "breakdownWaste",
     severity: waste.severity,
     eyebrow: { en: "Allocation Risk", vi: "Rủi ro phân bổ" },
-    title: { en: "Breakdown waste", vi: "Lãng phí breakdown" },
+    title: { en: "Breakdown waste", vi: "Lãng phí theo phân nhóm" },
     description: {
       en: `${dimensionLabel}: spend and result allocation.`,
       vi: `${dimensionLabel}: phân bổ chi tiêu và kết quả.`,

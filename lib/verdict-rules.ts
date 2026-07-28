@@ -7,28 +7,28 @@ const verdictText = {
   en: {
     account: "Account",
     noSignal: "Insufficient spend or primary-result signal for a confident budget move.",
-    trackingAssumption: "Pixel/CAPI/CRM/MER data is not included in this report; validate tracking before acting on budget moves.",
-    localSource: "Generated from local ads rules without an AI provider call.",
+    trackingAssumption: "Pixel, CAPI, CRM, and MER data are not included; confirm measurement quality before changing budget.",
+    localSource: "The decision is generated from deterministic local rules without an external AI call.",
     weakPack: "Selected KPI pack has weak or missing primary-result signal.",
     holdBudget: "Hold budget until spend and primary-result signal are strong enough to judge winners.",
     noRows: "No campaign or ad set rows were available for winner/loser analysis.",
-    testTracking: "Run a tracking-quality check before scaling: confirm Pixel/CAPI, CRM matchback, and event deduplication.",
-    testCreative: "Create at least 3-5 distinct creative angles before scaling; Meta retrieval benefits from creative diversity.",
+    testTracking: "Check measurement quality before increasing budget: confirm Pixel/CAPI, reconcile CRM results, and check for duplicate events.",
+    testCreative: "Prepare at least 3-5 distinct ad concepts before increasing budget so Meta has enough variety to test.",
     testFatigue: "Refresh hooks and first-frame creative for high-frequency segments before increasing spend.",
     testKpi: "Run one focused test against the selected KPI pack before moving budget.",
   },
   vi: {
     account: "Tài khoản",
     noSignal: "Chưa đủ chi tiêu hoặc tín hiệu kết quả chính để khuyến nghị điều chỉnh ngân sách chắc chắn.",
-    trackingAssumption: "Báo cáo chưa có dữ liệu Pixel/CAPI/CRM/MER; cần kiểm tra tracking trước khi hành động với ngân sách.",
-    localSource: "Được tạo bằng luật ads nội bộ, không gọi nhà cung cấp AI.",
+    trackingAssumption: "Báo cáo chưa có dữ liệu Pixel, CAPI, CRM và MER; cần xác nhận chất lượng đo lường trước khi đổi ngân sách.",
+    localSource: "Quyết định được tạo từ bộ quy tắc cục bộ, không gọi nhà cung cấp AI bên ngoài.",
     weakPack: "Gói KPI đang chọn có tín hiệu kết quả chính yếu hoặc thiếu.",
-    holdBudget: "Giữ ngân sách cho đến khi chi tiêu và kết quả chính đủ mạnh để xác định nhóm thắng.",
-    noRows: "Không có dòng campaign hoặc ad set để phân tích nhóm thắng/thua.",
-    testTracking: "Kiểm tra chất lượng tracking trước khi scale: Pixel/CAPI, đối soát CRM, và dedup sự kiện.",
-    testCreative: "Tạo ít nhất 3-5 góc creative khác biệt trước khi scale; Meta retrieval cần độ đa dạng creative.",
-    testFatigue: "Làm mới hook và first-frame creative cho nhóm frequency cao trước khi tăng chi tiêu.",
-    testKpi: "Chạy một test tập trung vào KPI đang chọn trước khi chuyển ngân sách.",
+    holdBudget: "Giữ ngân sách cho đến khi chi tiêu và kết quả chính đủ mạnh để xác định nhóm hiệu quả.",
+    noRows: "Không có dữ liệu chiến dịch hoặc nhóm quảng cáo để phân tích hiệu quả.",
+    testTracking: "Kiểm tra chất lượng đo lường trước khi tăng ngân sách: xác nhận Pixel/CAPI, đối soát CRM và kiểm tra sự kiện trùng lặp.",
+    testCreative: "Chuẩn bị ít nhất 3-5 ý tưởng quảng cáo khác biệt trước khi tăng ngân sách để Meta có đủ phương án thử nghiệm.",
+    testFatigue: "Làm mới thông điệp mở đầu và khung hình đầu cho nhóm có tần suất cao trước khi tăng chi tiêu.",
+    testKpi: "Chạy một thử nghiệm tập trung vào KPI đang chọn trước khi chuyển ngân sách.",
   },
 } satisfies Record<InterfaceLanguage, Record<string, string>>;
 
@@ -42,7 +42,7 @@ function activeRows(report: DashboardReport) {
 
 function compactMoney(value: number, currency = "USD", language: InterfaceLanguage = "en") {
   if (currency === "VND") {
-    return `${compactMetric(value, language)} VND`;
+    return `${(value || 0).toLocaleString(language === "vi" ? "vi-VN" : "en-US", { maximumFractionDigits: 0 })} VND`;
   }
   return new Intl.NumberFormat(language === "vi" ? "vi-VN" : "en-US", {
     style: "currency",
@@ -101,11 +101,11 @@ export function buildLocalVerdict(report: DashboardReport, language: InterfaceLa
     );
     budgetMoves.push(
       vi
-        ? `Có thể tăng ${move.targetRowName} tối đa ${move.suggestedMovePercent}% sau khi xác nhận tracking và chất lượng kết quả.`
-        : `Consider increasing ${move.targetRowName} by up to ${move.suggestedMovePercent}% after validating tracking and result quality.`,
+        ? `Có thể tăng ${move.targetRowName} tối đa ${move.suggestedMovePercent}% sau khi xác nhận đo lường và chất lượng kết quả.`
+        : `Consider increasing ${move.targetRowName} by up to ${move.suggestedMovePercent}% after confirming measurement and result quality.`,
       vi
-        ? `Giảm hoặc giữ trần ${move.sourceRowName}; chỉ chuyển ngân sách sang nhóm thắng theo bước tối đa ${move.maxReductionPercent}%.`
-        : `Reduce or cap ${move.sourceRowName}; reallocate only in steps of up to ${move.maxReductionPercent}% toward proven winners.`,
+        ? `Giảm hoặc giữ trần ${move.sourceRowName}; chỉ chuyển ngân sách sang nhóm hiệu quả theo từng bước tối đa ${move.maxReductionPercent}%.`
+        : `Reduce or cap ${move.sourceRowName}; reallocate only in steps of up to ${move.maxReductionPercent}% toward the stronger segment.`,
     );
   }
 
@@ -124,13 +124,17 @@ export function buildLocalVerdict(report: DashboardReport, language: InterfaceLa
         ? "medium"
         : "low";
 
-  const selectedPack = vi
-    ? ({ messages: "tin nhắn", lead_gen: "tạo khách hàng tiềm năng", sales_roas: "doanh số/ROAS", traffic: "lưu lượng", awareness: "nhận biết" } as const)[report.selectedPack]
-    : report.selectedPack;
+  const selectedPack = ({
+    messages: { en: "messages", vi: "tin nhắn" },
+    lead_gen: { en: "lead generation", vi: "tạo khách hàng tiềm năng" },
+    sales_roas: { en: "sales and ROAS", vi: "doanh số và ROAS" },
+    traffic: { en: "traffic", vi: "lưu lượng" },
+    awareness: { en: "awareness", vi: "nhận biết" },
+  } as const)[report.selectedPack][language];
   const verdict =
     vi
-      ? `${t.account} ${report.account.name} được đánh giá theo gói KPI ${selectedPack}. Chi tiêu ${compactMoney(totalSpend, currency, language)} tạo ${compactMetric(totalPrimary, language)} ${resultLabel}; ưu tiên xử lý rủi ro tracking/creative trước khi scale.`
-      : `${t.account} ${report.account.name} was evaluated with the ${report.selectedPack} KPI pack. Spend of ${compactMoney(totalSpend, currency, language)} produced ${compactMetric(totalPrimary, language)} ${resultLabel}; prioritize tracking and creative risks before scaling.`;
+      ? `${t.account} ${report.account.name} được đánh giá theo mục tiêu ${selectedPack}. Chi tiêu ${compactMoney(totalSpend, currency, language)} tạo ${compactMetric(totalPrimary, language)} ${resultLabel}; cần xử lý rủi ro đo lường và mẫu quảng cáo trước khi tăng ngân sách.`
+      : `${t.account} ${report.account.name} was evaluated against the ${selectedPack} objective. Spend of ${compactMoney(totalSpend, currency, language)} produced ${compactMetric(totalPrimary, language)} ${resultLabel}; address measurement and ad-creative risks before increasing budget.`;
 
   return {
     provider: "prompt",

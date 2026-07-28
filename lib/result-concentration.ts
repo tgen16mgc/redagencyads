@@ -81,8 +81,8 @@ export function assessResultConcentration(rows: NormalizedRow[], pack: KpiPack):
       severity: "risk",
       label: labels.high_risk,
       summary: {
-        en: `${topRows[0].name} drives ${percent(topOneShare)} of ${basis}; portfolio risk is concentrated in too few rows.`,
-        vi: `${topRows[0].name} chiếm ${percent(topOneShare)} ${basisVi}; rủi ro portfolio đang tập trung vào quá ít dòng.`,
+        en: `${topRows[0].name} drives ${percent(topOneShare)} of ${basis}; results depend too heavily on too few rows.`,
+        vi: `${topRows[0].name} chiếm ${percent(topOneShare)} ${basisVi}; kết quả đang phụ thuộc quá nhiều vào quá ít dòng.`,
       },
       topRows,
     };
@@ -94,8 +94,8 @@ export function assessResultConcentration(rows: NormalizedRow[], pack: KpiPack):
       severity: "watch",
       label: labels.medium_risk,
       summary: {
-        en: `The top 3 rows drive ${percent(topThreeShare)} of ${basis}; scale carefully until more rows prove repeatable.`,
-        vi: `Top 3 dòng chiếm ${percent(topThreeShare)} ${basisVi}; nên scale cẩn thận đến khi nhiều dòng chứng minh được độ lặp lại.`,
+        en: `The top 3 rows drive ${percent(topThreeShare)} of ${basis}; increase budget carefully until more rows prove repeatable.`,
+        vi: `Ba dòng dẫn đầu chiếm ${percent(topThreeShare)} ${basisVi}; chỉ tăng ngân sách thận trọng đến khi nhiều dòng chứng minh được độ lặp lại.`,
       },
       topRows,
     };
@@ -106,8 +106,8 @@ export function assessResultConcentration(rows: NormalizedRow[], pack: KpiPack):
     severity: "ok",
     label: labels.low_risk,
     summary: {
-      en: `Primary ${basis} are distributed across multiple rows, so portfolio dependency is low.`,
-      vi: `${basisVi} chính được phân bổ trên nhiều dòng, nên rủi ro phụ thuộc portfolio thấp.`,
+      en: `Primary ${basis} are distributed across multiple rows, so dependency risk is low.`,
+      vi: `${basisVi} chính được phân bổ trên nhiều dòng nên rủi ro phụ thuộc thấp.`,
     },
     topRows,
   };

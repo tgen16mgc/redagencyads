@@ -93,8 +93,8 @@ function insufficient(reasonEn: string, reasonVi: string): BudgetMoveEngineResul
     severity: "insufficient",
     label: labels.insufficient_data,
     summary: {
-      en: "Need stronger budget-owning row data before recommending guarded reallocations.",
-      vi: "Cần dữ liệu mạnh hơn ở cấp có ngân sách trước khi đề xuất điều chuyển an toàn.",
+      en: "More campaign or ad-set evidence is needed before recommending a budget shift.",
+      vi: "Cần thêm bằng chứng ở cấp chiến dịch hoặc nhóm quảng cáo trước khi đề xuất chuyển ngân sách.",
     },
     recommendations: [],
     holdReasons: { en: [reasonEn], vi: [reasonVi] },
@@ -107,7 +107,7 @@ function hold(reasonsEn: string[], reasonsVi: string[]): BudgetMoveEngineResult 
     severity: "watch",
     label: labels.hold,
     summary: {
-      en: "No safe guarded budget move is supported by the current report.",
+      en: "The current report does not support a budget shift within the stated safety limits.",
       vi: "Báo cáo hiện tại chưa hỗ trợ điều chuyển ngân sách an toàn.",
     },
     recommendations: [],
@@ -120,8 +120,8 @@ export function recommendBudgetMoves(report: DashboardReport): BudgetMoveEngineR
 
   if (!primaryResultSpec(pack).resultKey) {
     return hold(
-      ["The awareness pack is judged on CTR/CPM/frequency and does not support conversion-scale budget moves."],
-      ["Gói awareness được đánh giá theo CTR/CPM/frequency nên không có đề xuất ngân sách theo quy mô chuyển đổi."],
+      ["The awareness pack is judged on CTR, CPM, and frequency and does not support conversion-based budget increases."],
+      ["Gói nhận biết được đánh giá theo CTR, CPM và tần suất nên chưa hỗ trợ tăng ngân sách dựa trên chuyển đổi."],
     );
   }
 
@@ -234,7 +234,7 @@ export function recommendBudgetMoves(report: DashboardReport): BudgetMoveEngineR
         source.metrics.result === 0
           ? `Spent ${source.metrics.spend.toFixed(2)} with zero primary results.`
           : `Cost per result is ${(source.inefficiencyDelta * 100).toFixed(1)}% worse than account average.`,
-        source.fatigueRisk ? "Frequency and CTR indicate fatigue risk." : "Performance is weak enough to fund a guarded transfer.",
+        source.fatigueRisk ? "Frequency and CTR indicate fatigue risk." : "Performance is weak enough to fund a controlled budget shift.",
       ]),
     ],
   };
@@ -244,8 +244,8 @@ export function recommendBudgetMoves(report: DashboardReport): BudgetMoveEngineR
     severity: "ok",
     label: labels.moves_recommended,
     summary: {
-      en: "A guarded budget transfer is supported by current budget-owning row performance.",
-      vi: "Hiệu quả hiện tại hỗ trợ một điều chuyển ngân sách có kiểm soát.",
+      en: "Current performance supports a controlled budget shift between the named rows.",
+      vi: "Hiệu quả hiện tại hỗ trợ điều chuyển ngân sách có kiểm soát giữa các dòng đã nêu.",
     },
     recommendations: [recommendation],
     holdReasons: { en: [], vi: [] },
