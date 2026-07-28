@@ -139,7 +139,12 @@ const uiCopy = {
       functions: "Workspaces",
       workflow: "Workflow",
       aiSetup: "Enhancement",
+      aiStatusTitle: "AI enhancement",
       clearSession: "Clear session",
+      clearSessionTitle: "Clear this session?",
+      clearSessionDescription: "You will be signed out and the saved Meta session will be removed from this browser.",
+      clearSessionCancel: "Keep session",
+      clearSessionConfirm: "Clear session",
       overview: "Overview",
       ads: "Performance",
       competitor: "Competitor evidence",
@@ -167,6 +172,10 @@ const uiCopy = {
       tiktokTitle: "TikTok tracker",
       publisherTitle: "Publishing operations",
       session: "HttpOnly token session",
+      connected: "Meta connected",
+      sample: "Sample data",
+      worksWithoutMeta: "Works without Meta",
+      notConnected: "Meta not connected",
       pulled: "Pulled",
       exportPdf: "Export PDF",
       actionFailed: "Action failed",
@@ -194,7 +203,12 @@ const uiCopy = {
       functions: "Workspace",
       workflow: "Quy trình",
       aiSetup: "Tăng cường",
+      aiStatusTitle: "Tăng cường AI",
       clearSession: "Xóa session",
+      clearSessionTitle: "Xóa session này?",
+      clearSessionDescription: "Bạn sẽ được đăng xuất và session Meta đã lưu sẽ bị xóa khỏi trình duyệt này.",
+      clearSessionCancel: "Giữ session",
+      clearSessionConfirm: "Xóa session",
       overview: "Tổng quan",
       ads: "Hiệu quả",
       competitor: "Evidence đối thủ",
@@ -222,6 +236,10 @@ const uiCopy = {
       tiktokTitle: "Theo dõi TikTok",
       publisherTitle: "Vận hành đăng bài",
       session: "Session token HttpOnly",
+      connected: "Đã kết nối Meta",
+      sample: "Dữ liệu mẫu",
+      worksWithoutMeta: "Không cần Meta",
+      notConnected: "Chưa kết nối Meta",
       pulled: "Đã kéo",
       exportPdf: "Xuất PDF",
       actionFailed: "Thao tác lỗi",
@@ -425,6 +443,14 @@ export function DashboardShell() {
         : "Publish now or schedule Facebook Page posts with the connected Meta token.",
     },
   }[activeView];
+  const headerSession = authenticated
+    ? { label: copy.header.connected, variant: "success" as const }
+    : activeView === "competitor" || activeView === "tiktok" || activeView === "overview"
+      ? { label: copy.header.worksWithoutMeta, variant: "secondary" as const }
+      : sampleReportActive && activeView === "ads"
+        ? { label: copy.header.sample, variant: "secondary" as const }
+        : { label: copy.header.notConnected, variant: "secondary" as const };
+  const aiStatusState = capabilities.find((capability) => capability.key === "ai_enhancement")?.state || "unknown";
 
   React.useEffect(() => {
     window.localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
@@ -791,44 +817,48 @@ export function DashboardShell() {
         workflowLabel={copy.nav.workflow}
         workflowItems={workflowNavItems}
         aiSetupLabel={copy.nav.aiSetup}
+        aiStatusTitle={copy.nav.aiStatusTitle}
+        aiStatusState={aiStatusState}
         onActiveViewChange={setActiveView}
         onLogout={logout}
+        clearSessionTitle={copy.nav.clearSessionTitle}
+        clearSessionDescription={copy.nav.clearSessionDescription}
+        clearSessionCancel={copy.nav.clearSessionCancel}
+        clearSessionConfirm={copy.nav.clearSessionConfirm}
       />
       <SidebarInset>
         <div className="flex min-h-svh flex-col gap-4 p-4 pb-28 md:p-6 md:pb-28" data-print-page>
           <header className="rounded-2xl border bg-card p-3 sm:p-4 md:p-5">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex min-w-0 items-start gap-3">
-                <SidebarTrigger className="mt-0.5" data-print-hidden />
-                <span className="hidden size-11 shrink-0 items-center justify-center rounded-xl border bg-background text-muted-foreground sm:flex">
-                  <WaypointsIcon className="size-5" aria-hidden="true" />
-                </span>
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex min-w-0 items-start gap-2.5 sm:gap-3">
+                <SidebarTrigger className="mt-0.5 shrink-0" data-print-hidden />
                 <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground sm:text-sm">
-                    <Badge variant="secondary" className="shrink-0">{headerMode.badge}</Badge>
-                    <span className="flex items-center gap-1">{headerMode.detail}</span>
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] font-medium tracking-[0.08em] text-muted-foreground sm:text-xs">
+                    <span className="text-primary">{headerMode.badge}</span>
+                    <span className="size-1 rounded-full bg-border" aria-hidden="true" />
+                    <span>{headerMode.detail}</span>
                   </div>
-                  <h1 className="mt-1 font-heading text-xl font-semibold tracking-[-0.035em] sm:mt-2 sm:text-2xl md:text-3xl">
+                  <h1 className="mt-1 font-heading text-xl font-semibold tracking-[-0.035em] sm:mt-1.5 sm:text-2xl md:text-3xl">
                     {headerMode.title}
                   </h1>
                   <p className="mt-1 hidden max-w-2xl text-sm leading-6 text-muted-foreground sm:block">{headerMode.description}</p>
                 </div>
               </div>
-              <div className="flex w-full flex-wrap items-center justify-between gap-2 sm:w-auto sm:justify-start lg:justify-end">
-                <LanguageToggle language={language} onChange={setLanguage} />
-                <Badge variant="secondary">
-                  <ShieldCheckIcon />
-                  {authenticated
-                    ? copy.header.session
-                    : activeView === "competitor" || activeView === "tiktok" || activeView === "overview"
-                      ? language === "vi" ? "Không cần Meta" : "Works without Meta"
-                      : sampleReportActive && activeView === "ads"
-                        ? language === "vi" ? "Dữ liệu mẫu" : "Sample data"
-                        : language === "vi" ? "Chưa kết nối Meta" : "Meta not connected"}
+              <div className="flex w-full flex-wrap items-center gap-2 border-t border-border/70 pt-3 sm:justify-end lg:w-auto lg:border-t-0 lg:pt-0">
+                <Badge variant={headerSession.variant} className="order-1">
+                  <ShieldCheckIcon data-icon="inline-start" />
+                  {headerSession.label}
                 </Badge>
-                {activeView === "ads" && report ? <Badge variant="outline">{copy.header.pulled} {new Date(report.pulledAt).toLocaleString()}</Badge> : null}
-                {activeView === "ads" ? (
-                  <Button type="button" variant="outline" onClick={exportPdf} disabled={!reportHasData || exportingPdf} data-print-hidden>
+                {activeView === "ads" && report ? (
+                  <Badge variant="outline" className="order-2 max-w-full truncate">
+                    {copy.header.pulled} {new Date(report.pulledAt).toLocaleString()}
+                  </Badge>
+                ) : null}
+                <div className="order-3 ml-auto sm:ml-0">
+                  <LanguageToggle language={language} onChange={setLanguage} />
+                </div>
+                {activeView === "ads" && reportHasData ? (
+                  <Button type="button" variant="outline" onClick={exportPdf} disabled={exportingPdf} data-print-hidden className="order-4">
                     {exportingPdf ? <Spinner data-icon="inline-start" /> : <DownloadIcon data-icon="inline-start" />}
                     {copy.header.exportPdf}
                   </Button>
