@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { buildClientReportViewModel } from "../client-report";
-import { buildClientReportPdf, buildClientReportPdfLayout } from "../client-report-pdf";
+import { buildClientReportPdf, buildClientReportPdfLayout, type ClientReportPdfFontData } from "../client-report-pdf";
 import type { DashboardReport, KpiCard, NormalizedRow, Verdict } from "../types";
 
 function row(overrides: Partial<NormalizedRow>): NormalizedRow {
@@ -42,6 +44,11 @@ const kpis: KpiCard[] = [
 ];
 
 const longCopy = "This is a deliberately long client-facing sentence that must wrap naturally in the PDF instead of being clipped inside a fixed-height card.";
+
+const fonts: ClientReportPdfFontData = {
+  regular: readFileSync(resolve(process.cwd(), "public/fonts/geist/Geist-Regular.ttf")).toString("base64"),
+  semibold: readFileSync(resolve(process.cwd(), "public/fonts/geist/Geist-SemiBold.ttf")).toString("base64"),
+};
 
 function report(overrides: Partial<DashboardReport> = {}): DashboardReport {
   const longRows = Array.from({ length: 34 }, (_, index) =>
@@ -160,7 +167,7 @@ describe("client report PDF rebuild", () => {
       },
     });
     const layout = buildClientReportPdfLayout(longVerdictModel);
-    const verdictBlocks = layout.pages.flatMap((page) => page.blocks.filter((block) => block.kind === "text-card" && block.title === longVerdictModel.copy.verdictLabel));
+    const verdictBlocks = layout.pages.flatMap((page) => page.blocks.filter((block) => block.kind === "narrative" && block.title?.startsWith("Decision brief")));
 
     for (const page of layout.pages) {
       const top = layout.margin.top;
@@ -182,20 +189,20 @@ describe("client report PDF rebuild", () => {
   });
 
   it("renders selectable PDF text without screenshot image objects", async () => {
-    const pdf = buildClientReportPdf(model());
+    const pdf = await buildClientReportPdf(model(), fonts);
     const bytes = new Uint8Array(await pdf.blob.arrayBuffer());
     const text = new TextDecoder("latin1").decode(bytes);
 
     expect(pdf.filename).toBe("seoul-beauty-clinic-meta-ads-report-2026-06-01-to-2026-06-26.pdf");
     expect(String.fromCharCode(...bytes.slice(0, 8))).toBe("%PDF-1.3");
-    expect(text).toContain("Meta Ads Performance");
-    expect(text).toContain("Seoul Beauty Clinic");
+    expect(text).toContain("Geist");
+    expect(text).toContain("/ToUnicode");
     expect(text).not.toContain("/Subtype /Image");
     expect(text).toContain("%%EOF");
   });
 
-  it("transliterates Vietnamese PDF text without corrupting words into VND", async () => {
-    const pdf = buildClientReportPdf(buildClientReportViewModel({
+  it("keeps Vietnamese copy in the layout and embeds a Unicode font", async () => {
+    const vietnameseModel = buildClientReportViewModel({
       report: report({
         account: { id: "act", name: "Điều Đẹp Clinic ₫", currency: "VND" },
       }),
@@ -206,13 +213,16 @@ describe("client report PDF rebuild", () => {
         ...verdict(),
         verdict: "Điều chỉnh ngân sách ₫",
       },
-    }));
+    });
+    const layout = buildClientReportPdfLayout(vietnameseModel);
+    const pdf = await buildClientReportPdf(vietnameseModel, fonts);
     const bytes = new Uint8Array(await pdf.blob.arrayBuffer());
     const text = new TextDecoder("latin1").decode(bytes);
 
-    expect(text).toContain("Dieu Dep Clinic VND");
-    expect(text).toContain("Dieu chinh ngan sach VND");
-    expect(text).not.toContain("VNDiu");
+    expect(vietnameseModel.accountName).toBe("Điều Đẹp Clinic ₫");
+    expect(JSON.stringify(layout)).toContain("Điều chỉnh ngân sách VND");
+    expect(text).toContain("Geist");
+    expect(text).toContain("/ToUnicode");
     expect(text).not.toContain("/Subtype /Image");
   });
 });

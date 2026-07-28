@@ -739,7 +739,7 @@ export function DashboardShell() {
         kpis: effectiveKpis,
       });
       assertClientReportHealthParity(model, healthSummary);
-      downloadClientReportPdf(buildClientReportPdf(model), {
+      downloadClientReportPdf(await buildClientReportPdf(model), {
         createObjectUrl: (blob) => URL.createObjectURL(blob),
         revokeObjectUrl: (url) => URL.revokeObjectURL(url),
         createLink: () => document.createElement("a"),

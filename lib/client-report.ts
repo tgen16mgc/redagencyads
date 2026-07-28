@@ -1,8 +1,9 @@
 import { buildKpiComparisons, comparisonFootnote, formatComparisonChangePct, metricMovementIsBad } from "@/lib/metric-comparison";
 import { summarizeHealth, type HealthScoreSummary } from "@/lib/health-score";
+import { localizeHealthCheck } from "@/lib/health-check-copy";
 import { formatMetric } from "@/lib/metrics";
 import { primaryResultSpec } from "@/lib/primary-result";
-import type { AiInsightTable, CompareMode, DashboardReport, InterfaceLanguage, KpiCard, NormalizedRow, Verdict } from "@/lib/types";
+import type { AiInsightTable, AiProvider, CompareMode, DashboardReport, InterfaceLanguage, KpiCard, NormalizedRow, Verdict } from "@/lib/types";
 
 export type ClientReportKpi = {
   key: string;
@@ -53,6 +54,15 @@ export type ClientReportViewModel = {
   healthScore: number;
   healthGrade: string;
   healthLabel: string;
+  healthStatus: HealthScoreSummary["severity"];
+  healthStatusLabel: string;
+  healthSummaryText: string;
+  decisionProvider: AiProvider;
+  decisionProviderLabel: string;
+  primaryResultKey: keyof NormalizedRow;
+  primaryResultLabel: string;
+  primaryCostKey?: keyof NormalizedRow;
+  primaryCostLabel: string;
   kpis: ClientReportKpi[];
   wins: string[];
   risks: string[];
@@ -90,9 +100,9 @@ const copy = {
     kpiScorecard: "KPI scorecard",
     performanceStory: "Performance story",
     recommendations: "Recommendations",
-    appendixCharts: "Appendix A — Charts and breakdowns",
-    appendixTables: "Appendix B — Performance tables",
-    appendixDiagnostics: "Appendix C — Diagnostics and creative detail",
+    appendixCharts: "Appendix A: Charts and breakdowns",
+    appendixTables: "Appendix B: Performance tables",
+    appendixDiagnostics: "Appendix C: Diagnostics and creative detail",
     wins: "Wins",
     risks: "Risks",
     nextMoves: "Next moves",
@@ -102,7 +112,7 @@ const copy = {
   },
   vi: {
     title: "Báo cáo hiệu quả Meta Ads",
-    subtitle: "Bản báo cáo dành cho khách hàng: chuyện gì đã xảy ra, điều gì tạo ra hiệu quả và evidence hỗ trợ chuyển ngân sách ra sao.",
+    subtitle: "Bản báo cáo dành cho khách hàng: điều gì đã xảy ra, yếu tố nào tạo hiệu quả và bằng chứng hỗ trợ quyết định ngân sách tiếp theo.",
     preparedBy: "Chuẩn bị trong Decision Workspace",
     source: "Meta Ads API",
     verdictLabel: "Kết luận hiệu quả",
@@ -110,15 +120,15 @@ const copy = {
     kpiScorecard: "Bảng điểm KPI",
     performanceStory: "Câu chuyện hiệu quả",
     recommendations: "Khuyến nghị",
-    appendixCharts: "Phụ lục A — Biểu đồ và breakdown",
-    appendixTables: "Phụ lục B — Bảng hiệu quả",
-    appendixDiagnostics: "Phụ lục C — Chẩn đoán và creative",
+    appendixCharts: "Phụ lục A: Biểu đồ và phân tích nhóm",
+    appendixTables: "Phụ lục B: Bảng hiệu quả",
+    appendixDiagnostics: "Phụ lục C: Chẩn đoán và chi tiết quảng cáo",
     wins: "Điểm tốt",
     risks: "Rủi ro",
     nextMoves: "Bước tiếp theo",
-    footnoteSource: "Số liệu dùng kỳ báo cáo và phạm vi campaign đang chọn. Nguồn dữ liệu: Meta Ads API.",
+    footnoteSource: "Số liệu dùng kỳ báo cáo và phạm vi chiến dịch đang chọn. Nguồn dữ liệu: Meta Ads API.",
     footnoteComparison: "Chênh lệch so sánh hiển thị khi có báo cáo trước đó hoặc đủ dữ liệu ngày gần nhất.",
-    footnoteRecommendations: "Khuyến nghị kết hợp rule chẩn đoán tài khoản và nội dung AI insight khi có.",
+    footnoteRecommendations: "Khuyến nghị kết hợp luật chẩn đoán tài khoản và diễn giải AI khi có.",
   },
 } as const;
 
@@ -143,7 +153,11 @@ export function buildClientReportViewModel(args: {
     language: args.language,
   });
   const comparisonByKey = new Map(comparisons.map((comparison) => [comparison.key, comparison]));
-  const primaryKey = primaryResultSpec(report.selectedPack).volumeKey;
+  const primarySpec = primaryResultSpec(report.selectedPack);
+  const primaryKey = primarySpec.volumeKey;
+  const hasAiEnhancement = args.verdict?.provider === "9router" || args.insights?.provider === "9router";
+  const decisionProvider: AiProvider = hasAiEnhancement ? "9router" : "prompt";
+  const localizedChecks = report.health.checks.map((check) => localizeHealthCheck(check, args.language));
 
   return {
     accountName: report.account.name,
@@ -164,7 +178,18 @@ export function buildClientReportViewModel(args: {
     verdictText: args.verdict?.verdict || defaultVerdict(healthSummary, args.language),
     healthScore: healthSummary.score,
     healthGrade: healthSummary.grade,
-    healthLabel: `${healthSummary.grade} · ${healthSummary.score}/100`,
+    healthLabel: `${healthSummary.grade} / ${healthSummary.score}/100`,
+    healthStatus: healthSummary.severity,
+    healthStatusLabel: healthSummary.label[args.language],
+    healthSummaryText: healthSummary.summary[args.language],
+    decisionProvider,
+    decisionProviderLabel: hasAiEnhancement
+      ? args.language === "vi" ? "Luật cục bộ + diễn giải 9router" : "Local rules + 9router wording"
+      : args.language === "vi" ? "Luật quyết định cục bộ" : "Deterministic local rules",
+    primaryResultKey: primarySpec.volumeKey,
+    primaryResultLabel: primarySpec.volumeLabel[args.language],
+    primaryCostKey: primarySpec.costKey || undefined,
+    primaryCostLabel: primarySpec.costLabel[args.language],
     kpis: args.kpis.slice(0, 6).map((kpi) => {
       const key = kpi.key as keyof NormalizedRow;
       const value = kpi.key === "healthScore"
@@ -173,14 +198,14 @@ export function buildClientReportViewModel(args: {
       const comparison = kpi.key === "healthScore" ? undefined : comparisonByKey.get(key);
       return {
         key: kpi.key,
-        label: kpi.label,
+        label: localizeKpiLabel(kpi.key, kpi.label, args.language),
         value,
         delta: comparison ? `${comparison.change > 0 ? "↑" : comparison.change < 0 ? "↓" : "→"} ${formatComparisonChangePct(comparison.changePct, args.language)} ${comparison.descriptor}` : undefined,
         movement: comparison ? (metricMovementIsBad(kpi.key, comparison.change) ? "bad" : comparison.change === 0 ? "neutral" : "good") : "neutral",
       };
     }),
-    wins: pickList(args.verdict?.winners, args.insights?.rows.filter((row) => row.priority === "high").map((row) => row.insight), report.health.checks.filter((check) => check.status === "pass").map((check) => check.detail), args.language),
-    risks: pickList(args.verdict?.risks, args.insights?.rows.filter((row) => row.priority !== "low").map((row) => row.evidence), report.health.checks.filter((check) => check.status !== "pass").map((check) => check.detail), args.language),
+    wins: pickList(args.verdict?.winners, args.insights?.rows.filter((row) => row.priority === "high").map((row) => row.insight), localizedChecks.filter((check) => check.status === "pass").map((check) => check.detail), args.language),
+    risks: pickList(args.verdict?.risks, args.insights?.rows.filter((row) => row.priority !== "low").map((row) => row.evidence), localizedChecks.filter((check) => check.status !== "pass").map((check) => check.detail), args.language),
     actions: buildActions(args.verdict, args.insights, args.language),
     insightSummary: args.insights?.summary || defaultInsightSummary(report, args.language),
     dailyTrend: report.dailyRows.slice(-14).map((row) => ({
@@ -191,27 +216,29 @@ export function buildClientReportViewModel(args: {
     topCampaigns: report.campaignRows.slice(0, 4),
     topAdsets: report.adsetRows.slice(0, 4),
     breakdowns: {
-      platforms: report.platformRows.slice(0, 4),
+      platforms: report.platformRows.slice(0, 4).map((row) => localizeBreakdownRow(row, "platform", args.language)),
       regions: (report.regionRows.length ? report.regionRows : report.countryRows || []).slice(0, 4),
-      ageGender: report.ageGenderRows.slice(0, 4),
+      ageGender: report.ageGenderRows.slice(0, 4).map((row) => localizeBreakdownRow(row, "ageGender", args.language)),
     },
     tables: [
-      { title: args.language === "vi" ? "Campaign" : "Campaigns", rows: report.campaignRows },
-      { title: args.language === "vi" ? "Ad set" : "Ad sets", rows: report.adsetRows },
-      { title: "Ads", rows: report.adRows },
+      { title: args.language === "vi" ? "Chiến dịch" : "Campaigns", rows: report.campaignRows },
+      { title: args.language === "vi" ? "Nhóm quảng cáo" : "Ad sets", rows: report.adsetRows },
+      { title: args.language === "vi" ? "Quảng cáo" : "Ads", rows: report.adRows },
       { title: args.language === "vi" ? "Theo ngày" : "Daily", rows: report.dailyRows },
     ],
-    diagnostics: report.health.checks,
+    diagnostics: localizedChecks,
     creativeDetails: (report.adsetPreviews || []).map((adset) => {
       const adCount = adset.ads.length;
-      const adCountLabel = `${adCount} ${adCount === 1 ? "ad" : "ads"}`;
+      const adCountLabel = args.language === "vi"
+        ? `${adCount} quảng cáo`
+        : `${adCount} ${adCount === 1 ? "ad" : "ads"}`;
       return {
         name: adset.name,
         campaignName: adset.campaignName,
         status: adset.status,
         adCount,
         adCountLabel,
-        summary: `${adset.campaignName} · ${adset.status} · ${adCountLabel}`,
+        summary: `${adset.campaignName} / ${adset.status} / ${adCountLabel}`,
         ads: adset.ads.map((ad) => ad.name || ad.id).slice(0, 6),
       };
     }),
@@ -248,7 +275,7 @@ export function downloadClientReportPdf(pdf: ClientReportPdfFile, runtime: PdfDo
 }
 
 function formatDateRange(range: DashboardReport["dateRange"], language: InterfaceLanguage) {
-  return `${formatDate(range.since, language)} – ${formatDate(range.until, language)}`;
+  return `${formatDate(range.since, language)} - ${formatDate(range.until, language)}`;
 }
 
 function formatDate(value: string, language: InterfaceLanguage) {
@@ -265,8 +292,42 @@ function defaultVerdict(healthSummary: HealthScoreSummary, language: InterfaceLa
 }
 
 function defaultInsightSummary(report: DashboardReport, language: InterfaceLanguage) {
-  if (language === "vi") return `Báo cáo bao gồm ${report.campaignRows.length} campaign, ${report.adsetRows.length} ad set, và ${report.adRows.length} ads trong phạm vi đã chọn.`;
+  if (language === "vi") return `Báo cáo bao gồm ${report.campaignRows.length} chiến dịch, ${report.adsetRows.length} nhóm quảng cáo và ${report.adRows.length} quảng cáo trong phạm vi đã chọn.`;
   return `This report covers ${report.campaignRows.length} campaigns, ${report.adsetRows.length} ad sets, and ${report.adRows.length} ads in the selected scope.`;
+}
+
+function localizeKpiLabel(key: string, fallback: string, language: InterfaceLanguage) {
+  if (language !== "vi") return fallback;
+  const labels: Record<string, string> = {
+    impressions: "Lượt hiển thị",
+    reach: "Người tiếp cận",
+    messages: "Tin nhắn",
+    costPerMessage: "Chi phí/tin nhắn",
+    replyRate: "Tỷ lệ phản hồi",
+    leads: "Khách hàng tiềm năng",
+    leadRate: "Tỷ lệ lead/tin nhắn",
+    purchases: "Lượt mua",
+    linkClicks: "Lượt nhấp liên kết",
+    frequency: "Tần suất",
+    healthScore: "Sức khỏe tài khoản",
+  };
+  return labels[key] || fallback;
+}
+
+function localizeBreakdownRow(row: NormalizedRow, kind: "platform" | "ageGender", language: InterfaceLanguage): NormalizedRow {
+  if (kind === "platform") {
+    const platformLabels: Record<string, string> = {
+      facebook: "Facebook",
+      instagram: "Instagram",
+      audience_network: "Audience Network",
+      messenger: "Messenger",
+    };
+    return { ...row, name: platformLabels[row.name.toLowerCase()] || row.name, platform: undefined };
+  }
+
+  if (language !== "vi") return row;
+  const localizedGender = row.gender === "female" ? "Nữ" : row.gender === "male" ? "Nam" : row.gender;
+  return { ...row, name: [localizedGender, row.age].filter(Boolean).join(" ") || row.name, age: undefined, gender: undefined };
 }
 
 function pickList(primary: string[] | undefined, secondary: string[] | undefined, fallback: string[] | undefined, language: InterfaceLanguage) {
@@ -276,10 +337,19 @@ function pickList(primary: string[] | undefined, secondary: string[] | undefined
 }
 
 function buildActions(verdict: Verdict | null | undefined, insights: AiInsightTable | null | undefined, language: InterfaceLanguage): ClientReportAction[] {
-  const fromVerdict = [
-    ...(verdict?.budget_moves || []),
-    ...(verdict?.tests || []),
-  ].map((item) => ({ title: item, detail: language === "vi" ? "Ưu tiên kiểm tra trong kỳ tối ưu tiếp theo." : "Prioritize this in the next optimization cycle." }));
+  const budgetActions = (verdict?.budget_moves || []).map((item) => ({
+    title: item,
+    detail: language === "vi"
+      ? "Đối chiếu tracking, chất lượng kết quả và giới hạn 20% trước khi áp dụng."
+      : "Validate tracking, result quality, and the 20% guardrail before applying the move.",
+  }));
+  const testActions = (verdict?.tests || []).map((item) => ({
+    title: item,
+    detail: language === "vi"
+      ? "Chỉ định người phụ trách, KPI thành công và ngày rà soát trước khi chạy."
+      : "Assign an owner, success metric, and review date before launch.",
+  }));
+  const fromVerdict = [...budgetActions, ...testActions];
 
   const fromInsights = (insights?.rows || []).map((row) => ({ title: row.action, detail: `${row.area}: ${row.evidence}` }));
   const actions = (fromVerdict.length ? fromVerdict : fromInsights).filter((item) => item.title).slice(0, 4);

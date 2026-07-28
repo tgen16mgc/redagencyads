@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { assertClientReportHealthParity, buildClientReportViewModel, downloadClientReportPdf } from "../client-report";
-import { buildClientReportPdf } from "../client-report-pdf";
+import { buildClientReportPdf, type ClientReportPdfFontData } from "../client-report-pdf";
 import { summarizeHealth } from "../health-score";
 import type { DashboardReport, KpiCard, NormalizedRow, Verdict } from "../types";
 
@@ -41,6 +43,11 @@ const kpis: KpiCard[] = [
   { key: "cpl", label: "CPL", format: "currency" },
   { key: "healthScore", label: "Health", format: "number" },
 ];
+
+const fonts: ClientReportPdfFontData = {
+  regular: readFileSync(resolve(process.cwd(), "public/fonts/geist/Geist-Regular.ttf")).toString("base64"),
+  semibold: readFileSync(resolve(process.cwd(), "public/fonts/geist/Geist-SemiBold.ttf")).toString("base64"),
+};
 
 function report(overrides: Partial<DashboardReport> = {}): DashboardReport {
   return {
@@ -125,7 +132,8 @@ describe("buildClientReportViewModel", () => {
     });
 
     expect(healthSummary).toMatchObject({ score: 73, grade: "C" });
-    expect(model.healthLabel).toBe("C · 73/100");
+    expect(model.healthLabel).toBe("C / 73/100");
+    expect(model.healthStatusLabel).toBe("Needs attention");
     expect(model.kpis.find((kpi) => kpi.key === "healthScore")?.value).toBe("C");
     expect(model.verdictText).toContain("graded C");
     expect(model.copy.footnoteComparison).toBe("No comparison selected for this report.");
@@ -176,7 +184,7 @@ describe("buildClientReportViewModel", () => {
       adCount: 1,
       adCountLabel: "1 ad",
       ads: ["Testimonial ad"],
-      summary: "Lead campaign - HCM · ACTIVE · 1 ad",
+      summary: "Lead campaign - HCM / ACTIVE / 1 ad",
     });
   });
 
@@ -204,7 +212,15 @@ describe("buildClientReportViewModel", () => {
 
   it("uses Vietnamese report copy when requested", () => {
     const model = buildClientReportViewModel({
-      report: report(),
+      report: report({
+        health: {
+          score: 85,
+          grade: "B",
+          checks: [
+            { id: "M25", label: "Creative/ad volume proxy", status: "warning", detail: "8 ads found in selected scope. Target: 10+ diverse creatives where budget supports it." },
+          ],
+        },
+      }),
       compareMode: "off",
       language: "vi",
       kpis,
@@ -213,6 +229,12 @@ describe("buildClientReportViewModel", () => {
     expect(model.copy.executiveSummary).toBe("Tóm tắt điều hành");
     expect(model.copy.appendixCharts).toContain("Phụ lục A");
     expect(model.dateRangeLabel).toContain("2026");
+    expect(model.kpis.find((kpi) => kpi.key === "leads")?.label).toBe("Khách hàng tiềm năng");
+    expect(model.diagnostics[0].label).toBe("Độ phủ creative/quảng cáo");
+    expect(model.diagnostics[0].detail).toContain("Có 8 quảng cáo trong phạm vi đã chọn");
+    expect(model.primaryCostLabel).toBe("CPL");
+    expect(model.breakdowns.platforms[0].name).toBe("Instagram");
+    expect(model.breakdowns.ageGender[0].name).toBe("Nữ 25-34");
   });
 
   it("builds a downloadable PDF report file", async () => {
@@ -224,25 +246,16 @@ describe("buildClientReportViewModel", () => {
       verdict: verdict(),
     });
 
-    const pdf = buildClientReportPdf(model);
+    const pdf = await buildClientReportPdf(model, fonts);
     const bytes = new Uint8Array(await pdf.blob.arrayBuffer());
     const text = new TextDecoder("latin1").decode(bytes);
 
     expect(pdf.filename).toBe("seoul-beauty-clinic-meta-ads-report-2026-06-01-to-2026-06-26.pdf");
     expect(pdf.blob.type).toBe("application/pdf");
     expect(String.fromCharCode(...bytes.slice(0, 8))).toBe("%PDF-1.3");
-    expect(text).toContain("Meta Ads Performance");
-    expect(text).toContain("Report");
-    expect(text).toContain("EXECUTIVE SUMMARY");
-    expect(text).toContain("Appendix A");
-    expect(text).toContain("Appendix B");
-    expect(text).toContain("Appendix C");
-    expect(text).toContain("Lead campaign - HCM");
-    expect(text).toContain("Consult retargeting");
-    expect(text).toContain("instagram");
-    expect(text).toContain("Ho Chi Minh");
-    expect(text).toContain("25-34 female");
-    expect(text).toContain(" re");
+    expect(text).toContain("Geist");
+    expect(text).toContain("/ToUnicode");
+    expect(text).not.toContain("/Subtype /Image");
     expect(text).toContain("%%EOF");
   });
 

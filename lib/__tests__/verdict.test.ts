@@ -191,10 +191,14 @@ describe("buildLocalVerdict", () => {
   });
 
   it("returns Vietnamese local Verdict strings without provider calls", () => {
-    const verdict = buildLocalVerdict(report(), "vi");
+    const verdict = buildLocalVerdict(report({ account: { id: "act", name: "Test Account", currency: "VND" } }), "vi");
 
     expect(verdict.provider).toBe("prompt");
     expect(verdict.verdict).toContain("Tài khoản Test Account");
+    expect(verdict.verdict).toContain("gói KPI tin nhắn");
+    expect(verdict.verdict).toContain("VND");
+    expect(verdict.risks.join(" ")).toContain("Độ phủ creative/quảng cáo");
+    expect(verdict.risks.join(" ")).not.toContain("ads found in selected scope");
     expect(verdict.assumptions.join(" ")).toContain("không gọi nhà cung cấp AI");
   });
 

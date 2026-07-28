@@ -55,7 +55,7 @@ describe("primaryResultSpec", () => {
     expect(primaryResultSpec("messages").resultLabel).toEqual({ en: "messages", vi: "tin nhắn" });
     expect(primaryResultSpec("traffic").costLabel).toEqual({ en: "CPC", vi: "CPC" });
     expect(primaryResultSpec("awareness").costLabel.en).toBe("CTR/CPM/frequency");
-    expect(primaryResultSpec("awareness").volumeLabel).toEqual({ en: "reach", vi: "tiếp cận" });
+    expect(primaryResultSpec("awareness").volumeLabel).toEqual({ en: "reach", vi: "người tiếp cận" });
   });
 });
 

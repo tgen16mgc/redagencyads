@@ -1,5 +1,6 @@
 import type { DashboardReport, InterfaceLanguage, Verdict } from "@/lib/types";
 import { recommendBudgetMoves } from "@/lib/budget-move-engine";
+import { localizeHealthCheck } from "@/lib/health-check-copy";
 import { primaryResultSpec } from "@/lib/primary-result";
 
 const verdictText = {
@@ -40,6 +41,9 @@ function activeRows(report: DashboardReport) {
 }
 
 function compactMoney(value: number, currency = "USD", language: InterfaceLanguage = "en") {
+  if (currency === "VND") {
+    return `${compactMetric(value, language)} VND`;
+  }
   return new Intl.NumberFormat(language === "vi" ? "vi-VN" : "en-US", {
     style: "currency",
     currency,
@@ -63,7 +67,10 @@ export function buildLocalVerdict(report: DashboardReport, language: InterfaceLa
   const totalPrimary = spec.resultKey ? Number(report.totals[spec.resultKey] || 0) : 0;
   const failingChecks = report.health.checks.filter((check) => check.status !== "pass");
   const assumptions = [t.localSource, t.trackingAssumption];
-  const risks = failingChecks.map((check) => `${check.label}: ${check.detail}`);
+  const risks = failingChecks.map((check) => {
+    const localized = localizeHealthCheck(check, language);
+    return `${localized.label}: ${localized.detail}`;
+  });
   const tests = new Set<string>();
   const winners: string[] = [];
   const losers: string[] = [];
@@ -117,9 +124,12 @@ export function buildLocalVerdict(report: DashboardReport, language: InterfaceLa
         ? "medium"
         : "low";
 
+  const selectedPack = vi
+    ? ({ messages: "tin nhắn", lead_gen: "tạo khách hàng tiềm năng", sales_roas: "doanh số/ROAS", traffic: "lưu lượng", awareness: "nhận biết" } as const)[report.selectedPack]
+    : report.selectedPack;
   const verdict =
     vi
-      ? `${t.account} ${report.account.name} được đánh giá theo gói ${report.selectedPack}. Chi tiêu ${compactMoney(totalSpend, currency, language)} tạo ${compactMetric(totalPrimary, language)} ${resultLabel}; ưu tiên xử lý rủi ro tracking/creative trước khi scale.`
+      ? `${t.account} ${report.account.name} được đánh giá theo gói KPI ${selectedPack}. Chi tiêu ${compactMoney(totalSpend, currency, language)} tạo ${compactMetric(totalPrimary, language)} ${resultLabel}; ưu tiên xử lý rủi ro tracking/creative trước khi scale.`
       : `${t.account} ${report.account.name} was evaluated with the ${report.selectedPack} KPI pack. Spend of ${compactMoney(totalSpend, currency, language)} produced ${compactMetric(totalPrimary, language)} ${resultLabel}; prioritize tracking and creative risks before scaling.`;
 
   return {
