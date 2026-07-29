@@ -29,6 +29,9 @@ const capabilitySchema = z.object({
     "tiktok_ad_library",
     "page_publishing",
     "ai_enhancement",
+    "cross_channel_intelligence",
+    "google_ads",
+    "linkedin_ads",
   ]),
   state: z.enum(["available", "needs_connection", "needs_setup", "degraded", "paused", "unknown"]),
 }).strict();

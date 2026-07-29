@@ -317,6 +317,20 @@
     0 20px 48px rgb(0 0 0 / 40%);
 }
 
+@media (max-width: 639px) {
+  .context-chat-island {
+    width: 3rem;
+  }
+
+  .context-chat-standalone-pill {
+    padding-inline: 0 !important;
+  }
+
+  .context-chat-standalone-pill > span:not(.context-chat-pulse) {
+    display: none;
+  }
+}
+
 .context-chat-dialog {
   opacity: 1;
   translate: -50% 0;

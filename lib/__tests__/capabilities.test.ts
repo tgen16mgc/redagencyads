@@ -28,12 +28,14 @@ describe("buildCapabilitySnapshot", () => {
       authenticated: true,
       apifyConfigured: true,
       competitorActorConfigured: true,
+      tiktokAdLibraryConfigured: true,
       nineRouterConfigured: true,
     });
 
     expect(capabilityStatus(capabilities, "meta_analysis")?.state).toBe("available");
     expect(capabilityStatus(capabilities, "competitor_evidence")?.state).toBe("available");
     expect(capabilityStatus(capabilities, "tiktok_profiles")?.state).toBe("available");
+    expect(capabilityStatus(capabilities, "tiktok_ad_library")?.state).toBe("available");
     expect(capabilityStatus(capabilities, "page_publishing")?.state).toBe("available");
     expect(capabilityStatus(capabilities, "ai_enhancement")?.state).toBe("available");
   });
@@ -41,7 +43,7 @@ describe("buildCapabilitySnapshot", () => {
   it("represents a failed capability check without claiming setup is missing", () => {
     const capabilities = buildUnknownCapabilitySnapshot();
 
-    expect(capabilities).toHaveLength(6);
+    expect(capabilities).toHaveLength(9);
     expect(capabilities.every((capability) => capability.state === "unknown")).toBe(true);
   });
 });

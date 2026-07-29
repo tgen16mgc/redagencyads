@@ -1,7 +1,38 @@
-import type { DashboardReport, InsightRow, KpiPack, MetaAccount, MetaAdSet, MetaCampaign, NormalizedRow } from "@/lib/types";
+import type {
+  DashboardReport,
+  InsightRow,
+  KpiPack,
+  MetaAccount,
+  MetaAdSet,
+  MetaCampaign,
+  NormalizedRow,
+} from "@/lib/types";
 import { graphList, graphRequest } from "@/lib/meta-graph";
-import { buildPrompt, detectKpiPack, getKpiCards, normalizeRows, scoreHealth, sumRows } from "@/lib/metrics";
+import {
+  buildPrompt,
+  detectKpiPack,
+  getKpiCards,
+  normalizeRows,
+  scoreHealth,
+  sumRows,
+} from "@/lib/metrics";
 import { buildAdSetPreviewsWithCreatives } from "@/lib/adset-preview";
+import { flattenAudienceTargeting } from "@/lib/cross-channel";
+import {
+  boundedMediaHashNumber,
+  fetchHttpsMediaSha256,
+} from "@/lib/media-content-hash";
+
+type MetaReportAd = {
+  id: string;
+  name: string;
+  adset_id: string;
+  status: string;
+  effective_status: string;
+  previewImageUrl: string;
+  contentHash?: string;
+  contentHashSource?: "meta_thumbnail_sha256";
+};
 
 const META_FIELDS = [
   "account_name",
@@ -29,13 +60,20 @@ const META_FIELDS = [
 ].join(",");
 
 export async function validateToken(token: string) {
-  return graphRequest<{ id: string; name?: string }>({ path: "/me", params: { fields: "id,name" }, token });
+  return graphRequest<{ id: string; name?: string }>({
+    path: "/me",
+    params: { fields: "id,name" },
+    token,
+  });
 }
 
 export async function getAccounts(token: string) {
   return graphList<MetaAccount>({
     path: "/me/adaccounts",
-    params: { fields: "id,account_id,name,currency,timezone_name,account_status", limit: 100 },
+    params: {
+      fields: "id,account_id,name,currency,timezone_name,account_status",
+      limit: 100,
+    },
     token,
   });
 }
@@ -44,20 +82,31 @@ export async function getCampaigns(token: string, accountId: string) {
   const id = normalizeAccountId(accountId);
   return graphList<MetaCampaign>({
     path: `/${id}/campaigns`,
-    params: { fields: "id,name,objective,status,effective_status,daily_budget,lifetime_budget", limit: 100 },
+    params: {
+      fields:
+        "id,name,objective,status,effective_status,daily_budget,lifetime_budget",
+      limit: 100,
+    },
     token,
   });
 }
 
-export async function getAdSets(token: string, accountId: string, campaignIds: string[] = []) {
+export async function getAdSets(
+  token: string,
+  accountId: string,
+  campaignIds: string[] = [],
+) {
   const id = normalizeAccountId(accountId);
   const filtering = campaignIds.length
-    ? JSON.stringify([{ field: "campaign.id", operator: "IN", value: campaignIds }])
+    ? JSON.stringify([
+        { field: "campaign.id", operator: "IN", value: campaignIds },
+      ])
     : undefined;
   return graphList<MetaAdSet>({
     path: `/${id}/adsets`,
     params: {
-      fields: "id,name,campaign_id,campaign_name,status,effective_status,daily_budget,lifetime_budget",
+      fields:
+        "id,name,campaign_id,campaign_name,status,effective_status,daily_budget,lifetime_budget,targeting",
       filtering,
       limit: 100,
     },
@@ -65,10 +114,16 @@ export async function getAdSets(token: string, accountId: string, campaignIds: s
   });
 }
 
-export async function getActiveAdsForCampaigns(token: string, accountId: string, campaignIds: string[]) {
+export async function getActiveAdsForCampaigns(
+  token: string,
+  accountId: string,
+  campaignIds: string[],
+) {
   const id = normalizeAccountId(accountId);
   const filtering = campaignIds.length
-    ? JSON.stringify([{ field: "campaign.id", operator: "IN", value: campaignIds }])
+    ? JSON.stringify([
+        { field: "campaign.id", operator: "IN", value: campaignIds },
+      ])
     : undefined;
   const ads = await graphList<{
     id: string;
@@ -80,7 +135,8 @@ export async function getActiveAdsForCampaigns(token: string, accountId: string,
   }>({
     path: `/${id}/ads`,
     params: {
-      fields: "id,name,adset_id,status,effective_status,creative{thumbnail_url}",
+      fields:
+        "id,name,adset_id,status,effective_status,creative{thumbnail_url}",
       filtering,
       limit: 100,
     },
@@ -88,10 +144,103 @@ export async function getActiveAdsForCampaigns(token: string, accountId: string,
   });
   return ads
     .filter((ad) => (ad.effective_status || ad.status) === "ACTIVE")
-    .map((ad) => ({ ...ad, previewImageUrl: ad.creative?.thumbnail_url?.trim() || "" }));
+    .map((ad) => ({
+      ...ad,
+      previewImageUrl: ad.creative?.thumbnail_url?.trim() || "",
+    }));
 }
 
-export async function getAdPreviews(token: string, adIds: string[]): Promise<Record<string, string>> {
+export async function enrichMetaAdContentHashes(input: {
+  ads: MetaReportAd[];
+  fetchFn?: typeof fetch;
+  maxAssets?: number;
+  maxBytes?: number;
+  timeoutMs?: number;
+  concurrency?: number;
+}) {
+  const fetchFn = input.fetchFn || fetch;
+  const maxAssets = Math.floor(
+    boundedMediaHashNumber(
+      input.maxAssets,
+      process.env.CONNECTOR_MEDIA_HASH_MAX_ASSETS,
+      250,
+      0,
+    ),
+  );
+  const maxBytes = boundedMediaHashNumber(
+    input.maxBytes,
+    process.env.CONNECTOR_MEDIA_HASH_MAX_BYTES,
+    10 * 1024 * 1024,
+    1,
+  );
+  const timeoutMs = boundedMediaHashNumber(
+    input.timeoutMs,
+    process.env.CONNECTOR_MEDIA_HASH_TIMEOUT_MS,
+    15_000,
+    1000,
+  );
+  const concurrency = Math.floor(
+    boundedMediaHashNumber(input.concurrency, undefined, 4, 1),
+  );
+  const ads = input.ads.map((ad) => ({ ...ad }));
+  const eligible = ads
+    .map((ad, index) => ({ ad, index }))
+    .filter(({ ad }) => !ad.contentHash && ad.previewImageUrl);
+  const candidates = eligible.slice(0, maxAssets);
+  const failures: string[] = [];
+  let cursor = 0;
+
+  async function worker() {
+    while (cursor < candidates.length) {
+      const candidate = candidates[cursor];
+      cursor += 1;
+      try {
+        ads[candidate.index] = {
+          ...candidate.ad,
+          contentHash: await fetchHttpsMediaSha256({
+            mediaUrl: candidate.ad.previewImageUrl,
+            maxBytes,
+            timeoutMs,
+            fetchFn,
+          }),
+          contentHashSource: "meta_thumbnail_sha256",
+        };
+      } catch (error) {
+        if (failures.length < 20) {
+          failures.push(
+            `${candidate.ad.id}: ${error instanceof Error ? error.message : "Media hashing failed."}`,
+          );
+        }
+      }
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, candidates.length) }, () =>
+      worker(),
+    ),
+  );
+  const hashedAssets = ads.filter((ad) => ad.contentHash).length;
+  const cappedAssets = Math.max(0, eligible.length - candidates.length);
+  return {
+    ads,
+    summary: {
+      source: "meta_thumbnail_sha256" as const,
+      totalAssets: ads.length,
+      hashedAssets,
+      metadataFallbackAssets: ads.length - hashedAssets,
+      cappedAssets,
+      warnings: failures,
+      limitation:
+        "Meta hashes Graph API thumbnail bytes; transformed thumbnail renditions only deduplicate when their returned bytes are identical.",
+    },
+  };
+}
+
+export async function getAdPreviews(
+  token: string,
+  adIds: string[],
+): Promise<Record<string, string>> {
   if (!adIds.length) return {};
   const previews: Record<string, string> = {};
   await Promise.all(
@@ -151,13 +300,21 @@ export async function buildReport(params: {
     getAccounts(params.token),
     getCampaigns(params.token, accountId),
   ]);
-  const account = accounts.find((item) => item.id === accountId || item.account_id === accountId.replace("act_", ""));
-  if (!account) throw new Error("Selected account not found for current token.");
+  const account = accounts.find(
+    (item) =>
+      item.id === accountId ||
+      item.account_id === accountId.replace("act_", ""),
+  );
+  if (!account)
+    throw new Error("Selected account not found for current token.");
 
   const selectedCampaigns = campaigns.filter((campaign) =>
-    params.campaignIds.length ? params.campaignIds.includes(campaign.id) : campaign.effective_status === "ACTIVE",
+    params.campaignIds.length
+      ? params.campaignIds.includes(campaign.id)
+      : campaign.effective_status === "ACTIVE",
   );
-  if (!selectedCampaigns.length) throw new Error("No campaign selected or active campaigns found.");
+  if (!selectedCampaigns.length)
+    throw new Error("No campaign selected or active campaigns found.");
 
   const filter = JSON.stringify([
     {
@@ -180,34 +337,94 @@ export async function buildReport(params: {
     activeAdSetsData,
     activeAdsData,
   ] = await Promise.all([
-    getInsights(params.token, accountId, "campaign", params.since, params.until, { filtering: filter }),
-    getInsights(params.token, accountId, "adset", params.since, params.until, { filtering: filter }),
-    getInsights(params.token, accountId, "ad", params.since, params.until, { filtering: filter }),
-    getInsights(params.token, accountId, "campaign", params.since, params.until, {
+    getInsights(
+      params.token,
+      accountId,
+      "campaign",
+      params.since,
+      params.until,
+      { filtering: filter },
+    ),
+    getInsights(params.token, accountId, "adset", params.since, params.until, {
       filtering: filter,
-      time_increment: 1,
     }),
-    getInsights(params.token, accountId, "campaign", params.since, params.until, {
+    getInsights(params.token, accountId, "ad", params.since, params.until, {
       filtering: filter,
-      breakdowns: "publisher_platform",
     }),
-    getInsights(params.token, accountId, "campaign", params.since, params.until, {
-      filtering: filter,
-      breakdowns: "age,gender",
-    }),
-    getInsights(params.token, accountId, "campaign", params.since, params.until, {
-      filtering: filter,
-      breakdowns: "region",
-    }),
+    getInsights(
+      params.token,
+      accountId,
+      "campaign",
+      params.since,
+      params.until,
+      {
+        filtering: filter,
+        time_increment: 1,
+      },
+    ),
+    getInsights(
+      params.token,
+      accountId,
+      "campaign",
+      params.since,
+      params.until,
+      {
+        filtering: filter,
+        breakdowns: "publisher_platform",
+      },
+    ),
+    getInsights(
+      params.token,
+      accountId,
+      "campaign",
+      params.since,
+      params.until,
+      {
+        filtering: filter,
+        breakdowns: "age,gender",
+      },
+    ),
+    getInsights(
+      params.token,
+      accountId,
+      "campaign",
+      params.since,
+      params.until,
+      {
+        filtering: filter,
+        breakdowns: "region",
+      },
+    ),
     getAdSets(params.token, accountId, campaignIds),
     getActiveAdsForCampaigns(params.token, accountId, campaignIds),
   ]);
 
-  const activeAdSets = activeAdSetsData.filter((adset) => (adset.effective_status || adset.status) === "ACTIVE");
+  const activeAdSets = activeAdSetsData.filter(
+    (adset) => (adset.effective_status || adset.status) === "ACTIVE",
+  );
+  const adsetTargeting = activeAdSets.map((adset) => ({
+    adSetId: adset.id,
+    criteria: Array.from(
+      new Set(flattenAudienceTargeting(adset.targeting)),
+    ).sort(),
+  }));
   const activeAdSetIds = new Set(activeAdSets.map((adset) => adset.id));
-  const activeAds = activeAdsData.filter((ad) => activeAdSetIds.has(ad.adset_id));
-  const previewHtmls = await getAdPreviews(params.token, activeAds.map((ad) => ad.id));
-  const adsetPreviews = buildAdSetPreviewsWithCreatives(activeAdSets, activeAds, previewHtmls, selectedCampaigns);
+  const activeAds = activeAdsData.filter((ad) =>
+    activeAdSetIds.has(ad.adset_id),
+  );
+  const [previewHtmls, hashedActiveAds] = await Promise.all([
+    getAdPreviews(
+      params.token,
+      activeAds.map((ad) => ad.id),
+    ),
+    enrichMetaAdContentHashes({ ads: activeAds }),
+  ]);
+  const adsetPreviews = buildAdSetPreviewsWithCreatives(
+    activeAdSets,
+    hashedActiveAds.ads,
+    previewHtmls,
+    selectedCampaigns,
+  );
 
   const campaignRows = normalizeRows(campaignInsights, "campaign");
   const adsetRows = normalizeRows(adsetInsights, "adset");
@@ -257,5 +474,7 @@ export async function buildReport(params: {
     prompt,
     pulledAt: new Date().toISOString(),
     adsetPreviews,
+    adsetTargeting,
+    creativeHashing: hashedActiveAds.summary,
   };
 }

@@ -15,6 +15,8 @@ describe("GET /api/capabilities", () => {
     vi.clearAllMocks();
     delete process.env.APIFY_TOKEN;
     delete process.env.APIFY_META_ADS_ACTOR_ID;
+    delete process.env.TIKTOK_CCL_API_URL;
+    delete process.env.TIKTOK_CCL_ACCESS_TOKEN;
     delete process.env.META_APP_ID;
     delete process.env.META_APP_SECRET;
     delete process.env.META_LOGIN_CONFIG_ID;
@@ -28,12 +30,14 @@ describe("GET /api/capabilities", () => {
     const json = await response.json();
 
     expect(response.status).toBe(200);
-    expect(json.capabilities).toEqual(expect.arrayContaining([
-      { key: "meta_analysis", state: "needs_connection" },
-      { key: "competitor_evidence", state: "needs_setup" },
-      { key: "tiktok_profiles", state: "needs_setup" },
-      { key: "ai_enhancement", state: "degraded" },
-    ]));
+    expect(json.capabilities).toEqual(
+      expect.arrayContaining([
+        { key: "meta_analysis", state: "needs_connection" },
+        { key: "competitor_evidence", state: "needs_setup" },
+        { key: "tiktok_profiles", state: "needs_setup" },
+        { key: "ai_enhancement", state: "degraded" },
+      ]),
+    );
     expect(JSON.stringify(json)).not.toContain("token");
     expect(json.facebookOAuthConfigured).toBe(false);
   });
@@ -50,17 +54,33 @@ describe("GET /api/capabilities", () => {
     const response = await GET();
     const json = await response.json();
 
-    expect(json.capabilities).toEqual(expect.arrayContaining([
-      { key: "meta_analysis", state: "available" },
-      { key: "competitor_evidence", state: "available" },
-      { key: "tiktok_profiles", state: "available" },
-      { key: "page_publishing", state: "available" },
-      { key: "ai_enhancement", state: "available" },
-    ]));
+    expect(json.capabilities).toEqual(
+      expect.arrayContaining([
+        { key: "meta_analysis", state: "available" },
+        { key: "competitor_evidence", state: "available" },
+        { key: "tiktok_profiles", state: "available" },
+        { key: "tiktok_ad_library", state: "paused" },
+        { key: "page_publishing", state: "available" },
+        { key: "ai_enhancement", state: "available" },
+      ]),
+    );
     expect(json.facebookOAuthConfigured).toBe(true);
     expect(JSON.stringify(json)).not.toContain("meta-app-id");
     expect(JSON.stringify(json)).not.toContain("meta-app-secret");
     expect(JSON.stringify(json)).not.toContain("meta-login-config-id");
+  });
+
+  it("marks the TikTok Ad Library available only for an approved CCL or partner feed", async () => {
+    process.env.TIKTOK_CCL_API_URL = "https://partner.example.test/ccl";
+    process.env.TIKTOK_CCL_ACCESS_TOKEN = "partner-token";
+    hasTokenSession.mockResolvedValue(false);
+    hasNineRouterCredentials.mockReturnValue(false);
+    const json = await (await GET()).json();
+    expect(json.capabilities).toContainEqual({
+      key: "tiktok_ad_library",
+      state: "available",
+    });
+    expect(JSON.stringify(json)).not.toContain("partner-token");
   });
 
   it("does not report Facebook OAuth configured with only one credential", async () => {

@@ -11,6 +11,7 @@ import {
   ShieldAlertIcon,
   SparklesIcon,
   WaypointsIcon,
+  WorkflowIcon,
 } from "lucide-react";
 import type { CapabilityKey, CapabilityState, CapabilityStatus } from "@/lib/capabilities";
 import type { DashboardView } from "@/lib/dashboard-access";
@@ -59,14 +60,25 @@ const workspaceJobs: {
   },
   {
     view: "tiktok",
-    capability: "tiktok_profiles",
+    capability: "tiktok_ad_library",
     icon: ActivityIcon,
     title: { en: "Track TikTok signals", vi: "Theo dõi tín hiệu TikTok" },
     description: {
-      en: "Inspect public channel and video signals without mixing them with Ads Manager performance.",
-      vi: "Xem tín hiệu channel và video public mà không trộn với hiệu quả Ads Manager.",
+      en: "Inspect public profiles, videos, and ad creatives without mixing them with Ads Manager performance.",
+      vi: "Xem profile, video và ad creative public mà không trộn với hiệu quả Ads Manager.",
     },
-    output: { en: "Channel → videos → creative signals", vi: "Channel → video → creative signal" },
+    output: { en: "Profiles → ad library → creative signals", vi: "Profile → ad library → creative signal" },
+  },
+  {
+    view: "intelligence",
+    capability: "cross_channel_intelligence",
+    icon: WorkflowIcon,
+    title: { en: "Compare channels", vi: "So sánh đa kênh" },
+    description: {
+      en: "Unify owned performance with clearly labeled public creative intelligence and data-quality gates.",
+      vi: "Gộp hiệu quả owned với creative intelligence public được gắn nhãn rõ ràng và các cổng chất lượng dữ liệu.",
+    },
+    output: { en: "Canonical rows → quality gates → allocation context", vi: "Canonical rows → quality gates → bối cảnh phân bổ" },
   },
   {
     view: "publisher",
@@ -88,6 +100,9 @@ const capabilityCopy: Record<CapabilityKey, { en: string; vi: string }> = {
   tiktok_ad_library: { en: "TikTok Ad Library", vi: "TikTok Ad Library" },
   page_publishing: { en: "Page publishing", vi: "Đăng bài Page" },
   ai_enhancement: { en: "AI enhancement", vi: "AI enhancement" },
+  cross_channel_intelligence: { en: "Cross-channel intelligence", vi: "Intelligence đa kênh" },
+  google_ads: { en: "Google Ads", vi: "Google Ads" },
+  linkedin_ads: { en: "LinkedIn Ads", vi: "LinkedIn Ads" },
 };
 
 const stateCopy: Record<CapabilityState, { en: string; vi: string }> = {

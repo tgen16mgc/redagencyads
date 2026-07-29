@@ -8,6 +8,7 @@ const VIEW_LABELS: Record<DashboardView, { en: string; vi: string }> = {
   ads: { en: "Performance", vi: "Hiệu quả" },
   competitor: { en: "Competitor", vi: "Đối thủ" },
   tiktok: { en: "TikTok", vi: "TikTok" },
+  intelligence: { en: "Intelligence", vi: "Intelligence" },
   publisher: { en: "Publishing", vi: "Đăng bài" },
 };
 
@@ -27,6 +28,10 @@ const SUGGESTIONS: Record<DashboardView, { en: string[]; vi: string[] }> = {
   tiktok: {
     en: ["Which videos stand out?", "Find repeatable hook patterns", "What should we test next?"],
     vi: ["Video nào nổi bật?", "Tìm pattern hook có thể lặp lại", "Nên test gì tiếp theo?"],
+  },
+  intelligence: {
+    en: ["Which data is safe for budget decisions?", "Explain the quality gates", "What connector should we add next?"],
+    vi: ["Nguồn nào an toàn cho quyết định ngân sách?", "Giải thích các quality gate", "Nên thêm connector nào tiếp theo?"],
   },
   publisher: {
     en: ["Improve this post copy", "Check the draft for risks", "Suggest a stronger opening hook"],

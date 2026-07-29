@@ -8,7 +8,7 @@ User sees one app with two work areas:
 
 - `Ads analysis`: connect Meta token, choose ad account, choose campaign scope, pull Meta insights, inspect KPI cards/charts/tables, generate Verdict + insight table, export print/PDF report.
 - `Competitor analysis`: enter competitor names plus ad-library notes you verified, then generate a competitive readout and original test briefs. Automatic fetching is temporarily paused after relevance testing failed.
-- `TikTok intelligence`: fetch TikTok profile/video metadata through Apify for creative and competitor analysis. TikTok Ad Library fetching is temporarily paused while actor regions are corrected.
+- `TikTok intelligence`: fetch TikTok profile/video metadata plus public Ad Library and Creative Center creatives through Apify for creative and competitor analysis.
 - Global `EN / VI` toggle: one persisted language control for app chrome, report panels, controls, and generated report text. Raw Meta account/campaign names and fetched competitor ad copy are not translated.
 
 Core domain words:
@@ -192,7 +192,7 @@ The `/api/spy/meta` route remains available for repair work but is not exposed i
 
 ### 6. TikTok Intelligence
 
-TikTok profile/video data is fetched through Apify and stays separate from the owned Meta report contract. The Ad Library route remains available for repair work but is not exposed until its supported-region contract matches the UI.
+TikTok profile/video data is fetched through Apify and stays separate from the owned Meta report contract. Ad Library search is active: EEA/UK/CH markets route to the Commercial Content Library and other markets route to Creative Center through the default global actor.
 
 ```text
 Fetch TikTok profiles
@@ -206,11 +206,101 @@ Fetch TikTok ad library rows
   -> POST /api/tiktok/ads
     -> lib/tiktok.fetchTikTokAdLibrary()
       -> lib/apify.runApifyActor()
-      -> data_xplorer/tiktok-ads-library-fast by default
+      -> brilliant_gum/tiktok-ads-library-scraper by default
       -> normalize into TikTokLibraryReport
 ```
 
 TikTok Ad Library rows are public creative/intelligence data. They may include public ranges such as spend, reach, impressions, audience, targeting, or sponsor fields depending on the actor, but they are not treated as owned TikTok Ads Manager performance.
+
+#### TikTok live acceptance
+
+The TikTok workspace includes a five-gate live-acceptance card. It reads `GET /api/tiktok/acceptance` and deliberately separates implemented product paths, anonymous measurements, and certified production proof. Evidence defaults to `.data/tiktok-acceptance.json`; set `TIKTOK_ACCEPTANCE_PATH` to a persistent mounted path, configure a dedicated `TIKTOK_ACCEPTANCE_TOKEN`, and set `TIKTOK_ACCEPTANCE_ENVIRONMENT=production` in the production deployment.
+
+Each validation route returns its latest measured result. It writes release evidence only when the request supplies the dedicated acceptance token; ordinary product requests and anonymous validation calls cannot change gate status:
+
+- `POST /api/tiktok/coverage`: advertiser-handle coverage and whether the approved CCL/partner feed actually served the cohort.
+- `POST /api/tiktok/ads`: raw-to-normalized pipeline timing. Deduplication remains unproven here because checking already-deduplicated output is not an accuracy test.
+- `POST /api/tiktok/deduplication/validate`: labeled rows shaped as `{ expectedCreativeId, row }`; reports duplicate-pair precision, recall, and F1 and passes only above `0.99`.
+- `POST /api/tiktok/ads/search`: records the 10,000+ row search benchmark and two-second gate.
+- `GET /api/cron/tiktok-digest`: records the successful delivery channels, actual local delivery hour, and timezone only after at least one webhook succeeds.
+- `POST /api/tiktok/scoring/validate`: requires an ISO `observedAt` on every `{ score, cpa }` observation and passes only when `|r| > 0.6` across an inclusive window of at least 30 days.
+
+The CLI calls the same API surfaces, so measurements can be inspected safely before a deliberate certification run:
+
+```bash
+node scripts/tiktok-acceptance.mjs status
+node scripts/tiktok-acceptance.mjs coverage tmp/tiktok-coverage.json
+node scripts/tiktok-acceptance.mjs ingestion tmp/tiktok-ingestion.json
+node scripts/tiktok-acceptance.mjs deduplication tmp/tiktok-deduplication.json
+node scripts/tiktok-acceptance.mjs search tmp/tiktok-search-benchmark.json
+node scripts/tiktok-acceptance.mjs scoring tmp/tiktok-score-cpa.json
+```
+
+To certify a production cohort, set `DECISION_WORKSPACE_URL` and `TIKTOK_ACCEPTANCE_TOKEN`, then add both `--record` and a traceable `--cohort` label:
+
+```bash
+node scripts/tiktok-acceptance.mjs scoring tmp/tiktok-score-cpa.json \
+  --record \
+  --cohort client-cpa-2026-07-29 \
+  --require-pass
+```
+
+`--require-pass` returns exit code `2` when the measured gate is not met. `--record` returns exit code `3` when certification was requested but the server did not record it. HTTP, configuration, and input failures return exit code `1`. See `docs/tiktok-live-acceptance-runbook.md` for the production sequence and cohort contracts.
+
+### Decision Workspace completion readiness
+
+The complete set of 20 production-only gates is exposed at `GET /api/readiness`. The snapshot separates missing configuration, missing production evidence, measured failures, and passed gates without returning secret values.
+
+```bash
+npm run verify:decision-workspace
+npm run verify:decision-workspace -- --json
+npm run verify:decision-workspace -- --require-complete
+```
+
+`--require-complete` returns exit code `2` until every gate has production evidence. Browser-session checks can be included by setting `DECISION_WORKSPACE_COOKIE` to an authenticated request cookie. Use `DECISION_WORKSPACE_URL` to target a deployed workspace.
+
+Non-TikTok production evidence is recorded through `POST /api/readiness` with `Authorization: Bearer $DECISION_WORKSPACE_ACCEPTANCE_TOKEN`. Each record requires a known requirement ID, timestamp, result, summary, and either an evidence URL or run ID. Evidence only passes a gate when it was recorded with `DECISION_WORKSPACE_ACCEPTANCE_ENVIRONMENT=production`; local attestations remain visible but cannot complete the workspace.
+
+### 7. Cross-channel intelligence foundation
+
+The Intelligence workspace now exposes a canonical `schemaVersion: "1.0"` layer. Meta campaign rows normalize into owned performance records (spend, impressions, clicks, conversions, revenue, and ROAS), while TikTok rows normalize into public creative records with stable media/copy fingerprints. Public TikTok data is deliberately excluded from blended CPA/ROAS and budget allocation.
+
+Available seams:
+
+- `GET /api/connectors`: honest readiness contracts for Meta, TikTok public intelligence, Google Ads, YouTube Analytics, GA4 attribution, and LinkedIn Ads.
+- `GET/POST /api/readiness`: machine-readable completion status for all 20 production-only gates plus token-authenticated, traceable evidence recording.
+- `GET /api/tiktok/acceptance`: consolidated live evidence for the five measurable TikTok Ad Library gates.
+- `POST /api/intelligence/summary`: canonical rows, platform summaries, quality gates, source-boundary warnings, and OAuth-authorized GA4 data-driven attribution with truthful last-click fallback.
+- `POST /api/connectors/ga4/attribution`: verify the GA4 property reporting model and load attributed key events/revenue by default channel group for a requested date window; interactive reads require the connected Google browser session.
+- `POST /api/intelligence/sync`: incremental or full Google Ads, YouTube Analytics, and LinkedIn sync with encrypted OAuth-cookie refresh support. Interactive fetches and caller-supplied row ingestion require the matching connector session.
+- Trusted Meta Graph thumbnails, provider-fetched TikTok media, and scheduled connector creatives stream accessible HTTPS media through bounded SHA-256 hashing, relink performance rows to the content identity, and fall back to explicitly labeled metadata fingerprints when media is unavailable, capped, or exceeds limits. Provider-supplied TikTok SHA-256 values are preserved; interactive TikTok media hashing uses its own smaller latency cap. Meta report evidence states that transformed thumbnail renditions only match when their returned bytes are identical. Caller-supplied rows are never fetched for hashing.
+- `POST /api/intelligence/backfill`: plan or execute a one-click 13-month monthly backfill for Google Ads, YouTube Analytics, or LinkedIn. Planning is anonymous; execution requires the matching connector session.
+- `GET/POST /api/intelligence/incrementality`: atomically persist geo-lift or PSA study results and overlay the latest study.
+- `GET /api/intelligence/health`: pipeline row counts, deduplication, latest job, and four-hour SLA status.
+- `POST /api/experiments/plan`: hypothesis, MDE, confidence, power, allocation, and sample-size planning.
+- `POST /api/experiments/assign`, `/api/experiments/results`, and `/api/experiments/log`: deterministic user/geo assignment, mSPRT/result evaluation, and searchable learnings.
+- `POST /api/budget/allocate`: constrained marginal-ROAS allocation and what-if scenarios.
+- `POST /api/budget/pacing`, `/api/budget/alerts`, `/api/budget/caps`, `/api/budget/daypart`, and `/api/budget/apply`: pacing assessment, authenticated alerts to server-configured webhooks, guarded cap/daypart/budget actions, and immutable audit records.
+- `GET /api/cron/budget-actions/resume`: every 15 minutes, inspects deferred Meta and Google campaign learning states and retries budget writes after learning exits. Meta uses the system-user token; Google uses the scheduled server connector token. Transient provider failures remain deferred for the next attempt.
+- `/api/cron/connectors/daily`, `/api/cron/connectors/weekly`, and `/api/cron/budget-models/daily`: refresh-token-capable connector sync and daily Bayesian hierarchical response-curve refresh. The model uses campaign-level normal-normal posteriors over daily log-ROAS and exposes shrinkage diagnostics. Production cron requests fail closed without `CRON_SECRET`.
+- `POST /api/cron/connectors/backfill`: cron-authenticated server-token backfills for external orchestrators.
+- `orchestration/airflow/dags/decision_workspace_connectors.py`: deployable daily, weekly, and manual backfill DAGs with retry-safe idempotent windows and a four-hour timeout.
+- `/api/cron/budget-alerts/daily`: sums current-month owned spend from the canonical pipeline, projects end-of-month spend, and delivers Slack/email alerts when the deviation exceeds 10%. Set `BUDGET_ALERT_TOTAL_BUDGET` to enable it.
+- `POST /api/creatives/analyze` and `GET /api/creatives/clusters`: provider-backed multimodal inference with explicit heuristic provenance when the provider is absent.
+- `lib/prompt-library.ts`: versioned prompt records for copy, briefs, narration, anomaly detection, and forecasting.
+
+Google Ads, YouTube Analytics, GA4, and LinkedIn remain `needs_setup` until their OAuth credentials, property/account identifiers, and scopes are configured; readiness must not be confused with a live sync.
+
+Acceptance boundaries that require deployed systems or client evidence:
+
+- TikTok CCL coverage of at least 95%, sub-15-minute ingestion, greater than 99% labeled deduplication F1, and sub-two-second search over 10,000+ records must be validated against the approved production feed and production telemetry. The product records a result as acceptance evidence only when a dedicated operator token certifies the cohort in an environment explicitly labeled `production`.
+- The 08:00 digest requires the deployed cron schedule, `CRON_SECRET`, `TIKTOK_DIGEST_TIMEZONE`, and at least one Slack/email webhook. The default Vercel schedule is 01:00 UTC for an 08:00 Asia/Ho_Chi_Minh delivery; changing the timezone also requires aligning the UTC cron schedule.
+- Creative-score correlation above `|r| > 0.6` requires a real client score-to-CPA cohort covering the requested 30-day validation window; `/api/tiktok/scoring/validate` reports the measured gate without fabricating samples.
+- Google Ads, YouTube Analytics, GA4, and LinkedIn require approved OAuth applications, reporting scopes, account/property identifiers, and production refresh tokens before live acceptance can be claimed. GA4 data-driven attribution also verifies that the property reporting model is data-driven before using Data API totals.
+- Provider-backed CLIP/video embeddings, object detection, and raw-audio classification require `CREATIVE_INFERENCE_URL`; otherwise every result is explicitly labeled as a deterministic heuristic or fallback.
+- Live Meta budget, cap, and daypart writes require a production Meta token with campaign-management permissions. Interactive Google budget, pacing, cap, and campaign daypart writes require the owned Google browser OAuth session plus the Ads developer token; server access tokens are restricted to CRON_SECRET-protected scheduled/internal jobs. TikTok remains recommendation-only until an approved owned-account Ads API connector is available.
+- The repository provides idempotent sync/backfill jobs and Vercel cron scheduling. Selecting and operating Airflow, Dagster, or Temporal for a multi-worker production deployment remains infrastructure work.
+- X Ads, Pinterest, Snapchat, Reddit, DV360, and The Trade Desk are honest `needs_setup` backlog contracts, not implemented live connectors.
 
 ## Module Ownership
 
@@ -252,6 +342,7 @@ META_APP_ID=
 META_APP_SECRET=
 META_LOGIN_CONFIG_ID=
 META_OAUTH_REDIRECT_URI=
+META_SYSTEM_ACCESS_TOKEN=
 NINEROUTER_URL=http://localhost:20128
 NINEROUTER_KEY=
 NINEROUTER_MODEL=mhyc
@@ -263,14 +354,76 @@ APIFY_TOKEN=
 APIFY_META_ADS_ACTOR_ID=
 APIFY_META_ADS_INPUT_TEMPLATE=
 APIFY_TIKTOK_PROFILE_ACTOR_ID=clockworks/tiktok-profile-scraper
-APIFY_TIKTOK_ADS_ACTOR_ID=data_xplorer/tiktok-ads-library-fast
+APIFY_TIKTOK_ADS_ACTOR_ID=brilliant_gum/tiktok-ads-library-scraper
 APIFY_TIKTOK_PROFILE_INPUT_TEMPLATE=
 APIFY_TIKTOK_ADS_INPUT_TEMPLATE=
+# Optional approved TikTok Commercial Content Library or partner feed; takes precedence over Apify when both are set.
+TIKTOK_CCL_API_URL=
+TIKTOK_CCL_ACCESS_TOKEN=
+TIKTOK_DIGEST_REGION=VN
+# Used to report the real local delivery hour; align the UTC cron schedule with this timezone.
+TIKTOK_DIGEST_TIMEZONE=Asia/Ho_Chi_Minh
+TIKTOK_DIGEST_SLACK_WEBHOOK=
+TIKTOK_DIGEST_EMAIL_WEBHOOK=
+SLACK_WEBHOOK_URL=
+EMAIL_WEBHOOK_URL=
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+GOOGLE_ADS_DEVELOPER_TOKEN=
+GOOGLE_ADS_CUSTOMER_ID=
+GOOGLE_ADS_LOGIN_CUSTOMER_ID=
+GOOGLE_ADS_API_VERSION=v25
+GOOGLE_ADS_ACCESS_TOKEN=
+YOUTUBE_ACCESS_TOKEN=
+GOOGLE_REFRESH_TOKEN=
+YOUTUBE_CHANNEL_ID=
+GA4_PROPERTY_ID=
+GA4_ACCESS_TOKEN=
+LINKEDIN_CLIENT_ID=
+LINKEDIN_CLIENT_SECRET=
+LINKEDIN_AD_ACCOUNT_ID=
+LINKEDIN_ACCESS_TOKEN=
+LINKEDIN_REFRESH_TOKEN=
+LINKEDIN_API_VERSION=202607
+CONNECTOR_MEDIA_HASH_MAX_ASSETS=250
+CONNECTOR_MEDIA_HASH_MAX_BYTES=10485760
+CONNECTOR_MEDIA_HASH_TIMEOUT_MS=15000
+CRON_SECRET=
+DECISION_WORKSPACE_ENVIRONMENT=local
+DECISION_WORKSPACE_SCHEDULER=
+DECISION_WORKSPACE_PERSISTENCE_MODE=
+DECISION_WORKSPACE_DATA_DIR=
+DECISION_WORKSPACE_ACCEPTANCE_TOKEN=
+DECISION_WORKSPACE_ACCEPTANCE_ENVIRONMENT=local
+DECISION_WORKSPACE_ACCEPTANCE_PATH=
+BUDGET_ALERT_TOTAL_BUDGET=
+BUDGET_ALERT_ACCOUNT=owned account
+BUDGET_ALERT_CURRENCY=USD
+BUDGET_ALERT_CURVE=linear
+BUDGET_ALERT_SLACK_WEBHOOK=
+BUDGET_ALERT_EMAIL_WEBHOOK=
+CREATIVE_ASSET_STORAGE_DIR=
+TIKTOK_WATCHLIST_PATH=
+ACTION_AUDIT_PATH=
+PIPELINE_STORE_PATH=
+INCREMENTALITY_PATH=
+BUDGET_MODEL_PATH=
+PROMPT_LIBRARY_PATH=
+EXPERIMENT_LOG_PATH=
+EXPERIMENT_ASSIGNMENT_PATH=
+CREATIVE_INFERENCE_URL=
+CREATIVE_INFERENCE_API_KEY=
+CREATIVE_EMBEDDING_MODEL=clip
+CREATIVE_INFERENCE_MAX_BYTES=10485760
 ```
 
 Facebook Login uses a Meta Facebook Login for Business configuration. Set `META_LOGIN_CONFIG_ID` to that configuration ID and grant `ads_read`, `pages_show_list`, `pages_read_engagement`, and `pages_manage_posts` in the configuration. The valid OAuth redirect URI must exactly match `META_OAUTH_REDIRECT_URI` or `/api/auth/facebook/callback` on the current origin.
 
-No 9router key means Verdict and Insights still return local rule-based output. No Apify vars means competitor fetch uses public no-key scraping and keeps Meta Ad Library links as fallback evidence. TikTok endpoints require `APIFY_TOKEN` plus the selected TikTok actor IDs.
+No 9router key means Verdict and Insights still return local rule-based output. No Apify vars means competitor fetch uses public no-key scraping and keeps Meta Ad Library links as fallback evidence. TikTok endpoints require `APIFY_TOKEN`; actor IDs are optional overrides because the app ships validated defaults. Set `TIKTOK_CCL_API_URL` and `TIKTOK_CCL_ACCESS_TOKEN` to use an approved CCL/partner feed before Apify.
+
+Google Ads, YouTube Analytics, GA4, and LinkedIn interactive routes require browser OAuth when the client credentials are configured. OAuth access and refresh tokens are encrypted in HttpOnly cookies; interactive routes never fall back to server-side tokens. Scheduled/internal jobs run behind `CRON_SECRET` and prefer `GOOGLE_REFRESH_TOKEN` or `LINKEDIN_REFRESH_TOKEN`, refreshing and briefly caching access tokens at runtime; directly managed access-token variables remain supported when an external secret manager rotates them. The connector workspace exposes incremental sync, full refresh, and an executable 13-month backfill; `execute: false` on the backfill route remains a plan-only preflight. Interactive pacing alerts require the authenticated Meta workspace session and deliver only to webhooks configured in the server environment.
+
+Decision Workspace persistence defaults to local `.data/*.json` stores. In production, set `DECISION_WORKSPACE_PERSISTENCE_MODE=persistent_volume` and point the absolute `DECISION_WORKSPACE_DATA_DIR` at a mounted volume; every default pipeline, evidence, audit, experiment, prompt, watchlist, and creative-asset store then resolves beneath that root. Database and object-storage declarations are not accepted until a real adapter exists. The included `compose.yaml` mounts this root, while `orchestration/airflow/dags/decision_workspace_connectors.py` supplies the required Airflow schedules. Creative inference sends raw media only when it is within `CREATIVE_INFERENCE_MAX_BYTES`; larger files use the labeled text/metadata fallback. Configure `CREATIVE_INFERENCE_URL` for provider-backed embeddings, element tagging, and audio classification. Successful production GA4, provider-inference, and pacing-alert calls record acceptance evidence automatically.
 
 ## Dev Commands
 

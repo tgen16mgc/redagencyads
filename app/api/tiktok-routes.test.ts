@@ -60,6 +60,10 @@ describe("TikTok API routes", () => {
 
     expect(response.status).toBe(200);
     expect(body.report.rows).toEqual([{ id: "ad-1" }]);
+    expect(body.evidenceRecording).toEqual({
+      recorded: false,
+      reason: "not_requested",
+    });
     expect(fetchTikTokAdLibrary).toHaveBeenCalledWith({
       region: "VN",
       queryType: "1",
@@ -78,6 +82,52 @@ describe("TikTok API routes", () => {
       new Request("http://localhost/api/tiktok/ads", {
         method: "POST",
         body: JSON.stringify({ region: "VN", queryType: "1", query: "spa", startDate: "01-01-2026" }),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(fetchTikTokAdLibrary).not.toHaveBeenCalled();
+  });
+
+  it("passes creative filters to TikTok ingestion", async () => {
+    fetchTikTokAdLibrary.mockResolvedValue({ rows: [], warnings: [], actorId: "actor/id", pulledAt: "now" });
+    const { POST } = await import("./tiktok/ads/route");
+
+    const response = await POST(
+      new Request("http://localhost/api/tiktok/ads", {
+        method: "POST",
+        body: JSON.stringify({
+          region: "VN",
+          queryType: "2",
+          query: "serum",
+          startDate: "2026-01-01",
+          endDate: "2026-01-31",
+          maxAds: 250,
+          fetchDetails: true,
+          format: "video",
+          objective: "conversions",
+          industry: "beauty_personal_care",
+          performanceTier: "top",
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(fetchTikTokAdLibrary).toHaveBeenCalledWith(expect.objectContaining({
+      maxAds: 250,
+      format: "video",
+      objective: "conversions",
+      industry: "beauty_personal_care",
+      performanceTier: "top",
+    }));
+  });
+
+  it("rejects an inverted TikTok ad date range", async () => {
+    const { POST } = await import("./tiktok/ads/route");
+    const response = await POST(
+      new Request("http://localhost/api/tiktok/ads", {
+        method: "POST",
+        body: JSON.stringify({ region: "VN", queryType: "2", query: "serum", startDate: "2026-02-01", endDate: "2026-01-01" }),
       }),
     );
 

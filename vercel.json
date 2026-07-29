@@ -1,0 +1,28 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/tiktok-digest",
+      "schedule": "0 1 * * *"
+    },
+    {
+      "path": "/api/cron/connectors/daily",
+      "schedule": "15 1 * * *"
+    },
+    {
+      "path": "/api/cron/budget-models/daily",
+      "schedule": "30 1 * * *"
+    },
+    {
+      "path": "/api/cron/budget-alerts/daily",
+      "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/cron/budget-actions/resume",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/connectors/weekly",
+      "schedule": "45 1 * * 0"
+    }
+  ]
+}

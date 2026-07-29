@@ -1,4 +1,5 @@
-export type KpiPack = "lead_gen" | "messages" | "sales_roas" | "traffic" | "awareness";
+export type KpiPack =
+  "lead_gen" | "messages" | "sales_roas" | "traffic" | "awareness";
 export type CompareMode = "off" | "wow" | "mom" | "yoy";
 export type InterfaceLanguage = "en" | "vi";
 export type AiProvider = "9router" | "prompt";
@@ -103,6 +104,7 @@ export type MetaAdSet = {
   effective_status?: string;
   daily_budget?: string;
   lifetime_budget?: string;
+  targeting?: Record<string, unknown>;
 };
 
 export type AdSetPreview = {
@@ -121,6 +123,8 @@ export type AdPreview = {
   adsetId: string;
   previewHtml: string;
   previewImageUrl?: string;
+  contentHash?: string;
+  contentHashSource?: "meta_thumbnail_sha256";
 };
 
 export type AdSetWithPreviews = {
@@ -211,8 +215,15 @@ export type NormalizedRow = {
   leadRate: number;
   adFormat?: string;
   dailyBudget?: number;
-  learningStageStatus?: "LEARNING" | "LEARNING_LIMITED" | "NOT_LEARNING" | "NO_SIGNAL";
-  learningStageReasons?: Array<"LOW_VOLUME" | "NOT_ENOUGH_BUDGET" | "CREATIVE_FATIGUE" | "HIGH_OVERLAP" | "LOW_QUALITY">;
+  learningStageStatus?:
+    "LEARNING" | "LEARNING_LIMITED" | "NOT_LEARNING" | "NO_SIGNAL";
+  learningStageReasons?: Array<
+    | "LOW_VOLUME"
+    | "NOT_ENOUGH_BUDGET"
+    | "CREATIVE_FATIGUE"
+    | "HIGH_OVERLAP"
+    | "LOW_QUALITY"
+  >;
 };
 
 export type KpiCard = {
@@ -243,11 +254,26 @@ export type DashboardReport = {
   health: {
     score: number;
     grade: string;
-    checks: { id: string; label: string; status: "pass" | "warning" | "fail"; detail: string }[];
+    checks: {
+      id: string;
+      label: string;
+      status: "pass" | "warning" | "fail";
+      detail: string;
+    }[];
   };
   prompt: string;
   pulledAt: string;
   adsetPreviews?: AdSetWithPreviews[];
+  adsetTargeting?: Array<{ adSetId: string; criteria: string[] }>;
+  creativeHashing?: {
+    source: "meta_thumbnail_sha256";
+    totalAssets: number;
+    hashedAssets: number;
+    metadataFallbackAssets: number;
+    cappedAssets: number;
+    warnings: string[];
+    limitation: string;
+  };
 };
 
 export type Verdict = {
@@ -281,7 +307,8 @@ export type AiInsightTable = {
   provider: AiProvider;
 };
 
-export type CompetitorPlatform = "meta" | "google" | "linkedin" | "tiktok" | "mixed";
+export type CompetitorPlatform =
+  "meta" | "google" | "linkedin" | "tiktok" | "mixed";
 export type CompetitorFetchSource = "public" | "meta_official" | "apify";
 export type CompetitorEvidenceStatus = "accepted" | "needs_review" | "rejected";
 export type CompetitorEvidenceMatch = "exact" | "ambiguous" | "mismatch";
@@ -416,10 +443,22 @@ export type TikTokAdLibraryRow = {
   adTitle?: string;
   caption?: string;
   cta?: string;
+  format?: "video" | "image" | "unknown";
+  objective?: string;
+  industry?: string;
+  performanceTier?: "top" | "strong" | "standard" | "unknown";
+  performanceScore?: number;
+  hookRetention?: number;
+  ctr?: number;
+  likeCount?: number;
+  commentCount?: number;
+  shareCount?: number;
+  durationSeconds?: number;
   landingUrl?: string;
   previewUrl?: string;
   imageUrl?: string;
   videoUrl?: string;
+  contentHash?: string;
   firstSeen?: string;
   lastSeen?: string;
   impressionsLower?: number;
@@ -431,6 +470,8 @@ export type TikTokAdLibraryRow = {
   audienceMin?: number;
   audienceMax?: number;
   regions?: string[];
+  source?: string;
+  sourceUrl?: string;
   targeting?: unknown;
   raw?: unknown;
 };
@@ -439,5 +480,26 @@ export type TikTokLibraryReport = {
   rows: TikTokAdLibraryRow[];
   warnings: string[];
   actorId: string;
+  query?: string;
+  region?: string;
+  matchedAdvertisers?: number;
+  deduplicatedCount?: number;
+  pipelineDurationMs?: number;
+  normalizationDurationMs?: number;
+  deduplicationIntegrity?: number;
+  creativeHashing?: {
+    source: "tiktok_provider_media_sha256";
+    totalAssets: number;
+    providerHashAssets: number;
+    fetchedHashAssets: number;
+    metadataFallbackAssets: number;
+    cappedAssets: number;
+    warnings: string[];
+  };
+  acceptance?: {
+    normalizedWithin15Minutes: boolean;
+    deduplicationAbove99Percent: boolean | null;
+    deduplicationEvidence?: "labeled_cohort_required";
+  };
   pulledAt: string;
 };

@@ -46,6 +46,7 @@ const EMPTY_PENDING_REQUEST_IDS: PendingRequestIds = {
   ads: null,
   competitor: null,
   tiktok: null,
+  intelligence: null,
   publisher: null,
 };
 
@@ -226,6 +227,23 @@ export const ContextChat = React.forwardRef<ContextChatHandle, {
     }
     onOpenChange(nextOpen);
   }, [measureDialogOrigin, onOpenChange]);
+
+  const handleDialogKeyDown = React.useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "Tab" || event.altKey || event.ctrlKey || event.metaKey) return;
+    const popup = popupRef.current;
+    if (!popup) return;
+    const focusable = Array.from(popup.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    )).filter((element) => element.getClientRects().length > 0 && element.getAttribute("aria-hidden") !== "true");
+    if (!focusable.length) return;
+    const activeIndex = focusable.indexOf(document.activeElement as HTMLElement);
+    const atStart = activeIndex <= 0;
+    const atEnd = activeIndex === focusable.length - 1;
+    if ((event.shiftKey && atStart) || (!event.shiftKey && (activeIndex < 0 || atEnd))) {
+      event.preventDefault();
+      focusable[event.shiftKey ? focusable.length - 1 : 0]?.focus();
+    }
+  }, []);
 
   const sendMessage = React.useCallback((questionOverride?: string, reuseLastUser = false) => {
     if (!available) return;
@@ -433,7 +451,7 @@ export const ContextChat = React.forwardRef<ContextChatHandle, {
     <>
       {showStandaloneLauncher ? (
         <div className="pointer-events-none fixed inset-x-0 bottom-[max(0.5rem,env(safe-area-inset-bottom))] z-40 px-2 sm:px-4" data-print-hidden>
-          <div className="context-chat-island pointer-events-auto relative mx-auto overflow-hidden">
+          <div className="context-chat-island pointer-events-auto relative ml-auto overflow-hidden sm:mx-auto">
             <ContextChatLauncher
               activeView={activeView}
               language={language}
@@ -449,6 +467,7 @@ export const ContextChat = React.forwardRef<ContextChatHandle, {
         <DialogContent
           ref={setPopupNode}
           showCloseButton={false}
+          onKeyDown={handleDialogKeyDown}
           initialFocus={() => available ? textareaRef.current : closeButtonRef.current}
           finalFocus={() => openerRef.current?.isConnected ? openerRef.current : null}
           className={cn(

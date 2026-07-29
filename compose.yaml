@@ -1,0 +1,31 @@
+services:
+  decision-workspace:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.production
+    environment:
+      NODE_ENV: production
+      DECISION_WORKSPACE_ENVIRONMENT: production
+      DECISION_WORKSPACE_ACCEPTANCE_ENVIRONMENT: production
+      DECISION_WORKSPACE_PERSISTENCE_MODE: persistent_volume
+      DECISION_WORKSPACE_DATA_DIR: /var/lib/decision-workspace
+    volumes:
+      - decision-workspace-data:/var/lib/decision-workspace
+    healthcheck:
+      test:
+        - CMD
+        - wget
+        - --quiet
+        - --tries=1
+        - --spider
+        - http://127.0.0.1:3000/api/readiness
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  decision-workspace-data:

@@ -20,3 +20,5 @@ skills-lock.json
 .worktrees/
 .aidesigner/*
 !.aidesigner/.gitkeep
+.data/
+.env*

@@ -1,4 +1,9 @@
-import type { AdSetPreview, AdSetWithPreviews, MetaAdSet, MetaCampaign } from "@/lib/types";
+import type {
+  AdSetPreview,
+  AdSetWithPreviews,
+  MetaAdSet,
+  MetaCampaign,
+} from "@/lib/types";
 
 export type CampaignNameSource =
   | MetaCampaign[]
@@ -18,7 +23,10 @@ function shortIdentifier(value: string): string {
   return value.length > 8 ? `…${value.slice(-6)}` : value;
 }
 
-function resolveCampaignName(adset: MetaAdSet, campaigns: Map<string, string>): string {
+function resolveCampaignName(
+  adset: MetaAdSet,
+  campaigns: Map<string, string>,
+): string {
   const campaignId = adset.campaign_id || "";
   const selectedCampaignName = campaigns.get(campaignId)?.trim();
   if (selectedCampaignName) return selectedCampaignName;
@@ -35,12 +43,15 @@ function resolveCampaignName(adset: MetaAdSet, campaigns: Map<string, string>): 
 export function activeAdSetPreviews(
   adsets: MetaAdSet[],
   limit = 12,
-  campaignNames?: CampaignNameSource
+  campaignNames?: CampaignNameSource,
 ): AdSetPreview[] {
   const campaigns = campaignNameMap(campaignNames);
 
   return adsets
-    .filter((adset) => (adset.effective_status || adset.status || "UNKNOWN") === "ACTIVE")
+    .filter(
+      (adset) =>
+        (adset.effective_status || adset.status || "UNKNOWN") === "ACTIVE",
+    )
     .map((adset) => ({
       id: adset.id,
       name: adset.name,
@@ -50,18 +61,34 @@ export function activeAdSetPreviews(
       dailyBudget: Number(adset.daily_budget || 0),
       lifetimeBudget: Number(adset.lifetime_budget || 0),
     }))
-    .sort((a, b) => a.campaignName.localeCompare(b.campaignName) || a.name.localeCompare(b.name))
+    .sort(
+      (a, b) =>
+        a.campaignName.localeCompare(b.campaignName) ||
+        a.name.localeCompare(b.name),
+    )
     .slice(0, limit);
 }
 
 export function buildAdSetPreviewsWithCreatives(
   adsets: MetaAdSet[],
-  ads: { id: string; name: string; adset_id: string; status?: string; effective_status?: string; previewImageUrl?: string }[],
+  ads: {
+    id: string;
+    name: string;
+    adset_id: string;
+    status?: string;
+    effective_status?: string;
+    previewImageUrl?: string;
+    contentHash?: string;
+    contentHashSource?: "meta_thumbnail_sha256";
+  }[],
   previews: Record<string, string>,
-  campaignNames?: CampaignNameSource
+  campaignNames?: CampaignNameSource,
 ): AdSetWithPreviews[] {
   const campaigns = campaignNameMap(campaignNames);
-  const activeAdSets = adsets.filter((adset) => (adset.effective_status || adset.status || "UNKNOWN") === "ACTIVE");
+  const activeAdSets = adsets.filter(
+    (adset) =>
+      (adset.effective_status || adset.status || "UNKNOWN") === "ACTIVE",
+  );
 
   return activeAdSets
     .map((adset) => {
@@ -73,6 +100,8 @@ export function buildAdSetPreviewsWithCreatives(
           adsetId: ad.adset_id,
           previewHtml: previews[ad.id] || "",
           previewImageUrl: ad.previewImageUrl || undefined,
+          contentHash: ad.contentHash,
+          contentHashSource: ad.contentHashSource,
         }));
 
       return {
@@ -86,5 +115,9 @@ export function buildAdSetPreviewsWithCreatives(
         ads: adsetAds,
       };
     })
-    .sort((a, b) => a.campaignName.localeCompare(b.campaignName) || a.name.localeCompare(b.name));
+    .sort(
+      (a, b) =>
+        a.campaignName.localeCompare(b.campaignName) ||
+        a.name.localeCompare(b.name),
+    );
 }

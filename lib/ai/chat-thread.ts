@@ -27,6 +27,7 @@ export function emptyChatThreads(): ChatThreads {
     ads: emptyChatThread(),
     competitor: emptyChatThread(),
     tiktok: emptyChatThread(),
+    intelligence: emptyChatThread(),
     publisher: emptyChatThread(),
   };
 }

@@ -1,11 +1,13 @@
 "use client"
 
-import { useMemo } from "react"
+import { Children, cloneElement, isValidElement, useId, useMemo } from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
+import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
+import { Textarea } from "@/components/ui/textarea"
 
 function FieldSet({ className, ...props }: React.ComponentProps<"fieldset">) {
   return (
@@ -72,8 +74,35 @@ const fieldVariants = cva(
 function Field({
   className,
   orientation = "vertical",
+  children,
   ...props
 }: React.ComponentProps<"div"> & VariantProps<typeof fieldVariants>) {
+  const generatedId = useId()
+  const items = Children.toArray(children)
+  const label = items.find(
+    (child) => isValidElement(child) && child.type === FieldLabel
+  ) as React.ReactElement<{ htmlFor?: string }> | undefined
+  const control = items.find((child) => {
+    if (!isValidElement(child)) return false
+    if (child.type === Input || child.type === Textarea) return true
+    return (
+      typeof child.type === "string" &&
+      ["input", "select", "textarea"].includes(child.type)
+    )
+  }) as React.ReactElement<{ id?: string }> | undefined
+  const controlId = control?.props.id || label?.props.htmlFor || `field-${generatedId}`
+  const labelledChildren = label && control
+    ? items.map((child) => {
+        if (child === label && !label.props.htmlFor) {
+          return cloneElement(label, { htmlFor: controlId })
+        }
+        if (child === control && !control.props.id) {
+          return cloneElement(control, { id: controlId })
+        }
+        return child
+      })
+    : children
+
   return (
     <div
       role="group"
@@ -81,7 +110,9 @@ function Field({
       data-orientation={orientation}
       className={cn(fieldVariants({ orientation }), className)}
       {...props}
-    />
+    >
+      {labelledChildren}
+    </div>
   )
 }
 

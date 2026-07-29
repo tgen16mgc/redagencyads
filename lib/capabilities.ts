@@ -4,9 +4,18 @@ export type CapabilityKey =
   | "tiktok_profiles"
   | "tiktok_ad_library"
   | "page_publishing"
-  | "ai_enhancement";
+  | "ai_enhancement"
+  | "cross_channel_intelligence"
+  | "google_ads"
+  | "linkedin_ads";
 
-export type CapabilityState = "available" | "needs_connection" | "needs_setup" | "degraded" | "paused" | "unknown";
+export type CapabilityState =
+  | "available"
+  | "needs_connection"
+  | "needs_setup"
+  | "degraded"
+  | "paused"
+  | "unknown";
 
 export type CapabilityStatus = {
   key: CapabilityKey;
@@ -20,6 +29,9 @@ export const CAPABILITY_KEYS: CapabilityKey[] = [
   "tiktok_ad_library",
   "page_publishing",
   "ai_enhancement",
+  "cross_channel_intelligence",
+  "google_ads",
+  "linkedin_ads",
 ];
 
 export function buildUnknownCapabilitySnapshot(): CapabilityStatus[] {
@@ -30,7 +42,10 @@ export function buildCapabilitySnapshot(input: {
   authenticated: boolean;
   apifyConfigured: boolean;
   competitorActorConfigured: boolean;
+  tiktokAdLibraryConfigured?: boolean;
   nineRouterConfigured: boolean;
+  googleAdsConfigured?: boolean;
+  linkedinConfigured?: boolean;
 }): CapabilityStatus[] {
   return [
     {
@@ -39,7 +54,10 @@ export function buildCapabilitySnapshot(input: {
     },
     {
       key: "competitor_evidence",
-      state: input.apifyConfigured && input.competitorActorConfigured ? "available" : "needs_setup",
+      state:
+        input.apifyConfigured && input.competitorActorConfigured
+          ? "available"
+          : "needs_setup",
     },
     {
       key: "tiktok_profiles",
@@ -47,7 +65,7 @@ export function buildCapabilitySnapshot(input: {
     },
     {
       key: "tiktok_ad_library",
-      state: "paused",
+      state: input.tiktokAdLibraryConfigured ? "available" : "paused",
     },
     {
       key: "page_publishing",
@@ -56,6 +74,21 @@ export function buildCapabilitySnapshot(input: {
     {
       key: "ai_enhancement",
       state: input.nineRouterConfigured ? "available" : "degraded",
+    },
+    {
+      key: "cross_channel_intelligence",
+      state:
+        input.authenticated || input.apifyConfigured
+          ? "available"
+          : "needs_setup",
+    },
+    {
+      key: "google_ads",
+      state: input.googleAdsConfigured ? "available" : "needs_setup",
+    },
+    {
+      key: "linkedin_ads",
+      state: input.linkedinConfigured ? "available" : "needs_setup",
     },
   ];
 }
@@ -72,5 +105,9 @@ export function isFacebookOAuthConfigured(input: {
   appSecret?: string;
   loginConfigId?: string;
 }): boolean {
-  return Boolean(input.appId?.trim() && input.appSecret?.trim() && input.loginConfigId?.trim());
+  return Boolean(
+    input.appId?.trim() &&
+    input.appSecret?.trim() &&
+    input.loginConfigId?.trim(),
+  );
 }

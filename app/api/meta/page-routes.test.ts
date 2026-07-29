@@ -173,11 +173,14 @@ describe("Meta Pages API routes", () => {
     const response = await POST(new Request("http://localhost/api/meta/page-posts", { method: "POST", body: formData }));
 
     expect(response.status).toBe(200);
-    expect(publishPageFeedPost).toHaveBeenCalledWith(
-      expect.objectContaining({
-        media: { type: "image", name: "photo.jpg", file },
-      }),
-    );
+    const publishedMedia = publishPageFeedPost.mock.calls[0]?.[0]?.media;
+    expect(publishedMedia).toEqual(expect.objectContaining({
+      type: "image",
+      name: "photo.jpg",
+      file: expect.any(File),
+    }));
+    expect(publishedMedia.file.type).toBe("image/jpeg");
+    expect(await publishedMedia.file.text()).toBe("photo-bytes");
   });
 
   it("passes multipart mediaItems files to the publisher in metadata order", async () => {
@@ -211,15 +214,16 @@ describe("Meta Pages API routes", () => {
     const response = await POST(new Request("http://localhost/api/meta/page-posts", { method: "POST", body }));
 
     expect(response.status).toBe(200);
-    expect(publishPageFeedPost).toHaveBeenCalledWith(
-      expect.objectContaining({
-        mediaItems: [
-          { type: "gif", name: "second.gif", file: second },
-          { type: "image", url: "https://cdn.example.com/hosted.jpg" },
-          { type: "image", name: "first.jpg", file: first },
-        ],
-      }),
-    );
+    const publishedItems = publishPageFeedPost.mock.calls[0]?.[0]?.mediaItems;
+    expect(publishedItems).toEqual([
+      expect.objectContaining({ type: "gif", name: "second.gif", file: expect.any(File) }),
+      expect.objectContaining({ type: "image", url: "https://cdn.example.com/hosted.jpg" }),
+      expect.objectContaining({ type: "image", name: "first.jpg", file: expect.any(File) }),
+    ]);
+    expect(publishedItems[0].file.type).toBe("image/gif");
+    expect(await publishedItems[0].file.text()).toBe("second");
+    expect(publishedItems[2].file.type).toBe("image/jpeg");
+    expect(await publishedItems[2].file.text()).toBe("first");
   });
 
   it("publishes bulk schedule items with item-level results", async () => {

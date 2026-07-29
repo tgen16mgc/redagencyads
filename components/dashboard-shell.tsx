@@ -12,6 +12,10 @@ import {
   CheckIcon,
   DatabaseIcon,
   DownloadIcon,
+  ExternalLinkIcon,
+  FilterIcon,
+  GaugeIcon,
+  GitCompareArrowsIcon,
   HomeIcon,
   KeyRoundIcon,
   LanguagesIcon,
@@ -22,6 +26,7 @@ import {
 } from "lucide-react";
 import { AppSidebar, type AppSidebarItem, type WorkflowSidebarItem } from "@/components/dashboard/app-sidebar";
 import { WorkspaceOverview } from "@/components/dashboard/workspace-overview";
+import { IntelligenceWorkspace } from "@/components/dashboard/intelligence-workspace";
 import { StickyActionDock } from "@/components/dashboard/sticky-action-dock";
 import { ContextChat, type ContextChatHandle } from "@/components/dashboard/context-chat";
 import { CONTEXT_CHAT_PANEL_ID } from "@/components/dashboard/context-chat-copy";
@@ -45,7 +50,7 @@ import {
   buildPublisherChatContext,
   buildTikTokChatContext,
 } from "@/lib/ai/chat-context";
-import type { CompetitorEvidenceStatus, CompetitorFetchResult, CompetitorPlatform, CompetitorSpyResult, KpiCard, MetaAccount, MetaCampaign, TikTokProfile, TikTokProfileResult, TikTokVideo } from "@/lib/types";
+import type { CompetitorEvidenceStatus, CompetitorFetchResult, CompetitorPlatform, CompetitorSpyResult, KpiCard, MetaAccount, MetaCampaign, TikTokLibraryReport, TikTokProfile, TikTokProfileResult, TikTokVideo } from "@/lib/types";
 import { buildWorkflowSteps, type DashboardWorkflowStep } from "@/lib/dashboard-workflow";
 import { canOpenDashboardView, initialDashboardViewFromSearch, shouldLoadAdsWorkspaceData, type DashboardView } from "@/lib/dashboard-access";
 import { buildSampleReport } from "@/lib/sample-report";
@@ -57,6 +62,8 @@ import { summarizeHealth } from "@/lib/health-score";
 import type { DecisionTargets } from "@/lib/decision-confidence";
 import { normalizeCompetitorNames, normalizeCompetitorUrls } from "@/lib/competitor-input";
 import { normalizeTikTokProfiles } from "@/lib/tiktok-input";
+import { searchCreativeCatalog } from "@/lib/creative-search";
+import type { TikTokAcceptanceSnapshot } from "@/lib/tiktok-acceptance";
 import { canVerifyCompetitorEvidence, competitorInputChangeEffects, deriveCompetitorEvidenceModel, type CompetitorInputField } from "@/lib/competitor-evidence";
 import {
   buildCustomKpiCards,
@@ -97,6 +104,7 @@ const appSections = [
   { label: "Performance", value: "ads", icon: BarChart3Icon },
   { label: "Competitor evidence", value: "competitor", icon: SearchIcon },
   { label: "TikTok tracker", value: "tiktok", icon: ActivityIcon },
+  { label: "Intelligence", value: "intelligence", icon: GitCompareArrowsIcon },
   { label: "Publishing", value: "publisher", icon: CalendarClockIcon },
 ] as const;
 
@@ -108,6 +116,20 @@ type TikTokWorkspaceState = {
   profileResult: TikTokProfileResult | null;
   profileError: string;
   profileLoading: boolean;
+  adQuery: string;
+  adRegion: string;
+  adQueryType: "1" | "2" | "url";
+  adStartDate: string;
+  adEndDate: string;
+  adMaxAds: number;
+  adFetchDetails: boolean;
+  adFormat: string;
+  adObjective: string;
+  adIndustry: string;
+  adPerformanceTier: "all" | "top" | "strong" | "standard";
+  adReport: TikTokLibraryReport | null;
+  adError: string;
+  adLoading: boolean;
 };
 
 const languageValues = ["en", "vi"] as const;
@@ -149,6 +171,7 @@ const uiCopy = {
       ads: "Performance",
       competitor: "Competitor evidence",
       tiktok: "TikTok tracker",
+      intelligence: "Intelligence",
       publisher: "Publishing",
       connect: "Connect",
       select: "Select",
@@ -163,13 +186,16 @@ const uiCopy = {
       competitorCrumb: "Verified research",
       competitorDetail: "Apify evidence review",
       tiktokCrumb: "TikTok public intelligence",
-      tiktokDetail: "Apify profile and video pulls",
+      tiktokDetail: "Apify profiles and ad intelligence",
       publisherCrumb: "Meta Pages API",
       publisherDetail: "server-side Page publishing",
       overviewTitle: "Workspace overview",
       adsTitle: "Performance diagnosis",
       competitorTitle: "Competitor evidence",
       tiktokTitle: "TikTok tracker",
+      intelligenceCrumb: "Canonical data layer",
+      intelligenceDetail: "owned performance and public intelligence",
+      intelligenceTitle: "Cross-channel intelligence",
       publisherTitle: "Publishing operations",
       session: "HttpOnly token session",
       connected: "Meta connected",
@@ -213,6 +239,7 @@ const uiCopy = {
       ads: "Hiệu quả",
       competitor: "Evidence đối thủ",
       tiktok: "Theo dõi TikTok",
+      intelligence: "Intelligence đa kênh",
       publisher: "Vận hành đăng bài",
       connect: "Kết nối",
       select: "Chọn phạm vi",
@@ -227,13 +254,16 @@ const uiCopy = {
       competitorCrumb: "Nghiên cứu công khai",
       competitorDetail: "duyệt evidence Apify",
       tiktokCrumb: "Tình báo public TikTok",
-      tiktokDetail: "kéo profile và video qua Apify",
+      tiktokDetail: "profile và ad intelligence qua Apify",
       publisherCrumb: "Meta Pages API",
       publisherDetail: "đăng Page qua server",
       overviewTitle: "Tổng quan workspace",
       adsTitle: "Chẩn đoán hiệu quả",
       competitorTitle: "Evidence đối thủ",
       tiktokTitle: "Theo dõi TikTok",
+      intelligenceCrumb: "Canonical data layer",
+      intelligenceDetail: "hiệu quả owned và intelligence public",
+      intelligenceTitle: "Intelligence đa kênh",
       publisherTitle: "Vận hành đăng bài",
       session: "Session token HttpOnly",
       connected: "Đã kết nối Meta",
@@ -280,6 +310,20 @@ export function DashboardShell() {
     profileResult: null,
     profileError: "",
     profileLoading: false,
+    adQuery: "",
+    adRegion: "VN",
+    adQueryType: "2",
+    adStartDate: "",
+    adEndDate: "",
+    adMaxAds: 20,
+    adFetchDetails: false,
+    adFormat: "",
+    adObjective: "",
+    adIndustry: "",
+    adPerformanceTier: "all",
+    adReport: null,
+    adError: "",
+    adLoading: false,
   });
   const [copiedCompetitorPrompt, setCopiedCompetitorPrompt] = React.useState(false);
   const [token, setToken] = React.useState("");
@@ -341,6 +385,9 @@ export function DashboardShell() {
         profilesInput: tiktokWorkspace.profilesInput,
         result: tiktokWorkspace.profileResult,
       });
+    }
+    if (view === "intelligence") {
+      return buildOverviewChatContext({ workspaceLabel, authenticated: Boolean(authenticated), capabilities });
     }
     return publisherContextRef.current?.getChatContext() || buildPublisherChatContext({
       target: "facebook",
@@ -431,8 +478,16 @@ export function DashboardShell() {
       detail: copy.header.tiktokDetail,
       title: copy.header.tiktokTitle,
       description: language === "vi"
-        ? "Kéo profile và video TikTok public để nghiên cứu creative và đối thủ."
-        : "Pull public TikTok profile and video intelligence for creative and competitor research.",
+        ? "Kéo profile, video và ad intelligence TikTok public để nghiên cứu creative và đối thủ."
+        : "Pull public TikTok profiles, videos, and ad intelligence for creative and competitor research.",
+    },
+    intelligence: {
+      badge: copy.header.intelligenceCrumb,
+      detail: copy.header.intelligenceDetail,
+      title: copy.header.intelligenceTitle,
+      description: language === "vi"
+        ? "So sánh các nguồn dữ liệu theo schema chung và nhìn rõ ranh giới giữa hiệu quả owned với creative intelligence public."
+        : "Compare sources through one canonical schema while keeping owned performance separate from public creative intelligence.",
     },
     publisher: {
       badge: copy.header.publisherCrumb,
@@ -445,7 +500,7 @@ export function DashboardShell() {
   }[activeView];
   const headerSession = authenticated
     ? { label: copy.header.connected, variant: "success" as const }
-    : activeView === "competitor" || activeView === "tiktok" || activeView === "overview"
+    : activeView === "competitor" || activeView === "tiktok" || activeView === "intelligence" || activeView === "overview"
       ? { label: copy.header.worksWithoutMeta, variant: "secondary" as const }
       : sampleReportActive && activeView === "ads"
         ? { label: copy.header.sample, variant: "secondary" as const }
@@ -948,6 +1003,8 @@ export function DashboardShell() {
               onOpenAssistant={() => setChatOpen((current) => !current)}
               chatShortcutsDisabled={chatOpen}
             />
+          ) : activeView === "intelligence" ? (
+            <IntelligenceWorkspace report={report} tiktokReport={tiktokWorkspace.adReport} language={language} />
           ) : activeView === "publisher" ? (
             <PagePublisherPanel
               ref={publisherContextRef}
@@ -1264,7 +1321,27 @@ function TikTokIntelligencePanel({
 }) {
   const isVietnamese = language === "vi";
   const id = React.useId();
-  const { profilesInput, profileLimit, profileResult, profileError, profileLoading } = state;
+  const {
+    profilesInput,
+    profileLimit,
+    profileResult,
+    profileError,
+    profileLoading,
+    adQuery,
+    adRegion,
+    adQueryType,
+    adStartDate,
+    adEndDate,
+    adMaxAds,
+    adFetchDetails,
+    adFormat,
+    adObjective,
+    adIndustry,
+    adPerformanceTier,
+    adReport,
+    adError,
+    adLoading,
+  } = state;
   const updateState = React.useCallback(
     (patch: Partial<TikTokWorkspaceState>) => {
       onStateChange((current) => ({ ...current, ...patch }));
@@ -1284,6 +1361,37 @@ function TikTokIntelligencePanel({
   const unattributedVideos = (profileResult?.videos || []).filter(
     (video) => !video.username || !knownProfileNames.has(video.username.toLocaleLowerCase()),
   );
+  const [watchlist, setWatchlist] = React.useState<string[]>([]);
+  const [watchlistInput, setWatchlistInput] = React.useState("");
+  const [newCreativeCount, setNewCreativeCount] = React.useState(0);
+  const [acceptance, setAcceptance] =
+    React.useState<TikTokAcceptanceSnapshot | null>(null);
+  const [acceptanceLoading, setAcceptanceLoading] = React.useState(false);
+
+  const refreshAcceptance = React.useCallback(async () => {
+    setAcceptanceLoading(true);
+    try {
+      const data = await jsonFetch<{ acceptance: TikTokAcceptanceSnapshot }>(
+        "/api/tiktok/acceptance",
+        { timeoutMs: 5000 },
+      );
+      setAcceptance(data.acceptance);
+    } catch {
+      setAcceptance(null);
+    } finally {
+      setAcceptanceLoading(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    void jsonFetch<{ watchlist: { handles: string[] } }>("/api/tiktok/watchlist", { timeoutMs: 5000 })
+      .then((data) => setWatchlist(data.watchlist.handles.slice(0, 50)))
+      .catch(() => setWatchlist([]));
+  }, []);
+
+  React.useEffect(() => {
+    void refreshAcceptance();
+  }, [refreshAcceptance]);
 
   async function fetchProfiles() {
     if (!profiles.length) {
@@ -1311,6 +1419,69 @@ function TikTokIntelligencePanel({
       updateState({ profileLoading: false });
     }
   }
+
+  async function fetchAds() {
+    if (!adQuery.trim()) {
+      updateState({ adError: isVietnamese ? "Nhập keyword hoặc advertiser trước khi tìm." : "Add a keyword or advertiser before searching." });
+      return;
+    }
+    updateState({ adError: "", adLoading: true });
+    try {
+      const data = await jsonFetch<{ report: TikTokLibraryReport }>("/api/tiktok/ads", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          region: adRegion,
+          queryType: adQueryType,
+          query: adQuery.trim(),
+          startDate: adStartDate || undefined,
+          endDate: adEndDate || undefined,
+          maxAds: clampWholeNumber(adMaxAds, 1, 500),
+          fetchDetails: adFetchDetails,
+          format: adFormat || undefined,
+          objective: adObjective || undefined,
+          industry: adIndustry || undefined,
+          performanceTier: adPerformanceTier === "all" ? undefined : adPerformanceTier,
+        }),
+        timeoutMs: 300000,
+      });
+      const priorIds = new Set((adReport?.rows || []).map((row) => row.id));
+      setNewCreativeCount(data.report.rows.filter((row) => !priorIds.has(row.id)).length);
+      updateState({ adReport: data.report });
+      await refreshAcceptance();
+    } catch (error) {
+      updateState({ adError: error instanceof Error ? error.message : (isVietnamese ? "Không kéo được TikTok Ad Library." : "Could not fetch TikTok Ad Library.") });
+    } finally {
+      updateState({ adLoading: false });
+    }
+  }
+
+  async function saveWatchlist() {
+    const handles = watchlistInput
+      .split(/[\n,]/u)
+      .map((value) => value.trim().replace(/^@/u, ""))
+      .filter(Boolean);
+    const next = Array.from(new Set([...watchlist, ...handles])).slice(0, 50);
+    setWatchlist(next);
+    await jsonFetch("/api/tiktok/watchlist", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ handles: next }), timeoutMs: 5000 });
+    setWatchlistInput("");
+  }
+
+  async function removeWatchlist(handle: string) {
+    const next = watchlist.filter((item) => item !== handle);
+    setWatchlist(next);
+    await jsonFetch("/api/tiktok/watchlist", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ handles: next }), timeoutMs: 5000 });
+  }
+
+  const visibleAdRows = searchCreativeCatalog(adReport?.rows || [], {
+    keyword: adQuery,
+    startDate: adStartDate || undefined,
+    endDate: adEndDate || undefined,
+    format: (adFormat || undefined) as Parameters<typeof searchCreativeCatalog>[1]["format"],
+    objective: adObjective || undefined,
+    industry: adIndustry || undefined,
+    performanceTier: adPerformanceTier === "all" ? undefined : adPerformanceTier,
+  });
 
   return (
     <div className="grid gap-4 xl:grid-cols-[380px_1fr]">
@@ -1361,12 +1532,229 @@ function TikTokIntelligencePanel({
           </CardContent>
         </Card>
 
+        <Card>
+          <CardHeader>
+            <CardTitle>{isVietnamese ? "TikTok Ad Library" : "TikTok Ad Library"}</CardTitle>
+            <CardDescription>
+              {isVietnamese
+                ? "Apify tự định tuyến CCL ở EU/UK/CH và Creative Center cho các thị trường khác."
+                : "Apify routes EU/UK/CH to the Commercial Content Library and other markets to Creative Center."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                void fetchAds();
+              }}
+              className="flex flex-col gap-4"
+            >
+              <Field>
+                <FieldLabel htmlFor={`${id}-ad-query`}>{isVietnamese ? "Keyword hoặc advertiser" : "Keyword or advertiser"}</FieldLabel>
+                <Input
+                  id={`${id}-ad-query`}
+                  value={adQuery}
+                  onChange={(event) => updateState({ adQuery: event.target.value })}
+                  placeholder={isVietnamese ? "VD: Nike, serum, lead gen" : "Example: Nike, serum, lead gen"}
+                />
+              </Field>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field>
+                  <FieldLabel htmlFor={`${id}-ad-query-type`}>{isVietnamese ? "Kiểu tìm" : "Search type"}</FieldLabel>
+                  <select
+                    id={`${id}-ad-query-type`}
+                    value={adQueryType}
+                    onChange={(event) => updateState({ adQueryType: event.target.value as TikTokWorkspaceState["adQueryType"] })}
+                    className="h-9 rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <option value="2">{isVietnamese ? "Keyword / creative" : "Keyword / creative"}</option>
+                    <option value="1">{isVietnamese ? "Advertiser" : "Advertiser"}</option>
+                    <option value="url">URL / ad detail</option>
+                  </select>
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor={`${id}-ad-region`}>{isVietnamese ? "Thị trường" : "Market"}</FieldLabel>
+                  <Input
+                    id={`${id}-ad-region`}
+                    value={adRegion}
+                    onChange={(event) => updateState({ adRegion: event.target.value.toUpperCase() })}
+                    placeholder="VN"
+                    maxLength={8}
+                  />
+                </Field>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field>
+                  <FieldLabel htmlFor={`${id}-ad-start`}>{isVietnamese ? "Từ ngày" : "Start date"}</FieldLabel>
+                  <Input id={`${id}-ad-start`} type="date" value={adStartDate} onChange={(event) => updateState({ adStartDate: event.target.value })} />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor={`${id}-ad-end`}>{isVietnamese ? "Đến ngày" : "End date"}</FieldLabel>
+                  <Input id={`${id}-ad-end`} type="date" value={adEndDate} onChange={(event) => updateState({ adEndDate: event.target.value })} />
+                </Field>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field>
+                  <FieldLabel htmlFor={`${id}-ad-format`}>{isVietnamese ? "Format" : "Format"}</FieldLabel>
+                  <Input id={`${id}-ad-format`} value={adFormat} onChange={(event) => updateState({ adFormat: event.target.value })} placeholder="video / image" />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor={`${id}-ad-limit`}>{isVietnamese ? "Số creative" : "Creative limit"}</FieldLabel>
+                  <Input id={`${id}-ad-limit`} type="number" min={1} max={500} value={adMaxAds} onChange={(event) => updateState({ adMaxAds: clampWholeNumber(Number(event.target.value), 1, 500) })} />
+                </Field>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field>
+                  <FieldLabel htmlFor={`${id}-ad-objective`}>{isVietnamese ? "Objective (tuỳ chọn)" : "Objective (optional)"}</FieldLabel>
+                  <Input id={`${id}-ad-objective`} value={adObjective} onChange={(event) => updateState({ adObjective: event.target.value })} placeholder="conversions" />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor={`${id}-ad-industry`}>{isVietnamese ? "Industry (tuỳ chọn)" : "Industry (optional)"}</FieldLabel>
+                  <Input id={`${id}-ad-industry`} value={adIndustry} onChange={(event) => updateState({ adIndustry: event.target.value })} placeholder="beauty_personal_care" />
+                </Field>
+              </div>
+              <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                <input type="checkbox" checked={adFetchDetails} onChange={(event) => updateState({ adFetchDetails: event.target.checked })} />
+                {isVietnamese ? "Kéo detail, retention và targeting khi actor hỗ trợ" : "Include detail, retention, and targeting enrichment when supported"}
+              </label>
+              {adError ? <Alert variant="destructive"><AlertTitle>{isVietnamese ? "Ad Library lỗi" : "Ad Library failed"}</AlertTitle><AlertDescription>{adError}</AlertDescription></Alert> : null}
+              <Button type="submit" disabled={adLoading || !adQuery.trim()}>
+                {adLoading ? <Spinner data-icon="inline-start" /> : <FilterIcon data-icon="inline-start" />}
+                {adLoading ? (isVietnamese ? "Đang tìm..." : "Searching...") : (isVietnamese ? "Tìm creative" : "Search creatives")}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>{isVietnamese ? "Watchlist advertiser" : "Advertiser watchlist"}</CardTitle>
+            <CardDescription>{isVietnamese ? "Lưu tối đa 50 handle cho các lần pull tiếp theo." : "Save up to 50 handles for the next pull."}</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            <div className="flex gap-2">
+              <Input value={watchlistInput} onChange={(event) => setWatchlistInput(event.target.value)} placeholder="brand_a, brand_b" aria-label={isVietnamese ? "Handle watchlist" : "Watchlist handles"} />
+              <Button type="button" variant="outline" onClick={saveWatchlist} disabled={!watchlistInput.trim()}>Save</Button>
+            </div>
+            {watchlist.length ? (
+              <div className="flex flex-wrap gap-2">
+                {watchlist.map((handle) => <Button key={handle} type="button" size="xs" variant="secondary" onClick={() => removeWatchlist(handle)}>@{handle} ×</Button>)}
+              </div>
+            ) : <p className="text-xs text-muted-foreground">{isVietnamese ? "Chưa có handle nào." : "No handles saved yet."}</p>}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <CardTitle>
+                  {isVietnamese ? "Live acceptance" : "Live acceptance"}
+                </CardTitle>
+                <CardDescription>
+                  {isVietnamese
+                    ? "Evidence production cho 5 gate TikTok, tách biệt với trạng thái đã code."
+                    : "Production evidence for the five TikTok gates, separate from implementation status."}
+                </CardDescription>
+              </div>
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="outline"
+                onClick={() => void refreshAcceptance()}
+                disabled={acceptanceLoading}
+                aria-label={isVietnamese ? "Làm mới acceptance" : "Refresh acceptance"}
+              >
+                {acceptanceLoading ? <Spinner /> : <RefreshCcwIcon />}
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            {acceptance ? (
+              <>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-medium">
+                    {acceptance.passedCount}/{acceptance.totalGates}{" "}
+                    {isVietnamese ? "gate đã chứng minh" : "gates proven"}
+                  </span>
+                  <Badge
+                    variant={
+                      acceptance.passedCount === acceptance.totalGates
+                        ? "success"
+                        : "outline"
+                    }
+                  >
+                    {acceptance.passedCount === acceptance.totalGates
+                      ? isVietnamese
+                        ? "Sẵn sàng"
+                        : "Ready"
+                      : isVietnamese
+                        ? "Cần evidence"
+                        : "Evidence needed"}
+                  </Badge>
+                </div>
+                <div className="divide-y rounded-xl border">
+                  {acceptance.gates.map((gate) => (
+                    <div key={gate.id} className="flex flex-col gap-1 p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-medium">
+                          {gate.id} · {gate.title}
+                        </span>
+                        <Badge
+                          variant={
+                            gate.state === "passed"
+                              ? "success"
+                              : gate.state === "failed"
+                                ? "destructive"
+                                : gate.state === "blocked"
+                                  ? "outline"
+                                  : "secondary"
+                          }
+                        >
+                          {gate.state === "passed"
+                            ? isVietnamese
+                              ? "Đạt"
+                              : "Passed"
+                            : gate.state === "failed"
+                              ? isVietnamese
+                                ? "Chưa đạt"
+                                : "Failed"
+                              : gate.state === "blocked"
+                                ? isVietnamese
+                                  ? "Bị chặn"
+                                  : "Blocked"
+                                : isVietnamese
+                                  ? "Chờ evidence"
+                                  : "Awaiting evidence"}
+                        </Badge>
+                      </div>
+                      <p className="text-xs leading-5 text-muted-foreground">
+                        {gate.summary}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                {acceptanceLoading
+                  ? isVietnamese
+                    ? "Đang đọc acceptance..."
+                    : "Loading acceptance..."
+                  : isVietnamese
+                    ? "Không đọc được acceptance snapshot."
+                    : "Acceptance snapshot is unavailable."}
+              </p>
+            )}
+          </CardContent>
+        </Card>
+
         <Alert>
-          <AlertTitle>{isVietnamese ? "TikTok Ad Library đang tạm dừng" : "TikTok Ad Library is paused"}</AlertTitle>
+          <AlertTitle>{isVietnamese ? "Public intelligence, không phải Ads Manager" : "Public intelligence, not Ads Manager"}</AlertTitle>
           <AlertDescription>
             {isVietnamese
-              ? "Chỉ profile và video tracker đang hoạt động. Ad Library tạm dừng trong lúc kiểm định nguồn dữ liệu và sẽ tự mở lại khi đạt chuẩn."
-              : "Only profile and video tracking is active. Ad Library research is paused while its data source is being verified; it returns automatically once it passes."}
+              ? "Creative, reach, spend và retention là tín hiệu public. Không dùng chúng cho Budget Moves của Meta."
+              : "Creative, reach, spend, and retention are public signals. They never feed Meta Budget Moves."}
           </AlertDescription>
         </Alert>
       </div>
@@ -1390,7 +1778,97 @@ function TikTokIntelligencePanel({
           </>
         ) : null}
 
-        {!profileResult ? (
+        {adReport ? (
+          <section className="flex flex-col gap-3">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <h2 className="font-heading text-base font-semibold">{isVietnamese ? "Creative đã thu thập" : "Collected creatives"}</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {adReport.rows.length} {isVietnamese ? "creative chuẩn hoá" : "normalized creatives"}
+                  {newCreativeCount ? ` · ${newCreativeCount} ${isVietnamese ? "creative mới" : "new since last pull"}` : ""}
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="secondary">{adReport.actorId}</Badge>
+                {adReport.pipelineDurationMs !== undefined ? <Badge variant={adReport.pipelineDurationMs < 15 * 60 * 1000 ? "success" : "outline"}>{(adReport.pipelineDurationMs / 1000).toFixed(1)}s pipeline</Badge> : null}
+                {adReport.deduplicationIntegrity !== undefined ? <Badge variant={adReport.deduplicationIntegrity > 0.99 ? "success" : "outline"}>{(adReport.deduplicationIntegrity * 100).toFixed(1)}% dedup</Badge> : null}
+                {adReport.acceptance?.deduplicationAbove99Percent === null ? <Badge variant="outline">{isVietnamese ? "Dedup cần cohort gắn nhãn" : "Dedup needs labeled cohort"}</Badge> : null}
+                <select
+                  value={adPerformanceTier}
+                  onChange={(event) => updateState({ adPerformanceTier: event.target.value as TikTokWorkspaceState["adPerformanceTier"] })}
+                  aria-label={isVietnamese ? "Lọc performance tier" : "Filter performance tier"}
+                  className="h-8 rounded-md border border-input bg-background px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <option value="all">{isVietnamese ? "Tất cả tier" : "All tiers"}</option>
+                  <option value="top">Top</option>
+                  <option value="strong">Strong</option>
+                  <option value="standard">Standard</option>
+                </select>
+              </div>
+            </div>
+            {adReport.matchedAdvertisers !== undefined ? (
+              <Alert>
+                <GaugeIcon />
+                <AlertTitle>{isVietnamese ? "Độ khớp advertiser" : "Advertiser match coverage"}</AlertTitle>
+                <AlertDescription>
+                  {adReport.matchedAdvertisers}/{adReport.rows.length} {isVietnamese ? "row có advertiser khớp query." : "rows have an advertiser matching the query."}
+                </AlertDescription>
+              </Alert>
+            ) : null}
+            {adReport.warnings.slice(0, 3).map((warning, index) => (
+              <Alert key={`${warning}-${index}`}>
+                <AlertDescription>{warning}</AlertDescription>
+              </Alert>
+            ))}
+            {visibleAdRows.length ? (
+              <div className="overflow-hidden rounded-xl border bg-card">
+                <div className="grid grid-cols-[minmax(0,1fr)_110px_110px] gap-3 border-b bg-muted/30 px-4 py-3 text-xs font-medium text-muted-foreground max-sm:grid-cols-[minmax(0,1fr)_84px]">
+                  <span>{isVietnamese ? "Creative" : "Creative"}</span>
+                  <span className="max-sm:hidden">{isVietnamese ? "Signal" : "Signal"}</span>
+                  <span>{isVietnamese ? "Nguồn" : "Source"}</span>
+                </div>
+                {visibleAdRows.map((row) => (
+                  <article key={row.id} className="grid grid-cols-[minmax(0,1fr)_110px_110px] gap-3 border-b px-4 py-4 last:border-b-0 max-sm:grid-cols-[minmax(0,1fr)_84px]">
+                    <div className="flex min-w-0 gap-3">
+                      <div className="flex size-16 shrink-0 items-center justify-center rounded-lg border bg-muted text-muted-foreground" aria-hidden="true">{row.format === "video" ? "▶" : "▧"}</div>
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="truncate text-sm font-medium">{row.advertiserName || (isVietnamese ? "Advertiser chưa xác định" : "Unknown advertiser")}</h3>
+                          <Badge variant={row.performanceTier === "top" ? "success" : "secondary"}>{row.performanceScore ?? "--"}</Badge>
+                        </div>
+                        <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{row.caption || row.adTitle || (isVietnamese ? "Không có caption" : "No caption")}</p>
+                        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                          <span>{row.format}</span>
+                          {row.durationSeconds ? <span>{row.durationSeconds.toFixed(1)}s</span> : null}
+                          {row.ctr !== undefined ? <span>CTR {(row.ctr * 100).toFixed(1)}%</span> : null}
+                          {row.firstSeen ? <span>{row.firstSeen}</span> : null}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-1 text-xs text-muted-foreground max-sm:hidden">
+                      <span>{row.performanceTier || "unknown"}</span>
+                      {row.hookRetention !== undefined ? <span>Hook {Math.round(row.hookRetention * 100)}%</span> : null}
+                      {row.likeCount !== undefined ? <span>{formatCompactNumber(row.likeCount)} likes</span> : null}
+                    </div>
+                    <div className="flex items-start justify-end">
+                      {row.previewUrl || row.landingUrl || row.videoUrl || row.imageUrl ? <a href={row.previewUrl || row.landingUrl || row.videoUrl || row.imageUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"><ExternalLinkIcon className="size-3.5" />{isVietnamese ? "Mở" : "Open"}</a> : <span className="text-xs text-muted-foreground">--</span>}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <Empty className="min-h-48 rounded-xl border bg-card">
+                <EmptyHeader>
+                  <EmptyMedia variant="icon"><FilterIcon /></EmptyMedia>
+                  <EmptyTitle>{isVietnamese ? "Không có creative trong filter này" : "No creatives match this filter"}</EmptyTitle>
+                  <EmptyDescription>{isVietnamese ? "Đổi performance tier hoặc tìm lại với query rộng hơn." : "Change the performance tier or search with a broader query."}</EmptyDescription>
+                </EmptyHeader>
+              </Empty>
+            )}
+          </section>
+        ) : null}
+
+        {!profileResult && !adReport ? (
           <Empty className="min-h-72 rounded-2xl border bg-card">
             <EmptyHeader>
               <EmptyMedia variant="icon"><ActivityIcon /></EmptyMedia>
@@ -1471,24 +1949,32 @@ function TikTokIntelligencePanel({
       </div>
 
       <StickyActionDock
+        position="inline"
+        className="col-span-full px-0"
         contextLabel={isVietnamese ? "TikTok tracker" : "TikTok tracker"}
-        status={profileLoading ? "working" : profiles.length ? "ready" : "blocked"}
-        statusLabel={profileLoading
-          ? isVietnamese ? "Đang kéo profile" : "Fetching profiles"
-          : profiles.length
-            ? isVietnamese ? `${profiles.length} profile sẵn sàng` : `${profiles.length} profiles ready`
-            : isVietnamese ? "Cần username" : "Add usernames"}
+        status={profileLoading || adLoading ? "working" : adQuery.trim() || profiles.length ? "ready" : "blocked"}
+        statusLabel={adLoading
+          ? isVietnamese ? "Đang tìm creative" : "Searching creatives"
+          : profileLoading
+            ? isVietnamese ? "Đang kéo profile" : "Fetching profiles"
+            : adQuery.trim()
+              ? isVietnamese ? "Query Ad Library sẵn sàng" : "Ad Library query ready"
+              : profiles.length
+                ? isVietnamese ? `${profiles.length} profile sẵn sàng` : `${profiles.length} profiles ready`
+                : isVietnamese ? "Cần query hoặc username" : "Add a query or usernames"}
         primaryAction={{
-          id: "fetch-tiktok-profiles",
-          label: profileResult
-            ? isVietnamese ? "Làm mới profile" : "Refresh profiles"
-            : isVietnamese ? "Kéo profile" : "Fetch profiles",
-          shortLabel: isVietnamese ? "Kéo profile" : "Fetch profiles",
+          id: adQuery.trim() ? "fetch-tiktok-ads" : "fetch-tiktok-profiles",
+          label: adQuery.trim()
+            ? isVietnamese ? "Tìm TikTok creative" : "Search TikTok creatives"
+            : profileResult
+              ? isVietnamese ? "Làm mới profile" : "Refresh profiles"
+              : isVietnamese ? "Kéo profile" : "Fetch profiles",
+          shortLabel: adQuery.trim() ? (isVietnamese ? "Tìm creative" : "Search ads") : (isVietnamese ? "Kéo profile" : "Fetch profiles"),
           icon: RefreshCcwIcon,
-          onSelect: fetchProfiles,
-          disabled: !profiles.length,
-          disabledReason: isVietnamese ? "Nhập ít nhất một username TikTok." : "Add at least one TikTok username.",
-          loading: profileLoading,
+          onSelect: adQuery.trim() ? fetchAds : fetchProfiles,
+          disabled: !adQuery.trim() && !profiles.length,
+          disabledReason: isVietnamese ? "Nhập query Ad Library hoặc username TikTok." : "Add an Ad Library query or TikTok username.",
+          loading: profileLoading || adLoading,
           shortcut: "mod+enter",
         }}
         shortcutsDisabled={chatShortcutsDisabled}
