@@ -26,9 +26,12 @@ tmp
 *.md
 !README.md
 *.pdf
-*.png
 *.csv
 *.tsbuildinfo
+
+/dashboard_*.png
+/pdf_*.png
+/mqmph640-image.png
 
 fix-*.cjs
 patch.cjs
