@@ -31,17 +31,17 @@ import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/
 const EMPTY_COPY: Record<InterfaceLanguage, { noData: string; invalid: string }> = {
   en: {
     noData: "No daily data to chart yet.",
-    invalid: "This chart needs at least one metric on a single scale.",
+    invalid: "This chart needs at least one metric on a valid scale.",
   },
   vi: {
     noData: "Chưa có dữ liệu theo ngày để vẽ biểu đồ.",
-    invalid: "Biểu đồ cần ít nhất một chỉ số trên cùng một thang đo.",
+    invalid: "Biểu đồ cần ít nhất một chỉ số trên thang đo hợp lệ.",
   },
 };
 
-function CustomChartEmpty({ message }: { message: string }) {
+function CustomChartEmpty({ message, height }: { message: string; height: number }) {
   return (
-    <div className="flex h-[260px] items-center justify-center rounded-lg border text-sm text-muted-foreground">
+    <div className="flex items-center justify-center rounded-xl border border-border text-center text-xs text-muted-foreground" style={{ height }}>
       {message}
     </div>
   );
@@ -55,6 +55,103 @@ function tooltipFormatter(currency: string) {
   );
 }
 
+function CustomChartPlot({
+  spec,
+  rows,
+  language,
+  currency,
+  height,
+  compact = false,
+}: {
+  spec: CustomChartSpec;
+  rows: NormalizedRow[];
+  language: InterfaceLanguage;
+  currency: string;
+  height: number;
+  compact?: boolean;
+}) {
+  const copy = EMPTY_COPY[language];
+  const validation = validateSpec(spec);
+  const data = buildCustomChartData(rows, spec);
+  const config = buildChartConfig(spec, language);
+  const usedAxes: CustomAxis[] = [...new Set(spec.series.map((series) => series.axis))];
+
+  if (!validation.ok) return <CustomChartEmpty message={copy.invalid} height={height} />;
+  if (!data.length) return <CustomChartEmpty message={copy.noData} height={height} />;
+
+  const axes = usedAxes.map((axis) => {
+    const format = axisFormatFor(spec, axis);
+    return (
+      <YAxis
+        key={axis}
+        yAxisId={axis}
+        orientation={axis === "right" ? "right" : "left"}
+        hide={compact}
+        tickLine={false}
+        axisLine={false}
+        width={compact ? 0 : format === "currency" ? 64 : 52}
+        tickMargin={6}
+        tickFormatter={format ? (value) => formatAxisTick(Number(value), format, currency) : undefined}
+      />
+    );
+  });
+  const grid = <CartesianGrid vertical={false} strokeDasharray={compact ? "3 3" : undefined} />;
+  const xAxis = <XAxis dataKey="x" hide={compact} tickLine={false} axisLine={false} tickMargin={8} minTickGap={16} />;
+  const tooltip = compact ? null : <ChartTooltip content={<ChartTooltipContent formatter={tooltipFormatter(currency)} />} />;
+  const margin = compact ? { left: 2, right: 2, top: 4, bottom: 0 } : { left: 8, right: 8, top: 8, bottom: 0 };
+  const chartClassName = "h-full w-full";
+
+  const chart = (() => {
+    if (spec.type === "bar") {
+      return (
+        <BarChart data={data} margin={margin}>
+          {grid}{xAxis}{axes}{tooltip}
+          {spec.series.map((series) => <Bar key={series.key} yAxisId={series.axis} dataKey={series.key} fill={`var(--color-${series.key})`} radius={[3, 3, 0, 0]} />)}
+        </BarChart>
+      );
+    }
+    if (spec.type === "area") {
+      return (
+        <AreaChart data={data} margin={margin}>
+          {grid}{xAxis}{axes}{tooltip}
+          {spec.series.map((series) => <Area key={series.key} yAxisId={series.axis} type="monotone" dataKey={series.key} stroke={`var(--color-${series.key})`} fill={`var(--color-${series.key})`} fillOpacity={0.15} strokeWidth={2} />)}
+        </AreaChart>
+      );
+    }
+    if (spec.type === "composed") {
+      return (
+        <ComposedChart data={data} margin={margin}>
+          {grid}{xAxis}{axes}{tooltip}
+          {spec.series.map((series) => series.axis === "left"
+            ? <Bar key={series.key} yAxisId={series.axis} dataKey={series.key} fill={`var(--color-${series.key})`} radius={[3, 3, 0, 0]} />
+            : <Line key={series.key} yAxisId={series.axis} type="monotone" dataKey={series.key} stroke={`var(--color-${series.key})`} strokeWidth={2} dot={false} />)}
+        </ComposedChart>
+      );
+    }
+    return (
+      <LineChart data={data} margin={margin}>
+        {grid}{xAxis}{axes}{tooltip}
+        {spec.series.map((series) => <Line key={series.key} yAxisId={series.axis} type="monotone" dataKey={series.key} stroke={`var(--color-${series.key})`} strokeWidth={2} dot={false} />)}
+      </LineChart>
+    );
+  })();
+
+  return (
+    <div style={{ height }}>
+      <ChartContainer config={config} className={chartClassName}>{chart}</ChartContainer>
+    </div>
+  );
+}
+
+export function CustomChartPreview(props: {
+  spec: CustomChartSpec;
+  rows: NormalizedRow[];
+  language: InterfaceLanguage;
+  currency: string;
+}) {
+  return <CustomChartPlot {...props} height={94} compact />;
+}
+
 export function CustomChartCard({
   spec,
   rows,
@@ -66,119 +163,16 @@ export function CustomChartCard({
   language: InterfaceLanguage;
   currency: string;
 }) {
-  const copy = EMPTY_COPY[language];
-  const validation = validateSpec(spec);
-  const data = buildCustomChartData(rows, spec);
   const config = buildChartConfig(spec, language);
-  const usedAxes: CustomAxis[] = [...new Set(spec.series.map((s) => s.axis))];
-
-  const body = (() => {
-    if (!validation.ok) return <CustomChartEmpty message={copy.invalid} />;
-    if (!data.length) return <CustomChartEmpty message={copy.noData} />;
-
-    const axes = usedAxes.map((axis) => {
-      const fmt = axisFormatFor(spec, axis);
-      return (
-        <YAxis
-          key={axis}
-          yAxisId={axis}
-          orientation={axis === "right" ? "right" : "left"}
-          tickLine={false}
-          axisLine={false}
-          width={fmt === "currency" ? 64 : 52}
-          tickMargin={6}
-          tickFormatter={fmt ? (v) => formatAxisTick(Number(v), fmt, currency) : undefined}
-        />
-      );
-    });
-    const grid = <CartesianGrid vertical={false} />;
-    const xAxis = <XAxis dataKey="x" tickLine={false} axisLine={false} tickMargin={8} minTickGap={16} />;
-    const tooltip = <ChartTooltip content={<ChartTooltipContent formatter={tooltipFormatter(currency)} />} />;
-    const margin = { left: 8, right: 8, top: 8, bottom: 0 };
-
-    if (spec.type === "bar") {
-      return (
-        <ChartContainer config={config} className="h-[260px] w-full">
-          <BarChart data={data} margin={margin}>
-            {grid}
-            {xAxis}
-            {axes}
-            {tooltip}
-            {spec.series.map((s) => (
-              <Bar key={s.key} yAxisId={s.axis} dataKey={s.key} fill={`var(--color-${s.key})`} radius={[3, 3, 0, 0]} />
-            ))}
-          </BarChart>
-        </ChartContainer>
-      );
-    }
-
-    if (spec.type === "area") {
-      return (
-        <ChartContainer config={config} className="h-[260px] w-full">
-          <AreaChart data={data} margin={margin}>
-            {grid}
-            {xAxis}
-            {axes}
-            {tooltip}
-            {spec.series.map((s) => (
-              <Area
-                key={s.key}
-                yAxisId={s.axis}
-                type="monotone"
-                dataKey={s.key}
-                stroke={`var(--color-${s.key})`}
-                fill={`var(--color-${s.key})`}
-                fillOpacity={0.15}
-                strokeWidth={2}
-              />
-            ))}
-          </AreaChart>
-        </ChartContainer>
-      );
-    }
-
-    if (spec.type === "composed") {
-      return (
-        <ChartContainer config={config} className="h-[260px] w-full">
-          <ComposedChart data={data} margin={margin}>
-            {grid}
-            {xAxis}
-            {axes}
-            {tooltip}
-            {spec.series.map((s) =>
-              s.axis === "left" ? (
-                <Bar key={s.key} yAxisId={s.axis} dataKey={s.key} fill={`var(--color-${s.key})`} radius={[3, 3, 0, 0]} />
-              ) : (
-                <Line key={s.key} yAxisId={s.axis} type="monotone" dataKey={s.key} stroke={`var(--color-${s.key})`} strokeWidth={2} dot={false} />
-              ),
-            )}
-          </ComposedChart>
-        </ChartContainer>
-      );
-    }
-
-    return (
-      <ChartContainer config={config} className="h-[260px] w-full">
-        <LineChart data={data} margin={margin}>
-          {grid}
-          {xAxis}
-          {axes}
-          {tooltip}
-          {spec.series.map((s) => (
-            <Line key={s.key} yAxisId={s.axis} type="monotone" dataKey={s.key} stroke={`var(--color-${s.key})`} strokeWidth={2} dot={false} />
-          ))}
-        </LineChart>
-      </ChartContainer>
-    );
-  })();
-
   return (
     <Card data-print-flow>
       <CardHeader>
         <CardTitle>{spec.title}</CardTitle>
-        <CardDescription>{spec.series.map((s) => config[s.key]?.label).filter(Boolean).join(" · ")}</CardDescription>
+        <CardDescription>{spec.series.map((series) => config[series.key]?.label).filter(Boolean).join(" · ")}</CardDescription>
       </CardHeader>
-      <CardContent>{body}</CardContent>
+      <CardContent>
+        <CustomChartPlot spec={spec} rows={rows} language={language} currency={currency} height={260} />
+      </CardContent>
     </Card>
   );
 }

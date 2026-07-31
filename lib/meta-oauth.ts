@@ -9,7 +9,7 @@ export const FACEBOOK_OAUTH_STATE_MAX_AGE_SECONDS = 10 * 60;
 export const FACEBOOK_OAUTH_GENERIC_ERROR = "Facebook Login could not finish. Try again or use a Meta access token.";
 export const facebookOAuthScopes = ["ads_read", ...pageSetupPermissions];
 
-export type FacebookOAuthReturnDestination = "ads" | "publisher";
+export type FacebookOAuthReturnDestination = "ads" | "publisher" | "settings";
 
 type TokenResponse = {
   access_token?: string;
@@ -34,7 +34,7 @@ export function createFacebookOAuthState() {
 export function parseFacebookOAuthReturnDestination(
   value: string | null | undefined,
 ): FacebookOAuthReturnDestination | undefined {
-  return value === "ads" || value === "publisher" ? value : undefined;
+  return value === "ads" || value === "publisher" || value === "settings" ? value : undefined;
 }
 
 export function buildFacebookOAuthReturnUrl(
@@ -43,7 +43,8 @@ export function buildFacebookOAuthReturnUrl(
   error?: boolean,
 ) {
   const url = new URL("/", request.url);
-  if (destination) url.searchParams.set("view", destination);
+  if (destination === "settings") url.searchParams.set("settings", "workspace");
+  else if (destination) url.searchParams.set("view", destination);
   if (error) url.searchParams.set("auth_error", FACEBOOK_OAUTH_GENERIC_ERROR);
   return url;
 }

@@ -112,9 +112,12 @@ export function WorkspaceAuth({
     <main className="v2-auth-shell">
       <AuthStory />
       <section className="v2-auth-stage" aria-label="Workspace authentication">
-        <button type="button" className="v2-auth-theme" aria-label={theme === "dark" ? "Use light theme" : "Use dark theme"} onClick={onThemeChange}>
-          {theme === "dark" ? <SunIcon /> : <MoonIcon />}
-        </button>
+        <div className="v2-auth-stage-nav">
+          <a href="/landing"><ArrowLeftIcon />Back to website</a>
+          <button type="button" className="v2-auth-theme" aria-label={theme === "dark" ? "Use light theme" : "Use dark theme"} onClick={onThemeChange}>
+            {theme === "dark" ? <SunIcon /> : <MoonIcon />}
+          </button>
+        </div>
         <div className={cn("v2-auth-card", view !== "sign-in" && "v2-auth-card-compact")}>
           {view === "sign-in" ? (
             <SignInForm
@@ -156,23 +159,27 @@ export function WorkspaceAuth({
 
 export function AuthStory() {
   return (
-    <section className="v2-auth-story" aria-label="Decision Workspace">
+    <section className="v2-auth-story" aria-label="Red Agency Ads Decision Workspace">
       <div className="v2-auth-glow" aria-hidden="true" />
       <div className="v2-auth-brand">
         <span><WaypointsIcon /></span>
-        <div><b>Decision Workspace</b><small>RED AGENCY / OPERATIONS</small></div>
+        <div><b>Red Agency Ads</b><small>Decision Workspace</small></div>
       </div>
       <div className="v2-auth-message">
-        <span className="v2-auth-ai-chip">AI performance intelligence</span>
-        <h1>Turn ad data into<br />next moves.</h1>
-        <p>A focused command center for reading performance, finding risk, and leaving every review with a decision.</p>
+        <span className="v2-auth-ai-chip">Paid media decision operations</span>
+        <h1>Welcome back to <br />the decision loop.</h1>
+        <p>Move from signal to Verdict without losing the evidence, review state, or next action along the way.</p>
       </div>
       <div className="v2-auth-pulse">
-        <span>Decision pulse</span>
-        <b>3 signals ready for review</b>
-        <p>Efficiency is stable. Creative fatigue is emerging. One campaign is ready to scale.</p>
+        <div className="v2-auth-pulse-heading">
+          <span>Today&apos;s decision pulse</span>
+          <b>3 items ready</b>
+        </div>
+        <div className="v2-auth-pulse-row"><i data-tone="stable" /><span>Efficiency</span><b>Stable</b></div>
+        <div className="v2-auth-pulse-row"><i data-tone="watch" /><span>Creative fatigue</span><b>Review</b></div>
+        <div className="v2-auth-pulse-row"><i data-tone="move" /><span>Scale candidate</span><b>Ready</b></div>
       </div>
-      <div className="v2-auth-trust"><ShieldCheckIcon />Secure workspace · connected sources stay private</div>
+      <div className="v2-auth-trust"><ShieldCheckIcon />Private workspace · connected sources stay protected</div>
     </section>
   );
 }
@@ -224,7 +231,7 @@ function SignInForm({
 }) {
   return (
     <>
-      <AuthHeader title="Sign in to your workspace" description="Review live performance and continue where your team left off." />
+      <AuthHeader title="Log in to your workspace" description="Continue from the same evidence, Verdict, and reviewed next action." />
       {error ? <div className="v2-auth-error" role="alert">{error}</div> : null}
       {!configured && !error ? <div className="v2-auth-error" role="status">Workspace authentication is not configured on this deployment.</div> : null}
       <form className="v2-auth-form" onSubmit={onSubmit}>
@@ -253,7 +260,7 @@ function SignInForm({
         <Icon icon="logos:google-icon" aria-hidden="true" />
         Continue with Google
       </HeroButton>
-      <div className="v2-auth-footer">New to Decision Workspace? <button type="button" onClick={onRequest}>Request access</button></div>
+      <div className="v2-auth-footer">Need a workspace invite? <button type="button" onClick={onRequest}>Request access</button></div>
     </>
   );
 }

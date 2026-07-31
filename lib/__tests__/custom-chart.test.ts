@@ -15,6 +15,7 @@ import {
   defaultAxisFor,
   deserializeCharts,
   formatAxisTick,
+  getBuilderMetricCatalog,
   getMetricCatalog,
   getPresets,
   metricFormat,
@@ -28,8 +29,10 @@ import {
 } from "../custom-chart";
 
 const ALL_CHART_KEYS: ChartKey[] = [
+  "spend",
   "messages",
   "replies",
+  "replyRate",
   "leads",
   "purchases",
   "linkClicks",
@@ -91,7 +94,7 @@ function spec(overrides: Partial<CustomChartSpec>): CustomChartSpec {
 }
 
 describe("metric catalog", () => {
-  it("covers exactly the 17 chart keys", () => {
+  it("covers every supported chart key", () => {
     expect(METRIC_CATALOG).toHaveLength(ALL_CHART_KEYS.length);
     expect(new Set(METRIC_CATALOG.map((e) => e.key))).toEqual(new Set(ALL_CHART_KEYS));
   });
@@ -107,6 +110,28 @@ describe("metric catalog", () => {
     expect(metricLabel("leads", "en")).toBe("Leads");
     expect(metricLabel("leads", "vi")).toBe("Lead");
     expect(getMetricCatalog("vi").find((e) => e.key === "messages")?.label).toBe("Tin nhắn");
+  });
+
+  it("returns the exact 17 builder metrics in the Figma order", () => {
+    expect(getBuilderMetricCatalog("en").map((entry) => entry.key)).toEqual([
+      "spend",
+      "impressions",
+      "reach",
+      "frequency",
+      "cpm",
+      "linkClicks",
+      "ctr",
+      "cpc",
+      "messages",
+      "costPerMessage",
+      "replies",
+      "replyRate",
+      "leads",
+      "cpl",
+      "purchases",
+      "cpaPurchase",
+      "roas",
+    ]);
   });
 
   it("maps each key to a known format", () => {

@@ -60,11 +60,15 @@ describe("Facebook OAuth helpers", () => {
 
     expect(parseFacebookOAuthReturnDestination("ads")).toBe("ads");
     expect(parseFacebookOAuthReturnDestination("publisher")).toBe("publisher");
+    expect(parseFacebookOAuthReturnDestination("settings")).toBe("settings");
     expect(parseFacebookOAuthReturnDestination("https://evil.example")).toBeUndefined();
     expect(parseFacebookOAuthReturnDestination("javascript:alert(1)")).toBeUndefined();
 
     const success = buildFacebookOAuthReturnUrl(new Request("https://app.example.com/api/auth/facebook/callback"), "publisher");
     expect(success.toString()).toBe("https://app.example.com/?view=publisher");
+
+    const settings = buildFacebookOAuthReturnUrl(new Request("https://app.example.com/api/auth/facebook/callback"), "settings");
+    expect(settings.toString()).toBe("https://app.example.com/?settings=workspace");
 
     const failure = buildFacebookOAuthReturnUrl(new Request("https://app.example.com/api/auth/facebook/callback"), undefined, true);
     expect(failure.origin).toBe("https://app.example.com");

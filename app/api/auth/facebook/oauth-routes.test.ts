@@ -42,7 +42,7 @@ vi.mock("@/lib/meta-oauth", () => ({
   createFacebookOAuthState,
   exchangeFacebookCode,
   getFacebookOAuthRedirectUri,
-  parseFacebookOAuthReturnDestination: (value: string | null | undefined) => value === "ads" || value === "publisher" ? value : undefined,
+  parseFacebookOAuthReturnDestination: (value: string | null | undefined) => value === "ads" || value === "publisher" || value === "settings" ? value : undefined,
   validateFacebookOAuthToken,
 }));
 
@@ -59,7 +59,8 @@ describe("Facebook OAuth routes", () => {
     buildFacebookOAuthUrl.mockReturnValue(new URL("https://www.facebook.com/dialog/oauth?state=state_123"));
     buildFacebookOAuthReturnUrl.mockImplementation((request: Request, destination?: string, error?: boolean) => {
       const url = new URL("/", request.url);
-      if (destination) url.searchParams.set("view", destination);
+      if (destination === "settings") url.searchParams.set("settings", "workspace");
+      else if (destination) url.searchParams.set("view", destination);
       if (error) url.searchParams.set("auth_error", "Facebook Login could not finish. Try again or use a Meta access token.");
       return url;
     });
@@ -93,6 +94,17 @@ describe("Facebook OAuth routes", () => {
       "publisher",
       expect.objectContaining({ httpOnly: true, sameSite: "lax", maxAge: 600, path: "/" }),
     );
+  });
+
+  it("restores the workspace settings window after a successful connection", async () => {
+    cookieStore.get.mockImplementation((name: string) => name === "meta_facebook_oauth_state" ? { value: "state_123" } : { value: "settings" });
+    const { GET } = await import("./callback/route");
+
+    const response = await GET(new Request("http://localhost/api/auth/facebook/callback?state=state_123&code=code_123"));
+    const location = new URL(response.headers.get("location") || "");
+
+    expect(location.searchParams.get("settings")).toBe("workspace");
+    expect(location.searchParams.get("view")).toBeNull();
   });
 
   it("rejects arbitrary return destinations and clears a stale destination", async () => {

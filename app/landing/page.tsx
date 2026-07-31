@@ -1,247 +1,228 @@
 import type { Metadata } from "next"
-import Image from "next/image"
 import Link from "next/link"
-import { WaypointsIcon } from "lucide-react"
+import {
+  ArrowRightIcon,
+  BarChart3Icon,
+  CheckIcon,
+  FileTextIcon,
+  LanguagesIcon,
+  RadioIcon,
+  SearchIcon,
+  SendIcon,
+  ShieldCheckIcon,
+  WaypointsIcon,
+} from "lucide-react"
 
 import { LandingActionLink } from "./landing-action-link"
 import styles from "./landing.module.css"
 
 export const metadata: Metadata = {
-  title: "Decision Workspace | Evidence to action",
+  title: "Red Agency Ads | Decision Workspace",
   description:
-    "Diagnose Meta performance, trace the evidence, and turn campaign data into a client-ready decision and action plan.",
+    "Turn paid media performance and verified market evidence into traceable Verdicts, guarded budget moves, and client-ready action plans.",
 }
 
 const workflow = [
-  {
-    number: "01",
-    label: "Input",
-    title: "Connect",
-    description: "Bring Meta performance or verified competitor evidence into one accountable workspace.",
-  },
-  {
-    number: "02",
-    label: "Signal",
-    title: "Diagnose",
-    description: "Rank the highest-impact issue while keeping the supporting rows visible.",
-  },
-  {
-    number: "03",
-    label: "Verdict",
-    title: "Decide",
-    description: "Generate a deterministic Verdict with guarded budget moves and test priorities.",
-  },
-  {
-    number: "04",
-    label: "Action",
-    title: "Deliver",
-    description: "Export a client-ready report or move a reviewed action into publishing.",
-  },
+  ["01", "Connect", "Bring Meta performance or verified market evidence into the workspace.", "Research can start before a Meta account is connected."],
+  ["02", "Diagnose", "Rank the highest-impact issue while keeping the supporting rows visible.", "Every ranking keeps the evidence that produced it."],
+  ["03", "Decide", "Produce a deterministic Verdict, guarded budget move, and test priorities.", "Budget moves stop at the 20% guardrail."],
+  ["04", "Deliver", "Export the client report or move a reviewed action into publishing.", "Publishing stays behind explicit review."],
 ]
 
 const guarantees = [
-  ["Deterministic Verdicts", "Local analysis works without an AI provider."],
-  ["20% budget guardrail", "Recommendations protect Meta learning stability."],
-  ["English and Vietnamese", "Interface and client report language stay aligned."],
+  ["Claims stay beside their source", "Every observation keeps the ad, time window, and review state that supports it."],
+  ["Missing inputs stay visibly missing", "A stale or degraded source appears as a gap instead of being silently filled."],
+  ["Observation becomes an original test", "Competitor research turns into a brief in your own voice—not copied advertising."],
+  ["You can tell evidence from wording", "Verified facts, assumptions, and AI-enhanced phrasing are labelled separately."],
 ]
 
-const evidencePromises = [
-  "Local rules own the strategic claim, even when AI improves the wording.",
-  "Unavailable and degraded sources stay visible instead of appearing successful.",
-  "Budget recommendations respect a 20% learning-stability guardrail.",
+const outputs = [
+  ["Verdict", "Deterministic strategic conclusions", "The same evidence reproduces the same core claim, even without an AI provider."],
+  ["Priority", "A ranked list of what changes next", "The highest-impact diagnosis arrives first with its supporting rows still attached."],
+  ["Report", "Client-ready PDF output", "The record that produced the Verdict also produces the report—no rebuilding the story."],
+  ["Language", "English and Vietnamese consistency", "One setting carries from the workspace through the exported client report."],
+  ["Disclosure", "Clear provider and fallback state", "You always see which capabilities are connected, degraded, or running locally."],
 ]
+
+const jobs = [
+  [BarChart3Icon, "01", "Diagnose performance", "Rank what is costing money across campaigns, ad sets, and creative.", "Requires Meta"],
+  [SearchIcon, "02", "Investigate competitors", "Turn verified ad-library evidence into themes, gaps, and original test briefs.", "Works without Meta"],
+  [RadioIcon, "03", "Track TikTok signals", "Watch channel and video movement without mixing it with Ads Manager performance.", "Works without Meta"],
+  [SendIcon, "04", "Publish with control", "Move a reviewed action into Facebook Page publishing with the decision record attached.", "Requires Meta"],
+] as const
 
 export default function LandingPage() {
   return (
     <main className={styles.page}>
       <header className={styles.navShell}>
         <nav className={styles.nav} aria-label="Main navigation">
-          <Link href="/landing" className={styles.brand} aria-label="Decision Workspace landing page">
-            <span className={styles.brandMark} aria-hidden="true">
-              <WaypointsIcon />
-            </span>
-            <span>Decision Workspace</span>
+          <Link href="/landing" className={styles.brand} aria-label="Red Agency Ads home">
+            <span className={styles.brandMark} aria-hidden="true"><WaypointsIcon /></span>
+            <span><strong>Red Agency Ads</strong><small>Decision Workspace</small></span>
           </Link>
-
           <div className={styles.navLinks}>
-            <a href="#workflow">Workflow</a>
+            <a href="#how-it-works">How it works</a>
             <a href="#evidence">Evidence</a>
-            <a href="#output">Output</a>
+            <a href="#decisions">Decisions</a>
+            <a href="#use-cases">Use cases</a>
           </div>
-
-          <LandingActionLink href="/" className={styles.navCta}>
-            Open workspace
-          </LandingActionLink>
+          <LandingActionLink href="/" className={styles.navCta}>Log in</LandingActionLink>
         </nav>
       </header>
 
-      <section className={styles.hero}>
-        <div className={styles.heroGrid}>
+      <section id="top" className={styles.hero}>
+        <div className={styles.heroField}>
+          <div className={styles.photoCredit}>Photo via Unsplash</div>
           <div className={styles.heroCopy}>
-            <p className={`${styles.kicker} ${styles.resolveOne}`}>Decision operations workspace</p>
-            <h1 className={`${styles.heroTitle} ${styles.resolveTwo}`}>From ad evidence to action.</h1>
-            <p className={`${styles.heroBody} ${styles.resolveThree}`}>
-              Diagnose Meta performance, trace the evidence, and publish a client-ready action plan from one workspace.
+            <p className={`${styles.eyebrow} ${styles.resolveOne}`}>Decision operations for paid media</p>
+            <h1 className={`${styles.resolveTwo}`}>Make the next ad decision without guessing.</h1>
+            <p className={`${styles.resolveThree}`}>
+              Turn performance, verified competitor evidence, and TikTok signals into traceable
+              Verdicts, guarded budget moves, and client-ready action plans.
             </p>
             <div className={`${styles.heroActions} ${styles.resolveFour}`}>
-              <LandingActionLink href="/" className={styles.primaryCta}>
-                Open workspace
-              </LandingActionLink>
-              <a href="#workflow" className={styles.textCta}>
-                See the workflow
-              </a>
+              <LandingActionLink href="/" className={styles.primaryCta}>Log in to workspace</LandingActionLink>
+              <a href="#how-it-works" className={styles.ghostCta}>See how it works <ArrowRightIcon /></a>
             </div>
           </div>
 
-          <div className={`${styles.heroVisual} ${styles.resolveVisual}`}>
-            <span className={styles.heroTrace} aria-hidden="true" />
-            <div className={`${styles.productFrame} ${styles.heroProductFrame}`}>
-              <Image
-                src="/landing/workspace-overview.png"
-                alt="Decision Workspace overview showing jobs and live capability states"
-                width={1184}
-                height={1000}
-                priority
-                className={styles.productImage}
-              />
-            </div>
+          <div className={`${styles.heroSurface} ${styles.resolveSurface}`}>
+            <iframe
+              className={styles.productPreviewFrame}
+              data-surface="overview"
+              src="/landing/product-preview?surface=overview"
+              title="Live Red Agency Ads V2 workspace preview"
+              tabIndex={-1}
+            />
           </div>
         </div>
 
-        <div className={styles.proofRail} aria-label="Product guarantees">
-          {guarantees.map(([title, description]) => (
-            <div key={title}>
-              <strong>{title}</strong>
-              <span>{description}</span>
-            </div>
-          ))}
+        <ul className={styles.trustRail} aria-label="Workspace guarantees">
+          <li><strong>Deterministic Verdicts</strong><span>Core analysis works without an AI provider</span></li>
+          <li><strong>20% budget guardrail</strong><span>Recommendations protect Meta learning stability</span></li>
+          <li><strong>English + Vietnamese</strong><span>One language setting from workspace to report</span></li>
+        </ul>
+      </section>
+
+      <section className={styles.problemSection}>
+        <h2>Dashboards show what happened. <span>Red Agency Ads shows what changes next.</span></h2>
+        <div className={styles.problemGrid}>
+          <article className={styles.fragmentedPanel}>
+            <p className={styles.panelLabel}>Today — five surfaces, no owner</p>
+            <dl>
+              <div><dt>Ads Manager</dt><dd>Shows what happened, never what to change</dd></div>
+              <div><dt>Spreadsheet</dt><dd>Reasoning lives in a cell nobody can audit</dd></div>
+              <div><dt>Ad-library tabs</dt><dd>Research disappears when the tab closes</dd></div>
+              <div><dt>AI chat</dt><dd>Confident wording with no traceable source</dd></div>
+              <div><dt>Client deck</dt><dd>Rebuilt by hand every reporting cycle</dd></div>
+            </dl>
+            <p>Every hand-off loses the reasoning. By the time a client asks why the budget moved, the evidence is three tools away.</p>
+          </article>
+
+          <article className={styles.loopPanel}>
+            <p className={styles.panelLabel}>Instead — one accountable decision loop</p>
+            <ol>
+              <li><span>1</span><p>Evidence enters once and keeps its source.</p></li>
+              <li><span>2</span><p>The Verdict is derived, not improvised.</p></li>
+              <li><span>3</span><p>The budget move is bounded before anyone sees it.</p></li>
+              <li><span>4</span><p>The report and publishing action share the same record.</p></li>
+            </ol>
+          </article>
         </div>
       </section>
 
-      <section id="workflow" className={styles.section}>
-        <div className={styles.sectionLead}>
-          <div>
-            <p className={styles.kicker}>A single accountable loop</p>
-            <h2>One operating loop, not five disconnected tools.</h2>
+      <section id="how-it-works" className={styles.workflowSection}>
+        <div className={styles.workflowCard}>
+          <header className={styles.sectionLead}>
+            <h2>One loop, from raw evidence to a reviewed action.</h2>
+            <p>The same record moves through all four stages. Nothing is retyped, and nothing loses its provenance on the way.</p>
+          </header>
+          <div className={styles.workflowRail}>
+            {workflow.map(([number, title, description, note]) => (
+              <article key={number} className={styles.workflowStep}>
+                <i aria-hidden="true" />
+                <span>{number}</span>
+                <h3>{title}</h3>
+                <p>{description}</p>
+                <small>{note}</small>
+              </article>
+            ))}
           </div>
-          <p>Each workspace moves from source truth to a reviewed action without losing the reason behind it.</p>
-        </div>
-
-        <div className={styles.workflowRail}>
-          {workflow.map((item) => (
-            <article key={item.title} className={styles.workflowStep}>
-              <span className={styles.workflowNode} aria-hidden="true" />
-              <p className={styles.workflowMeta}>{item.number} / {item.label}</p>
-              <h3>{item.title}</h3>
-              <p>{item.description}</p>
-            </article>
-          ))}
         </div>
       </section>
 
       <section id="evidence" className={styles.evidenceSection}>
+        <div className={styles.evidenceVisual}>
+          <iframe
+            className={styles.productPreviewFrame}
+            data-surface="competitor"
+            src="/landing/product-preview?surface=competitor"
+            title="Live Red Agency Ads V2 competitor evidence preview"
+            tabIndex={-1}
+          />
+          <p>Competitor evidence — live V2 workspace preview</p>
+        </div>
         <div className={styles.evidenceCopy}>
-          <p className={styles.kicker}>Evidence remains visible</p>
+          <p className={styles.kicker}>Traceability</p>
           <h2>Every recommendation keeps its evidence attached.</h2>
-          <p>
-            Investigate campaign performance or verified competitor signals without turning assumptions into facts.
-          </p>
           <ul>
-            {evidencePromises.map((promise) => (
-              <li key={promise}>
-                <span aria-hidden="true">✓</span>
-                <p>{promise}</p>
-              </li>
+            {guarantees.map(([title, description]) => (
+              <li key={title}><span><CheckIcon /></span><div><h3>{title}</h3><p>{description}</p></div></li>
             ))}
           </ul>
-        </div>
-
-        <div className={styles.evidenceStage}>
-          <div className={`${styles.productFrame} ${styles.evidenceProductFrame}`}>
-            <Image
-              src="/landing/competitor-evidence.png"
-              alt="Competitor evidence workspace with verified notes, themes, gaps, and original test briefs"
-              width={1184}
-              height={1307}
-              className={styles.productImage}
-            />
-          </div>
-          <aside className={`${styles.evidenceNote} ${styles.noteOne}`}>
-            <strong>Traceable claim</strong>
-            <span>Conclusions stay beside the rows, sources, and review state that support them.</span>
-          </aside>
-          <aside className={`${styles.evidenceNote} ${styles.noteTwo}`}>
-            <strong>Honest capability</strong>
-            <span>Missing inputs appear as missing, never as a false success state.</span>
-          </aside>
+          <LandingActionLink href="/" className={styles.inlineCta}>Log in to workspace</LandingActionLink>
         </div>
       </section>
 
-      <section id="output" className={`${styles.section} ${styles.outputSection}`}>
-        <div className={styles.sectionLead}>
-          <div>
-            <p className={styles.kicker}>Output with a review trail</p>
-            <h2>The output is a decision your team can defend.</h2>
-          </div>
-          <p>Clear state, guarded recommendations, and a report that is ready for the client conversation.</p>
-        </div>
-
-        <div className={styles.outputStage}>
-          <div className={`${styles.productFrame} ${styles.outputProductFrame}`}>
-            <Image
-              src="/landing/workspace-overview.png"
-              alt="Workspace overview with capability states and available decision jobs"
-              width={1184}
-              height={1000}
-              priority
-              className={styles.productImage}
-            />
-          </div>
-
-          <article className={styles.guardrailCell}>
-            <strong>20%</strong>
-            <h3>Guarded budget moves</h3>
-            <p>No recommendation exceeds the learning-stability limit.</p>
+      <section id="decisions" className={styles.decisionsSection}>
+        <h2>Leave with a decision your team can defend.</h2>
+        <div className={styles.decisionGrid}>
+          <article className={styles.guardrailCard}>
+            <p className={styles.panelLabel}>Hard ceiling</p>
+            <strong>20<span>%</span></strong>
+            <p>No recommended budget move exceeds twenty percent in a single step. The guardrail protects Meta learning stability.</p>
+            <dl>
+              <div><dt>Proposed move</dt><dd>+12%</dd></div>
+              <div><dt>Guardrail ceiling</dt><dd>20%</dd></div>
+              <div><dt>Review before publish</dt><dd>Required</dd></div>
+            </dl>
           </article>
-
-          <div className={styles.outputMeta}>
-            <article>
-              <h3>Client-ready PDF</h3>
-              <p>Performance story, evidence, actions, and appendices leave as one report.</p>
-            </article>
-            <article>
-              <h3>One language setting</h3>
-              <p>English or Vietnamese carries from interface copy into the generated report.</p>
-            </article>
+          <div className={styles.outputList}>
+            {outputs.map(([label, title, description]) => (
+              <article key={label}><span>{label}</span><div><h3>{title}</h3><p>{description}</p></div></article>
+            ))}
           </div>
+        </div>
+      </section>
+
+      <section id="use-cases" className={styles.useCasesSection}>
+        <header className={styles.sectionLead}>
+          <h2>Four jobs the workspace already does.</h2>
+          <p>Two need a connected Meta account. Two do not—your team can start research before connecting anything.</p>
+        </header>
+        <div className={styles.jobGrid}>
+          {jobs.map(([Icon, number, title, description, requirement]) => (
+            <article key={number} className={styles.jobCard}>
+              <div><span>{number}</span><Icon /></div>
+              <h3>{title}</h3>
+              <p>{description}</p>
+              <small data-available={requirement === "Works without Meta"}>{requirement}</small>
+            </article>
+          ))}
         </div>
       </section>
 
       <section className={styles.finalCta}>
-        <span className={styles.ctaOrbit} aria-hidden="true" />
-        <div className={styles.finalCtaCopy}>
-          <p className={styles.kicker}>The next action stays visible</p>
-          <h2>Stop translating dashboards into decisions by hand.</h2>
-          <p>Bring the evidence, review the Verdict, and leave with the next action.</p>
-          <LandingActionLink href="/" className={styles.primaryCta}>
-            Open workspace
-          </LandingActionLink>
-        </div>
-        <div className={`${styles.productFrame} ${styles.ctaProductFrame}`}>
-          <Image
-            src="/landing/workspace-overview.png"
-            alt="Decision Workspace overview"
-            width={1184}
-            height={1000}
-            priority
-            className={styles.productImage}
-          />
-        </div>
+        <div className={styles.finalIcon}><ShieldCheckIcon /></div>
+        <h2>Stop translating dashboards into decisions by hand.</h2>
+        <p>Bring the evidence, review the Verdict, and leave with the next action.</p>
+        <LandingActionLink href="/" className={styles.finalButton}>Log in to Red Agency Ads</LandingActionLink>
       </section>
 
       <footer className={styles.footer}>
-        <span>Decision Workspace</span>
-        <span>Evidence to action</span>
+        <div className={styles.footerBrand}><span className={styles.brandMark}><WaypointsIcon /></span><div><strong>Red Agency Ads</strong><small>Decision operations for paid media</small></div></div>
+        <nav aria-label="Footer navigation"><Link href="/">Log in</Link><Link href="/privacy">Privacy</Link><Link href="/terms">Terms</Link></nav>
+        <div className={styles.footerMeta}><span><FileTextIcon />Client-ready output</span><span><LanguagesIcon />EN + VI</span></div>
       </footer>
     </main>
   )

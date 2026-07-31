@@ -65,8 +65,10 @@ function axisForFormat(format: ChartFormat): CustomAxis {
 }
 
 const CATALOG_SOURCE: Array<Pick<MetricCatalogEntry, "key" | "format" | "labelEn" | "labelVi">> = [
+  { key: "spend", format: "currency", labelEn: "Spend", labelVi: "Chi tiêu" },
   { key: "messages", format: "number", labelEn: "Messages", labelVi: "Tin nhắn" },
   { key: "replies", format: "number", labelEn: "Replies", labelVi: "Phản hồi" },
+  { key: "replyRate", format: "percent", labelEn: "Reply rate", labelVi: "Tỷ lệ phản hồi" },
   { key: "leads", format: "number", labelEn: "Leads", labelVi: "Lead" },
   { key: "purchases", format: "number", labelEn: "Purchases", labelVi: "Đơn hàng" },
   { key: "linkClicks", format: "number", labelEn: "Link clicks", labelVi: "Click link" },
@@ -126,6 +128,31 @@ export function getMetricCatalog(language: InterfaceLanguage): ResolvedCatalogEn
     defaultAxis: entry.defaultAxis,
     colorVar: entry.colorVar,
   }));
+}
+
+export const BUILDER_METRIC_KEYS: ChartKey[] = [
+  "spend",
+  "impressions",
+  "reach",
+  "frequency",
+  "cpm",
+  "linkClicks",
+  "ctr",
+  "cpc",
+  "messages",
+  "costPerMessage",
+  "replies",
+  "replyRate",
+  "leads",
+  "cpl",
+  "purchases",
+  "cpaPurchase",
+  "roas",
+];
+
+export function getBuilderMetricCatalog(language: InterfaceLanguage): ResolvedCatalogEntry[] {
+  const catalogByKey = new Map(getMetricCatalog(language).map((entry) => [entry.key, entry]));
+  return BUILDER_METRIC_KEYS.map((key) => catalogByKey.get(key)).filter((entry): entry is ResolvedCatalogEntry => Boolean(entry));
 }
 
 function coerceAxis(axis: unknown, key: ChartKey): CustomAxis {

@@ -17,12 +17,10 @@ import {
   BotMessageSquareIcon,
   CheckIcon,
   ChevronDownIcon,
-  ChevronUpIcon,
   ClipboardIcon,
   DatabaseIcon,
   DownloadIcon,
   FileTextIcon,
-  RefreshCcwIcon,
   SlidersHorizontalIcon,
   SparklesIcon,
   XIcon,
@@ -89,7 +87,7 @@ import type {
 } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
@@ -102,7 +100,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
-import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -447,6 +445,7 @@ export function AdsWorkspace({
   onSaveCustomKpis,
   onExportPdf,
   onOpenAssistant,
+  onCancelInitialScope,
 }: {
   language: InterfaceLanguage;
   provider: Provider;
@@ -468,6 +467,7 @@ export function AdsWorkspace({
   onSaveCustomKpis: (keys: CustomKpiKey[]) => void;
   onExportPdf: () => Promise<ClientReportPdfFile>;
   onOpenAssistant: () => void;
+  onCancelInitialScope: () => void;
 }) {
   const {
     campaigns,
@@ -490,36 +490,12 @@ export function AdsWorkspace({
     customCharts,
   } = state;
   const copy = adsCopy[language];
-  const scopeFieldId = React.useId();
   const reportStartRef = React.useRef<HTMLDivElement>(null);
   const [reportFlow, setReportFlow] = React.useState<"idle" | "pulling" | "ready" | "error">("idle");
   const [reportFlowError, setReportFlowError] = React.useState("");
   const verdictProgress = useTimedProgress(aiLoading.verdict);
   const insightProgress = useTimedProgress(aiLoading.insights);
   const selectedAccount = accounts.find((account) => account.id === accountId);
-  const dateRangeInvalid = Boolean(since && until && since > until);
-  const scopeBusy = loading === "accounts" || loading === "campaigns" || loading === "report";
-  const scopeReady = Boolean(accountId) && !dateRangeInvalid && !scopeBusy;
-  const scopeStatusText = loading === "report"
-    ? copy.scope.pullingReport
-    : loading === "accounts"
-      ? copy.scope.loadingAccount
-      : loading === "campaigns"
-        ? copy.scope.loadingCampaigns
-        : !accountId
-          ? copy.scope.chooseAccountHint
-          : dateRangeInvalid
-            ? copy.scope.invalidDate
-            : copy.scope.readyHint;
-  const scopeStatusLabel = loading === "report"
-    ? copy.scope.pullingReport
-    : loading === "campaigns"
-      ? copy.campaign.loading
-      : scopeReady
-        ? copy.scope.ready
-        : dateRangeInvalid
-          ? copy.scope.checkDates
-          : copy.scope.chooseAccount;
   const updateState = React.useCallback(
     (patch: Partial<AdsWorkspaceState>) => {
       onStateChange((current) => ({ ...current, ...patch }));
@@ -537,6 +513,10 @@ export function AdsWorkspace({
   }, [comparisonReport, previousReport, compareMode, language]);
   const diagnostics = React.useMemo(() => (report ? runDiagnostics(report, decisionTargets) : []), [report, decisionTargets]);
   const reportCurrency = report?.account.currency || "VND";
+
+  React.useEffect(() => {
+    if (!report && !scopeExpanded) updateState({ scopeExpanded: true });
+  }, [report, scopeExpanded, updateState]);
 
   React.useEffect(() => {
     window.localStorage.setItem(CUSTOM_CHARTS_STORAGE_KEY, serializeCharts(customCharts));
@@ -678,194 +658,6 @@ export function AdsWorkspace({
 
   return (
     <>
-      {!report ? (
-        <Card className="workbench-fade-up v2-panel">
-          <CardHeader className="border-b pb-4">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div className="min-w-0">
-                <CardTitle>
-                  <h2>{copy.scope.title}</h2>
-                </CardTitle>
-                <CardDescription className="mt-1 max-w-2xl leading-6">{copy.scope.description}</CardDescription>
-              </div>
-              <Badge variant={scopeReady ? "success" : "outline"} className="h-6 shrink-0 px-2.5">
-                <span className={`size-1.5 rounded-full ${scopeReady ? "bg-success" : loading === "report" ? "bg-primary" : "bg-muted-foreground"}`} />
-                {scopeStatusLabel}
-              </Badge>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <FieldGroup className="grid gap-0 xl:grid-cols-[minmax(0,1fr)_minmax(22rem,0.82fr)]">
-              <div className="flex min-w-0 flex-col gap-5 pb-5 xl:pr-6 xl:pb-0">
-                <section aria-labelledby={`${scopeFieldId}-source-title`}>
-                  <div className="mb-3">
-                    <h3 id={`${scopeFieldId}-source-title`} className="font-heading text-sm font-semibold">{copy.scope.sourceTitle}</h3>
-                  </div>
-                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                    <Field className="sm:col-span-2">
-                      <FieldLabel htmlFor={`${scopeFieldId}-account`}>{copy.scope.account}</FieldLabel>
-                      <Select
-                        items={accounts.map((item) => ({ label: item.name, value: item.id }))}
-                        value={accountId}
-                        onValueChange={(value) => {
-                          if (value) onAccountIdChange(value);
-                        }}
-                      >
-                        <SelectTrigger id={`${scopeFieldId}-account`} className="h-10 w-full" disabled={loading === "accounts"}>
-                          <SelectValue placeholder={loading === "accounts" ? copy.scope.loadingAccount : copy.scope.chooseAccount} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectGroup>
-                            {accounts.map((account) => (
-                              <SelectItem key={account.id} value={account.id}>
-                                {account.name}
-                              </SelectItem>
-                            ))}
-                          </SelectGroup>
-                        </SelectContent>
-                      </Select>
-                    </Field>
-                    <Field data-invalid={dateRangeInvalid || undefined}>
-                      <FieldLabel htmlFor={`${scopeFieldId}-since`}>{copy.scope.since}</FieldLabel>
-                      <Input
-                        id={`${scopeFieldId}-since`}
-                        type="date"
-                        value={since}
-                        aria-invalid={dateRangeInvalid || undefined}
-                        aria-describedby={dateRangeInvalid ? `${scopeFieldId}-date-error` : undefined}
-                        onChange={(event) => updateState({ since: event.target.value })}
-                      />
-                    </Field>
-                    <Field data-invalid={dateRangeInvalid || undefined}>
-                      <FieldLabel htmlFor={`${scopeFieldId}-until`}>{copy.scope.until}</FieldLabel>
-                      <Input
-                        id={`${scopeFieldId}-until`}
-                        type="date"
-                        value={until}
-                        aria-invalid={dateRangeInvalid || undefined}
-                        aria-describedby={dateRangeInvalid ? `${scopeFieldId}-date-error` : undefined}
-                        onChange={(event) => updateState({ until: event.target.value })}
-                      />
-                    </Field>
-                  </div>
-                  {dateRangeInvalid ? <p id={`${scopeFieldId}-date-error`} role="alert" className="mt-2 text-sm text-destructive">{copy.scope.invalidDate}</p> : null}
-                </section>
-
-                <Separator />
-
-                <section aria-labelledby={`${scopeFieldId}-analysis-title`}>
-                  <div className="mb-3">
-                    <h3 id={`${scopeFieldId}-analysis-title`} className="font-heading text-sm font-semibold">{copy.scope.analysisTitle}</h3>
-                  </div>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <Field>
-                      <FieldLabel htmlFor={`${scopeFieldId}-kpi-pack`}>{copy.scope.kpiPack}</FieldLabel>
-                      <Select
-                        items={[{ label: "Auto-detect", value: "auto" }, ...packItems]}
-                        value={pack}
-                        onValueChange={(value) => {
-                          if (value) updateState({ pack: value as KpiPack | "auto" });
-                        }}
-                      >
-                        <SelectTrigger id={`${scopeFieldId}-kpi-pack`} className="h-10 w-full">
-                          <SelectValue placeholder={copy.scope.kpiPack} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectGroup>
-                            <SelectItem value="auto">{copy.scope.autoDetect}</SelectItem>
-                            {packItems.map((item) => (
-                              <SelectItem key={item.value} value={item.value}>
-                                {packLabel(item.value, language)}
-                              </SelectItem>
-                            ))}
-                          </SelectGroup>
-                        </SelectContent>
-                      </Select>
-                      <FieldDescription>{copy.scope.kpiHelp}</FieldDescription>
-                    </Field>
-                    <Field>
-                      <FieldLabel htmlFor={`${scopeFieldId}-compare`}>{copy.scope.compare}</FieldLabel>
-                      <Select
-                        items={compareItems}
-                        value={compareMode}
-                        onValueChange={(value) => {
-                          if (value) {
-                            const nextMode = value as CompareMode;
-                            updateState(nextMode === "off" ? { compareMode: nextMode, previousReport: null } : { compareMode: nextMode });
-                          }
-                        }}
-                      >
-                        <SelectTrigger id={`${scopeFieldId}-compare`} className="h-10 w-full">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectGroup>
-                            {compareItems.map((item) => (
-                              <SelectItem key={item.value} value={item.value}>
-                                {compareLabel(item.value, language)}
-                              </SelectItem>
-                            ))}
-                          </SelectGroup>
-                        </SelectContent>
-                      </Select>
-                    </Field>
-                  </div>
-
-                  <div className="mt-4 rounded-lg bg-muted/35 p-3 ring-1 ring-foreground/10">
-                    <div className="mb-3">
-                      <h3 className="text-sm font-medium">{copy.scope.thresholdsTitle}</h3>
-                      <p className="mt-1 text-xs leading-5 text-muted-foreground">{copy.scope.thresholdsHelp}</p>
-                    </div>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <Field>
-                        <FieldLabel htmlFor={`${scopeFieldId}-target-cpa`}>Target CPA</FieldLabel>
-                        <Input id={`${scopeFieldId}-target-cpa`} type="number" min="0" step="0.01" inputMode="decimal" value={targetCpa} onChange={(event) => updateState({ targetCpa: event.target.value })} placeholder="40" />
-                        <FieldDescription>{language === "vi" ? "Chặn scale nếu CPA vượt mục tiêu." : "Blocks scale when CPA is above target."}</FieldDescription>
-                      </Field>
-                      <Field>
-                        <FieldLabel htmlFor={`${scopeFieldId}-target-roas`}>Target ROAS</FieldLabel>
-                        <Input id={`${scopeFieldId}-target-roas`} type="number" min="0" step="0.01" inputMode="decimal" value={targetRoas} onChange={(event) => updateState({ targetRoas: event.target.value })} placeholder="2.5" />
-                        <FieldDescription>{language === "vi" ? "Chặn scale sales nếu ROAS dưới mục tiêu." : "Blocks sales scale when ROAS is below target."}</FieldDescription>
-                      </Field>
-                    </div>
-                  </div>
-                </section>
-              </div>
-
-              <div className="min-w-0 border-t pt-5 xl:border-t-0 xl:border-l xl:pt-0 xl:pl-6">
-                <CampaignPicker
-                  campaigns={campaigns}
-                  currency={selectedAccount?.currency || "VND"}
-                  language={language}
-                  loading={loading === "campaigns"}
-                  selectedIds={selectedCampaignIds}
-                  onChange={(ids) => updateState({ selectedCampaignIds: ids })}
-                />
-              </div>
-            </FieldGroup>
-          </CardContent>
-          <CardFooter className="flex flex-col items-stretch justify-between gap-3 sm:flex-row sm:items-center">
-            <div className="flex min-w-0 items-start gap-2.5 text-sm">
-              <span className={`mt-1.5 size-2 shrink-0 rounded-full ${scopeReady ? "bg-success" : loading === "report" ? "bg-primary" : "bg-muted-foreground"}`} aria-hidden="true" />
-              <div className="min-w-0">
-                <div className="font-medium">{selectedAccount?.name || copy.scope.account}</div>
-                <div className={dateRangeInvalid ? "text-destructive" : "text-muted-foreground"}>{scopeStatusText}</div>
-              </div>
-            </div>
-            <Button
-              type="button"
-              size="lg"
-              onClick={() => void pullReport()}
-              disabled={!scopeReady}
-              className="w-full sm:w-auto sm:min-w-44"
-            >
-              {loading === "report" ? <Spinner data-icon="inline-start" /> : <RefreshCcwIcon data-icon="inline-start" />}
-              {copy.scope.pullReport}
-            </Button>
-          </CardFooter>
-        </Card>
-      ) : null}
-
       <ReportProgressDialog
         language={language}
         state={reportFlow}
@@ -873,33 +665,37 @@ export function AdsWorkspace({
         onClose={() => setReportFlow("idle")}
         onRetry={() => void pullReport()}
       />
-      {report ? (
-        <ReportScopeDialog
+      <ReportScopeDialog
           open={scopeExpanded}
           language={language}
-          accounts={accounts.length ? accounts : [report.account]}
-          accountId={accountId || report.account.id}
-          campaigns={campaigns.length ? campaigns : report.source === "sample" ? SAMPLE_CAMPAIGNS : report.selectedCampaigns}
-          currency={selectedAccount?.currency || report.account.currency || "VND"}
+          accounts={accounts.length ? accounts : report ? [report.account] : []}
+          accountId={accountId || report?.account.id || ""}
+          campaigns={campaigns.length ? campaigns : report?.source === "sample" ? SAMPLE_CAMPAIGNS : report?.selectedCampaigns || []}
+          currency={selectedAccount?.currency || report?.account.currency || "VND"}
           loading={loading}
           selectedCampaignIds={selectedCampaignIds}
           since={since}
           until={until}
           pack={pack}
           compareMode={compareMode}
-          targetCpa={targetCpa || (report.source === "sample" ? "40" : "")}
-          targetRoas={targetRoas || (report.source === "sample" ? "2.5" : "")}
-          onAccountIdChange={report.source === "sample" && !accountId ? () => undefined : onAccountIdChange}
-          onOpenChange={(open) => updateState({ scopeExpanded: open })}
+          targetCpa={targetCpa || (report?.source === "sample" ? "40" : "")}
+          targetRoas={targetRoas || (report?.source === "sample" ? "2.5" : "")}
+          onAccountIdChange={report?.source === "sample" && !accountId ? () => undefined : onAccountIdChange}
+          onOpenChange={(open) => {
+            if (!open && !report) {
+              onCancelInitialScope();
+              return;
+            }
+            updateState({ scopeExpanded: open });
+          }}
           onSave={(patch) => {
-            if (report.source === "sample" && !accountId) {
+            if (report?.source === "sample" && !accountId) {
               void pullReport(patch);
               return;
             }
             void pullReport(patch);
           }}
         />
-      ) : null}
       {report && !reportHasData ? (
         <Card className="border-border bg-card">
           <CardContent>
@@ -1150,7 +946,7 @@ function ReportScopeDialog({
   }, [open, selectedCampaignIds, since, until, pack, compareMode, targetCpa, targetRoas]);
 
   function save() {
-    if (invalidDates || loading === "report" || loading === "campaigns") return;
+    if (!accountId || invalidDates || loading === "report" || loading === "campaigns") return;
     onSave({
       ...draft,
       targetCpa: thresholdsEnabled ? draft.targetCpa : "",
@@ -1225,8 +1021,17 @@ function ReportScopeDialog({
               </Field>
             </div>
             <label className="flex cursor-pointer items-start gap-3">
-              <input type="checkbox" className="mt-1 accent-[var(--primary)]" checked={thresholdsEnabled} onChange={(event) => setThresholdsEnabled(event.target.checked)} />
-              <span><span className="block text-sm font-medium">{isVietnamese ? "Áp dụng ngưỡng quyết định" : "Apply decision thresholds"}</span><span className="mt-0.5 block text-sm text-muted-foreground">{thresholdsEnabled && draft.targetCpa && draft.targetRoas ? (isVietnamese ? `Dùng CPA ${draft.targetCpa} và ROAS ${draft.targetRoas} làm guardrail khi scale.` : `Use CPA ${draft.targetCpa} and ROAS ${draft.targetRoas} as scale guardrails.`) : (isVietnamese ? "Dùng ngưỡng CPA và ROAS đã cấu hình làm guardrail khi scale." : "Use configured CPA and ROAS as scale guardrails.")}</span></span>
+              <input
+                type="checkbox"
+                className="mt-1 accent-[var(--primary)]"
+                checked={thresholdsEnabled}
+                onChange={(event) => {
+                  const enabled = event.target.checked;
+                  setThresholdsEnabled(enabled);
+                  if (enabled) setDraft((current) => ({ ...current, targetCpa: current.targetCpa || "40", targetRoas: current.targetRoas || "2.5" }));
+                }}
+              />
+              <span><span className="block text-sm font-medium">{isVietnamese ? "Áp dụng ngưỡng quyết định" : "Apply decision thresholds"}</span><span className="mt-0.5 block text-sm text-muted-foreground">{isVietnamese ? `Dùng CPA ${draft.targetCpa || "40"} và ROAS ${draft.targetRoas || "2.5"} làm guardrail khi scale.` : `Use CPA ${draft.targetCpa || "40"} and ROAS ${draft.targetRoas || "2.5"} as scale guardrails.`}</span></span>
             </label>
           </section>
 
@@ -1246,7 +1051,7 @@ function ReportScopeDialog({
         <DialogFooter className="mt-auto flex-row items-center justify-between gap-4 pt-1">
           <span className="mr-auto text-[11px] text-muted-foreground">{isVietnamese ? "Áp dụng cho lần phân tích tiếp theo" : "Applies to the next analysis"}</span>
           <Button type="button" variant="outline" className="rounded-full" onClick={() => onOpenChange(false)}>{isVietnamese ? "Hủy" : "Cancel"}</Button>
-          <Button type="button" className="rounded-full" onClick={save} disabled={invalidDates || loading === "report" || loading === "campaigns"}>{loading === "report" ? <Spinner data-icon="inline-start" /> : null}{isVietnamese ? "Lưu phạm vi" : "Save scope"}</Button>
+          <Button type="button" className="rounded-full" onClick={save} disabled={!accountId || invalidDates || loading === "report" || loading === "campaigns"}>{loading === "report" ? <Spinner data-icon="inline-start" /> : null}{isVietnamese ? "Lưu phạm vi" : "Save scope"}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -1412,156 +1217,6 @@ function ReportSkeleton({ language }: { language: InterfaceLanguage }) {
         </section>
       </CardContent>
     </Card>
-  );
-}
-
-function CampaignPicker({
-  campaigns,
-  currency,
-  language,
-  loading,
-  selectedIds,
-  onChange,
-}: {
-  campaigns: MetaCampaign[];
-  currency: string;
-  language: InterfaceLanguage;
-  loading: boolean;
-  selectedIds: string[];
-  onChange: (ids: string[]) => void;
-}) {
-  const pickerId = React.useId();
-  const [query, setQuery] = React.useState("");
-  const [expanded, setExpanded] = React.useState(false);
-  const activeCampaigns = campaigns.filter(isActiveCampaign);
-  const selectedSet = React.useMemo(() => new Set(selectedIds), [selectedIds]);
-  const visibleCampaigns = campaigns
-    .filter((campaign) => `${campaign.name} ${campaign.objective || ""} ${campaignStatus(campaign)}`.toLowerCase().includes(query.toLowerCase()))
-    .sort((a, b) => Number(isActiveCampaign(b)) - Number(isActiveCampaign(a)) || a.name.localeCompare(b.name))
-    .slice(0, 30);
-  const effectiveCount = selectedIds.length || activeCampaigns.length;
-  const copy = adsCopy[language].campaign;
-  const summary = selectedIds.length ? `${selectedIds.length} ${copy.selected}` : `${copy.allActive} (${activeCampaigns.length})`;
-  const scopeMode = selectedIds.length ? copy.customScope : `${activeCampaigns.length} ${copy.activeCampaigns}`;
-
-  function toggleCampaign(id: string) {
-    const current = selectedIds.length ? selectedIds : [];
-    onChange(current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
-  }
-
-  return (
-    <Field>
-      <div className="flex items-center justify-between gap-3">
-        <FieldLabel id={`${pickerId}-label`}>{copy.label}</FieldLabel>
-        <span className="text-xs tabular-nums text-muted-foreground">{effectiveCount} {copy.inScope}</span>
-      </div>
-      <div className="rounded-lg bg-background p-2.5 ring-1 ring-foreground/10" role="group" aria-labelledby={`${pickerId}-label`}>
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex min-w-0 items-center gap-2">
-            <Badge variant={selectedIds.length ? "default" : "secondary"}>{summary}</Badge>
-            <span className="truncate text-xs text-muted-foreground">{scopeMode}</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <Button
-              type="button"
-              variant={selectedIds.length ? "outline" : "secondary"}
-              size="sm"
-              aria-pressed={!selectedIds.length}
-              onClick={() => onChange([])}
-              disabled={loading}
-              className="min-h-10"
-            >
-              {copy.allActive}
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => setExpanded((value) => !value)}
-              disabled={loading || !campaigns.length}
-              aria-expanded={expanded}
-              aria-controls={`${pickerId}-campaign-list`}
-              className="min-h-10"
-            >
-              {expanded ? <ChevronUpIcon data-icon="inline-start" /> : <ChevronDownIcon data-icon="inline-start" />}
-              {expanded ? copy.hide : copy.edit}
-            </Button>
-          </div>
-        </div>
-        {selectedIds.length ? (
-          <div className="mt-2 flex flex-wrap gap-1">
-            {campaigns
-              .filter((campaign) => selectedSet.has(campaign.id))
-              .slice(0, 4)
-              .map((campaign) => (
-                <Badge key={campaign.id} variant="outline" className="max-w-48 truncate">
-                  {campaign.name}
-                </Badge>
-              ))}
-            {selectedIds.length > 4 ? <Badge variant="outline">+{selectedIds.length - 4}</Badge> : null}
-          </div>
-        ) : null}
-        {expanded ? (
-          <div id={`${pickerId}-campaign-list`} className="mt-3 border-t pt-3">
-            <div className="flex gap-2">
-              <label htmlFor={`${pickerId}-search`} className="sr-only">{copy.search}</label>
-              <Input
-                id={`${pickerId}-search`}
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder={copy.search}
-                disabled={loading}
-              />
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => onChange(visibleCampaigns.map((campaign) => campaign.id))}
-                disabled={loading || !visibleCampaigns.length}
-                className="min-h-10"
-              >
-                {copy.all}
-              </Button>
-            </div>
-            <div className="mt-2 flex max-h-72 flex-col gap-1 overflow-auto pr-1">
-              {loading ? (
-                <div className="flex h-24 items-center justify-center text-sm text-muted-foreground">
-                  <Spinner data-icon="inline-start" />
-                  {copy.loading}
-                </div>
-              ) : null}
-              {!loading && visibleCampaigns.length
-                ? visibleCampaigns.map((campaign) => {
-                    const status = campaignStatus(campaign);
-                    const selected = selectedIds.length ? selectedSet.has(campaign.id) : isActiveCampaign(campaign);
-                    return (
-                      <button
-                        key={campaign.id}
-                        type="button"
-                        aria-pressed={selected}
-                        onClick={() => toggleCampaign(campaign.id)}
-                        className="group grid min-h-12 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-md border px-2.5 py-2 text-left text-sm transition-colors hover:bg-muted focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none aria-pressed:border-ring/70 aria-pressed:bg-muted aria-pressed:ring-1 aria-pressed:ring-ring/50"
-                      >
-                        <span className="flex size-5 items-center justify-center rounded-md border text-ring group-aria-pressed:border-ring group-aria-pressed:bg-ring group-aria-pressed:text-black">
-                          {selected ? <CheckIcon className="size-3.5" /> : null}
-                        </span>
-                        <span className="min-w-0">
-                          <span className="block truncate font-medium">{campaign.name}</span>
-                          <span className="block truncate text-xs text-muted-foreground">
-                            {campaign.objective || copy.noObjective} {formatCampaignBudget(campaign, currency, language)}
-                          </span>
-                        </span>
-                        <Badge variant={status === "ACTIVE" ? "secondary" : status === "PAUSED" ? "outline" : "destructive"}>{status}</Badge>
-                      </button>
-                    );
-                  })
-                : null}
-              {!loading && !visibleCampaigns.length ? <div className="py-6 text-center text-sm text-muted-foreground">{copy.none}</div> : null}
-            </div>
-          </div>
-        ) : null}
-      </div>
-      <FieldDescription>{copy.help}</FieldDescription>
-    </Field>
   );
 }
 

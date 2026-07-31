@@ -57,9 +57,12 @@ export function WorkspacePasswordUpdate() {
     <main className="v2-auth-shell">
       <AuthStory />
       <section className="v2-auth-stage" aria-label="Update workspace password">
-        <button type="button" className="v2-auth-theme" aria-label={theme === "dark" ? "Use light theme" : "Use dark theme"} onClick={toggleTheme}>
-          {theme === "dark" ? <SunIcon /> : <MoonIcon />}
-        </button>
+        <div className="v2-auth-stage-nav">
+          <a href="/landing">Back to website</a>
+          <button type="button" className="v2-auth-theme" aria-label={theme === "dark" ? "Use light theme" : "Use dark theme"} onClick={toggleTheme}>
+            {theme === "dark" ? <SunIcon /> : <MoonIcon />}
+          </button>
+        </div>
         <div className="v2-auth-card v2-auth-card-compact">
           {complete ? (
             <div className="v2-auth-complete">

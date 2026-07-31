@@ -2,8 +2,10 @@ import type { InterfaceLanguage, KpiPack, NormalizedRow } from "@/lib/types";
 import { formatMetric } from "@/lib/metrics";
 
 export type ChartKey =
+  | "spend"
   | "messages"
   | "replies"
+  | "replyRate"
   | "leads"
   | "purchases"
   | "linkClicks"

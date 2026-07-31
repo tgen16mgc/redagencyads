@@ -93,9 +93,9 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { WorkspaceAuth, type WorkspaceSessionStatus } from "@/components/workspace-auth";
 import { MetaConnectDialog } from "@/components/meta-connect-dialog";
+import { AccountWorkspaceSettingsDialog, type SettingsTab } from "@/components/account-workspace-settings-dialog";
 
 const workflowItems: { value: DashboardWorkflowStep; label: string; icon: React.ComponentType<React.SVGProps<SVGSVGElement>> }[] = [
   { value: "connect", label: "Connect", icon: KeyRoundIcon },
@@ -302,6 +302,8 @@ export function DashboardShell() {
     return window.localStorage.getItem(THEME_STORAGE_KEY) === "light" ? "light" : "dark";
   });
   const [accountMenuOpen, setAccountMenuOpen] = React.useState(false);
+  const [settingsOpen, setSettingsOpen] = React.useState(false);
+  const [settingsTab, setSettingsTab] = React.useState<SettingsTab>("profile");
   const [metaConnectOpen, setMetaConnectOpen] = React.useState(false);
   const [pendingMetaView, setPendingMetaView] = React.useState<"ads" | "publisher">("ads");
   const accountMenuRef = React.useRef<HTMLDivElement>(null);
@@ -581,6 +583,16 @@ export function DashboardShell() {
 
   React.useEffect(() => {
     const url = new URL(window.location.href);
+    const requestedSettings = url.searchParams.get("settings");
+    if (requestedSettings !== "profile" && requestedSettings !== "workspace") return;
+    setSettingsTab(requestedSettings);
+    setSettingsOpen(true);
+    url.searchParams.delete("settings");
+    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  }, []);
+
+  React.useEffect(() => {
+    const url = new URL(window.location.href);
     if (activeView === "overview") url.searchParams.delete("view");
     else url.searchParams.set("view", activeView);
     const nextUrl = `${url.pathname}${url.search}${url.hash}`;
@@ -683,9 +695,9 @@ export function DashboardShell() {
       setAuthenticated(true);
       setToken("");
       await loadCapabilities();
-      if (shouldLoadAdsWorkspaceData({ authenticated: true, activeView: pendingMetaView })) await loadAccounts();
+      if (settingsOpen || shouldLoadAdsWorkspaceData({ authenticated: true, activeView: pendingMetaView })) await loadAccounts();
       setMetaConnectOpen(false);
-      setActiveView(pendingMetaView);
+      if (!settingsOpen) setActiveView(pendingMetaView);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not validate token.");
     } finally {
@@ -1035,8 +1047,8 @@ export function DashboardShell() {
                       <div><div className="text-sm font-semibold">{workspaceSession.user?.name || "Workspace owner"}</div><div className="text-xs text-muted-foreground">{workspaceSession.user?.role || "Workspace owner"} · {workspaceSession.user?.email || "Workspace session"}</div></div>
                     </div>
                     <div className="mt-4 text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">Account</div>
-                    <button type="button" className="v2-account-menu-row" onClick={() => toast.info(language === "vi" ? "Hồ sơ được quản lý bởi workspace hiện tại." : "Profile details are managed by the current workspace.")}><UserRoundIcon /><span><b>Profile</b><small>Identity, alerts and personal defaults</small></span></button>
-                    <button type="button" className="v2-account-menu-row" onClick={() => { setAccountMenuOpen(false); if (authenticated) setAdsWorkspace((current) => ({ ...current, scopeExpanded: true })); requestView("ads"); }}><Settings2Icon /><span><b>Workspace settings</b><small>Sources, rules and team access</small></span></button>
+                    <button type="button" className="v2-account-menu-row" onClick={() => { setAccountMenuOpen(false); setSettingsTab("profile"); setSettingsOpen(true); }}><UserRoundIcon /><span><b>Profile</b><small>Identity, alerts and personal defaults</small></span></button>
+                    <button type="button" className="v2-account-menu-row" onClick={() => { setAccountMenuOpen(false); setSettingsTab("workspace"); setSettingsOpen(true); }}><Settings2Icon /><span><b>Workspace settings</b><small>Sources, rules and team access</small></span></button>
                     <div className="my-3 flex items-center gap-2 border-y border-border py-3 text-xs text-muted-foreground"><span className="size-2 rounded-full bg-success" />{workspaceSession.signedInAt ? `Secure session · signed in ${new Date(workspaceSession.signedInAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "Secure local workspace"}</div>
                     <Button type="button" variant="destructive" className="w-full" onClick={() => void logout()}><LogOutIcon data-icon="inline-start" />Sign out</Button>
                   </div>
@@ -1118,6 +1130,7 @@ export function DashboardShell() {
               onSaveCustomKpis={saveCustomKpis}
               onExportPdf={exportPdf}
               onOpenAssistant={() => setChatOpen((current) => !current)}
+              onCancelInitialScope={() => setActiveView("overview")}
             />
             </>
           ) : activeView === "tiktok" ? (
@@ -1180,11 +1193,28 @@ export function DashboardShell() {
         getContext={getChatContext}
         onOpenChange={setChatOpen}
       />
+      <AccountWorkspaceSettingsDialog
+        open={settingsOpen}
+        initialTab={settingsTab}
+        session={workspaceSession}
+        metaConnected={Boolean(authenticated)}
+        onOpenChange={setSettingsOpen}
+        onOpenMeta={() => {
+          setError("");
+          setPendingMetaView("ads");
+          setMetaConnectOpen(true);
+        }}
+        onProfileSaved={({ name, initials }) => {
+          setWorkspaceSession((current) => current?.user
+            ? { ...current, user: { ...current.user, name, initials } }
+            : current);
+        }}
+      />
       <MetaConnectDialog
         open={metaConnectOpen}
         onOpenChange={(open) => { setMetaConnectOpen(open); if (!open) setError(""); }}
         oauthConfigured={facebookOAuthConfigured}
-        returnTo={pendingMetaView}
+        returnTo={settingsOpen ? "settings" : pendingMetaView}
         token={token}
         loading={loading === "session"}
         error={error}
@@ -1365,29 +1395,13 @@ function LoadingScreen({ language }: { language: ReportLanguage }) {
 }
 
 function LanguageToggle({ language, onChange }: { language: ReportLanguage; onChange: (value: ReportLanguage) => void }) {
-  const label = language === "vi" ? "Ngôn ngữ" : "Language";
+  const nextLanguage = language === "en" ? "vi" : "en";
+  const label = language === "vi" ? "Chuyển sang tiếng Anh" : "Switch to Vietnamese";
   return (
-    <div className="flex items-center gap-2" data-print-hidden>
-      <LanguagesIcon className="text-muted-foreground" />
-      <ToggleGroup
-        aria-label={label}
-        value={[language]}
-        onValueChange={(values) => {
-          const next = values.find((value): value is ReportLanguage => value === "en" || value === "vi");
-          if (next) onChange(next);
-        }}
-        variant="outline"
-        size="sm"
-        spacing={0}
-      >
-        <ToggleGroupItem value="en" aria-label="English">
-          EN
-        </ToggleGroupItem>
-        <ToggleGroupItem value="vi" aria-label="Tiếng Việt">
-          VI
-        </ToggleGroupItem>
-      </ToggleGroup>
-    </div>
+    <Button type="button" variant="outline" size="sm" aria-label={label} title={label} onClick={() => onChange(nextLanguage)} data-print-hidden>
+      <LanguagesIcon data-icon="inline-start" />
+      {language.toUpperCase()}
+    </Button>
   );
 }
 
