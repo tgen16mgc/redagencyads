@@ -1,5 +1,5 @@
 import { sumRows } from "@/lib/metric-aggregation";
-import type { CompareMode, CompetitorPlatform, CompetitorSpyAd, DashboardReport, InsightAction, InsightRow, InterfaceLanguage, KpiCard, KpiPack, MetaAccount, MetaCampaign, NormalizedRow } from "@/lib/types";
+import type { CompareMode, CompetitorPlatform, CompetitorSpyAd, DashboardReport, InsightAction, InsightRow, InterfaceLanguage, KpiCard, KpiPack, MetaAccount, MetaCampaign, NormalizedRow, OutcomeMetricKey } from "@/lib/types";
 import { compareTotals } from "@/lib/metric-comparison";
 import { summarizeHealth } from "@/lib/health-score";
 
@@ -36,6 +36,25 @@ const actionValue = (items: InsightAction[] | undefined, types: string[]) =>
 const costValue = (items: InsightAction[] | undefined, types: string[]) =>
   Number(items?.find((item) => types.includes(item.action_type))?.value || 0);
 
+const hasAction = (items: InsightAction[] | undefined, types: string[]) =>
+  Boolean(items?.some((item) => types.includes(item.action_type)));
+
+const ACTION_TYPES: Record<OutcomeMetricKey, string[]> = {
+  messages: [
+    "onsite_conversion.total_messaging_connection",
+    "onsite_conversion.messaging_conversation_started_7d",
+    "messaging_conversation_started_7d",
+  ],
+  replies: [
+    "onsite_conversion.messaging_conversation_replied_7d",
+    "onsite_conversion.messaging_first_reply",
+  ],
+  leads: ["lead", "onsite_conversion.lead_grouped"],
+  purchases: ["purchase", "omni_purchase"],
+  addToCart: ["add_to_cart", "omni_add_to_cart"],
+  initiateCheckout: ["initiate_checkout", "omni_initiated_checkout"],
+};
+
 const safeDivide = (top: number, bottom: number) => (bottom ? top / bottom : 0);
 
 function roasValue(row: InsightRow) {
@@ -47,17 +66,10 @@ function roasValue(row: InsightRow) {
 export function normalizeRows(rows: InsightRow[], level: NormalizedRow["level"]): NormalizedRow[] {
   return rows.map((row, index) => {
     const spend = Number(row.spend || 0);
-    const messages = actionValue(row.actions, [
-      "onsite_conversion.total_messaging_connection",
-      "onsite_conversion.messaging_conversation_started_7d",
-      "messaging_conversation_started_7d",
-    ]);
-    const replies = actionValue(row.actions, [
-      "onsite_conversion.messaging_conversation_replied_7d",
-      "onsite_conversion.messaging_first_reply",
-    ]);
-    const leads = actionValue(row.actions, ["lead", "onsite_conversion.lead_grouped"]);
-    const purchases = actionValue(row.actions, ["purchase", "omni_purchase"]);
+    const messages = actionValue(row.actions, ACTION_TYPES.messages);
+    const replies = actionValue(row.actions, ACTION_TYPES.replies);
+    const leads = actionValue(row.actions, ACTION_TYPES.leads);
+    const purchases = actionValue(row.actions, ACTION_TYPES.purchases);
     const normalized: NormalizedRow = {
       ...ZERO_ROW,
       id: row.ad_id || row.adset_id || row.campaign_id || `${level}-${index}`,
@@ -89,8 +101,8 @@ export function normalizeRows(rows: InsightRow[], level: NormalizedRow["level"])
       replies,
       leads,
       purchases,
-      addToCart: actionValue(row.actions, ["add_to_cart", "omni_add_to_cart"]),
-      initiateCheckout: actionValue(row.actions, ["initiate_checkout", "omni_initiated_checkout"]),
+      addToCart: actionValue(row.actions, ACTION_TYPES.addToCart),
+      initiateCheckout: actionValue(row.actions, ACTION_TYPES.initiateCheckout),
       costPerMessage:
         costValue(row.cost_per_action_type, ["onsite_conversion.total_messaging_connection"]) ||
         safeDivide(spend, messages),
@@ -102,6 +114,14 @@ export function normalizeRows(rows: InsightRow[], level: NormalizedRow["level"])
       roas: roasValue(row),
       replyRate: safeDivide(replies, messages) * 100,
       leadRate: safeDivide(leads, messages) * 100,
+      metricAvailability: {
+        messages: hasAction(row.actions, ACTION_TYPES.messages) || hasAction(row.cost_per_action_type, ACTION_TYPES.messages) ? "tracked" : "not_tracked",
+        replies: hasAction(row.actions, ACTION_TYPES.replies) || hasAction(row.cost_per_action_type, ACTION_TYPES.replies) ? "tracked" : "not_tracked",
+        leads: hasAction(row.actions, ACTION_TYPES.leads) || hasAction(row.cost_per_action_type, ACTION_TYPES.leads) ? "tracked" : "not_tracked",
+        purchases: hasAction(row.actions, ACTION_TYPES.purchases) || hasAction(row.cost_per_action_type, ACTION_TYPES.purchases) || Boolean(row.purchase_roas?.length || row.website_purchase_roas?.length) ? "tracked" : "not_tracked",
+        addToCart: hasAction(row.actions, ACTION_TYPES.addToCart) || hasAction(row.cost_per_action_type, ACTION_TYPES.addToCart) ? "tracked" : "not_tracked",
+        initiateCheckout: hasAction(row.actions, ACTION_TYPES.initiateCheckout) || hasAction(row.cost_per_action_type, ACTION_TYPES.initiateCheckout) ? "tracked" : "not_tracked",
+      },
     };
     return normalized;
   });

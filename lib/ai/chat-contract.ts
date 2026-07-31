@@ -76,7 +76,7 @@ const performanceContextSchema = z.object({
   dateRange: z.object({ since: z.string().max(20), until: z.string().max(20) }).strict().optional(),
   campaigns: z.array(shortText).max(CHAT_LIMITS.performanceCampaigns),
   selectedPack: z.enum(["lead_gen", "messages", "sales_roas", "traffic", "awareness"]).optional(),
-  compareMode: z.enum(["off", "wow", "mom", "yoy"]),
+  compareMode: z.enum(["off", "previous", "campaign", "wow", "mom", "yoy"]),
   totals: totalsSchema.optional(),
   comparison: z.object({
     dateRange: z.object({ since: z.string().max(20), until: z.string().max(20) }).strict(),

@@ -6,10 +6,12 @@ import {
   ActivityIcon,
   ArrowLeftIcon,
   BarChart3Icon,
+  BellIcon,
   BotMessageSquareIcon,
   CalendarClockIcon,
   BrainIcon,
   CheckIcon,
+  ChevronDownIcon,
   DatabaseIcon,
   DownloadIcon,
   ExternalLinkIcon,
@@ -19,10 +21,16 @@ import {
   HomeIcon,
   KeyRoundIcon,
   LanguagesIcon,
+  LogOutIcon,
+  MoonIcon,
   RefreshCcwIcon,
   SearchIcon,
+  Settings2Icon,
   ShieldCheckIcon,
+  SunIcon,
+  UserRoundIcon,
   WaypointsIcon,
+  XIcon,
 } from "lucide-react";
 import { AppSidebar, type AppSidebarItem, type WorkflowSidebarItem } from "@/components/dashboard/app-sidebar";
 import { WorkspaceOverview } from "@/components/dashboard/workspace-overview";
@@ -39,7 +47,7 @@ import {
   type AdsWorkspaceState,
   type Provider,
 } from "@/components/dashboard/ads-workspace";
-import { buildClientReportViewModel, downloadClientReportPdf } from "@/lib/client-report";
+import { buildClientReportViewModel, type ClientReportPdfFile } from "@/lib/client-report";
 import { buildClientReportPdf } from "@/lib/client-report-pdf";
 import { PagePublisherPanel, type PagePublisherContextHandle } from "@/components/dashboard/page-publisher-panel";
 import type { ChatContext } from "@/lib/ai/chat-contract";
@@ -53,7 +61,7 @@ import {
 import type { CompetitorEvidenceStatus, CompetitorFetchResult, CompetitorPlatform, CompetitorSpyResult, KpiCard, MetaAccount, MetaCampaign, TikTokLibraryReport, TikTokProfile, TikTokProfileResult, TikTokVideo } from "@/lib/types";
 import { buildWorkflowSteps, type DashboardWorkflowStep } from "@/lib/dashboard-workflow";
 import { canOpenDashboardView, initialDashboardViewFromSearch, shouldLoadAdsWorkspaceData, type DashboardView } from "@/lib/dashboard-access";
-import { buildSampleReport } from "@/lib/sample-report";
+import { buildSampleReport, SAMPLE_CAMPAIGNS } from "@/lib/sample-report";
 import { buildUnknownCapabilitySnapshot, type CapabilityStatus } from "@/lib/capabilities";
 import { jsonFetch } from "@/lib/api-client";
 import { hasReportSignal } from "@/lib/data-sufficiency";
@@ -82,15 +90,12 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
-import {
-  SidebarInset,
-  SidebarProvider,
-  SidebarTrigger,
-} from "@/components/ui/sidebar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { WorkspaceAuth, type WorkspaceSessionStatus } from "@/components/workspace-auth";
+import { MetaConnectDialog } from "@/components/meta-connect-dialog";
 
 const workflowItems: { value: DashboardWorkflowStep; label: string; icon: React.ComponentType<React.SVGProps<SVGSVGElement>> }[] = [
   { value: "connect", label: "Connect", icon: KeyRoundIcon },
@@ -137,6 +142,7 @@ const languageValues = ["en", "vi"] as const;
 type ReportLanguage = (typeof languageValues)[number];
 const COMPETITOR_SPY_TIMEOUT_MS = 5 * 60 * 1000;
 const LANGUAGE_STORAGE_KEY = "decision-workspace-language";
+const THEME_STORAGE_KEY = "decision-workspace-theme";
 
 const uiCopy = {
   en: {
@@ -179,8 +185,8 @@ const uiCopy = {
       verdict: "Verdict",
     },
     header: {
-      overviewCrumb: "Decision operations",
-      overviewDetail: "evidence to action",
+      overviewCrumb: "Meta Ads",
+      overviewDetail: "Tien Duong",
       adsCrumb: "Meta Graph API",
       adsDetail: "campaign-first analysis",
       competitorCrumb: "Verified research",
@@ -189,7 +195,7 @@ const uiCopy = {
       tiktokDetail: "Apify profiles and ad intelligence",
       publisherCrumb: "Meta Pages API",
       publisherDetail: "server-side Page publishing",
-      overviewTitle: "Workspace overview",
+      overviewTitle: "Decision command center",
       adsTitle: "Performance diagnosis",
       competitorTitle: "Competitor evidence",
       tiktokTitle: "TikTok tracker",
@@ -247,8 +253,8 @@ const uiCopy = {
       verdict: "Verdict",
     },
     header: {
-      overviewCrumb: "Vận hành quyết định",
-      overviewDetail: "từ evidence đến hành động",
+      overviewCrumb: "Meta Ads",
+      overviewDetail: "Tien Duong",
       adsCrumb: "Meta Graph API",
       adsDetail: "phân tích theo campaign",
       competitorCrumb: "Nghiên cứu công khai",
@@ -257,7 +263,7 @@ const uiCopy = {
       tiktokDetail: "profile và ad intelligence qua Apify",
       publisherCrumb: "Meta Pages API",
       publisherDetail: "đăng Page qua server",
-      overviewTitle: "Tổng quan workspace",
+      overviewTitle: "Decision command center",
       adsTitle: "Chẩn đoán hiệu quả",
       competitorTitle: "Evidence đối thủ",
       tiktokTitle: "Theo dõi TikTok",
@@ -278,6 +284,7 @@ const uiCopy = {
 } as const;
 
 export function DashboardShell() {
+  const [workspaceSession, setWorkspaceSession] = React.useState<WorkspaceSessionStatus | null>(null);
   const [authenticated, setAuthenticated] = React.useState<boolean | null>(null);
   const [accounts, setAccounts] = React.useState<MetaAccount[]>([]);
   const [accountId, setAccountId] = React.useState("");
@@ -289,6 +296,14 @@ export function DashboardShell() {
     const stored = window.localStorage.getItem(LANGUAGE_STORAGE_KEY);
     return stored === "vi" || stored === "en" ? stored : "en";
   });
+  const [theme, setTheme] = React.useState<"dark" | "light">(() => {
+    if (typeof window === "undefined") return "dark";
+    return window.localStorage.getItem(THEME_STORAGE_KEY) === "light" ? "light" : "dark";
+  });
+  const [accountMenuOpen, setAccountMenuOpen] = React.useState(false);
+  const [metaConnectOpen, setMetaConnectOpen] = React.useState(false);
+  const [pendingMetaView, setPendingMetaView] = React.useState<"ads" | "publisher">("ads");
+  const accountMenuRef = React.useRef<HTMLDivElement>(null);
   const [activeView, setActiveView] = React.useState<ActiveView>(() =>
     typeof window === "undefined" ? "overview" : initialDashboardViewFromSearch(window.location.search),
   );
@@ -340,6 +355,12 @@ export function DashboardShell() {
     return adsWorkspace.customKpiKeys?.length ? buildCustomKpiCards(adsWorkspace.customKpiKeys) : report.kpis;
   }, [adsWorkspace.customKpiKeys, report]);
   const healthSummary = React.useMemo(() => report ? summarizeHealth(report) : null, [report]);
+  const overviewReport = React.useMemo(() => {
+    if (report) return report;
+    const sample = buildSampleReport();
+    return { ...sample, selectedCampaigns: [SAMPLE_CAMPAIGNS[1]] };
+  }, [report]);
+  const overviewHealthSummary = React.useMemo(() => summarizeHealth(overviewReport), [overviewReport]);
   const reportHasData = report ? hasReportSignal(report.totals) : false;
 
   const decisionTargets = React.useMemo<DecisionTargets>(() => {
@@ -416,10 +437,6 @@ export function DashboardShell() {
     tiktokWorkspace.profilesInput,
     workspaceLabel,
   ]);
-  const hasWorkspaceDock = activeView === "competitor"
-    || activeView === "tiktok"
-    || activeView === "publisher"
-    || (activeView === "ads" && Boolean(report && reportHasData));
   const copy = uiCopy[language];
   const workflowSteps = React.useMemo(
     () => buildWorkflowSteps({ hasAccount: Boolean(accountId), hasReport: reportHasData, hasVerdict: Boolean(adsWorkspace.verdict) }),
@@ -500,7 +517,9 @@ export function DashboardShell() {
   }[activeView];
   const headerSession = authenticated
     ? { label: copy.header.connected, variant: "success" as const }
-    : activeView === "competitor" || activeView === "tiktok" || activeView === "intelligence" || activeView === "overview"
+    : activeView === "overview"
+      ? { label: copy.header.sample, variant: "secondary" as const }
+      : activeView === "competitor" || activeView === "tiktok" || activeView === "intelligence"
       ? { label: copy.header.worksWithoutMeta, variant: "secondary" as const }
       : sampleReportActive && activeView === "ads"
         ? { label: copy.header.sample, variant: "secondary" as const }
@@ -511,6 +530,43 @@ export function DashboardShell() {
     window.localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
     document.documentElement.lang = language;
   }, [language]);
+
+  React.useEffect(() => {
+    window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+    document.documentElement.classList.toggle("light", theme === "light");
+  }, [theme]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    jsonFetch<WorkspaceSessionStatus>("/api/workspace/session", { timeoutMs: 8000 })
+      .then((data) => {
+        if (!cancelled) setWorkspaceSession(data);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setWorkspaceSession({
+            authenticated: false,
+            configured: false,
+            required: true,
+            googleConfigured: false,
+            googleAuthUrl: null,
+            user: null,
+          });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  React.useEffect(() => {
+    if (!accountMenuOpen) return;
+    const close = (event: PointerEvent) => {
+      if (!accountMenuRef.current?.contains(event.target as Node)) setAccountMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, [accountMenuOpen]);
 
   React.useEffect(() => {
     const url = new URL(window.location.href);
@@ -613,8 +669,7 @@ export function DashboardShell() {
       .finally(() => setLoading(""));
   }, [accountId]);
 
-  async function connectToken(event: React.FormEvent) {
-    event.preventDefault();
+  async function validateMetaToken() {
     setError("");
     setLoading("session");
     try {
@@ -626,7 +681,9 @@ export function DashboardShell() {
       setAuthenticated(true);
       setToken("");
       await loadCapabilities();
-      if (shouldLoadAdsWorkspaceData({ authenticated: true, activeView })) await loadAccounts();
+      if (shouldLoadAdsWorkspaceData({ authenticated: true, activeView: pendingMetaView })) await loadAccounts();
+      setMetaConnectOpen(false);
+      setActiveView(pendingMetaView);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not validate token.");
     } finally {
@@ -641,7 +698,12 @@ export function DashboardShell() {
   async function logout() {
     contextChatRef.current?.clearAll();
     setChatOpen(false);
-    await fetch("/api/session", { method: "DELETE" });
+    const [, workspaceResponse] = await Promise.all([
+      fetch("/api/session", { method: "DELETE" }),
+      fetch("/api/workspace/session", { method: "DELETE" }),
+    ]);
+    const nextWorkspaceSession = await workspaceResponse.json().catch(() => null) as WorkspaceSessionStatus | null;
+    if (nextWorkspaceSession) setWorkspaceSession(nextWorkspaceSession);
     setAuthenticated(false);
     setActiveView("overview");
     void loadCapabilities();
@@ -803,8 +865,8 @@ export function DashboardShell() {
     window.setTimeout(() => setCopiedCompetitorPrompt(false), 1500);
   }
 
-  async function exportPdf() {
-    if (!report || !reportHasData || !healthSummary) return;
+  async function exportPdf(): Promise<ClientReportPdfFile> {
+    if (!report || !reportHasData || !healthSummary) throw new Error("A report with analyzable data is required before export.");
     setError("");
     setExportingPdf(true);
     try {
@@ -820,13 +882,10 @@ export function DashboardShell() {
         decisionTargets,
         customCharts: adsWorkspace.customCharts,
       });
-      downloadClientReportPdf(await buildClientReportPdf(model), {
-        createObjectUrl: (blob) => URL.createObjectURL(blob),
-        revokeObjectUrl: (url) => URL.revokeObjectURL(url),
-        createLink: () => document.createElement("a"),
-      });
+      return await buildClientReportPdf(model);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not export a consistent report.");
+      throw err;
     } finally {
       setExportingPdf(false);
     }
@@ -839,16 +898,52 @@ export function DashboardShell() {
     }
   }, [authenticated, sampleReportActive]);
 
-  function viewSampleReport() {
-    setError("");
-    setAdsWorkspace({ ...initialAdsWorkspaceState(), report: buildSampleReport() });
-    setSampleReportActive(true);
-    setActiveView("ads");
-  }
-
   function exitSampleReport() {
     setSampleReportActive(false);
     setAdsWorkspace(initialAdsWorkspaceState());
+  }
+
+  function viewSampleReport() {
+    setError("");
+    const sampleState = initialAdsWorkspaceState();
+    setAdsWorkspace({
+      ...sampleState,
+      report: buildSampleReport({ dateRange: { since: sampleState.since, until: sampleState.until } }),
+    });
+    setSampleReportActive(true);
+    setMetaConnectOpen(false);
+    setActiveView("ads");
+  }
+
+  function requestView(view: ActiveView) {
+    if (!canOpenDashboardView({ authenticated: Boolean(authenticated), activeView: view }) && !(view === "ads" && sampleReportActive)) {
+      setPendingMetaView(view === "publisher" ? "publisher" : "ads");
+      setMetaConnectOpen(true);
+      return;
+    }
+    setActiveView(view);
+  }
+
+  React.useEffect(() => {
+    if (authenticated !== false || sampleReportActive || canOpenDashboardView({ authenticated: false, activeView })) return;
+    setPendingMetaView(activeView === "publisher" ? "publisher" : "ads");
+    setMetaConnectOpen(true);
+    setActiveView("overview");
+  }, [activeView, authenticated, sampleReportActive]);
+
+  if (workspaceSession === null) {
+    return <LoadingScreen language={language} />;
+  }
+
+  if (!workspaceSession.authenticated) {
+    return (
+      <WorkspaceAuth
+        status={workspaceSession}
+        theme={theme}
+        onThemeChange={() => setTheme((current) => current === "dark" ? "light" : "dark")}
+        onAuthenticated={setWorkspaceSession}
+      />
+    );
   }
 
   if (authenticated === null) {
@@ -860,69 +955,101 @@ export function DashboardShell() {
 
   return (
     <>
-      <SidebarProvider>
-      <AppSidebar
-        activeView={activeView}
-        aiProviderLabel={providerLabel(provider, language, capabilities)}
-        appItems={appNavItems}
-        clearSessionLabel={copy.nav.clearSession}
-        functionsLabel={copy.nav.functions}
-        showWorkflow={activeView === "ads"}
-        showClearSession={authenticated}
-        workflowLabel={copy.nav.workflow}
-        workflowItems={workflowNavItems}
-        aiSetupLabel={copy.nav.aiSetup}
-        aiStatusTitle={copy.nav.aiStatusTitle}
-        aiStatusState={aiStatusState}
-        onActiveViewChange={setActiveView}
-        onLogout={logout}
-        clearSessionTitle={copy.nav.clearSessionTitle}
-        clearSessionDescription={copy.nav.clearSessionDescription}
-        clearSessionCancel={copy.nav.clearSessionCancel}
-        clearSessionConfirm={copy.nav.clearSessionConfirm}
-      />
-      <SidebarInset>
-        <div className="flex min-h-svh flex-col gap-4 p-4 pb-28 md:p-6 md:pb-28" data-print-page>
-          <header className="rounded-2xl border bg-card p-3 sm:p-4 md:p-5">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex min-w-0 items-start gap-2.5 sm:gap-3">
-                <SidebarTrigger className="mt-0.5 shrink-0" data-print-hidden />
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] font-medium tracking-[0.08em] text-muted-foreground sm:text-xs">
-                    <span className="text-primary">{headerMode.badge}</span>
-                    <span className="size-1 rounded-full bg-border" aria-hidden="true" />
-                    <span>{headerMode.detail}</span>
-                  </div>
-                  <h1 className="mt-1 font-heading text-xl font-semibold tracking-[-0.035em] sm:mt-1.5 sm:text-2xl md:text-3xl">
-                    {headerMode.title}
-                  </h1>
-                  <p className="mt-1 hidden max-w-2xl text-sm leading-6 text-muted-foreground sm:block">{headerMode.description}</p>
-                </div>
+      <div className="v2-shell">
+        <AppSidebar
+          activeView={activeView}
+          aiProviderLabel={providerLabel(provider, language, capabilities)}
+          appItems={appNavItems}
+          clearSessionLabel={copy.nav.clearSession}
+          functionsLabel={copy.nav.functions}
+          showWorkflow={activeView === "ads"}
+          showClearSession={authenticated}
+          workflowLabel={copy.nav.workflow}
+          workflowItems={workflowNavItems}
+          aiSetupLabel={copy.nav.aiSetup}
+          aiStatusTitle={copy.nav.aiStatusTitle}
+          aiStatusState={aiStatusState}
+          assistantOpen={chatOpen}
+          onActiveViewChange={requestView}
+          onOpenAssistant={() => setChatOpen((current) => !current)}
+          onLogout={logout}
+          clearSessionTitle={copy.nav.clearSessionTitle}
+          clearSessionDescription={copy.nav.clearSessionDescription}
+          clearSessionCancel={copy.nav.clearSessionCancel}
+          clearSessionConfirm={copy.nav.clearSessionConfirm}
+        />
+
+        <div className="v2-app-main">
+          <header className="v2-topbar" data-print-hidden>
+            <div className="v2-topbar-copy">
+              <div className="min-w-0">
+                <div className="v2-topbar-eyebrow">{headerMode.badge} · {headerMode.detail}</div>
+                <div className="v2-topbar-title">{headerMode.title}</div>
               </div>
-              <div className="flex w-full flex-wrap items-center gap-2 border-t border-border/70 pt-3 sm:justify-end lg:w-auto lg:border-t-0 lg:pt-0">
-                <Badge variant={headerSession.variant} className="order-1">
-                  <ShieldCheckIcon data-icon="inline-start" />
-                  {headerSession.label}
-                </Badge>
-                {activeView === "ads" && report ? (
-                  <Badge variant="outline" className="order-2 max-w-full truncate">
-                    {copy.header.pulled} {new Date(report.pulledAt).toLocaleString()}
-                  </Badge>
-                ) : null}
-                <div className="order-3 ml-auto sm:ml-0">
-                  <LanguageToggle language={language} onChange={setLanguage} />
-                </div>
-                {activeView === "ads" && reportHasData ? (
-                  <Button type="button" variant="outline" onClick={exportPdf} disabled={exportingPdf} data-print-hidden className="order-4">
+              <span className="v2-live-chip">{headerSession.label}</span>
+            </div>
+
+            <div className="v2-topbar-actions">
+              {activeView === "overview" ? (
+                <>
+                  <button type="button" className="v2-icon-button" aria-label="Search" onClick={() => toast.info(language === "vi" ? "Tìm kiếm sẽ có trong bản cập nhật tiếp theo." : "Workspace search is coming next.") }>
+                    <SearchIcon />
+                  </button>
+                  <button type="button" className="v2-icon-button" aria-label="Notifications" onClick={() => toast.info(language === "vi" ? "Không có thông báo mới." : "No new notifications.") }>
+                    <BellIcon />
+                  </button>
+                </>
+              ) : null}
+              {activeView === "ads" && reportHasData ? (
+                <>
+                  <button type="button" className="v2-icon-button" aria-label={language === "vi" ? "Làm mới báo cáo" : "Refresh report"} onClick={() => window.dispatchEvent(new Event("v2:refresh-report"))}>
+                    <RefreshCcwIcon />
+                  </button>
+                  <Button type="button" variant="outline" size="sm" onClick={() => window.dispatchEvent(new Event("v2:open-export"))} disabled={exportingPdf}>
                     {exportingPdf ? <Spinner data-icon="inline-start" /> : <DownloadIcon data-icon="inline-start" />}
-                    {copy.header.exportPdf}
+                    {language === "vi" ? "Xuất" : "Export"}
                   </Button>
+                </>
+              ) : null}
+              <LanguageToggle language={language} onChange={setLanguage} />
+              <div ref={accountMenuRef} className="relative">
+                <button type="button" className="v2-account-chip" aria-label={`${workspaceSession.user?.name || "Workspace owner"}, ${workspaceSession.user?.role || "Workspace owner"}`} aria-expanded={accountMenuOpen} onClick={() => setAccountMenuOpen((current) => !current)}>
+                  <span className="v2-account-avatar">{workspaceSession.user?.initials || "DW"}</span>
+                  <span className="min-w-0 flex-1 text-left">
+                    <span className="v2-account-name block">{workspaceSession.user?.name || "Workspace owner"}</span>
+                    <span className="v2-account-role block">{workspaceSession.user?.role || "Workspace owner"}</span>
+                  </span>
+                  <ChevronDownIcon className="size-3.5 text-muted-foreground" aria-hidden="true" />
+                </button>
+                {accountMenuOpen ? (
+                  <div className="v2-account-menu">
+                    <button type="button" className="absolute top-4 right-4 flex size-8 items-center justify-center rounded-xl border border-border text-muted-foreground hover:text-foreground" aria-label="Close account menu" onClick={() => setAccountMenuOpen(false)}><XIcon className="size-4" /></button>
+                    <div className="flex items-center gap-3 border-b border-border pb-4 pr-10">
+                      <span className="v2-account-avatar">{workspaceSession.user?.initials || "DW"}</span>
+                      <div><div className="text-sm font-semibold">{workspaceSession.user?.name || "Workspace owner"}</div><div className="text-xs text-muted-foreground">{workspaceSession.user?.role || "Workspace owner"} · {workspaceSession.user?.email || "Workspace session"}</div></div>
+                    </div>
+                    <div className="mt-4 text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">Account</div>
+                    <button type="button" className="v2-account-menu-row" onClick={() => toast.info(language === "vi" ? "Hồ sơ được quản lý bởi workspace hiện tại." : "Profile details are managed by the current workspace.")}><UserRoundIcon /><span><b>Profile</b><small>Identity, alerts and personal defaults</small></span></button>
+                    <button type="button" className="v2-account-menu-row" onClick={() => { setAccountMenuOpen(false); if (authenticated) setAdsWorkspace((current) => ({ ...current, scopeExpanded: true })); requestView("ads"); }}><Settings2Icon /><span><b>Workspace settings</b><small>Sources, rules and team access</small></span></button>
+                    <div className="my-3 flex items-center gap-2 border-y border-border py-3 text-xs text-muted-foreground"><span className="size-2 rounded-full bg-success" />{workspaceSession.signedInAt ? `Secure session · signed in ${new Date(workspaceSession.signedInAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "Secure local workspace"}</div>
+                    <Button type="button" variant="destructive" className="w-full" onClick={() => void logout()}><LogOutIcon data-icon="inline-start" />Sign out</Button>
+                  </div>
                 ) : null}
               </div>
+              <button
+                type="button"
+                className="v2-icon-button"
+                aria-label={theme === "dark" ? "Use light theme" : "Use dark theme"}
+                onClick={() => setTheme((current) => current === "dark" ? "light" : "dark")}
+              >
+                {theme === "dark" ? <SunIcon /> : <MoonIcon />}
+              </button>
             </div>
           </header>
 
-          {error ? (
+          <main className="v2-page" data-print-page>
+
+          {error && !metaConnectOpen ? (
             <Alert variant="destructive">
               <AlertTitle>{copy.header.actionFailed}</AlertTitle>
               <AlertDescription>{error}</AlertDescription>
@@ -930,28 +1057,20 @@ export function DashboardShell() {
           ) : null}
 
           {gateBlocked ? (
-            <TokenScreen
-              embedded
-              error={error}
-              token={token}
-              loading={loading === "session"}
-              language={language}
-              intendedView={activeView}
-              facebookOAuthConfigured={facebookOAuthConfigured}
-              onLanguageChange={setLanguage}
-              onBack={() => setActiveView("overview")}
-              onTokenChange={setToken}
-              onUseCompetitor={() => setActiveView("competitor")}
-              onViewSample={viewSampleReport}
-              onSubmit={connectToken}
-            />
+            <div className="min-h-[480px]" aria-hidden="true" />
           ) : activeView === "overview" ? (
             <WorkspaceOverview
               authenticated={authenticated}
               capabilities={capabilities}
               language={language}
               workspaceLabel={accounts.find((account) => account.id === accountId)?.name}
-              onOpen={setActiveView}
+              report={overviewReport}
+              healthSummary={overviewHealthSummary}
+              onOpen={requestView}
+              onEditScope={() => {
+                if (authenticated) setAdsWorkspace((current) => ({ ...current, scopeExpanded: true }));
+                requestView("ads");
+              }}
             />
           ) : activeView === "ads" ? (
             <>
@@ -965,7 +1084,7 @@ export function DashboardShell() {
                       ? "Dữ liệu demo của một tài khoản thẩm mỹ viện. Kết nối Meta để phân tích tài khoản của bạn."
                       : "Demo data from a sample beauty-clinic account. Connect Meta to analyze your own account."}
                   </span>
-                  <Button type="button" size="sm" variant="outline" onClick={exitSampleReport}>
+                  <Button type="button" size="sm" variant="outline" onClick={() => { exitSampleReport(); setPendingMetaView("ads"); setMetaConnectOpen(true); }}>
                     <ShieldCheckIcon data-icon="inline-start" />
                     {language === "vi" ? "Kết nối Meta" : "Connect Meta"}
                   </Button>
@@ -1042,18 +1161,30 @@ export function DashboardShell() {
               chatShortcutsDisabled={chatOpen}
             />
           )}
+          </main>
         </div>
-      </SidebarInset>
-      </SidebarProvider>
+      </div>
       <ContextChat
         ref={contextChatRef}
         activeView={activeView}
         language={language}
         available={nineRouterAvailable}
         open={chatOpen}
-        showStandaloneLauncher={!hasWorkspaceDock}
+        showStandaloneLauncher={false}
         getContext={getChatContext}
         onOpenChange={setChatOpen}
+      />
+      <MetaConnectDialog
+        open={metaConnectOpen}
+        onOpenChange={(open) => { setMetaConnectOpen(open); if (!open) setError(""); }}
+        oauthConfigured={facebookOAuthConfigured}
+        returnTo={pendingMetaView}
+        token={token}
+        loading={loading === "session"}
+        error={error}
+        onTokenChange={setToken}
+        onConnectToken={validateMetaToken}
+        onUseSample={viewSampleReport}
       />
     </>
   );
@@ -1084,137 +1215,85 @@ function TokenScreen(props: {
     : isVietnamese ? "Chẩn đoán hiệu quả" : "Performance diagnosis";
 
   const gateCard = (
-        <Card className="overflow-hidden">
-          <CardHeader className="border-b">
-            <div className="flex items-start gap-3">
-              <span className="flex size-10 shrink-0 items-center justify-center rounded-xl border bg-background text-muted-foreground">
-                <KeyRoundIcon className="size-5" />
-              </span>
-              <div className="min-w-0">
-                <CardDescription>{destination}</CardDescription>
-                <CardTitle className="text-2xl">{isVietnamese ? "Kết nối Meta để tiếp tục" : "Connect Meta to continue"}</CardTitle>
-                <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-                  {publishing
-                    ? isVietnamese
-                      ? "Workspace cần kiểm tra Page và quyền tạo nội dung trước khi preview hoặc gửi bài. Sau khi xác thực, bạn sẽ quay lại đúng luồng đăng bài."
-                      : "This workspace must verify Page access and content permissions before previewing or submitting. After validation, you return directly to publishing."
-                    : isVietnamese
-                      ? "Workspace cần đọc account, campaign và insight để tạo chẩn đoán có evidence. Sau khi xác thực, bạn sẽ quay lại đúng luồng phân tích."
-                      : "This workspace needs account, campaign, and insight access to produce an evidence-backed diagnosis. After validation, you return directly to performance."}
-                </p>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="grid gap-6 p-5 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.7fr)] lg:p-6">
-            <div className="flex min-w-0 flex-col gap-5">
-            {props.error ? (
-              <Alert variant="destructive">
-                <AlertTitle>{copy.rejected}</AlertTitle>
-                <AlertDescription>{props.error}</AlertDescription>
-              </Alert>
-            ) : null}
+    <section className="v2-panel grid min-h-[640px] overflow-hidden lg:grid-cols-[minmax(0,1.15fr)_minmax(420px,0.85fr)]">
+      <div className="relative flex min-h-[420px] flex-col overflow-hidden border-b border-border p-6 sm:p-9 lg:min-h-0 lg:border-r lg:border-b-0">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_78%_56%,rgba(4,133,247,0.78),rgba(4,133,247,0.2)_28%,transparent_58%)] opacity-90" />
+        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(145deg,rgba(6,6,7,0.18),rgba(6,6,7,0.88))]" />
+        <div className="relative flex items-center gap-3">
+          <span className="flex size-10 items-center justify-center rounded-xl border border-primary bg-primary/10 text-primary"><WaypointsIcon className="size-5" /></span>
+          <div><div className="text-sm font-semibold">Decision Workspace</div><div className="text-[10px] uppercase tracking-[0.06em] text-muted-foreground">Read agency / operations</div></div>
+        </div>
 
-            {props.facebookOAuthConfigured === true ? (
-              <>
-                <div className="flex min-w-0 flex-col gap-3">
-                  <Button
-                    type="button"
-                    className="w-full"
-                    onClick={() => { window.location.href = `/api/auth/facebook/start?returnTo=${oauthReturnTo}`; }}
-                  >
-                    <ShieldCheckIcon data-icon="inline-start" />
-                    {copy.facebookLogin}
-                  </Button>
-                  <FieldDescription className="break-words">{copy.facebookHelp}</FieldDescription>
-                </div>
+        <div className="relative my-auto max-w-2xl py-12">
+          <Badge variant="secondary">{isVietnamese ? "AI performance intelligence" : "AI performance intelligence"}</Badge>
+          <h1 className="mt-5 text-[clamp(2.5rem,6vw,4.25rem)] font-semibold leading-[1.02] tracking-[-0.06em]">
+            {isVietnamese ? "Biến dữ liệu quảng cáo thành bước đi tiếp theo." : "Turn ad data into next moves."}
+          </h1>
+          <p className="mt-5 max-w-xl text-base leading-7 text-muted-foreground sm:text-lg">
+            {isVietnamese ? "Một command center tập trung để đọc hiệu quả, tìm rủi ro và biến mọi review thành một quyết định." : "A focused command center for reading performance, finding risk, and leaving every review with a decision."}
+          </p>
+          <div className="mt-12 max-w-xl rounded-2xl border border-border bg-card/90 p-4 backdrop-blur">
+            <div className="text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">Decision pulse</div>
+            <div className="mt-1 text-sm font-medium">{isVietnamese ? "3 tín hiệu sẵn sàng xem xét" : "3 signals ready for review"}</div>
+            <p className="mt-3 text-xs leading-5 text-muted-foreground">{isVietnamese ? "Hiệu quả đang ổn định. Creative fatigue bắt đầu xuất hiện. Một campaign đã sẵn sàng để scale." : "Efficiency is stable. Creative fatigue is emerging. One campaign is ready to scale."}</p>
+          </div>
+        </div>
 
-                <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                  <Separator className="flex-1" />
-                  {copy.manualToken}
-                  <Separator className="flex-1" />
-                </div>
-              </>
-            ) : (
-              <Alert>
-                <AlertTitle>
-                  {props.facebookOAuthConfigured === null
-                    ? isVietnamese ? "Đang kiểm tra Facebook Login…" : "Checking Facebook Login availability…"
-                    : isVietnamese ? "Dùng Meta access token" : "Use a Meta access token"}
-                </AlertTitle>
-                <AlertDescription>
-                  {props.facebookOAuthConfigured === null
-                    ? isVietnamese ? "Bạn vẫn có thể dùng token bên dưới." : "You can still use a token below."
-                    : isVietnamese
-                      ? "Facebook Login chưa khả dụng trên bản triển khai này. Hãy dùng Meta access token bên dưới."
-                      : "Facebook Login is not available on this deployment. Use a Meta access token below."}
-                </AlertDescription>
-              </Alert>
-            )}
+        <div className="relative flex items-center gap-2 text-xs text-muted-foreground"><ShieldCheckIcon className="size-4 text-success" />{isVietnamese ? "Workspace bảo mật · nguồn đã kết nối luôn riêng tư" : "Secure workspace · connected sources stay private"}</div>
+      </div>
 
-            <form onSubmit={props.onSubmit} className="flex min-w-0 flex-col gap-4">
-              <FieldGroup>
-                <Field>
-                  <FieldLabel htmlFor={tokenInputId}>{copy.field}</FieldLabel>
-                  <Input
-                    id={tokenInputId}
-                    value={props.token}
-                    onChange={(event) => props.onTokenChange(event.target.value)}
-                    type="password"
-                    autoComplete="off"
-                    minLength={20}
-                    placeholder={copy.placeholder}
-                    className="w-full"
-                    required
-                  />
-                  <FieldDescription className="break-words">
-                    {publishing
-                      ? isVietnamese
-                        ? "Token dùng để kiểm tra Page và quyền CREATE_CONTENT của tài khoản Meta trước khi preview hoặc gửi bài."
-                        : "The token verifies available Pages and CREATE_CONTENT permissions before previewing or submitting."
-                      : isVietnamese
-                        ? "Token dùng để đọc account, campaign và insight cho KPI, verdict và drilldown."
-                        : "The token reads account, campaign, and insight data for KPIs, verdict, and drilldown."}
-                  </FieldDescription>
-                </Field>
-              </FieldGroup>
-              <Button type="submit" disabled={props.loading || props.token.trim().length < 20} className="w-full" variant="outline">
-                {props.loading ? <Spinner data-icon="inline-start" /> : <KeyRoundIcon data-icon="inline-start" />}
-                {copy.submit}
+      <div className="flex items-center justify-center bg-background/70 p-5 sm:p-8">
+        <div className="w-full max-w-md rounded-2xl border border-border bg-card p-5 shadow-2xl shadow-black/20 sm:p-7">
+          <span className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary"><KeyRoundIcon className="size-5" /></span>
+          <CardDescription className="mt-4">{destination}</CardDescription>
+          <CardTitle className="mt-1 text-2xl">{isVietnamese ? "Kết nối workspace của bạn" : "Connect your workspace"}</CardTitle>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">
+            {publishing
+              ? isVietnamese ? "Xác minh Page và quyền tạo nội dung để tiếp tục vận hành đăng bài." : "Verify Page access and content permissions to continue publishing operations."
+              : isVietnamese ? "Xác minh account, campaign và insight để tạo chẩn đoán có evidence." : "Verify account, campaign, and insight access to produce an evidence-backed diagnosis."}
+          </p>
+
+          {props.error ? <Alert variant="destructive" className="mt-5"><AlertTitle>{copy.rejected}</AlertTitle><AlertDescription>{props.error}</AlertDescription></Alert> : null}
+
+          {props.facebookOAuthConfigured === true ? (
+            <div className="mt-6">
+              <Button type="button" className="w-full" onClick={() => { window.location.href = `/api/auth/facebook/start?returnTo=${oauthReturnTo}`; }}>
+                <ShieldCheckIcon data-icon="inline-start" />
+                {copy.facebookLogin}
               </Button>
-                <FieldDescription className="break-words">{copy.help}</FieldDescription>
-              </form>
+              <FieldDescription className="mt-2 break-words">{copy.facebookHelp}</FieldDescription>
             </div>
+          ) : (
+            <Alert className="mt-6"><AlertTitle>{props.facebookOAuthConfigured === null ? (isVietnamese ? "Đang kiểm tra Facebook Login…" : "Checking Facebook Login availability…") : (isVietnamese ? "Dùng Meta access token" : "Use a Meta access token")}</AlertTitle><AlertDescription>{props.facebookOAuthConfigured === null ? (isVietnamese ? "Bạn vẫn có thể dùng token bên dưới." : "You can still use a token below.") : (isVietnamese ? "Facebook Login chưa khả dụng trên bản triển khai này." : "Facebook Login is not available on this deployment.")}</AlertDescription></Alert>
+          )}
 
-            <div className="flex flex-col gap-4 border-t pt-5 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
-              <div>
-                <h2 className="text-sm font-semibold">{isVietnamese ? "Ranh giới truy cập" : "Access boundary"}</h2>
-                <p className="mt-1 text-sm leading-6 text-muted-foreground">{copy.storage}</p>
-              </div>
-              <Separator />
-              <div className="flex flex-col gap-3 text-sm">
-                <span className="flex items-start gap-2"><CheckIcon className="mt-0.5 size-4 shrink-0 text-success" />{isVietnamese ? "Token không được trả về client sau khi xác thực." : "The token is not returned to the client after validation."}</span>
-                <span className="flex items-start gap-2"><CheckIcon className="mt-0.5 size-4 shrink-0 text-success" />{isVietnamese ? "Chỉ workspace cần Meta mới yêu cầu kết nối." : "Only Meta-dependent workspaces require this connection."}</span>
-              </div>
-              <div className="mt-auto flex flex-col gap-2">
-                {props.onViewSample ? (
-                  <Button
-                    type="button"
-                    variant={props.facebookOAuthConfigured === true ? "outline" : "default"}
-                    onClick={props.onViewSample}
-                    className="w-full"
-                  >
-                    <BarChart3Icon data-icon="inline-start" />
-                    {isVietnamese ? "Xem báo cáo mẫu" : "View a sample report"}
-                  </Button>
-                ) : null}
-                <Button type="button" variant="outline" onClick={props.onUseCompetitor} className="w-full">
-                  <SearchIcon data-icon="inline-start" />
-                  {isVietnamese ? "Mở evidence đối thủ" : "Open competitor evidence"}
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+          <div className="my-5 flex items-center gap-3 text-[10px] uppercase tracking-[0.06em] text-muted-foreground"><Separator className="flex-1" />{copy.manualToken}<Separator className="flex-1" /></div>
+
+          <form onSubmit={props.onSubmit} className="flex min-w-0 flex-col gap-4">
+            <FieldGroup>
+              <Field>
+                <FieldLabel htmlFor={tokenInputId}>{copy.field}</FieldLabel>
+                <Input id={tokenInputId} value={props.token} onChange={(event) => props.onTokenChange(event.target.value)} type="password" autoComplete="off" minLength={20} placeholder={copy.placeholder} className="w-full" required />
+                <FieldDescription className="break-words">{publishing ? (isVietnamese ? "Dùng để kiểm tra Page và quyền CREATE_CONTENT." : "Used to verify Pages and CREATE_CONTENT permissions.") : (isVietnamese ? "Dùng để đọc account, campaign và insight cho KPI và verdict." : "Used to read account, campaign, and insight data for KPIs and Verdicts.")}</FieldDescription>
+              </Field>
+            </FieldGroup>
+            <Button type="submit" disabled={props.loading || props.token.trim().length < 20} className="w-full">
+              {props.loading ? <Spinner data-icon="inline-start" /> : <KeyRoundIcon data-icon="inline-start" />}
+              {copy.submit}
+            </Button>
+          </form>
+
+          <div className="mt-5 flex flex-col gap-2">
+            {props.onViewSample ? <Button type="button" variant="outline" onClick={props.onViewSample} className="w-full"><BarChart3Icon data-icon="inline-start" />{isVietnamese ? "Xem báo cáo mẫu" : "View a sample report"}</Button> : null}
+            <Button type="button" variant="ghost" onClick={props.onUseCompetitor} className="w-full"><SearchIcon data-icon="inline-start" />{isVietnamese ? "Mở evidence đối thủ" : "Open competitor evidence"}</Button>
+          </div>
+
+          <div className="mt-5 border-t border-border pt-4 text-xs leading-5 text-muted-foreground">
+            <span className="flex items-start gap-2"><CheckIcon className="mt-0.5 size-3.5 shrink-0 text-success" />{copy.storage}</span>
+          </div>
+        </div>
+      </div>
+    </section>
   );
 
   if (props.embedded) return gateCard;

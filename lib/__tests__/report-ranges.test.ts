@@ -2,6 +2,20 @@ import { describe, expect, it } from "vitest";
 import { getCompareRange } from "../report-ranges";
 
 describe("getCompareRange", () => {
+  it("returns the immediately preceding range with the same inclusive duration", () => {
+    expect(getCompareRange({ since: "2026-07-02", until: "2026-07-31" }, "previous")).toEqual({
+      since: "2026-06-02",
+      until: "2026-07-01",
+    });
+  });
+
+  it("keeps the current dates for a campaign peer comparison", () => {
+    expect(getCompareRange({ since: "2026-07-02", until: "2026-07-31" }, "campaign")).toEqual({
+      since: "2026-07-02",
+      until: "2026-07-31",
+    });
+  });
+
   it("returns the same range when comparison is off", () => {
     const range = { since: "2026-06-01", until: "2026-06-04" };
 

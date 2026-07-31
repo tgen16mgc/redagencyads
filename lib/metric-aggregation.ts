@@ -1,4 +1,4 @@
-import type { NormalizedRow } from "@/lib/types";
+import type { NormalizedRow, OutcomeMetricKey } from "@/lib/types";
 
 const ZERO_ROW: Omit<NormalizedRow, "id" | "level" | "name"> = {
   spend: 0,
@@ -57,5 +57,10 @@ export function sumRows(rows: NormalizedRow[], name: string): NormalizedRow {
   total.leadRate = safeDivide(total.leads, total.messages) * 100;
   const roasSpend = rows.reduce((sum, row) => sum + (row.roas > 0 ? row.spend : 0), 0);
   total.roas = safeDivide(rows.reduce((sum, row) => sum + row.roas * row.spend, 0), roasSpend);
+  const outcomeKeys: OutcomeMetricKey[] = ["messages", "replies", "leads", "purchases", "addToCart", "initiateCheckout"];
+  total.metricAvailability = Object.fromEntries(outcomeKeys.map((key) => [
+    key,
+    rows.some((row) => row.metricAvailability?.[key] === "tracked") ? "tracked" : "not_tracked",
+  ]));
   return total;
 }

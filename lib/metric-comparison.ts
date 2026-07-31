@@ -116,6 +116,8 @@ export function comparisonDescriptor(args: {
 }) {
   const language = args.language ?? "en";
   if (args.compareMode === "off") return language === "vi" ? "không so sánh" : "no comparison";
+  if (args.compareMode === "previous") return language === "vi" ? "so với kỳ trước" : "vs previous period";
+  if (args.compareMode === "campaign") return language === "vi" ? "so với nhóm campaign" : "vs campaign peers";
   if (args.compareMode === "wow") return language === "vi" ? "so với WoW" : "vs WoW";
   if (args.compareMode === "mom") return language === "vi" ? "so với MoM" : "vs MoM";
   if (args.compareMode === "yoy") return language === "vi" ? "so với YoY" : "vs YoY";
@@ -140,7 +142,12 @@ export function comparisonFootnote(args: {
       : "Comparison unavailable; this report contains current-period values only.";
   }
 
-  const mode = args.compareMode === "wow" ? "WoW" : args.compareMode === "mom" ? "MoM" : "YoY";
+  if (args.compareMode === "campaign") {
+    return language === "vi"
+      ? "Nhóm campaign đã chọn được so với các campaign peer trong cùng khoảng ngày."
+      : "Selected campaigns are compared with campaign peers in the same date range.";
+  }
+  const mode = args.compareMode === "wow" ? "WoW" : args.compareMode === "mom" ? "MoM" : args.compareMode === "yoy" ? "YoY" : language === "vi" ? "Kỳ trước" : "Previous period";
   const separator = language === "vi" ? " đến " : " to ";
   const current = `${args.report.dateRange.since}${separator}${args.report.dateRange.until}`;
   const previous = `${args.previousReport.dateRange.since}${separator}${args.previousReport.dateRange.until}`;

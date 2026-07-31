@@ -20,7 +20,7 @@ function isDashboardReport(value: unknown): value is DashboardReport {
 const bodySchema = z.object({
   report: z.custom<DashboardReport>(isDashboardReport, "report is required."),
   previousReport: z.custom<DashboardReport>(isDashboardReport).nullable().optional(),
-  compareMode: z.enum(["off", "wow", "mom", "yoy"]).default("off"),
+  compareMode: z.enum(["off", "previous", "campaign", "wow", "mom", "yoy"]).default("off"),
   language: languageSchema,
   provider: providerSchema,
 });

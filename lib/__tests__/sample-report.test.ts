@@ -23,7 +23,7 @@ describe("buildSampleReport", () => {
     expect(report.source).toBe("sample");
     expect(report.detectedPack).toBe(report.selectedPack);
     expect(report.kpis.length).toBeGreaterThan(0);
-    expect(report.dailyRows).toHaveLength(14);
+    expect(report.dailyRows).toHaveLength(30);
     expect(report.platformRows.length).toBeGreaterThan(0);
     expect(report.ageGenderRows.length).toBeGreaterThan(0);
     expect(report.regionRows.length).toBeGreaterThan(0);
@@ -39,5 +39,36 @@ describe("buildSampleReport", () => {
     const diagnostics = runDiagnostics(report);
     expect(diagnostics.length).toBeGreaterThan(0);
     expect(diagnostics.every((diagnostic) => ["ok", "watch", "risk", "insufficient"].includes(diagnostic.severity))).toBe(true);
+  });
+
+  it("rebuilds the sample report for campaign, KPI pack, and date-range scope", () => {
+    const scoped = buildSampleReport({
+      selectedCampaignIds: ["smp-c2"],
+      pack: "traffic",
+      dateRange: { since: "2026-07-24", until: "2026-07-30" },
+    });
+
+    expect(scoped.selectedCampaigns.map((campaign) => campaign.id)).toEqual(["smp-c2"]);
+    expect(scoped.campaignRows.map((row) => row.id)).toEqual(["smp-c2"]);
+    expect(scoped.selectedPack).toBe("traffic");
+    expect(scoped.dailyRows).toHaveLength(7);
+    expect(scoped.dateRange).toEqual({ since: "2026-07-24", until: "2026-07-30" });
+    expect(scoped.totals.spend).toBeLessThan(buildSampleReport({ selectedCampaignIds: ["smp-c2"] }).totals.spend);
+  });
+
+  it("keeps tracked and missing outcome events distinct", () => {
+    const lead = buildSampleReport({ selectedCampaignIds: ["smp-c2"] });
+    const messages = buildSampleReport({ selectedCampaignIds: ["smp-c3"] });
+
+    expect(lead.totals.metricAvailability).toMatchObject({ leads: "tracked", messages: "not_tracked", purchases: "not_tracked" });
+    expect(messages.totals.metricAvailability).toMatchObject({ messages: "tracked", replies: "tracked", leads: "tracked" });
+  });
+
+  it("models previous-period sample data instead of fabricating a zero delta", () => {
+    const current = buildSampleReport({ dateRange: { since: "2026-07-01", until: "2026-07-30" } });
+    const previous = buildSampleReport({ dateRange: { since: "2026-06-01", until: "2026-06-30" } });
+
+    expect(current.totals.spend).not.toBe(previous.totals.spend);
+    expect(current.totals.linkClicks).not.toBe(previous.totals.linkClicks);
   });
 });

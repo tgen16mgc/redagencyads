@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { toast } from "sonner";
 import {
   Bar,
   BarChart,
@@ -24,13 +25,16 @@ import {
   RefreshCcwIcon,
   SlidersHorizontalIcon,
   SparklesIcon,
+  XIcon,
 } from "lucide-react";
 import BorderGlow from "@/components/BorderGlow";
+import type { ClientReportPdfFile } from "@/lib/client-report";
+import { buildSampleReport, SAMPLE_CAMPAIGNS } from "@/lib/sample-report";
 import { BreakdownAnalysisSection, ChartEmpty, paddedPositiveDomain } from "@/components/dashboard/breakdown-analysis";
 import { CONTEXT_CHAT_PANEL_ID } from "@/components/dashboard/context-chat-copy";
 import { CustomChartsSection } from "@/components/dashboard/custom-charts-section";
 import { DiagnosticCard } from "@/components/dashboard/diagnostic-card";
-import { StickyActionDock } from "@/components/dashboard/sticky-action-dock";
+import { PerformanceV2 } from "@/components/dashboard/performance-v2";
 import { sanitizeAdPreviewHtml } from "@/lib/ad-preview-html";
 import { jsonFetch } from "@/lib/api-client";
 import { detectBaselineAnomalies, anomalyBadgeText } from "@/lib/baseline-anomaly";
@@ -51,7 +55,6 @@ import {
 import { analyzeComparisonRootCauses } from "@/lib/comparison-root-cause";
 import { classifyCreativeFatigue, computeCreativeFatigueBaseline } from "@/lib/creative-fatigue";
 import {
-  buildCustomKpiCards,
   type CustomKpiKey,
   deserializeCustomKpiSet,
   getCustomKpiCatalogGroups,
@@ -66,7 +69,7 @@ import {
 import type { DecisionTargets } from "@/lib/decision-confidence";
 import { runDiagnostics } from "@/lib/diagnosis";
 import type { HealthScoreSummary } from "@/lib/health-score";
-import { buildKpiComparisons, formatComparisonChangePct, metricMovementIsBad } from "@/lib/metric-comparison";
+import { buildKpiComparisons } from "@/lib/metric-comparison";
 import { formatMetric } from "@/lib/metrics";
 import { getCompareRange } from "@/lib/report-ranges";
 import { rowDecision } from "@/lib/row-decision";
@@ -89,6 +92,15 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -101,14 +113,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -130,11 +134,15 @@ const providerItems = [
 
 export type Provider = (typeof providerItems)[number]["value"];
 
+type ReportScopePatch = Partial<Pick<
+  AdsWorkspaceState,
+  "selectedCampaignIds" | "since" | "until" | "pack" | "compareMode" | "targetCpa" | "targetRoas"
+>>;
+
 const compareItems: { label: string; value: CompareMode }[] = [
-  { label: "No compare", value: "off" },
-  { label: "WoW", value: "wow" },
-  { label: "MoM", value: "mom" },
-  { label: "YoY", value: "yoy" },
+  { label: "Previous period", value: "previous" },
+  { label: "Campaign group", value: "campaign" },
+  { label: "No comparison", value: "off" },
 ];
 
 const adsCopy = {
@@ -458,7 +466,7 @@ export function AdsWorkspace({
   onError: (message: string) => void;
   onStateChange: React.Dispatch<React.SetStateAction<AdsWorkspaceState>>;
   onSaveCustomKpis: (keys: CustomKpiKey[]) => void;
-  onExportPdf: () => void;
+  onExportPdf: () => Promise<ClientReportPdfFile>;
   onOpenAssistant: () => void;
 }) {
   const {
@@ -484,6 +492,8 @@ export function AdsWorkspace({
   const copy = adsCopy[language];
   const scopeFieldId = React.useId();
   const reportStartRef = React.useRef<HTMLDivElement>(null);
+  const [reportFlow, setReportFlow] = React.useState<"idle" | "pulling" | "ready" | "error">("idle");
+  const [reportFlowError, setReportFlowError] = React.useState("");
   const verdictProgress = useTimedProgress(aiLoading.verdict);
   const insightProgress = useTimedProgress(aiLoading.insights);
   const selectedAccount = accounts.find((account) => account.id === accountId);
@@ -532,32 +542,90 @@ export function AdsWorkspace({
     window.localStorage.setItem(CUSTOM_CHARTS_STORAGE_KEY, serializeCharts(customCharts));
   }, [customCharts]);
 
-  async function fetchReportForRange(range: { since: string; until: string }) {
+  async function fetchReportForRange(range: { since: string; until: string }, overrides: ReportScopePatch = {}) {
     const url = new URL("/api/meta/report", window.location.origin);
     url.searchParams.set("accountId", accountId);
     url.searchParams.set("since", range.since);
     url.searchParams.set("until", range.until);
-    selectedCampaignIds.forEach((id) => url.searchParams.append("campaignId", id));
-    if (pack !== "auto") url.searchParams.set("pack", pack);
+    (overrides.selectedCampaignIds ?? selectedCampaignIds).forEach((id) => url.searchParams.append("campaignId", id));
+    const resolvedPack = overrides.pack ?? pack;
+    if (resolvedPack !== "auto") url.searchParams.set("pack", resolvedPack);
     return jsonFetch<{ report: DashboardReport }>(url.toString(), { timeoutMs: 30000 });
   }
 
-  async function pullReport() {
-    if (!accountId || dateRangeInvalid) return;
+  async function pullReport(overrides: ReportScopePatch = {}) {
+    const nextSince = overrides.since ?? since;
+    const nextUntil = overrides.until ?? until;
+    const nextCompareMode = overrides.compareMode ?? compareMode;
+    if (report?.source === "sample" && !accountId) {
+      if (!nextSince || !nextUntil || nextSince > nextUntil) return;
+      const sampleSelectedIds = overrides.selectedCampaignIds ?? selectedCampaignIds;
+      const samplePack = overrides.pack ?? pack;
+      setReportFlowError("");
+      setReportFlow("pulling");
+      updateState({ ...overrides, verdict: null, insights: null, aiLoading: { verdict: false, insights: false }, previousReport: null });
+      onLoadingChange("report");
+      try {
+        await new Promise((resolve) => window.setTimeout(resolve, 220));
+        const current = buildSampleReport({ selectedCampaignIds: sampleSelectedIds, pack: samplePack, dateRange: { since: nextSince, until: nextUntil } });
+        let sampleComparison: DashboardReport | null = null;
+        if (nextCompareMode === "campaign") {
+          if (!sampleSelectedIds.length) throw new Error("Choose at least one campaign before comparing it with the peer group.");
+          const peerIds = SAMPLE_CAMPAIGNS.filter((campaign) => !sampleSelectedIds.includes(campaign.id)).map((campaign) => campaign.id);
+          if (!peerIds.length) throw new Error("No active peer campaigns are available outside the selected group.");
+          sampleComparison = buildSampleReport({ selectedCampaignIds: peerIds, pack: samplePack, dateRange: { since: nextSince, until: nextUntil } });
+        } else if (nextCompareMode !== "off") {
+          sampleComparison = buildSampleReport({ selectedCampaignIds: sampleSelectedIds, pack: samplePack, dateRange: getCompareRange({ since: nextSince, until: nextUntil }, nextCompareMode) });
+        }
+        updateState({ report: current, previousReport: sampleComparison, scopeExpanded: false });
+        toast.success(language === "vi" ? "Đã áp dụng thay đổi" : "Changes applied", { description: language === "vi" ? "Báo cáo mẫu đã được dựng lại với phạm vi mới." : "The sample report was rebuilt with the new scope and comparison." });
+        setReportFlow("ready");
+        window.setTimeout(() => setReportFlow("idle"), 900);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Could not rebuild the sample report.";
+        setReportFlowError(message);
+        setReportFlow("error");
+        onError(message);
+      } finally {
+        onLoadingChange("");
+      }
+      return;
+    }
+    if (!accountId || !nextSince || !nextUntil || nextSince > nextUntil) return;
     onError("");
-    updateState({ verdict: null, insights: null, aiLoading: { verdict: false, insights: false }, previousReport: null });
+    setReportFlowError("");
+    setReportFlow("pulling");
+    updateState({ ...overrides, verdict: null, insights: null, aiLoading: { verdict: false, insights: false }, previousReport: null });
     onLoadingChange("report");
     try {
-      const current = await fetchReportForRange({ since, until });
+      const current = await fetchReportForRange({ since: nextSince, until: nextUntil }, overrides);
       updateState({ report: current.report, scopeExpanded: false });
       window.setTimeout(() => reportStartRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
-      if (compareMode !== "off") {
-        const previousRange = getCompareRange({ since, until }, compareMode);
-        const previous = await fetchReportForRange(previousRange);
+      if (nextCompareMode !== "off") {
+        const selectedIds = overrides.selectedCampaignIds ?? selectedCampaignIds;
+        if (nextCompareMode === "campaign" && !selectedIds.length) {
+          throw new Error("Choose at least one campaign before comparing it with the peer group.");
+        }
+        const comparisonOverrides = nextCompareMode === "campaign"
+          ? { ...overrides, selectedCampaignIds: campaigns.filter((campaign) => campaignStatus(campaign) === "ACTIVE" && !selectedIds.includes(campaign.id)).map((campaign) => campaign.id) }
+          : overrides;
+        if (nextCompareMode === "campaign" && !comparisonOverrides.selectedCampaignIds?.length) {
+          throw new Error("No active peer campaigns are available outside the selected group.");
+        }
+        const previousRange = getCompareRange({ since: nextSince, until: nextUntil }, nextCompareMode);
+        const previous = await fetchReportForRange(previousRange, comparisonOverrides);
         updateState({ previousReport: previous.report });
       }
+      if (Object.keys(overrides).length) {
+        toast.success(language === "vi" ? "Đã áp dụng thay đổi" : "Changes applied", { description: language === "vi" ? "Báo cáo đã được kéo lại với phạm vi và quy tắc mới." : "The report was refreshed with the new scope and decision rules." });
+      }
+      setReportFlow("ready");
+      window.setTimeout(() => setReportFlow("idle"), 900);
     } catch (err) {
-      onError(err instanceof Error ? err.message : "Could not pull Meta report.");
+      const message = err instanceof Error ? err.message : "Could not pull Meta report.";
+      setReportFlowError(message);
+      setReportFlow("error");
+      onError(message);
     } finally {
       onLoadingChange("");
     }
@@ -610,31 +678,8 @@ export function AdsWorkspace({
 
   return (
     <>
-      {report && !scopeExpanded ? (
-        <Card className="workbench-fade-up">
-          <CardContent className="flex flex-col gap-3 py-4 md:flex-row md:items-center md:justify-between">
-            <div className="min-w-0">
-              <div className="text-sm font-medium">{accounts.find((account) => account.id === accountId)?.name || copy.scope.account}</div>
-              <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                <span>{since} to {until}</span>
-                <span>{selectedCampaignIds.length ? `${selectedCampaignIds.length} ${copy.campaign.selected}` : copy.campaign.allActive}</span>
-                <span>{pack === "auto" ? copy.scope.autoDetect : packLabel(pack, language)}</span>
-                <span>{compareLabel(compareMode, language)}</span>
-              </div>
-            </div>
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <Button type="button" variant="outline" onClick={() => updateState({ scopeExpanded: true })}>
-                {language === "vi" ? "Sửa phạm vi" : "Edit scope"}
-              </Button>
-              <Button onClick={pullReport} disabled={!accountId || loading === "report"}>
-                {loading === "report" ? <Spinner data-icon="inline-start" /> : <RefreshCcwIcon data-icon="inline-start" />}
-                {language === "vi" ? "Kéo lại" : "Refresh report"}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <Card className="workbench-fade-up">
+      {!report ? (
+        <Card className="workbench-fade-up v2-panel">
           <CardHeader className="border-b pb-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
@@ -810,7 +855,7 @@ export function AdsWorkspace({
             <Button
               type="button"
               size="lg"
-              onClick={pullReport}
+              onClick={() => void pullReport()}
               disabled={!scopeReady}
               className="w-full sm:w-auto sm:min-w-44"
             >
@@ -819,9 +864,42 @@ export function AdsWorkspace({
             </Button>
           </CardFooter>
         </Card>
-      )}
+      ) : null}
 
-      {loading === "report" ? <ReportSkeleton language={language} /> : null}
+      <ReportProgressDialog
+        language={language}
+        state={reportFlow}
+        error={reportFlowError}
+        onClose={() => setReportFlow("idle")}
+        onRetry={() => void pullReport()}
+      />
+      {report ? (
+        <ReportScopeDialog
+          open={scopeExpanded}
+          language={language}
+          accounts={accounts.length ? accounts : [report.account]}
+          accountId={accountId || report.account.id}
+          campaigns={campaigns.length ? campaigns : report.source === "sample" ? SAMPLE_CAMPAIGNS : report.selectedCampaigns}
+          currency={selectedAccount?.currency || report.account.currency || "VND"}
+          loading={loading}
+          selectedCampaignIds={selectedCampaignIds}
+          since={since}
+          until={until}
+          pack={pack}
+          compareMode={compareMode}
+          targetCpa={targetCpa || (report.source === "sample" ? "40" : "")}
+          targetRoas={targetRoas || (report.source === "sample" ? "2.5" : "")}
+          onAccountIdChange={report.source === "sample" && !accountId ? () => undefined : onAccountIdChange}
+          onOpenChange={(open) => updateState({ scopeExpanded: open })}
+          onSave={(patch) => {
+            if (report.source === "sample" && !accountId) {
+              void pullReport(patch);
+              return;
+            }
+            void pullReport(patch);
+          }}
+        />
+      ) : null}
       {report && !reportHasData ? (
         <Card className="border-border bg-card">
           <CardContent>
@@ -841,234 +919,68 @@ export function AdsWorkspace({
           </CardContent>
         </Card>
       ) : null}
-      {report && reportHasData && !scopeExpanded ? (
-        <div ref={reportStartRef} className="workbench-fade-up flex flex-col gap-4 scroll-mt-4">
-          <section className="flex flex-col gap-3">
-            <div className="flex flex-wrap items-center justify-between gap-2" data-print-hidden>
-              <div>
-                <h2 className="font-heading text-lg font-semibold tracking-tight">{language === "vi" ? "KPI chính" : "Top KPIs"}</h2>
-                <p className="text-sm text-muted-foreground">
-                  {language === "vi" ? "Các thẻ này là phần hiển thị, không đổi bộ KPI đang chọn hoặc Verdict." : "These cards are display-only and do not change the selected KPI pack or Verdict."}
-                </p>
-              </div>
+      {report && reportHasData ? (
+        <div ref={reportStartRef} className="workbench-fade-up scroll-mt-4">
+          <PerformanceV2
+            language={language}
+            report={report}
+            previousReport={previousReport}
+            kpiComparisons={kpiComparisons}
+            effectiveKpis={effectiveKpis}
+            healthSummary={healthSummary}
+            verdict={verdict}
+            insights={insights}
+            accountLabel={report.source === "sample"
+              ? selectedCampaignIds.length === 1
+                ? report.selectedCampaigns[0]?.name || copy.campaign.allActive
+                : selectedCampaignIds.length > 1
+                  ? `${selectedCampaignIds.length} ${copy.campaign.selected}`
+                  : copy.campaign.allActive
+              : selectedCampaignIds.length === 1
+                ? campaigns.find((campaign) => campaign.id === selectedCampaignIds[0])?.name || selectedAccount?.name || copy.scope.account
+                : selectedCampaignIds.length > 1
+                  ? `${selectedCampaignIds.length} ${copy.campaign.selected}`
+                  : selectedAccount?.name || copy.campaign.allActive}
+            periodLabel={`${report.dateRange.since} – ${report.dateRange.until}`}
+            scopeLabel={packLabel(report.selectedPack, language)}
+            campaigns={campaigns}
+            selectedCampaignIds={selectedCampaignIds}
+            since={since}
+            until={until}
+            pack={pack}
+            compareMode={compareMode}
+            exporting={exportingPdf}
+            reviewing={aiLoading.verdict}
+            reportLoading={loading === "report"}
+            onEditScope={() => updateState({ scopeExpanded: true })}
+            onRefresh={() => void pullReport()}
+            onExport={onExportPdf}
+            onReviewActions={runAi}
+            onApplyScope={(patch) => pullReport(patch)}
+            customizeAction={
               <CustomKpiSetSheet
                 defaultKpis={report.kpis}
                 language={language}
                 selectedKeys={customKpiKeys || effectiveKpis.map((kpi) => kpi.key as CustomKpiKey)}
                 onSave={onSaveCustomKpis}
               />
-            </div>
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-              {effectiveKpis.map((kpi) => {
-                const comparison = kpiComparisons?.get(kpi.key as keyof NormalizedRow);
-
-                return (
-                  <Card key={kpi.key} size="sm">
-                    <CardHeader>
-                      <CardDescription className="text-xs font-medium uppercase tracking-wide">{kpi.label}</CardDescription>
-                      <CardTitle className="text-3xl font-semibold tabular-nums leading-none">
-                        {kpi.key === "healthScore" && healthSummary
-                          ? `${healthSummary.score}/100`
-                          : formatMetric(Number(report.totals[kpi.key as keyof NormalizedRow] || 0), kpi.format, report.account.currency || "VND")}
-                      </CardTitle>
-                      {comparison ? (
-                        <CardDescription className={`text-xs tabular-nums ${metricMovementIsBad(kpi.key, comparison.change) ? "text-destructive" : "text-muted-foreground"}`}>
-                          {comparison.change > 0 ? "↑" : comparison.change < 0 ? "↓" : "→"} {formatComparisonChangePct(comparison.changePct, language)} {comparison.descriptor}
-                        </CardDescription>
-                      ) : null}
-                    </CardHeader>
-                  </Card>
-                );
-              })}
-            </div>
-          </section>
-
-          <PerformanceCharts report={report} language={language} />
-
-          <BreakdownAnalysisSection report={report} language={language} />
-
-          <CustomChartsSection
-            report={report}
-            language={language}
-            saved={customCharts}
-            onSavedChange={(update) => {
-              onStateChange((current) => ({
-                ...current,
-                customCharts: typeof update === "function" ? update(current.customCharts) : update,
-              }));
-            }}
+            }
+            evidenceExtra={
+              <CustomChartsSection
+                controllerOnly
+                report={report}
+                language={language}
+                saved={customCharts}
+                onSavedChange={(update) => {
+                  onStateChange((current) => ({
+                    ...current,
+                    customCharts: typeof update === "function" ? update(current.customCharts) : update,
+                  }));
+                }}
+              />
+            }
           />
-
-          {previousReport ? <ComparisonPanel current={report} previous={previousReport} mode={compareMode} language={language} /> : null}
-
-          <VerdictPanel
-            provider={provider}
-            loading={aiLoading.verdict}
-            progress={verdictProgress}
-            verdict={verdict}
-            copiedPrompt={copiedPrompt}
-            language={language}
-            onProviderChange={onProviderChange}
-            onGenerate={runAi}
-            onCopyPrompt={copyPrompt}
-          />
-
-          <InsightPanel
-            provider={provider}
-            insights={insights}
-            loading={aiLoading.insights}
-            progress={insightProgress}
-            compareMode={compareMode}
-            hasComparison={Boolean(previousReport)}
-            language={language}
-            onGenerate={runInsights}
-          />
-
-          {report.adsetPreviews ? (
-            <RunningAdSetsPanel
-              adsets={report.adsetPreviews}
-              currency={report.account.currency || "VND"}
-              language={language}
-            />
-          ) : null}
-
-          <section className="grid gap-4 xl:grid-cols-[1.5fr_1fr]" data-print-flow>
-            <Card>
-              <CardHeader>
-                <CardTitle>{copy.performance.title}</CardTitle>
-                <CardDescription>
-                  {copy.performance.description
-                    .replace("{detected}", report.detectedPack)
-                    .replace("{active}", report.selectedPack)
-                    .replace("{reason}", report.packReason)}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Tabs defaultValue="campaigns">
-                  <TabsList>
-                    <TabsTrigger value="campaigns">{copy.performance.campaigns}</TabsTrigger>
-                    <TabsTrigger value="adsets">{copy.performance.adsets}</TabsTrigger>
-                    <TabsTrigger value="ads">{copy.performance.ads}</TabsTrigger>
-                    <TabsTrigger value="daily">{copy.performance.daily}</TabsTrigger>
-                  </TabsList>
-                  <TabsContent value="campaigns" className="mt-3">
-                    <PerformanceTable
-                      rows={report.campaignRows}
-                      currency={report.account.currency || "VND"}
-                      language={language}
-                      pack={report.selectedPack}
-                    />
-                  </TabsContent>
-                  <TabsContent value="adsets" className="mt-3">
-                    <PerformanceTable
-                      rows={report.adsetRows}
-                      currency={report.account.currency || "VND"}
-                      language={language}
-                      pack={report.selectedPack}
-                    />
-                  </TabsContent>
-                  <TabsContent value="ads" className="mt-3">
-                    <PerformanceTable
-                      rows={report.adRows}
-                      currency={report.account.currency || "VND"}
-                      language={language}
-                      pack={report.selectedPack}
-                    />
-                  </TabsContent>
-                  <TabsContent value="daily" className="mt-3">
-                    <PerformanceTable rows={report.dailyRows} currency={report.account.currency || "VND"} language={language} daily />
-                  </TabsContent>
-                </Tabs>
-              </CardContent>
-            </Card>
-
-            <DiagnosticCard diagnostic={diagnostics.find((diagnostic) => diagnostic.id === "healthTriage")!} language={language} currency={reportCurrency} />
-          </section>
-
-          <section data-print-flow>
-            <DiagnosticCard diagnostic={diagnostics.find((diagnostic) => diagnostic.id === "dailyDiagnosis")!} language={language} currency={reportCurrency} />
-          </section>
-
-          <Collapsible open={diagnosticsOpen} onOpenChange={(open) => updateState({ diagnosticsOpen: open })} className="rounded-2xl border bg-card" data-print-flow>
-            <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
-              <div className="min-w-0">
-                <h2 className="font-heading text-lg font-semibold tracking-tight">
-                  {language === "vi" ? "Evidence chẩn đoán chi tiết" : "Detailed diagnostic evidence"}
-                </h2>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {language === "vi"
-                    ? "13 kiểm tra chuyên sâu được ẩn mặc định để ưu tiên health score, nguyên nhân và hành động."
-                    : "Thirteen deep checks stay collapsed so health, causes, and actions remain primary."}
-                </p>
-              </div>
-              <CollapsibleTrigger render={<Button type="button" variant="outline" className="shrink-0" />}>
-                {diagnosticsOpen
-                  ? language === "vi" ? "Ẩn evidence" : "Hide evidence"
-                  : language === "vi" ? "Mở 13 kiểm tra" : "Open 13 checks"}
-                <ChevronDownIcon data-icon="inline-end" className={diagnosticsOpen ? "rotate-180" : undefined} />
-              </CollapsibleTrigger>
-            </div>
-            <CollapsibleContent className="border-t p-4 sm:p-5">
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {diagnostics
-                  .filter((diagnostic) => diagnostic.id !== "healthTriage" && diagnostic.id !== "dailyDiagnosis")
-                  .map((diagnostic) => (
-                    <DiagnosticCard key={diagnostic.id} diagnostic={diagnostic} language={language} currency={reportCurrency} />
-                  ))}
-              </div>
-            </CollapsibleContent>
-          </Collapsible>
-
         </div>
-      ) : null}
-      {report && reportHasData && !scopeExpanded ? (
-        <StickyActionDock
-          contextLabel={language === "vi" ? "Hiệu quả" : "Performance"}
-          status={aiLoading.verdict ? "working" : "ready"}
-          statusLabel={aiLoading.verdict
-            ? language === "vi" ? "Đang tạo Verdict" : "Generating Verdict"
-            : verdict
-              ? language === "vi" ? "Verdict đã sẵn sàng" : "Verdict ready"
-              : language === "vi" ? "Báo cáo đã sẵn sàng" : "Report ready"}
-          primaryAction={{
-            id: "verdict",
-            label: verdict
-              ? language === "vi" ? "Làm mới Verdict" : "Refresh Verdict"
-              : language === "vi" ? "Tạo Verdict" : "Generate Verdict",
-            shortLabel: "Verdict",
-            icon: SparklesIcon,
-            onSelect: runAi,
-            loading: aiLoading.verdict,
-            shortcut: "mod+enter",
-          }}
-          secondaryActions={[
-            {
-              id: "export",
-              label: language === "vi" ? "Xuất báo cáo" : "Export report",
-              icon: DownloadIcon,
-              onSelect: onExportPdf,
-              loading: exportingPdf,
-            },
-            {
-              id: "copy-prompt",
-              label: copiedPrompt
-                ? language === "vi" ? "Đã copy prompt" : "Prompt copied"
-                : language === "vi" ? "Copy prompt phân tích" : "Copy analyst prompt",
-              icon: ClipboardIcon,
-              onSelect: copyPrompt,
-            },
-          ]}
-          shortcutsDisabled={chatShortcutsDisabled}
-          companionAction={{
-            id: "open-performance-assistant",
-            label: language === "vi" ? "Hỏi trợ lý AI về hiệu quả" : "Ask the smart assistant about performance",
-            shortLabel: language === "vi" ? "Trợ lý AI" : "Assistant",
-            controlsId: CONTEXT_CHAT_PANEL_ID,
-            icon: BotMessageSquareIcon,
-            onSelect: onOpenAssistant,
-          }}
-          companionActive={chatShortcutsDisabled}
-        />
       ) : null}
     </>
   );
@@ -1088,13 +1000,21 @@ function CustomKpiSetSheet({
   const isVietnamese = language === "vi";
   const [open, setOpen] = React.useState(false);
   const [draftKeys, setDraftKeys] = React.useState<CustomKpiKey[]>(selectedKeys);
+  const [query, setQuery] = React.useState("");
   const groups = getCustomKpiCatalogGroups(language);
   const selectedSet = React.useMemo(() => new Set(draftKeys), [draftKeys]);
-  const selectedCards = buildCustomKpiCards(draftKeys);
+  const catalog = React.useMemo(() => groups.flatMap((group) => group.metrics), [groups]);
+  const adaptiveCards = defaultKpis.filter((kpi): kpi is KpiCard & { key: CustomKpiKey } => kpi.key !== "healthScore");
+  const visibleCards = query.trim()
+    ? catalog.filter((metric) => `${metric.label} ${metric.format}`.toLowerCase().includes(query.trim().toLowerCase()))
+    : adaptiveCards;
 
   function handleOpenChange(nextOpen: boolean) {
     setOpen(nextOpen);
-    if (nextOpen) setDraftKeys(selectedKeys.length ? selectedKeys : deserializeCustomKpiSet(null, defaultKpis));
+    if (nextOpen) {
+      setDraftKeys(selectedKeys.length ? selectedKeys : deserializeCustomKpiSet(null, defaultKpis));
+      setQuery("");
+    }
   }
 
   function toggleMetric(key: CustomKpiKey) {
@@ -1107,12 +1027,13 @@ function CustomKpiSetSheet({
   function handleSave() {
     if (!draftKeys.length) return;
     onSave(draftKeys);
+    toast.success(isVietnamese ? "Đã lưu thẻ KPI" : "KPI cards saved", { description: isVietnamese ? `${draftKeys.length} thẻ sẽ xuất hiện trên mọi tab hiệu quả.` : `${draftKeys.length} cards now follow the active performance scope.` });
     setOpen(false);
   }
 
   return (
-    <Sheet open={open} onOpenChange={handleOpenChange}>
-      <SheetTrigger
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogTrigger
         render={
           <Button type="button" variant="outline" size="sm">
             <SlidersHorizontalIcon data-icon="inline-start" />
@@ -1120,68 +1041,318 @@ function CustomKpiSetSheet({
           </Button>
         }
       />
-      <SheetContent className="w-full gap-0 overflow-y-auto sm:max-w-md">
-        <SheetHeader>
-          <SheetTitle>{isVietnamese ? "Tùy chỉnh KPI" : "Customize KPIs"}</SheetTitle>
-          <SheetDescription>
+      <DialogContent className="flex h-[min(700px,calc(100svh-2rem))] max-w-[440px] flex-col gap-3.5 overflow-hidden rounded-2xl border border-border bg-popover p-5" showCloseButton={false}>
+        <DialogHeader className="gap-0 text-left">
+          <DialogTitle className="text-[22px] font-bold leading-7">{isVietnamese ? "Tùy chỉnh thẻ KPI" : "Customize KPI cards"}</DialogTitle>
+          <DialogDescription className="mt-3 text-[13px] leading-5">
             {isVietnamese
-              ? "Chọn các thẻ KPI hiển thị ở đầu dashboard. Việc này không đổi bộ KPI hoặc Verdict."
-              : "Choose the KPI cards shown at the top of the dashboard. This does not change the KPI pack or Verdict."}
-          </SheetDescription>
-        </SheetHeader>
-        <Separator />
-        <div className="flex flex-col gap-4 p-4">
-          <div className="rounded-lg border bg-muted/20 p-3">
-            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              {isVietnamese ? "KPI đã chọn" : "Selected KPIs"}
-            </div>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {selectedCards.map((kpi, index) => (
-                <Badge key={kpi.key} variant="secondary">
-                  {index + 1}. {kpi.label}
-                </Badge>
-              ))}
+              ? "Tạo bộ evidence tập trung. KPI tùy chỉnh chỉ thay đổi phần hiển thị và không đổi KPI pack đang active."
+              : "Build a focused evidence set. Custom KPI cards are display-only and never change the active KPI pack."}
+          </DialogDescription>
+        </DialogHeader>
+
+        <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={isVietnamese ? `Tìm ${catalog.length} chỉ số...` : `Search ${catalog.length} metrics...`} className="h-9" />
+        <div className="text-xs font-bold uppercase tracking-[0.06em] text-muted-foreground">{query.trim() ? (isVietnamese ? "Kết quả" : "Metric results") : (isVietnamese ? "Thẻ KPI thích ứng" : "Adaptive KPI cards")}</div>
+
+        <div className="flex max-h-[272px] flex-col gap-2 overflow-y-auto pr-1">
+          {visibleCards.map((metric, index) => {
+            const checked = selectedSet.has(metric.key);
+            const disabled = checked && draftKeys.length === 1;
+            return (
+              <button
+                key={metric.key}
+                type="button"
+                aria-pressed={checked}
+                disabled={disabled}
+                onClick={() => toggleMetric(metric.key)}
+                className="min-h-12 rounded-[20px] px-3 py-1.5 text-left transition-colors hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-60 aria-pressed:bg-primary/12"
+              >
+                <span className="block text-sm font-medium">{query.trim() ? metric.label : adaptiveKpiLabel(metric, index, language)}</span>
+                <span className="block text-xs text-muted-foreground">{query.trim() ? metric.format : adaptiveKpiDescription(metric, index, language)}</span>
+              </button>
+            );
+          })}
+          {!visibleCards.length ? <div className="py-8 text-center text-sm text-muted-foreground">{isVietnamese ? "Không tìm thấy KPI phù hợp." : "No matching KPI metrics."}</div> : null}
+        </div>
+
+        <div className="flex items-center justify-between text-xs text-muted-foreground"><span>{draftKeys.length} {isVietnamese ? "đã chọn" : "selected"}</span><span>{draftKeys.length === 1 ? (isVietnamese ? "Tối thiểu 1 KPI" : "Minimum 1 KPI") : (isVietnamese ? "Có thể chỉnh bất cứ lúc nào" : "Editable anytime")}</span></div>
+        <div className="grid grid-cols-2 gap-2.5 pt-0.5">
+          <Button type="button" variant="secondary" className="rounded-full text-primary" onClick={() => handleOpenChange(false)}>{isVietnamese ? "Hủy" : "Cancel"}</Button>
+          <Button type="button" className="rounded-full" onClick={handleSave} disabled={!draftKeys.length}>{isVietnamese ? "Lưu KPI" : "Save KPIs"}</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function adaptiveKpiLabel(metric: KpiCard, index: number, language: InterfaceLanguage) {
+  if (index === 2) return language === "vi" ? "Kết quả chính" : "Primary result";
+  if (index === 3) return language === "vi" ? "Chi phí / kết quả" : "Cost / result";
+  if (index === 4) return language === "vi" ? "Tín hiệu chất lượng" : "Quality signal";
+  return metric.label;
+}
+
+function adaptiveKpiDescription(metric: KpiCard, index: number, language: InterfaceLanguage) {
+  if (index === 0) return language === "vi" ? "Sản lượng phân phối · số" : "Delivery volume · number";
+  if (index === 1) return language === "vi" ? "Người tiếp cận duy nhất · số" : "Unique people reached · number";
+  if (index === 2) return language === "vi" ? "Thích ứng theo KPI pack đã chọn" : "Adapts to selected KPI pack";
+  if (index === 3) return language === "vi" ? "CPL, CPA, CPC hoặc cost/message" : "CPL, CPA, CPC or cost/message";
+  if (index === 4) return language === "vi" ? "ROAS, CTR, reply rate hoặc frequency" : "ROAS, CTR, reply rate or frequency";
+  return metric.format;
+}
+
+function ReportScopeDialog({
+  open,
+  language,
+  accounts,
+  accountId,
+  campaigns,
+  currency,
+  loading,
+  selectedCampaignIds,
+  since,
+  until,
+  pack,
+  compareMode,
+  targetCpa,
+  targetRoas,
+  onAccountIdChange,
+  onOpenChange,
+  onSave,
+}: {
+  open: boolean;
+  language: InterfaceLanguage;
+  accounts: MetaAccount[];
+  accountId: string;
+  campaigns: MetaCampaign[];
+  currency: string;
+  loading: string;
+  selectedCampaignIds: string[];
+  since: string;
+  until: string;
+  pack: KpiPack | "auto";
+  compareMode: CompareMode;
+  targetCpa: string;
+  targetRoas: string;
+  onAccountIdChange: (id: string) => void;
+  onOpenChange: (open: boolean) => void;
+  onSave: (patch: ReportScopePatch) => void;
+}) {
+  const isVietnamese = language === "vi";
+  const [draft, setDraft] = React.useState({ selectedCampaignIds, since, until, pack, compareMode, targetCpa, targetRoas });
+  const [thresholdsEnabled, setThresholdsEnabled] = React.useState(Boolean(targetCpa || targetRoas));
+  const invalidDates = Boolean(draft.since && draft.until && draft.since > draft.until);
+
+  React.useEffect(() => {
+    if (!open) return;
+    setDraft({ selectedCampaignIds, since, until, pack, compareMode, targetCpa, targetRoas });
+    setThresholdsEnabled(Boolean(targetCpa || targetRoas));
+  }, [open, selectedCampaignIds, since, until, pack, compareMode, targetCpa, targetRoas]);
+
+  function save() {
+    if (invalidDates || loading === "report" || loading === "campaigns") return;
+    onSave({
+      ...draft,
+      targetCpa: thresholdsEnabled ? draft.targetCpa : "",
+      targetRoas: thresholdsEnabled ? draft.targetRoas : "",
+    });
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="flex max-h-[calc(100svh-2rem)] max-w-[520px] flex-col gap-5 overflow-y-auto rounded-[24px] border border-border bg-popover p-6" showCloseButton={false}>
+        <DialogHeader className="flex-row items-center justify-between gap-4 text-left">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-primary">
+              <SlidersHorizontalIcon className="size-[19px]" />
+            </span>
+            <div className="min-w-0">
+              <DialogTitle className="text-lg font-semibold">{isVietnamese ? "Sửa phạm vi báo cáo" : "Edit report scope"}</DialogTitle>
+              <DialogDescription className="mt-0.5 text-xs">{isVietnamese ? "Chỉ thay đổi những gì ảnh hưởng đến quyết định." : "Change only what affects the decision."}</DialogDescription>
             </div>
           </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <Badge variant="secondary">4 {isVietnamese ? "trường" : "fields"}</Badge>
+            <button type="button" className="flex size-8 items-center justify-center rounded-[10px] border border-border bg-secondary text-muted-foreground transition-colors hover:text-foreground" aria-label={isVietnamese ? "Đóng" : "Close"} onClick={() => onOpenChange(false)}>
+              <XIcon className="size-[15px]" />
+            </button>
+          </div>
+        </DialogHeader>
 
-          <div className="flex flex-col gap-4">
-            {groups.map((group) => (
-              <div key={group.id} className="flex flex-col gap-2">
-                <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{group.label}</div>
-                <div className="grid gap-2">
-                  {group.metrics.map((metric) => {
-                    const checked = selectedSet.has(metric.key);
-                    const disabled = checked && draftKeys.length === 1;
-                    return (
-                      <label
-                        key={metric.key}
-                        className="flex cursor-pointer items-start gap-3 rounded-lg border bg-background p-3 text-sm transition-colors hover:bg-muted/50 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-60"
-                      >
-                        <input
-                          type="checkbox"
-                          className="mt-1"
-                          checked={checked}
-                          disabled={disabled}
-                          onChange={() => toggleMetric(metric.key)}
-                        />
-                        <span className="min-w-0">
-                          <span className="block font-medium text-foreground">{metric.label}</span>
-                          <span className="block text-xs text-muted-foreground">{metric.format}</span>
-                        </span>
-                      </label>
-                    );
-                  })}
-                </div>
+        <div className="grid gap-5">
+          <section className="grid gap-3.5">
+            <div className="text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">{isVietnamese ? "Nguồn & kỳ" : "Source & period"}</div>
+            <Field>
+              <FieldLabel>{isVietnamese ? "Tài khoản quảng cáo" : "Ad account"}</FieldLabel>
+              <Select
+                items={accounts.map((account) => ({ label: account.name, value: account.id }))}
+                value={accountId}
+                onValueChange={(value) => value && onAccountIdChange(value)}
+              >
+                <SelectTrigger className="h-10 w-full"><SelectValue /></SelectTrigger>
+                <SelectContent><SelectGroup>{accounts.map((account) => <SelectItem key={account.id} value={account.id}>{account.name}</SelectItem>)}</SelectGroup></SelectContent>
+              </Select>
+            </Field>
+            <Field data-invalid={invalidDates || undefined}>
+              <FieldLabel>{isVietnamese ? "Khoảng evidence" : "Evidence window"}</FieldLabel>
+              <div className="grid min-h-10 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center overflow-hidden rounded-xl bg-secondary/75 ring-1 ring-foreground/5 focus-within:ring-2 focus-within:ring-ring">
+                <label className="sr-only" htmlFor="report-scope-since">{isVietnamese ? "Từ ngày" : "Since"}</label>
+                <Input id="report-scope-since" type="date" value={draft.since} onChange={(event) => setDraft((current) => ({ ...current, since: event.target.value }))} className="min-w-0 border-0 bg-transparent shadow-none focus-visible:ring-0" />
+                <span className="px-1 text-sm text-muted-foreground">–</span>
+                <label className="sr-only" htmlFor="report-scope-until">{isVietnamese ? "Đến ngày" : "Until"}</label>
+                <Input id="report-scope-until" type="date" value={draft.until} onChange={(event) => setDraft((current) => ({ ...current, until: event.target.value }))} className="min-w-0 border-0 bg-transparent shadow-none focus-visible:ring-0" />
               </div>
-            ))}
-          </div>
+            </Field>
+            {invalidDates ? <p className="text-xs text-destructive">{isVietnamese ? "Ngày kết thúc phải bằng hoặc sau ngày bắt đầu." : "Until must be the same as or later than Since."}</p> : null}
+          </section>
 
-          <Button type="button" onClick={handleSave} disabled={!draftKeys.length}>
-            {isVietnamese ? "Lưu KPI" : "Save KPIs"}
+          <section className="grid gap-3">
+            <div className="text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">{isVietnamese ? "Quy tắc quyết định" : "Decision rules"}</div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field>
+                <FieldLabel>KPI pack</FieldLabel>
+                <Select items={[{ label: "Auto-detect", value: "auto" }, ...packItems]} value={draft.pack} onValueChange={(value) => value && setDraft((current) => ({ ...current, pack: value as KpiPack | "auto" }))}>
+                  <SelectTrigger className="h-10 w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectGroup><SelectItem value="auto">{isVietnamese ? "Tự nhận diện" : "Auto-detect"}</SelectItem>{packItems.map((item) => <SelectItem key={item.value} value={item.value}>{packLabel(item.value, language)}</SelectItem>)}</SelectGroup></SelectContent>
+                </Select>
+              </Field>
+              <Field>
+                <FieldLabel>{isVietnamese ? "So sánh" : "Compare"}</FieldLabel>
+                <Select items={compareItems} value={draft.compareMode} onValueChange={(value) => value && setDraft((current) => ({ ...current, compareMode: value as CompareMode }))}>
+                  <SelectTrigger className="h-10 w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectGroup>{compareItems.map((item) => <SelectItem key={item.value} value={item.value}>{compareLabel(item.value, language)}</SelectItem>)}</SelectGroup></SelectContent>
+                </Select>
+              </Field>
+            </div>
+            <label className="flex cursor-pointer items-start gap-3">
+              <input type="checkbox" className="mt-1 accent-[var(--primary)]" checked={thresholdsEnabled} onChange={(event) => setThresholdsEnabled(event.target.checked)} />
+              <span><span className="block text-sm font-medium">{isVietnamese ? "Áp dụng ngưỡng quyết định" : "Apply decision thresholds"}</span><span className="mt-0.5 block text-sm text-muted-foreground">{thresholdsEnabled && draft.targetCpa && draft.targetRoas ? (isVietnamese ? `Dùng CPA ${draft.targetCpa} và ROAS ${draft.targetRoas} làm guardrail khi scale.` : `Use CPA ${draft.targetCpa} and ROAS ${draft.targetRoas} as scale guardrails.`) : (isVietnamese ? "Dùng ngưỡng CPA và ROAS đã cấu hình làm guardrail khi scale." : "Use configured CPA and ROAS as scale guardrails.")}</span></span>
+            </label>
+          </section>
+
+          <section className="grid gap-3">
+            <div className="text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">{isVietnamese ? "Phạm vi campaign" : "Campaign scope"}</div>
+            <ReportScopeCampaignPicker
+              campaigns={campaigns}
+              currency={currency}
+              language={language}
+              loading={loading === "campaigns"}
+              selectedIds={draft.selectedCampaignIds}
+              onChange={(ids) => setDraft((current) => ({ ...current, selectedCampaignIds: ids }))}
+            />
+          </section>
+        </div>
+
+        <DialogFooter className="mt-auto flex-row items-center justify-between gap-4 pt-1">
+          <span className="mr-auto text-[11px] text-muted-foreground">{isVietnamese ? "Áp dụng cho lần phân tích tiếp theo" : "Applies to the next analysis"}</span>
+          <Button type="button" variant="outline" className="rounded-full" onClick={() => onOpenChange(false)}>{isVietnamese ? "Hủy" : "Cancel"}</Button>
+          <Button type="button" className="rounded-full" onClick={save} disabled={invalidDates || loading === "report" || loading === "campaigns"}>{loading === "report" ? <Spinner data-icon="inline-start" /> : null}{isVietnamese ? "Lưu phạm vi" : "Save scope"}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ReportScopeCampaignPicker({ campaigns, currency, language, loading, selectedIds, onChange }: {
+  campaigns: MetaCampaign[];
+  currency: string;
+  language: InterfaceLanguage;
+  loading: boolean;
+  selectedIds: string[];
+  onChange: (ids: string[]) => void;
+}) {
+  const isVietnamese = language === "vi";
+  const [expanded, setExpanded] = React.useState(false);
+  const [query, setQuery] = React.useState("");
+  const activeCampaigns = campaigns.filter(isActiveCampaign);
+  const selectedSet = React.useMemo(() => new Set(selectedIds), [selectedIds]);
+  const scopedCampaigns = selectedIds.length ? campaigns.filter((campaign) => selectedSet.has(campaign.id)) : activeCampaigns;
+  const primary = scopedCampaigns[0] || campaigns[0];
+  const visibleCampaigns = campaigns.filter((campaign) => `${campaign.name} ${campaign.objective || ""}`.toLowerCase().includes(query.toLowerCase())).slice(0, 30);
+
+  function toggle(id: string) {
+    const current = selectedIds.length ? selectedIds : [];
+    onChange(current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+  }
+
+  return (
+    <div>
+      <div className="rounded-2xl border border-border bg-card p-3.5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <Badge variant={scopedCampaigns.length ? "success" : "secondary"}>{scopedCampaigns.length} {isVietnamese ? "active" : "active"}</Badge>
+            <div className="mt-2 truncate text-sm font-medium" title={primary?.name}>{primary?.name || (isVietnamese ? "Tất cả campaign đang hoạt động" : "All active campaigns")}</div>
+            <div className="mt-1 truncate text-[11px] uppercase text-muted-foreground">
+              {primary ? `${(primary.objective || "Objective unavailable").replace(/^OUTCOME_/, "").replaceAll("_", " ")} ${formatCampaignBudget(primary, currency, language)}` : (isVietnamese ? "Chưa có campaign" : "No campaigns available")}
+            </div>
+          </div>
+          <Button type="button" variant="outline" size="sm" className="shrink-0 rounded-full" onClick={() => setExpanded((current) => !current)} disabled={loading || !campaigns.length} aria-expanded={expanded}>
+            {expanded ? (isVietnamese ? "Xong" : "Done") : (isVietnamese ? "Thay đổi" : "Change")}
           </Button>
         </div>
-      </SheetContent>
-    </Sheet>
+      </div>
+
+      {expanded ? (
+        <div className="mt-3 rounded-2xl border border-border bg-secondary/35 p-3">
+          <div className="flex gap-2">
+            <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={isVietnamese ? "Tìm campaign..." : "Search campaigns..."} />
+            <Button type="button" variant="secondary" size="sm" onClick={() => onChange([])} disabled={loading}>{isVietnamese ? "Tất cả active" : "All active"}</Button>
+          </div>
+          <div className="mt-2 flex max-h-52 flex-col gap-1 overflow-y-auto">
+            {visibleCampaigns.map((campaign) => {
+              const selected = selectedIds.length ? selectedSet.has(campaign.id) : isActiveCampaign(campaign);
+              return (
+                <button key={campaign.id} type="button" aria-pressed={selected} onClick={() => toggle(campaign.id)} className="grid grid-cols-[20px_minmax(0,1fr)_auto] items-center gap-2 rounded-xl px-2.5 py-2 text-left hover:bg-secondary aria-pressed:bg-primary/10">
+                  <span className="flex size-4 items-center justify-center rounded border border-border text-primary">{selected ? <CheckIcon className="size-3" /> : null}</span>
+                  <span className="min-w-0"><span className="block truncate text-sm font-medium">{campaign.name}</span><span className="block truncate text-xs text-muted-foreground">{campaign.objective || (isVietnamese ? "Không có objective" : "No objective")} {formatCampaignBudget(campaign, currency, language)}</span></span>
+                  <Badge variant={isActiveCampaign(campaign) ? "secondary" : "outline"}>{campaignStatus(campaign)}</Badge>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ReportProgressDialog({ language, state, error, onClose, onRetry }: { language: InterfaceLanguage; state: "idle" | "pulling" | "ready" | "error"; error: string; onClose: () => void; onRetry: () => void }) {
+  const isVietnamese = language === "vi";
+  const [percent, setPercent] = React.useState(12);
+
+  React.useEffect(() => {
+    if (state !== "pulling") {
+      if (state === "ready") setPercent(100);
+      return;
+    }
+    setPercent(12);
+    const interval = window.setInterval(() => setPercent((current) => Math.min(92, current + Math.max(1, (96 - current) * 0.08))), 500);
+    return () => window.clearInterval(interval);
+  }, [state]);
+
+  return (
+    <Dialog open={state !== "idle"} onOpenChange={(open) => !open && state !== "pulling" && onClose()}>
+      <DialogContent className="max-w-[440px] rounded-3xl border border-border bg-popover p-6" showCloseButton={state !== "pulling"}>
+        <DialogHeader>
+          <Badge variant={state === "ready" ? "success" : state === "error" ? "destructive" : "secondary"} className="mb-3 w-fit">Meta Marketing API</Badge>
+          <DialogTitle className="text-xl font-semibold">
+            {state === "ready" ? (isVietnamese ? "Báo cáo đã sẵn sàng" : "Report ready") : state === "error" ? (isVietnamese ? "Kéo báo cáo quá thời gian" : "Report pull needs attention") : (isVietnamese ? "Đang kéo báo cáo" : "Pulling your report")}
+          </DialogTitle>
+          <DialogDescription className="mt-1 leading-5">
+            {state === "ready" ? (isVietnamese ? "Dữ liệu, breakdown và evidence đã được chuẩn hóa." : "Data, breakdowns and evidence are normalized and ready.") : state === "error" ? error : (isVietnamese ? "Đang lấy campaign, ad set, insight và breakdown từ phạm vi đã chọn." : "Fetching campaigns, ad sets, insights and breakdowns from the selected scope.")}
+          </DialogDescription>
+        </DialogHeader>
+        {state !== "error" ? (
+          <div className="mt-5">
+            <div className="h-2 overflow-hidden rounded-full bg-secondary"><div className="h-full rounded-full bg-primary transition-[width] duration-500" style={{ width: `${percent}%` }} /></div>
+            <div className="mt-2 text-xs text-muted-foreground">{state === "ready" ? "100%" : `${Math.round(percent)}% · ${isVietnamese ? "Đang chuẩn hóa evidence" : "Normalizing evidence"}`}</div>
+          </div>
+        ) : null}
+        <DialogFooter className="mt-6">
+          {state === "error" ? <><Button variant="outline" onClick={onClose}>{isVietnamese ? "Đóng" : "Close"}</Button><Button onClick={onRetry}>{isVietnamese ? "Thử lại" : "Retry"}</Button></> : state === "ready" ? <Button onClick={onClose}>{isVietnamese ? "Mở báo cáo" : "Open report"}</Button> : <Button variant="outline" disabled>{isVietnamese ? "Đang xử lý" : "Working"}</Button>}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1933,6 +2104,8 @@ function compareLabel(mode: CompareMode, language: InterfaceLanguage) {
 }
 
 function modeLabel(mode: CompareMode, language: InterfaceLanguage = "en") {
+  if (mode === "previous") return language === "vi" ? "Kỳ trước" : "Previous period";
+  if (mode === "campaign") return language === "vi" ? "Nhóm campaign" : "Campaign group";
   if (mode === "wow") return "WoW";
   if (mode === "mom") return "MoM";
   if (mode === "yoy") return "YoY";

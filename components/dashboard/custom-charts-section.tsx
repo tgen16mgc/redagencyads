@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { InfoIcon, PlusIcon, SlidersHorizontalIcon, Trash2Icon } from "lucide-react";
+import { toast } from "sonner";
+import { PlusIcon, SlidersHorizontalIcon, Trash2Icon } from "lucide-react";
 import type { DashboardReport } from "@/lib/types";
 import type { InterfaceLanguage } from "@/lib/types";
 import { type ChartKey } from "@/lib/chart-spec";
@@ -23,20 +24,18 @@ import {
 import { CustomChartCard } from "@/components/dashboard/custom-chart-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 type Copy = {
   trigger: string;
@@ -70,8 +69,8 @@ type Copy = {
 const COPY: Record<InterfaceLanguage, Copy> = {
   en: {
     trigger: "Build custom chart",
-    title: "Custom chart builder",
-    description: "Compose a chart from metrics already pulled into this report.",
+    title: "Build a custom chart",
+    description: "Compose evidence without changing the active KPI pack.",
     tabPresets: "Presets",
     tabCustom: "Custom",
     presetAdd: "Add chart",
@@ -128,6 +127,15 @@ const COPY: Record<InterfaceLanguage, Copy> = {
 
 const CHART_TYPES: CustomChartType[] = ["composed", "line", "bar", "area"];
 
+const PRESET_PRESENTATION: Record<string, { name: string; description: string }> = {
+  "preset-cpl-leads": { name: "Outcome + cost", description: "Primary result with CPA, CPL, CPC or cost/message." },
+  "preset-purchases-roas": { name: "Delivery quality", description: "Spend, reach and frequency with efficiency context." },
+  "preset-messages-costpermsg": { name: "Funnel efficiency", description: "Stage volume, rate, unit cost and benchmark." },
+  "preset-clicks-ctr": { name: "Saturation watch", description: "Reach growth, CPM pressure and frequency risk." },
+  "preset-frequency-ctr": { name: "Creative fatigue", description: "CTR decay, frequency and creative-level results." },
+  "preset-cpm-reach": { name: "Spend pace", description: "Daily spend against target and remaining opportunity." },
+};
+
 function newId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
   return `chart-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -142,27 +150,40 @@ export function CustomChartsSection({
   language,
   saved,
   onSavedChange,
+  controllerOnly = false,
 }: {
   report: DashboardReport;
   language: InterfaceLanguage;
   saved: CustomChartSpec[];
   onSavedChange: React.Dispatch<React.SetStateAction<CustomChartSpec[]>>;
+  controllerOnly?: boolean;
 }) {
   const copy = COPY[language];
   const currency = report.account.currency || "VND";
   const catalog = getMetricCatalog(language);
 
   const [open, setOpen] = React.useState(false);
+  const [builderTab, setBuilderTab] = React.useState("presets");
   const [draft, setDraft] = React.useState<CustomChartSpec>(emptyDraft);
   const [dragKey, setDragKey] = React.useState<ChartKey | null>(null);
   const [dropAxis, setDropAxis] = React.useState<CustomAxis | null>(null);
   const draftValidation = validateSpec(draft);
   const addedKeys = new Set(draft.series.map((s) => s.key));
 
+  React.useEffect(() => {
+    const openBuilder = () => {
+      setBuilderTab("presets");
+      setOpen(true);
+    };
+    window.addEventListener("v2:open-custom-chart", openBuilder);
+    return () => window.removeEventListener("v2:open-custom-chart", openBuilder);
+  }, []);
+
   function handleAddPreset(presetId: string) {
     const preset = CHART_PRESETS.find((p) => p.id === presetId);
     if (!preset) return;
     onSavedChange((prev) => [...prev, presetToSpec(preset, language, newId())]);
+    toast.success(language === "vi" ? "Đã thêm biểu đồ" : "Chart added", { description: PRESET_PRESENTATION[preset.id]?.name || preset.nameEn });
   }
 
   function handleAddMetric(key: ChartKey) {
@@ -188,22 +209,24 @@ export function CustomChartsSection({
   function handleSaveDraft() {
     if (!draftValidation.ok) return;
     onSavedChange((prev) => [...prev, { ...draft, id: newId() }]);
+    toast.success(language === "vi" ? "Đã lưu biểu đồ tùy chỉnh" : "Custom chart saved", { description: draft.title || draft.series.map((series) => metricLabel(series.key, language)).join(" + ") });
     setDraft(emptyDraft());
   }
 
   function handleRemoveSaved(id: string) {
     onSavedChange((prev) => prev.filter((spec) => spec.id !== id));
+    toast.success(language === "vi" ? "Đã xóa biểu đồ" : "Chart removed");
   }
 
   return (
     <section className="flex flex-col gap-4" data-print-flow>
-      <div className="flex items-center justify-between gap-3" data-print-hidden>
+      <div className={controllerOnly ? "hidden" : "flex items-center justify-between gap-3"} data-print-hidden>
         <div>
           <h3 className="font-heading text-sm font-medium text-foreground">{copy.savedLabel}</h3>
           {saved.length === 0 ? <p className="text-xs text-muted-foreground">{copy.savedEmpty}</p> : null}
         </div>
-        <Sheet open={open} onOpenChange={setOpen}>
-          <SheetTrigger
+        <Dialog open={open} onOpenChange={setOpen}>
+          <DialogTrigger
             render={
               <Button variant="outline" size="sm">
                 <SlidersHorizontalIcon />
@@ -211,57 +234,44 @@ export function CustomChartsSection({
               </Button>
             }
           />
-          <SheetContent className="w-full gap-0 overflow-y-auto sm:max-w-md">
-            <SheetHeader>
-              <SheetTitle>{copy.title}</SheetTitle>
-              <SheetDescription>{copy.description}</SheetDescription>
-            </SheetHeader>
-            <Separator />
-            <Tabs defaultValue="presets" className="gap-3 p-4">
-              <TabsList className="w-full">
+          <DialogContent className="flex max-h-[calc(100svh-2rem)] max-w-[620px] flex-col overflow-hidden rounded-2xl border border-border bg-popover p-0" showCloseButton={false}>
+            <DialogHeader className="flex-row items-start justify-between gap-4 p-4 pb-2">
+              <div>
+                <DialogTitle className="text-2xl font-semibold">{copy.title}</DialogTitle>
+                <DialogDescription className="mt-1">{copy.description}</DialogDescription>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => setOpen(false)}>Close</Button>
+            </DialogHeader>
+            <div className="flex items-center gap-2 px-4 pb-2 text-xs text-muted-foreground"><Badge variant="secondary" className="text-primary">Adaptive metrics</Badge><span>Availability follows the selected pack; missing values stay unavailable.</span></div>
+            <Tabs value={builderTab} onValueChange={setBuilderTab} className="min-h-0 flex-1 gap-0">
+              <TabsList variant="line" className="mx-4 h-auto w-fit rounded-none p-0">
                 <TabsTrigger value="presets">{copy.tabPresets}</TabsTrigger>
                 <TabsTrigger value="custom">{copy.tabCustom}</TabsTrigger>
               </TabsList>
 
-              <TabsContent value="presets" className="flex flex-col gap-3">
-                {CHART_PRESETS.map((preset) => {
-                  const name = language === "vi" ? preset.nameVi : preset.nameEn;
-                  const usage = language === "vi" ? preset.usageVi : preset.usageEn;
-                  const meaning = language === "vi" ? preset.meaningVi : preset.meaningEn;
-                  return (
-                    <div key={preset.id} className="flex flex-col gap-2 rounded-lg border p-3">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-sm font-medium text-foreground">{name}</span>
-                          <Tooltip>
-                            <TooltipTrigger
-                              render={
-                                <button type="button" aria-label={copy.presetMeaning} className="text-muted-foreground hover:text-foreground">
-                                  <InfoIcon className="size-3.5" />
-                                </button>
-                              }
-                            />
-                            <TooltipContent>
-                              <span className="font-medium">{copy.presetMeaning}: </span>
-                              {meaning}
-                            </TooltipContent>
-                          </Tooltip>
-                        </div>
-                        <Button variant="outline" size="sm" onClick={() => handleAddPreset(preset.id)}>
-                          <PlusIcon />
-                          {copy.presetAdd}
-                        </Button>
+              <TabsContent value="presets" className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-3">
+                <div className="flex items-start justify-between gap-4">
+                  <div><h3 className="font-semibold">Start with a decision-ready pattern.</h3><p className="mt-0.5 text-xs text-muted-foreground">Six presets use valid axes, formats and pack-aware metrics.</p></div>
+                  <Badge variant="secondary">6 presets</Badge>
+                </div>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  {CHART_PRESETS.map((preset) => {
+                    const presentation = PRESET_PRESENTATION[preset.id];
+                    return (
+                      <div key={preset.id} className="flex min-h-28 flex-col rounded-3xl bg-secondary/70 p-4">
+                        <div className="font-semibold">{presentation?.name || preset.nameEn}</div>
+                        <p className="mt-1 text-xs leading-5 text-muted-foreground">{presentation?.description || preset.usageEn}</p>
+                        <Button className="mt-auto self-end" variant="outline" size="sm" onClick={() => handleAddPreset(preset.id)}>{copy.presetAdd}</Button>
                       </div>
-                      <p className="text-xs text-muted-foreground">
-                        <span className="font-medium text-foreground/70">{copy.presetUsage}: </span>
-                        {usage}
-                      </p>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
+                <div className="mt-3 rounded-3xl bg-secondary p-4"><h3 className="font-semibold">Pack-aware metric contract</h3><p className="mt-2 text-xs leading-5 text-muted-foreground">Sales: purchases, CPA, ROAS · Lead: leads, CPL · Messages: cost/message, reply quality · Traffic: clicks, CTR, CPC · Awareness: reach, CPM, frequency.</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Unavailable values render as — with an explanation; custom charts never change the KPI pack.</p></div>
+                <div className="mt-4 flex items-center justify-between gap-3"><span className="text-xs text-muted-foreground">Presets can be edited after they are added.</span><Button onClick={() => setBuilderTab("custom")}>Build custom</Button></div>
               </TabsContent>
 
-              <TabsContent value="custom" className="flex flex-col gap-4">
+              <TabsContent value="custom" className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-3">
+                <div className="flex flex-col gap-4">
                 <div className="flex flex-col gap-1.5">
                   <Label htmlFor="custom-chart-title">{copy.titleLabel}</Label>
                   <Input
@@ -404,10 +414,11 @@ export function CustomChartsSection({
                 <Button onClick={handleSaveDraft} disabled={!draftValidation.ok}>
                   {copy.save}
                 </Button>
+                </div>
               </TabsContent>
             </Tabs>
-          </SheetContent>
-        </Sheet>
+          </DialogContent>
+        </Dialog>
       </div>
 
       {saved.length > 0 ? (

@@ -1,6 +1,6 @@
 export type KpiPack =
   "lead_gen" | "messages" | "sales_roas" | "traffic" | "awareness";
-export type CompareMode = "off" | "wow" | "mom" | "yoy";
+export type CompareMode = "off" | "previous" | "campaign" | "wow" | "mom" | "yoy";
 export type InterfaceLanguage = "en" | "vi";
 export type AiProvider = "9router" | "prompt";
 export type VerdictProvider = AiProvider;
@@ -213,6 +213,7 @@ export type NormalizedRow = {
   roas: number;
   replyRate: number;
   leadRate: number;
+  metricAvailability?: Partial<Record<OutcomeMetricKey, MetricAvailability>>;
   adFormat?: string;
   dailyBudget?: number;
   learningStageStatus?:
@@ -225,6 +226,16 @@ export type NormalizedRow = {
     | "LOW_QUALITY"
   >;
 };
+
+export type OutcomeMetricKey =
+  | "messages"
+  | "replies"
+  | "leads"
+  | "purchases"
+  | "addToCart"
+  | "initiateCheckout";
+
+export type MetricAvailability = "tracked" | "not_tracked";
 
 export type KpiCard = {
   key: keyof NormalizedRow | "healthScore";

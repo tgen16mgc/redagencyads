@@ -11,6 +11,17 @@ export function getCompareRange(range: DateRange, mode: CompareMode) {
   const sinceDate = parseDateInput(range.since);
   const untilDate = parseDateInput(range.until);
 
+  if (mode === "previous") {
+    const durationDays = Math.max(1, Math.round((untilDate.getTime() - sinceDate.getTime()) / 86_400_000) + 1);
+    const previousUntil = addDays(sinceDate, -1);
+    return {
+      since: toDateInput(addDays(previousUntil, -durationDays + 1)),
+      until: toDateInput(previousUntil),
+    };
+  }
+
+  if (mode === "campaign") return range;
+
   if (mode === "wow") {
     return {
       since: toDateInput(addDays(sinceDate, -7)),

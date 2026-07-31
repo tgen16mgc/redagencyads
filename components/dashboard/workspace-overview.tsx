@@ -1,132 +1,58 @@
 "use client";
 
 import {
-  ActivityIcon,
-  ArrowUpRightIcon,
+  AlertTriangleIcon,
+  ArrowRightIcon,
   BarChart3Icon,
-  CalendarClockIcon,
+  CalendarDaysIcon,
   CheckCircle2Icon,
-  CircleDashedIcon,
-  SearchIcon,
-  ShieldAlertIcon,
+  CircleDollarSignIcon,
+  DatabaseIcon,
+  GaugeIcon,
+  RefreshCwIcon,
+  ShieldCheckIcon,
+  SlidersHorizontalIcon,
   SparklesIcon,
-  WaypointsIcon,
-  WorkflowIcon,
+  TargetIcon,
 } from "lucide-react";
-import type { CapabilityKey, CapabilityState, CapabilityStatus } from "@/lib/capabilities";
+import type { CapabilityState, CapabilityStatus } from "@/lib/capabilities";
 import type { DashboardView } from "@/lib/dashboard-access";
+import type { HealthScoreSummary } from "@/lib/health-score";
+import type { DashboardReport } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
 
 type WorkspaceOverviewProps = {
   authenticated: boolean;
   capabilities: CapabilityStatus[];
   language: "en" | "vi";
   workspaceLabel?: string;
+  report: DashboardReport | null;
+  healthSummary: HealthScoreSummary | null;
   onOpen: (view: DashboardView) => void;
+  onEditScope: () => void;
 };
 
-const workspaceJobs: {
-  view: Exclude<DashboardView, "overview">;
-  capability: CapabilityKey;
-  icon: typeof BarChart3Icon;
-  title: { en: string; vi: string };
-  description: { en: string; vi: string };
-  output: { en: string; vi: string };
-}[] = [
-  {
-    view: "ads",
-    capability: "meta_analysis",
-    icon: BarChart3Icon,
-    title: { en: "Diagnose performance", vi: "Chẩn đoán hiệu quả" },
-    description: {
-      en: "Find the highest-impact cause, inspect its evidence, and decide what changes next.",
-      vi: "Tìm nguyên nhân tác động lớn nhất, xem evidence và quyết định thay đổi tiếp theo.",
-    },
-    output: { en: "Diagnosis → evidence → action", vi: "Chẩn đoán → evidence → hành động" },
-  },
-  {
-    view: "competitor",
-    capability: "competitor_evidence",
-    icon: SearchIcon,
-    title: { en: "Investigate competitors", vi: "Nghiên cứu đối thủ" },
-    description: {
-      en: "Collect ads through Apify, review advertiser provenance, and turn accepted evidence into original test briefs.",
-      vi: "Thu thập ads qua Apify, duyệt provenance advertiser và biến evidence đã chấp nhận thành brief test mới.",
-    },
-    output: { en: "Collect → review → analyze", vi: "Thu thập → duyệt → phân tích" },
-  },
-  {
-    view: "tiktok",
-    capability: "tiktok_ad_library",
-    icon: ActivityIcon,
-    title: { en: "Track TikTok signals", vi: "Theo dõi tín hiệu TikTok" },
-    description: {
-      en: "Inspect public profiles, videos, and ad creatives without mixing them with Ads Manager performance.",
-      vi: "Xem profile, video và ad creative public mà không trộn với hiệu quả Ads Manager.",
-    },
-    output: { en: "Profiles → ad library → creative signals", vi: "Profile → ad library → creative signal" },
-  },
-  {
-    view: "intelligence",
-    capability: "cross_channel_intelligence",
-    icon: WorkflowIcon,
-    title: { en: "Compare channels", vi: "So sánh đa kênh" },
-    description: {
-      en: "Unify owned performance with clearly labeled public creative intelligence and data-quality gates.",
-      vi: "Gộp hiệu quả owned với creative intelligence public được gắn nhãn rõ ràng và các cổng chất lượng dữ liệu.",
-    },
-    output: { en: "Canonical rows → quality gates → allocation context", vi: "Canonical rows → quality gates → bối cảnh phân bổ" },
-  },
-  {
-    view: "publisher",
-    capability: "page_publishing",
-    icon: CalendarClockIcon,
-    title: { en: "Publish with control", vi: "Đăng bài có kiểm soát" },
-    description: {
-      en: "Prepare, preview, confirm, and track Facebook Page submissions.",
-      vi: "Chuẩn bị, preview, xác nhận và theo dõi bài gửi lên Facebook Page.",
-    },
-    output: { en: "Draft → review → submission", vi: "Bản nháp → duyệt → gửi" },
-  },
-];
-
-const capabilityCopy: Record<CapabilityKey, { en: string; vi: string }> = {
-  meta_analysis: { en: "Meta performance", vi: "Hiệu quả Meta" },
-  competitor_evidence: { en: "Competitor evidence", vi: "Evidence đối thủ" },
-  tiktok_profiles: { en: "TikTok profiles", vi: "Profile TikTok" },
-  tiktok_ad_library: { en: "TikTok Ad Library", vi: "TikTok Ad Library" },
-  page_publishing: { en: "Page publishing", vi: "Đăng bài Page" },
-  ai_enhancement: { en: "AI enhancement", vi: "AI enhancement" },
-  cross_channel_intelligence: { en: "Cross-channel intelligence", vi: "Intelligence đa kênh" },
-  google_ads: { en: "Google Ads", vi: "Google Ads" },
-  linkedin_ads: { en: "LinkedIn Ads", vi: "LinkedIn Ads" },
+const stateRank: Record<CapabilityState, number> = {
+  available: 0,
+  degraded: 1,
+  needs_connection: 2,
+  needs_setup: 3,
+  paused: 4,
+  unknown: 5,
 };
 
-const stateCopy: Record<CapabilityState, { en: string; vi: string }> = {
-  available: { en: "Available", vi: "Sẵn sàng" },
-  needs_connection: { en: "Connect Meta", vi: "Kết nối Meta" },
-  needs_setup: { en: "Needs setup", vi: "Cần thiết lập" },
-  degraded: { en: "Local fallback", vi: "Fallback local" },
-  paused: { en: "Paused", vi: "Tạm dừng" },
-  unknown: { en: "Status unavailable", vi: "Không đọc được trạng thái" },
-};
-
-function stateVariant(state: CapabilityState): "success" | "secondary" | "outline" | "destructive" {
-  if (state === "available") return "success";
-  if (state === "degraded") return "secondary";
-  if (state === "paused") return "outline";
-  if (state === "unknown") return "destructive";
-  return "secondary";
+function compactNumber(value: number) {
+  return new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(value || 0);
 }
 
-function stateIcon(state: CapabilityState) {
-  if (state === "available") return CheckCircle2Icon;
-  if (state === "paused") return CircleDashedIcon;
-  if (state === "degraded") return SparklesIcon;
-  return ShieldAlertIcon;
+function currency(value: number, code: string) {
+  return new Intl.NumberFormat("en", {
+    style: "currency",
+    currency: code || "VND",
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(value || 0);
 }
 
 export function WorkspaceOverview({
@@ -134,112 +60,250 @@ export function WorkspaceOverview({
   capabilities,
   language,
   workspaceLabel,
+  report,
+  healthSummary,
   onOpen,
+  onEditScope,
 }: WorkspaceOverviewProps) {
-  const capabilityMap = new Map(capabilities.map((capability) => [capability.key, capability]));
-  const defaultState: CapabilityState = "unknown";
-  const statePriority: Record<CapabilityState, number> = {
-    available: 0,
-    degraded: 1,
-    needs_connection: 2,
-    needs_setup: 3,
-    paused: 4,
-    unknown: 5,
-  };
-  const orderedJobs = [...workspaceJobs].sort((left, right) => {
-    const leftState = capabilityMap.get(left.capability)?.state || defaultState;
-    const rightState = capabilityMap.get(right.capability)?.state || defaultState;
-    return statePriority[leftState] - statePriority[rightState];
-  });
+  const isVietnamese = language === "vi";
+  const availableCount = capabilities.filter((item) => item.state === "available").length;
+  const readinessScore = healthSummary?.score ?? Math.round((availableCount / Math.max(capabilities.length, 1)) * 100);
+  const confidenceLabel = readinessScore >= 80 ? (isVietnamese ? "Cao" : "High") : readinessScore >= 55 ? (isVietnamese ? "Vừa" : "Medium") : (isVietnamese ? "Thấp" : "Low");
+  const accountName = report?.account.name || workspaceLabel || (authenticated ? (isVietnamese ? "Chọn tài khoản" : "Choose account") : (isVietnamese ? "Chưa kết nối" : "Not connected"));
+  const period = report ? `${report.dateRange.since} – ${report.dateRange.until}` : (isVietnamese ? "30 ngày gần nhất" : "Last 30 days");
+  const campaignScope = report?.selectedCampaigns.length
+    ? report.selectedCampaigns.length === 1
+      ? report.selectedCampaigns[0].name
+      : `${report.selectedCampaigns.length} ${isVietnamese ? "campaign" : "campaigns"}`
+    : (isVietnamese ? "Tất cả campaign active" : "All active campaigns");
+  const ruleLabel = report?.source === "sample"
+    ? "Auto · CPA 40 / ROAS 2.5"
+    : report
+      ? `${report.selectedPack.replaceAll("_", " ")} · ${report.health.grade}`
+      : (isVietnamese ? "Tự nhận diện" : "Auto-detect");
+  const attentionItems = healthSummary
+    ? healthSummary.items.slice(0, 3).map((item) => ({
+        id: item.id,
+        severity: item.severity,
+        titleText: item.title[language],
+        detailText: item.detail[language],
+      }))
+    : [...capabilities]
+        .sort((left, right) => stateRank[right.state] - stateRank[left.state])
+        .slice(0, 3)
+        .map((item) => ({
+          id: item.key,
+          severity: item.state === "unknown" || item.state === "paused" ? "danger" : "warning",
+          titleText: capabilityName(item.key),
+          detailText: capabilityStateDetail(item.state, language),
+        }));
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(280px,0.55fr)]">
-      <Card className="overflow-hidden">
-        <CardHeader className="border-b">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div className="flex min-w-0 flex-col gap-1">
-              <CardDescription>{language === "vi" ? "Client workspace" : "Client workspace"}</CardDescription>
-              <CardTitle className="text-2xl">{workspaceLabel || (language === "vi" ? "Chọn workspace của bạn" : "Choose your workspace")}</CardTitle>
-              <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
-                {language === "vi"
-                  ? "Chọn công việc cần hoàn thành. Mỗi workspace đưa evidence đến quyết định thay vì mở một dashboard chung chung."
-                  : "Choose the job to complete. Each workspace moves evidence toward a decision instead of opening a generic dashboard."}
-              </p>
-            </div>
-            <Badge variant={authenticated ? "success" : "secondary"} className="w-fit">
-              {authenticated
-                ? language === "vi" ? "Meta đã kết nối" : "Meta connected"
-                : language === "vi" ? "Meta chưa kết nối" : "Meta not connected"}
-            </Badge>
+    <div className="flex flex-col gap-5">
+      <section className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-[clamp(1.75rem,3vw,2.25rem)] font-semibold leading-tight tracking-[-0.045em]">
+            {isVietnamese ? "Chào buổi sáng, Tiến." : "Good morning, Tien."}
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {isVietnamese ? "Phạm vi báo cáo đã sẵn sàng. Xem tín hiệu rồi quyết định thay đổi hôm nay." : "Your reporting scope is ready. Review the signals, then decide what changes today."}
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Button type="button" variant="outline" onClick={onEditScope}>
+            <SlidersHorizontalIcon data-icon="inline-start" />
+            {isVietnamese ? "Sửa phạm vi" : "Edit scope"}
+          </Button>
+          <Button type="button" onClick={() => onOpen("ads")}>
+            <BarChart3Icon data-icon="inline-start" />
+            {isVietnamese ? "Chạy phân tích" : "Run analysis"}
+          </Button>
+        </div>
+      </section>
+
+      <section className="v2-panel grid overflow-hidden lg:grid-cols-[minmax(0,1fr)_392px]">
+        <div className="p-5 sm:p-6">
+          <Badge variant={authenticated || report ? "success" : "secondary"}>
+            {authenticated || report ? (isVietnamese ? "Phạm vi sẵn sàng" : "Scope ready") : (isVietnamese ? "Có thể xem demo" : "Demo ready")}
+          </Badge>
+          <h2 className="mt-4 max-w-3xl text-2xl font-semibold leading-[1.18] tracking-[-0.035em] sm:text-[30px]">
+            {report
+              ? (isVietnamese ? "Một phạm vi rõ ràng. Đủ tín hiệu để ra quyết định." : "One scope. Clear guardrails. Ready to diagnose.")
+              : (isVietnamese ? "Khóa phạm vi trước. Sau đó chẩn đoán điều cần thay đổi." : "Lock the scope first. Then diagnose what needs to change.")}
+          </h2>
+          <p className="mt-3 text-sm text-muted-foreground">
+            {isVietnamese ? "Các yếu tố cốt lõi được giữ cùng một chỗ để mọi kết luận luôn có thể truy ngược về dữ liệu." : "The essentials stay locked in one place so every conclusion remains traceable to its evidence."}
+          </p>
+
+          <div className="mt-5 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+            <ScopeMetric icon={DatabaseIcon} label={isVietnamese ? "Tài khoản" : "Account"} value={accountName} />
+            <ScopeMetric icon={CalendarDaysIcon} label={isVietnamese ? "Thời gian" : "Period"} value={period} />
+            <ScopeMetric icon={TargetIcon} label="Campaign" value={campaignScope} />
+            <ScopeMetric icon={GaugeIcon} label={isVietnamese ? "Quy tắc" : "Rules"} value={ruleLabel} />
           </div>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="divide-y">
-            {orderedJobs.map((job) => {
-              const state = capabilityMap.get(job.capability)?.state || defaultState;
-              const Icon = job.icon;
+        </div>
+
+        <div className="border-t border-border bg-secondary/35 p-5 sm:p-6 lg:border-t-0 lg:border-l">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <SparklesIcon className="size-4 text-primary" />
+              {isVietnamese ? "Độ tin cậy quyết định" : "Decision confidence"}
+            </div>
+            <Badge variant={readinessScore >= 75 ? "success" : "outline"}>{confidenceLabel}</Badge>
+          </div>
+          <div className="mt-3 text-5xl font-semibold tracking-[-0.055em]">{readinessScore}</div>
+          <p className="mt-2 text-sm leading-5 text-muted-foreground">
+            {healthSummary?.summary[language] || (isVietnamese ? `${availableCount}/${capabilities.length} nguồn dữ liệu đã sẵn sàng.` : `${availableCount}/${capabilities.length} data capabilities are ready.`)}
+          </p>
+          <div className="mt-4 flex items-center justify-between text-xs">
+            <span>{isVietnamese ? "Độ phủ tín hiệu" : "Signal coverage"}</span>
+            <span className="font-medium tabular-nums">{readinessScore}%</span>
+          </div>
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
+            <div className="h-full rounded-full bg-primary transition-[width] duration-500" style={{ width: `${readinessScore}%` }} />
+          </div>
+          <button type="button" className="mt-4 inline-flex items-center gap-1.5 text-xs font-medium text-primary" onClick={() => onOpen("ads")}>
+            {isVietnamese ? "Xem rủi ro nổi bật" : "Review emerging risks"}
+            <ArrowRightIcon className="size-3.5" />
+          </button>
+        </div>
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.55fr)]">
+        <div className="v2-panel p-4 sm:p-5">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="v2-section-title">{isVietnamese ? "Điều cần chú ý" : "What needs attention"}</h2>
+              <p className="v2-section-copy">{isVietnamese ? "Xếp theo tác động quyết định, không chỉ theo biến động metric." : "Ranked by decision impact, not by raw metric movement."}</p>
+            </div>
+            <Badge variant="outline">{attentionItems.length} {isVietnamese ? "tín hiệu" : "signals"}</Badge>
+          </div>
+
+          <div className="mt-4 flex flex-col gap-2">
+            {attentionItems.map((item, index) => {
+              const danger = item.severity === "danger";
               return (
-                <div key={job.view} className="grid gap-4 p-4 transition-colors hover:bg-muted/35 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-center sm:p-5">
-                  <span className="flex size-10 items-center justify-center rounded-xl border bg-background text-muted-foreground">
-                    <Icon className="size-5" />
+                <button
+                  key={item.id}
+                  type="button"
+                  className={`grid w-full grid-cols-[24px_minmax(0,1fr)_20px] items-center gap-3 rounded-xl border px-3 py-4 text-left transition-colors hover:border-primary/45 ${danger ? "border-destructive/20 bg-destructive/10" : "border-transparent bg-secondary/55"}`}
+                  onClick={() => onOpen("ads")}
+                >
+                  {danger ? <ShieldCheckIcon className="size-4 text-destructive" /> : index === 0 ? <AlertTriangleIcon className="size-4 text-warning" /> : <BarChart3Icon className="size-4 text-primary" />}
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium">{item.titleText}</span>
+                    <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">{item.detailText}</span>
                   </span>
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h2 className="font-heading text-base font-semibold">{job.title[language]}</h2>
-                      <Badge variant={stateVariant(state)}>{stateCopy[state][language]}</Badge>
-                    </div>
-                    <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">{job.description[language]}</p>
-                    <p className="mt-2 text-xs font-medium text-foreground/75">{job.output[language]}</p>
-                  </div>
-                  <Button type="button" variant={state === "available" ? "default" : "outline"} onClick={() => onOpen(job.view)} className="w-full sm:w-auto">
-                    {state === "needs_connection"
-                      ? language === "vi" ? "Kết nối" : "Connect"
-                      : state === "needs_setup"
-                        ? language === "vi" ? "Mở thiết lập" : "Open setup"
-                        : state === "unknown"
-                          ? language === "vi" ? "Mở và kiểm tra" : "Open and check"
-                        : language === "vi" ? "Mở workspace" : "Open workspace"}
-                    <ArrowUpRightIcon data-icon="inline-end" />
-                  </Button>
-                </div>
+                  <ArrowRightIcon className="size-4 text-muted-foreground" />
+                </button>
               );
             })}
           </div>
-        </CardContent>
-      </Card>
+        </div>
 
-      <Card className="h-fit">
-        <CardHeader>
-          <div className="flex items-center gap-3">
-            <span className="flex size-9 items-center justify-center rounded-xl border bg-background text-muted-foreground">
-              <WaypointsIcon className="size-4" />
-            </span>
+        <div className="v2-panel p-4 sm:p-5">
+          <div className="flex items-start justify-between gap-4">
             <div>
-              <CardTitle>{language === "vi" ? "Capability status" : "Capability status"}</CardTitle>
-              <CardDescription>{language === "vi" ? "Trạng thái thật của từng nguồn." : "The real state of every source."}</CardDescription>
+              <h2 className="v2-section-title">{isVietnamese ? "Báo cáo gần đây" : "Recent reports"}</h2>
+              <p className="v2-section-copy">{isVietnamese ? "Tiếp tục từ evidence mới nhất." : "Continue from the latest evidence."}</p>
+            </div>
+            <Badge variant="outline">{report?.source === "sample" ? 2 : report ? 1 : 0} {isVietnamese ? "báo cáo" : "reports"}</Badge>
+          </div>
+
+          {report ? (
+            <div className="v2-subtle-panel mt-4 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <BarChart3Icon className="size-4 text-primary" />
+                  <div>
+                    <div className="text-sm font-medium">{isVietnamese ? "Chẩn đoán hiệu quả" : "Performance diagnosis"}</div>
+                    <div className="text-[11px] text-muted-foreground">{new Date(report.pulledAt).toLocaleString()}</div>
+                  </div>
+                </div>
+                <Badge variant="success">{isVietnamese ? "Hoàn tất" : "Complete"}</Badge>
+              </div>
+              <p className="mt-4 text-xs leading-5 text-muted-foreground">{healthSummary?.summary[language] || report.packReason}</p>
+              <div className="mt-4 grid grid-cols-3 gap-3">
+                <ReportMetric label={isVietnamese ? "Chi tiêu" : "Spend"} value={currency(report.totals.spend, report.account.currency || "VND")} />
+                <ReportMetric label={report.selectedPack === "sales_roas" ? (isVietnamese ? "Mua hàng" : "Purchases") : (isVietnamese ? "Kết quả" : "Results")} value={compactNumber(report.selectedPack === "sales_roas" ? report.totals.purchases : report.totals.leads || report.totals.messages || report.totals.linkClicks)} />
+                <ReportMetric label="ROAS" value={report.totals.roas.toFixed(1)} />
+              </div>
+              <Button type="button" variant="outline" size="sm" className="mt-4 w-full" onClick={() => onOpen("ads")}>
+                {isVietnamese ? "Mở báo cáo" : "Open report"}
+              </Button>
+            </div>
+          ) : (
+            <div className="v2-subtle-panel mt-4 flex min-h-56 flex-col items-center justify-center p-6 text-center">
+              <span className="flex size-11 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                <RefreshCwIcon className="size-5" />
+              </span>
+              <h3 className="mt-4 text-sm font-medium">{isVietnamese ? "Chưa có chẩn đoán" : "No diagnosis yet"}</h3>
+              <p className="mt-1 max-w-xs text-xs leading-5 text-muted-foreground">{isVietnamese ? "Mở Performance để chọn phạm vi và kéo báo cáo đầu tiên." : "Open Performance to choose a scope and pull the first report."}</p>
+              <Button type="button" size="sm" className="mt-4" onClick={() => onOpen("ads")}>
+                {isVietnamese ? "Bắt đầu" : "Start analysis"}
+              </Button>
+            </div>
+          )}
+
+          <div className="mt-4 flex flex-col gap-3 text-xs">
+            <div className="flex items-center justify-between gap-3">
+              <span className="flex items-center gap-2"><CheckCircle2Icon className="size-3.5 text-success" />{isVietnamese ? "Meta source" : "Meta source"}</span>
+              <span className="text-muted-foreground">{authenticated ? (isVietnamese ? "Đã kết nối" : "Connected") : (isVietnamese ? "Chờ kết nối" : "Awaiting")}</span>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="flex items-center gap-2"><CircleDollarSignIcon className="size-3.5 text-primary" />{isVietnamese ? "Quy tắc quyết định" : "Decision rules"}</span>
+              <span className="text-muted-foreground">{report ? (isVietnamese ? "Đã cập nhật" : "Updated") : (isVietnamese ? "Mặc định" : "Default")}</span>
             </div>
           </div>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3">
-          {capabilities.map((capability, index) => {
-            const StateIcon = stateIcon(capability.state);
-            return (
-              <div key={capability.key}>
-                {index > 0 ? <Separator className="mb-3" /> : null}
-                <div className="flex items-center justify-between gap-3">
-                  <span className="flex min-w-0 items-center gap-2 text-sm">
-                    <StateIcon className="size-4 shrink-0 text-muted-foreground" />
-                    <span className="truncate">{capabilityCopy[capability.key][language]}</span>
-                  </span>
-                  <Badge variant={stateVariant(capability.state)} className="shrink-0">
-                    {stateCopy[capability.state][language]}
-                  </Badge>
-                </div>
-              </div>
-            );
-          })}
-        </CardContent>
-      </Card>
+        </div>
+      </section>
     </div>
   );
+}
+
+function ScopeMetric({ icon: Icon, label, value }: { icon: typeof DatabaseIcon; label: string; value: string }) {
+  return (
+    <div className="v2-subtle-panel min-w-0 p-3">
+      <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-[0.05em] text-muted-foreground">
+        <Icon className="size-3.5 text-primary" />
+        {label}
+      </div>
+      <div className="mt-2 truncate text-xs font-medium" title={value}>{value}</div>
+    </div>
+  );
+}
+
+function ReportMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="text-[9px] font-medium uppercase tracking-[0.06em] text-muted-foreground">{label}</div>
+      <div className="mt-0.5 text-xs font-semibold tabular-nums">{value}</div>
+    </div>
+  );
+}
+
+function capabilityName(key: CapabilityStatus["key"]) {
+  return {
+    meta_analysis: "Meta performance",
+    competitor_evidence: "Competitor evidence",
+    tiktok_profiles: "TikTok profiles",
+    tiktok_ad_library: "TikTok Ad Library",
+    page_publishing: "Page publishing",
+    ai_enhancement: "AI enhancement",
+    cross_channel_intelligence: "Cross-channel intelligence",
+    google_ads: "Google Ads",
+    linkedin_ads: "LinkedIn Ads",
+  }[key];
+}
+
+function capabilityStateDetail(state: CapabilityState, language: "en" | "vi") {
+  const copy = {
+    available: { en: "Available and ready for the next decision.", vi: "Sẵn sàng cho quyết định tiếp theo." },
+    degraded: { en: "Running with a local fallback; review output before acting.", vi: "Đang dùng fallback local; cần xem lại trước khi hành động." },
+    needs_connection: { en: "Connect the source before evidence can be verified.", vi: "Kết nối nguồn trước khi có thể xác minh evidence." },
+    needs_setup: { en: "Provider setup is still required for this workspace.", vi: "Workspace này vẫn cần thiết lập provider." },
+    paused: { en: "This capability is paused until its data path is available.", vi: "Capability đang tạm dừng đến khi data path sẵn sàng." },
+    unknown: { en: "Status could not be verified in the current session.", vi: "Không thể xác minh trạng thái trong session hiện tại." },
+  } as const;
+  return copy[state][language];
 }

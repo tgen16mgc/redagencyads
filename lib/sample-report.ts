@@ -1,9 +1,9 @@
 import { buildPrompt, detectKpiPack, getKpiCards, scoreHealth, sumRows } from "@/lib/metrics";
-import type { DashboardReport, MetaAccount, MetaCampaign, NormalizedRow } from "@/lib/types";
+import type { DashboardReport, KpiPack, MetaAccount, MetaCampaign, NormalizedRow, OutcomeMetricKey } from "@/lib/types";
 
 export const SAMPLE_ACCOUNT: MetaAccount = {
   id: "act_sample_demo",
-  name: "Aura Beauty Clinic — Sample",
+  name: "Tien Duong",
   account_id: "000000000000000",
   currency: "VND",
   timezone_name: "Asia/Ho_Chi_Minh",
@@ -25,6 +25,7 @@ type RowBase = {
   replies?: number;
   leads?: number;
   purchases?: number;
+  trackedMetrics?: OutcomeMetricKey[];
 };
 
 type AdSeed = RowBase & {
@@ -60,6 +61,12 @@ function makeRow(
   const replies = base.replies || 0;
   const leads = base.leads || 0;
   const purchases = base.purchases || 0;
+  const trackedMetrics = new Set(base.trackedMetrics || [
+    ...(Object.prototype.hasOwnProperty.call(base, "messages") ? ["messages" as const] : []),
+    ...(Object.prototype.hasOwnProperty.call(base, "replies") ? ["replies" as const] : []),
+    ...(Object.prototype.hasOwnProperty.call(base, "leads") ? ["leads" as const] : []),
+    ...(Object.prototype.hasOwnProperty.call(base, "purchases") ? ["purchases" as const] : []),
+  ]);
   return {
     level,
     campaignId: undefined,
@@ -98,11 +105,19 @@ function makeRow(
     roas: 0,
     replyRate: Number((safeDivide(replies, messages) * 100).toFixed(1)),
     leadRate: Number((safeDivide(leads, messages) * 100).toFixed(1)),
+    metricAvailability: {
+      messages: trackedMetrics.has("messages") ? "tracked" : "not_tracked",
+      replies: trackedMetrics.has("replies") ? "tracked" : "not_tracked",
+      leads: trackedMetrics.has("leads") ? "tracked" : "not_tracked",
+      purchases: trackedMetrics.has("purchases") ? "tracked" : "not_tracked",
+      addToCart: trackedMetrics.has("addToCart") ? "tracked" : "not_tracked",
+      initiateCheckout: trackedMetrics.has("initiateCheckout") ? "tracked" : "not_tracked",
+    },
   };
 }
 
 function sumBases(seeds: RowBase[]): RowBase {
-  return seeds.reduce<RowBase>(
+  const total = seeds.reduce<RowBase>(
     (acc, seed) => ({
       spend: acc.spend + seed.spend,
       impressions: acc.impressions + seed.impressions,
@@ -116,6 +131,10 @@ function sumBases(seeds: RowBase[]): RowBase {
     }),
     { spend: 0, impressions: 0, reach: 0, clicks: 0, linkClicks: 0, messages: 0, replies: 0, leads: 0, purchases: 0 },
   );
+  const outcomeKeys: OutcomeMetricKey[] = ["messages", "replies", "leads", "purchases", "addToCart", "initiateCheckout"];
+  const trackedMetrics: OutcomeMetricKey[] = outcomeKeys
+    .filter((key) => seeds.some((seed) => seed.trackedMetrics?.includes(key) || Object.prototype.hasOwnProperty.call(seed, key)));
+  return { ...total, trackedMetrics };
 }
 
 function groupBy<T>(items: T[], key: (item: T) => string): Map<string, T[]> {
@@ -134,21 +153,55 @@ function isoDaysAgo(days: number) {
   return date.toISOString().slice(0, 10);
 }
 
-const DAY_COUNT = 14;
+const DAY_COUNT = 30;
 
-function buildDailyRows(accountTotal: RowBase): NormalizedRow[] {
-  const weights = [0.9, 1.0, 1.05, 1.1, 1.0, 0.8, 0.75, 0.95, 1.05, 1.35, 1.25, 1.0, 0.9, 0.9];
+function inclusiveDays(dateRange: { since: string; until: string }) {
+  const since = new Date(`${dateRange.since}T00:00:00Z`);
+  const until = new Date(`${dateRange.until}T00:00:00Z`);
+  return Math.max(1, Math.round((until.getTime() - since.getTime()) / 86_400_000) + 1);
+}
+
+function modelSeedForRange(seed: AdSeed, dateRange: { since: string; until: string }): AdSeed {
+  const windowScale = inclusiveDays(dateRange) / DAY_COUNT;
+  const untilDay = Math.floor(new Date(`${dateRange.until}T00:00:00Z`).getTime() / 86_400_000);
+  const pulse = ((untilDay % 17) - 8) / 100;
+  const scale = (value: number | undefined, factor: number) => value === undefined ? undefined : Math.max(0, Math.round(value * windowScale * factor));
+  return {
+    ...seed,
+    trackedMetrics: ["messages", "replies", "leads", "purchases", "addToCart", "initiateCheckout"]
+      .filter((key): key is OutcomeMetricKey => Object.prototype.hasOwnProperty.call(seed, key)),
+    spend: scale(seed.spend, 1 + pulse * 0.6) || 0,
+    impressions: scale(seed.impressions, 1 + pulse * 0.25) || 0,
+    reach: scale(seed.reach, 1 + pulse * 0.18) || 0,
+    clicks: scale(seed.clicks, 1 - pulse * 0.2) || 0,
+    linkClicks: scale(seed.linkClicks, 1 - pulse * 0.3) || 0,
+    messages: scale(seed.messages, 1 - pulse * 0.45),
+    replies: scale(seed.replies, 1 - pulse * 0.5),
+    leads: scale(seed.leads, 1 - pulse * 0.4),
+    purchases: scale(seed.purchases, 1 - pulse * 0.4),
+  };
+}
+
+function buildDailyRows(accountTotal: RowBase, dateRange: { since: string; until: string }): NormalizedRow[] {
+  const since = new Date(`${dateRange.since}T00:00:00Z`);
+  const until = new Date(`${dateRange.until}T00:00:00Z`);
+  const dayCount = Math.max(1, Math.min(90, Math.round((until.getTime() - since.getTime()) / 86_400_000) + 1));
+  const weights = Array.from({ length: dayCount }, (_, index) => {
+    const weeklyPulse = 1 + Math.sin((index / 6) * Math.PI) * 0.14;
+    const growth = 0.86 + (index / Math.max(dayCount - 1, 1)) * 0.28;
+    return Number((weeklyPulse * growth).toFixed(3));
+  });
   const weightSum = weights.reduce((sum, weight) => sum + weight, 0);
   return weights.map((weight, index) => {
     const share = weight / weightSum;
-    const dip = index === 9 ? 0.45 : 1;
+    const dip = index === 20 ? 0.45 : 1;
     return makeRow(
       "daily",
-      { id: `smp-day-${index}`, name: isoDaysAgo(DAY_COUNT - 1 - index), date: isoDaysAgo(DAY_COUNT - 1 - index) },
+      { id: `smp-day-${index}`, name: new Date(since.getTime() + index * 86_400_000).toISOString().slice(0, 10), date: new Date(since.getTime() + index * 86_400_000).toISOString().slice(0, 10) },
       {
         spend: Math.round(accountTotal.spend * share),
         impressions: Math.round(accountTotal.impressions * share),
-        reach: Math.round((accountTotal.reach / DAY_COUNT) * weight * 2.2),
+        reach: Math.round((accountTotal.reach / dayCount) * weight * 2.2),
         clicks: Math.round(accountTotal.clicks * share),
         linkClicks: Math.round(accountTotal.linkClicks * share),
         messages: Math.round((accountTotal.messages || 0) * share),
@@ -159,8 +212,13 @@ function buildDailyRows(accountTotal: RowBase): NormalizedRow[] {
   });
 }
 
-export function buildSampleReport(): DashboardReport {
-  const adRows = AD_SEEDS.map((seed) =>
+export function buildSampleReport(options: { selectedCampaignIds?: string[]; pack?: KpiPack | "auto"; dateRange?: { since: string; until: string } } = {}): DashboardReport {
+  const selectedIds = options.selectedCampaignIds || [];
+  const dateRange = options.dateRange || { since: isoDaysAgo(DAY_COUNT - 1), until: isoDaysAgo(0) };
+  const sourceSeeds = options.dateRange ? AD_SEEDS.map((seed) => modelSeedForRange(seed, dateRange)) : AD_SEEDS;
+  const scopedSeeds = selectedIds.length ? sourceSeeds.filter((seed) => selectedIds.includes(seed.campaignId)) : sourceSeeds;
+  const scopedCampaigns = selectedIds.length ? SAMPLE_CAMPAIGNS.filter((campaign) => selectedIds.includes(campaign.id)) : SAMPLE_CAMPAIGNS;
+  const adRows = scopedSeeds.map((seed) =>
     makeRow("ad", {
       id: seed.adId,
       name: seed.adName,
@@ -173,7 +231,7 @@ export function buildSampleReport(): DashboardReport {
     }, seed),
   );
 
-  const adsetRows = [...groupBy(AD_SEEDS, (seed) => seed.adsetId).entries()].map(([adsetId, seeds]) =>
+  const adsetRows = [...groupBy(scopedSeeds, (seed) => seed.adsetId).entries()].map(([adsetId, seeds]) =>
     makeRow("adset", {
       id: adsetId,
       name: seeds[0].adsetName,
@@ -184,7 +242,7 @@ export function buildSampleReport(): DashboardReport {
     }, sumBases(seeds)),
   );
 
-  const campaignRows = [...groupBy(AD_SEEDS, (seed) => seed.campaignId).entries()].map(([campaignId, seeds]) =>
+  const campaignRows = [...groupBy(scopedSeeds, (seed) => seed.campaignId).entries()].map(([campaignId, seeds]) =>
     makeRow("campaign", {
       id: campaignId,
       name: seeds[0].campaignName,
@@ -193,7 +251,7 @@ export function buildSampleReport(): DashboardReport {
     }, sumBases(seeds)),
   );
 
-  const accountTotal = sumBases(AD_SEEDS);
+  const accountTotal = sumBases(scopedSeeds);
   const share = (fraction: number): RowBase => ({
     spend: Math.round(accountTotal.spend * fraction),
     impressions: Math.round(accountTotal.impressions * fraction),
@@ -228,15 +286,15 @@ export function buildSampleReport(): DashboardReport {
     makeRow("breakdown", { id: "smp-rg-5", name: "Khác", region: "Khác" }, share(0.07)),
   ];
 
-  const dailyRows = buildDailyRows(accountTotal);
+  const dailyRows = buildDailyRows(accountTotal, dateRange);
   const totals = sumRows(campaignRows, "Account total");
-  const detected = detectKpiPack(SAMPLE_CAMPAIGNS, campaignRows, adsetRows);
+  const detected = detectKpiPack(scopedCampaigns, campaignRows, adsetRows);
+  const selectedPack = options.pack && options.pack !== "auto" ? options.pack : detected.pack;
   const health = scoreHealth({ totals, campaignRows, adsetRows, adRows });
-  const dateRange = { since: isoDaysAgo(DAY_COUNT - 1), until: isoDaysAgo(0) };
   const prompt = buildPrompt({
     account: SAMPLE_ACCOUNT,
-    campaigns: SAMPLE_CAMPAIGNS,
-    selectedPack: detected.pack,
+    campaigns: scopedCampaigns,
+    selectedPack,
     totals,
     campaignRows,
     adsetRows,
@@ -252,12 +310,12 @@ export function buildSampleReport(): DashboardReport {
   return {
     source: "sample",
     account: SAMPLE_ACCOUNT,
-    selectedCampaigns: SAMPLE_CAMPAIGNS,
+    selectedCampaigns: scopedCampaigns,
     dateRange,
     detectedPack: detected.pack,
-    selectedPack: detected.pack,
-    packReason: detected.reason,
-    kpis: getKpiCards(detected.pack),
+    selectedPack,
+    packReason: options.pack && options.pack !== "auto" ? "Selected manually for this sample scope." : detected.reason,
+    kpis: getKpiCards(selectedPack),
     totals,
     campaignRows,
     adsetRows,

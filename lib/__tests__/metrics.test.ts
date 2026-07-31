@@ -73,6 +73,14 @@ describe("normalizeRows", () => {
       cpl: 25,
       cpaPurchase: 50,
       roas: 2.5,
+      metricAvailability: {
+        messages: "tracked",
+        replies: "not_tracked",
+        leads: "tracked",
+        purchases: "tracked",
+        addToCart: "not_tracked",
+        initiateCheckout: "not_tracked",
+      },
     });
   });
 });
@@ -153,6 +161,14 @@ describe("normalizeRows edge cases", () => {
     expect(row.messages).toBe(0);
     expect(row.roas).toBe(0);
     expect(row.costPerMessage).toBe(0);
+    expect(row.metricAvailability).toEqual({
+      messages: "not_tracked",
+      replies: "not_tracked",
+      leads: "not_tracked",
+      purchases: "not_tracked",
+      addToCart: "not_tracked",
+      initiateCheckout: "not_tracked",
+    });
   });
 });
 
@@ -173,6 +189,16 @@ describe("sumRows", () => {
     ], "Total");
 
     expect(total.roas).toBeCloseTo(13000 / 10100);
+  });
+
+  it("aggregates outcome availability without turning missing tracking into zero", () => {
+    const total = sumRows([
+      normalized({ metricAvailability: { leads: "tracked", purchases: "not_tracked" } }),
+      normalized({ metricAvailability: { leads: "not_tracked", purchases: "not_tracked" } }),
+    ], "Total");
+
+    expect(total.metricAvailability?.leads).toBe("tracked");
+    expect(total.metricAvailability?.purchases).toBe("not_tracked");
   });
 });
 
