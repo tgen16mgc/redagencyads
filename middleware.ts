@@ -1,52 +1,63 @@
+import { createServerClient } from "@supabase/ssr";
 import { NextRequest, NextResponse } from "next/server";
+import { getSupabaseConfig } from "@/lib/supabase/config";
+import type { Database } from "@/lib/supabase/types";
 
-const WORKSPACE_COOKIE = "decision_workspace_session";
+function copyAuthState(source: NextResponse, target: NextResponse) {
+  source.cookies.getAll().forEach((cookie) => target.cookies.set(cookie));
+  for (const header of ["cache-control", "expires", "pragma"]) {
+    const value = source.headers.get(header);
+    if (value) target.headers.set(header, value);
+  }
+  return target;
+}
 
 export async function middleware(request: NextRequest) {
-  const requestedMode = process.env.WORKSPACE_AUTH_MODE?.trim().toLowerCase();
-  if (requestedMode === "disabled") return NextResponse.next();
-
-  const secret = process.env.WORKSPACE_SESSION_SECRET || process.env.SESSION_SECRET || "";
-  const credentialsConfigured = Boolean(process.env.WORKSPACE_AUTH_EMAIL && process.env.WORKSPACE_AUTH_PASSWORD_HASH && secret);
-  const authRequired = requestedMode === "credentials" || credentialsConfigured || process.env.NODE_ENV === "production";
-  if (!authRequired) return NextResponse.next();
-  if (!credentialsConfigured) {
+  const config = getSupabaseConfig();
+  if (!config.configured) {
     return NextResponse.json({ ok: false, error: "Workspace authentication is not fully configured." }, { status: 503 });
   }
 
-  const value = request.cookies.get(WORKSPACE_COOKIE)?.value;
-  if (!value || !(await validWorkspaceCookie(value, secret))) {
-    return NextResponse.json({ ok: false, error: "Workspace session missing or expired." }, { status: 401 });
+  let response = NextResponse.next({ request });
+  const supabase = createServerClient<Database>(config.url, config.publishableKey, {
+    cookies: {
+      getAll() {
+        return request.cookies.getAll();
+      },
+      setAll(cookiesToSet, headers) {
+        cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
+        response = NextResponse.next({ request });
+        cookiesToSet.forEach(({ name, options, value }) => response.cookies.set(name, value, options));
+        Object.entries(headers).forEach(([name, value]) => response.headers.set(name, value));
+      },
+    },
+  });
+
+  const { data, error } = await supabase.auth.getUser();
+  if (error || !data.user) {
+    return copyAuthState(
+      response,
+      NextResponse.json({ ok: false, error: "Workspace session missing or expired." }, { status: 401 }),
+    );
   }
 
-  return NextResponse.next();
-}
+  const { data: membership, error: membershipError } = await supabase
+    .from("workspace_members")
+    .select("workspace_id")
+    .eq("user_id", data.user.id)
+    .eq("status", "active")
+    .limit(1)
+    .maybeSingle();
 
-async function validWorkspaceCookie(value: string, secret: string) {
-  try {
-    const raw = decodeBase64Url(value);
-    if (raw.length < 29) return false;
-    const iv = raw.slice(0, 12);
-    const tag = raw.slice(12, 28);
-    const encrypted = raw.slice(28);
-    const encryptedWithTag = new Uint8Array(encrypted.length + tag.length);
-    encryptedWithTag.set(encrypted);
-    encryptedWithTag.set(tag, encrypted.length);
-    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`workspace:${secret}`));
-    const key = await crypto.subtle.importKey("raw", digest, { name: "AES-GCM" }, false, ["decrypt"]);
-    const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv, tagLength: 128 }, key, encryptedWithTag);
-    const payload = JSON.parse(new TextDecoder().decode(plain)) as { email?: string; expiresAt?: number };
-    return Boolean(payload.email && payload.expiresAt && payload.expiresAt > Date.now());
-  } catch {
-    return false;
+  if (membershipError || !membership) {
+    return copyAuthState(
+      response,
+      NextResponse.json({ ok: false, error: "Workspace access is not approved for this account." }, { status: 403 }),
+    );
   }
-}
 
-function decodeBase64Url(value: string) {
-  const normalized = value.replaceAll("-", "+").replaceAll("_", "/");
-  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
-  const binary = atob(padded);
-  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  response.headers.set("Cache-Control", "private, no-store");
+  return response;
 }
 
 export const config = {

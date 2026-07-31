@@ -1,6 +1,8 @@
 "use client";
 
 import * as React from "react";
+import { Button as HeroButton } from "@heroui/react";
+import { Icon } from "@iconify/react";
 import {
   ArrowLeftIcon,
   CheckIcon,
@@ -29,6 +31,8 @@ export type WorkspaceSessionStatus = {
   required: boolean;
   googleConfigured: boolean;
   googleAuthUrl: string | null;
+  resetConfigured?: boolean;
+  accessRequestConfigured?: boolean;
   signedInAt?: number | null;
   user: WorkspaceIdentity | null;
 };
@@ -38,11 +42,13 @@ type AuthView = "sign-in" | "reset" | "reset-sent" | "request" | "request-sent";
 export function WorkspaceAuth({
   status,
   theme,
+  initialError,
   onThemeChange,
   onAuthenticated,
 }: {
   status: WorkspaceSessionStatus;
   theme: "dark" | "light";
+  initialError?: string;
   onThemeChange: () => void;
   onAuthenticated: (next: WorkspaceSessionStatus) => void;
 }) {
@@ -53,6 +59,10 @@ export function WorkspaceAuth({
   const [showPassword, setShowPassword] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState("");
+
+  React.useEffect(() => {
+    if (initialError) setError(initialError);
+  }, [initialError]);
 
   async function submitJson(path: string, body: Record<string, unknown>) {
     const response = await fetch(path, {
@@ -144,7 +154,7 @@ export function WorkspaceAuth({
   );
 }
 
-function AuthStory() {
+export function AuthStory() {
   return (
     <section className="v2-auth-story" aria-label="Decision Workspace">
       <div className="v2-auth-glow" aria-hidden="true" />
@@ -234,7 +244,15 @@ function SignInForm({
         </button>
       </form>
       <div className="v2-auth-divider"><span />OR<span /></div>
-      <button type="button" className="v2-auth-secondary" onClick={() => { if (googleAuthUrl) window.location.href = googleAuthUrl; else onGoogleUnavailable(); }}>Continue with Google</button>
+      <HeroButton
+        fullWidth
+        variant="outline"
+        className="v2-auth-google"
+        onPress={() => { if (googleAuthUrl) window.location.href = googleAuthUrl; else onGoogleUnavailable(); }}
+      >
+        <Icon icon="logos:google-icon" aria-hidden="true" />
+        Continue with Google
+      </HeroButton>
       <div className="v2-auth-footer">New to Decision Workspace? <button type="button" onClick={onRequest}>Request access</button></div>
     </>
   );

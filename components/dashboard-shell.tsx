@@ -285,6 +285,7 @@ const uiCopy = {
 
 export function DashboardShell() {
   const [workspaceSession, setWorkspaceSession] = React.useState<WorkspaceSessionStatus | null>(null);
+  const [workspaceAuthError, setWorkspaceAuthError] = React.useState("");
   const [authenticated, setAuthenticated] = React.useState<boolean | null>(null);
   const [accounts, setAccounts] = React.useState<MetaAccount[]>([]);
   const [accountId, setAccountId] = React.useState("");
@@ -572,6 +573,7 @@ export function DashboardShell() {
     const url = new URL(window.location.href);
     const authError = url.searchParams.get("auth_error");
     if (!authError) return;
+    setWorkspaceAuthError(authError);
     setError(authError);
     url.searchParams.delete("auth_error");
     window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
@@ -940,8 +942,12 @@ export function DashboardShell() {
       <WorkspaceAuth
         status={workspaceSession}
         theme={theme}
+        initialError={workspaceAuthError}
         onThemeChange={() => setTheme((current) => current === "dark" ? "light" : "dark")}
-        onAuthenticated={setWorkspaceSession}
+        onAuthenticated={(next) => {
+          setWorkspaceAuthError("");
+          setWorkspaceSession(next);
+        }}
       />
     );
   }

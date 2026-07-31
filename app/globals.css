@@ -60,6 +60,17 @@
   --duration-slow: 750ms;
   --duration-pulse: 1400ms;
   --action-dock-clearance: 6rem;
+  --accent-hover: color-mix(in srgb, var(--primary) 90%, white);
+  --cursor-interactive: pointer;
+  --cursor-disabled: not-allowed;
+  --default: var(--secondary);
+  --default-foreground: var(--foreground);
+  --default-hover: var(--accent);
+  --disabled-opacity: 0.48;
+  --ease-out: ease-out;
+  --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+  --focus: var(--ring);
+  --ring-offset-width: 0px;
   --ease-out-workbench: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in-out-workbench: cubic-bezier(0.65, 0, 0.35, 1);
   --shadow-glow-surface: 0 1px 2px rgb(0 0 0 / 10%), 0 2px 4px rgb(0 0 0 / 10%), 0 4px 8px rgb(0 0 0 / 10%), 0 8px 16px rgb(0 0 0 / 10%), 0 16px 32px rgb(0 0 0 / 10%), 0 32px 64px rgb(0 0 0 / 10%);
@@ -111,6 +122,7 @@
   --color-chart-2: var(--chart-2);
   --color-chart-1: var(--chart-1);
   --color-ring: var(--ring);
+  --color-focus: var(--focus);
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
@@ -583,7 +595,8 @@
 }
 
 .v2-auth-primary,
-.v2-auth-secondary {
+.v2-auth-secondary,
+.v2-auth-google {
   display: inline-flex;
   width: 100%;
   min-height: 2.25rem;
@@ -603,12 +616,14 @@
 }
 
 .v2-auth-primary:not(:disabled):hover,
-.v2-auth-secondary:not(:disabled):hover {
+.v2-auth-secondary:not(:disabled):hover,
+.v2-auth-google:not(:disabled):hover {
   transform: translateY(-1px);
 }
 
 .v2-auth-primary:disabled,
-.v2-auth-secondary:disabled {
+.v2-auth-secondary:disabled,
+.v2-auth-google:disabled {
   opacity: 0.48;
   cursor: not-allowed;
 }
@@ -621,6 +636,26 @@
 .v2-auth-secondary {
   border: 1px solid var(--border);
   color: var(--foreground);
+}
+
+.v2-auth-google.button {
+  width: 100%;
+  min-height: 2.25rem;
+  height: 2.25rem;
+  border-color: var(--border);
+  color: var(--foreground);
+  background: transparent;
+  box-shadow: none;
+}
+
+.v2-auth-google.button:hover {
+  background: color-mix(in srgb, var(--secondary) 72%, transparent);
+}
+
+.v2-auth-google.button svg {
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
 }
 
 .v2-auth-divider {
@@ -649,6 +684,11 @@
 .v2-auth-footer-spacious {
   margin-top: auto;
   padding-top: 2rem;
+}
+
+.v2-auth-footer a {
+  color: var(--primary);
+  font-weight: 550;
 }
 
 .v2-auth-spinner {
