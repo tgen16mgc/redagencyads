@@ -1486,6 +1486,281 @@
 .testBrief footer i[data-tone="assumption"] { background: #f2b94e; }
 .testBrief footer i[data-tone="ai"] { background: #55a9ff; }
 
+/* Light glass material, scoped to the public landing page. */
+.page {
+  --glass: rgb(255 255 255 / 0.7);
+  --glass-strong: rgb(255 255 255 / 0.84);
+  --glass-border: rgb(255 255 255 / 0.9);
+  --glass-line: rgb(15 23 42 / 0.1);
+  --glass-shadow: 0 24px 70px rgb(15 23 42 / 0.1), inset 0 1px 0 rgb(255 255 255 / 0.9);
+  background:
+    radial-gradient(circle at 8% 8%, rgb(60 152 255 / 0.14), transparent 30rem),
+    radial-gradient(circle at 92% 34%, rgb(93 214 236 / 0.12), transparent 34rem),
+    linear-gradient(180deg, #f8fbff 0%, #f4f6f9 42%, #f7f7f8 100%);
+}
+
+.nav {
+  border-color: var(--glass-border);
+  background: rgb(255 255 255 / 0.72);
+  box-shadow: 0 18px 48px rgb(15 23 42 / 0.11), inset 0 1px 0 #fff;
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  backdrop-filter: blur(24px) saturate(160%);
+}
+
+.brand {
+  color: var(--ink);
+}
+
+.brand small {
+  color: var(--muted);
+}
+
+.brandMark {
+  border-color: rgb(4 133 247 / 0.14);
+  background: rgb(255 255 255 / 0.72);
+  color: var(--blue);
+  box-shadow: inset 0 1px 0 #fff;
+}
+
+.navLinks a {
+  color: #5f6470;
+}
+
+.navLinks a:hover {
+  background: rgb(4 133 247 / 0.08);
+  color: var(--ink);
+}
+
+.navCta {
+  background: var(--blue);
+  color: #fff;
+  box-shadow: 0 10px 28px rgb(4 133 247 / 0.22);
+}
+
+.navCta .ctaIcon {
+  background: #fff;
+  color: var(--blue);
+}
+
+.heroField {
+  min-height: 0;
+  padding-block: clamp(112px, 9vw, 138px) 28px;
+  background:
+    linear-gradient(180deg, rgb(250 253 255 / 0.72) 0%, rgb(228 242 255 / 0.78) 48%, rgb(247 250 252 / 0.96) 100%),
+    url("/landing/decision-sky-v2.jpg") center 53% / cover no-repeat;
+  color: var(--ink);
+}
+
+.heroField::before {
+  background-image:
+    linear-gradient(rgb(15 23 42 / 0.075) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(15 23 42 / 0.075) 1px, transparent 1px);
+}
+
+.photoCredit {
+  color: rgb(24 24 27 / 0.42);
+}
+
+.eyebrow {
+  border-color: var(--glass-border);
+  background: rgb(255 255 255 / 0.58);
+  color: #3f4753;
+  box-shadow: inset 0 1px 0 #fff, 0 10px 30px rgb(15 23 42 / 0.08);
+  -webkit-backdrop-filter: blur(18px) saturate(150%);
+  backdrop-filter: blur(18px) saturate(150%);
+}
+
+.eyebrow::before {
+  background: var(--blue);
+  box-shadow: 0 0 0 4px rgb(4 133 247 / 0.12);
+}
+
+.heroCopy h1 {
+  color: var(--ink);
+  text-shadow: none;
+}
+
+.heroBlurText {
+  width: 100%;
+  justify-content: center;
+}
+
+.heroCopy > p:not(.eyebrow) {
+  color: #4f5968;
+}
+
+.ghostCta {
+  color: var(--ink);
+}
+
+.heroSurface {
+  width: min(86%, 1240px);
+  margin-top: 52px;
+  border-color: var(--glass-border);
+  background: rgb(255 255 255 / 0.58);
+  box-shadow: 0 34px 90px rgb(42 84 124 / 0.18), inset 0 1px 0 #fff;
+  -webkit-backdrop-filter: blur(24px) saturate(145%);
+  backdrop-filter: blur(24px) saturate(145%);
+}
+
+.productPreviewFrame {
+  pointer-events: none;
+  color-scheme: light;
+  background: #f7f7f8;
+}
+
+.productPreviewFrame[data-surface="overview"] {
+  height: clamp(360px, 31vw, 480px);
+}
+
+.productPreviewFrame[data-surface="competitor"] {
+  height: clamp(500px, 43vw, 620px);
+  border-color: var(--glass-border);
+  background: #f7f7f8;
+  box-shadow: var(--glass-shadow);
+}
+
+.trustRail li,
+.fragmentedPanel,
+.loopPanel,
+.workflowCard,
+.outputList,
+.jobCard {
+  border: 1px solid var(--glass-border);
+  background: var(--glass);
+  box-shadow: var(--glass-shadow);
+  -webkit-backdrop-filter: blur(22px) saturate(145%);
+  backdrop-filter: blur(22px) saturate(145%);
+}
+
+.problemSection,
+.workflowSection,
+.evidenceSection,
+.decisionsSection,
+.useCasesSection {
+  padding-block: clamp(58px, 6vw, 88px);
+  scroll-margin-top: 94px;
+}
+
+.problemGrid {
+  margin-top: 52px;
+}
+
+.loopPanel {
+  color: var(--ink);
+}
+
+.loopPanel .panelLabel,
+.guardrailCard .panelLabel {
+  color: var(--muted);
+}
+
+.loopPanel li:not(:last-child)::after {
+  background: rgb(15 23 42 / 0.12);
+}
+
+.loopPanel li p {
+  color: #343a45;
+}
+
+.workflowRail {
+  margin-top: 64px;
+}
+
+.workflowStep > i {
+  border-color: #fff;
+}
+
+.guardrailCard {
+  border: 1px solid var(--glass-border);
+  background:
+    radial-gradient(circle at 100% 0%, rgb(255 255 255 / 0.9), transparent 18rem),
+    linear-gradient(145deg, rgb(221 239 255 / 0.92), rgb(247 252 255 / 0.82));
+  color: var(--ink);
+  box-shadow: var(--glass-shadow);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
+  backdrop-filter: blur(24px) saturate(150%);
+}
+
+.guardrailCard > strong {
+  color: var(--blue);
+}
+
+.guardrailCard > strong span {
+  color: rgb(4 133 247 / 0.45);
+}
+
+.guardrailCard > p:not(.panelLabel) {
+  color: #596273;
+}
+
+.guardrailCard dl {
+  border-color: rgb(15 23 42 / 0.12);
+}
+
+.guardrailCard dl > div + div {
+  border-color: rgb(15 23 42 / 0.1);
+}
+
+.guardrailCard dt {
+  color: var(--muted);
+}
+
+.decisionGrid {
+  margin-top: 52px;
+}
+
+.jobGrid {
+  margin-top: 44px;
+}
+
+.finalCta {
+  min-height: 430px;
+  margin-top: 8px;
+  border: 1px solid var(--glass-border);
+  background:
+    radial-gradient(circle at 16% 8%, rgb(255 255 255 / 0.94), transparent 22rem),
+    radial-gradient(circle at 92% 88%, rgb(77 205 235 / 0.26), transparent 28rem),
+    linear-gradient(145deg, rgb(224 241 255 / 0.86), rgb(246 251 255 / 0.78));
+  color: var(--ink);
+  box-shadow: var(--glass-shadow);
+  -webkit-backdrop-filter: blur(28px) saturate(155%);
+  backdrop-filter: blur(28px) saturate(155%);
+}
+
+.finalCta::before,
+.finalCta::after {
+  border-color: rgb(4 133 247 / 0.14);
+}
+
+.finalIcon {
+  border-color: var(--glass-border);
+  background: rgb(255 255 255 / 0.72);
+  color: var(--blue);
+  box-shadow: inset 0 1px 0 #fff, 0 12px 30px rgb(15 23 42 / 0.08);
+}
+
+.finalCta > p {
+  color: #596273;
+}
+
+.finalButton {
+  background: var(--blue);
+  color: #fff;
+  box-shadow: 0 14px 34px rgb(4 133 247 / 0.24);
+}
+
+.finalButton .ctaIcon {
+  background: #fff;
+  color: var(--blue);
+}
+
+.footer {
+  min-height: 120px;
+  margin-top: 26px;
+  border-top: 1px solid rgb(15 23 42 / 0.09);
+}
+
 .resolveOne,
 .resolveTwo,
 .resolveThree,
@@ -1629,7 +1904,7 @@
   .decisionsSection,
   .useCasesSection {
     width: calc(100% - 24px);
-    padding-block: 72px;
+    padding-block: 56px;
   }
 
   .problemSection > h2,
@@ -1761,7 +2036,7 @@
 
   .finalCta {
     width: calc(100% - 24px);
-    min-height: 480px;
+    min-height: 420px;
     border-radius: 24px;
   }
 

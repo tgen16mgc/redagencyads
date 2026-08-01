@@ -150,7 +150,7 @@ export function LandingProductPreview({ surface }: { surface: "overview" | "comp
 
   if (!mounted) {
     return (
-      <main className={styles.preview} data-surface={surface} aria-busy="true">
+      <main className={`${styles.preview} light`} data-surface={surface} aria-busy="true">
         <div className={styles.loadingSurface}>
           <span />
           <span />
@@ -161,7 +161,7 @@ export function LandingProductPreview({ surface }: { surface: "overview" | "comp
   }
 
   return (
-    <main className={styles.preview} data-surface={surface}>
+    <main className={`${styles.preview} light`} data-surface={surface}>
       {surface === "overview" ? (
         <WorkspaceOverview
           authenticated

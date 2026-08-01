@@ -1,10 +1,15 @@
 .preview {
   width: 100%;
-  min-height: 100svh;
+  height: 100svh;
+  min-height: 0;
+  box-sizing: border-box;
   padding: 20px;
   overflow: hidden;
-  background: #060607;
-  color: #fcfcfc;
+  overscroll-behavior: none;
+  background:
+    radial-gradient(circle at 10% 0%, rgb(62 152 255 / 0.1), transparent 28rem),
+    var(--background);
+  color: var(--foreground);
 }
 
 .preview[data-surface="overview"] {
@@ -21,16 +26,17 @@
   align-content: start;
   gap: 12px;
   padding: 24px;
-  border: 1px solid #28282c;
+  border: 1px solid var(--border);
   border-radius: 20px;
-  background: #18181b;
+  background: rgb(255 255 255 / 0.78);
+  box-shadow: 0 18px 44px rgb(15 23 42 / 0.08);
 }
 
 .loadingSurface span {
   display: block;
   height: 48px;
   border-radius: 14px;
-  background: linear-gradient(90deg, #232325, #2c2c30, #232325);
+  background: linear-gradient(90deg, #ececf0, #f7f7fa, #ececf0);
   background-size: 220% 100%;
   animation: preview-shimmer 1.2s ease-in-out infinite;
 }

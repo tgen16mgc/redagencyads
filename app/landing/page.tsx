@@ -13,7 +13,10 @@ import {
   WaypointsIcon,
 } from "lucide-react"
 
+import BlurText from "@/components/BlurText"
+
 import { LandingActionLink } from "./landing-action-link"
+import { LandingMotion } from "./landing-motion"
 import styles from "./landing.module.css"
 
 export const metadata: Metadata = {
@@ -53,7 +56,7 @@ const jobs = [
 
 export default function LandingPage() {
   return (
-    <main className={styles.page}>
+    <LandingMotion>
       <header className={styles.navShell}>
         <nav className={styles.nav} aria-label="Main navigation">
           <Link href="/landing" className={styles.brand} aria-label="Red Agency Ads home">
@@ -74,30 +77,40 @@ export default function LandingPage() {
         <div className={styles.heroField}>
           <div className={styles.photoCredit}>Photo via Unsplash</div>
           <div className={styles.heroCopy}>
-            <p className={`${styles.eyebrow} ${styles.resolveOne}`}>Decision operations for paid media</p>
-            <h1 className={`${styles.resolveTwo}`}>Make the next ad decision without guessing.</h1>
-            <p className={`${styles.resolveThree}`}>
+            <p className={styles.eyebrow} data-gsap-hero>Decision operations for paid media</p>
+            <h1>
+              <BlurText
+                text="Make the next ad decision without guessing."
+                animateBy="words"
+                direction="bottom"
+                delay={90}
+                stepDuration={0.28}
+                className={styles.heroBlurText}
+              />
+            </h1>
+            <p data-gsap-hero>
               Turn performance, verified competitor evidence, and TikTok signals into traceable
               Verdicts, guarded budget moves, and client-ready action plans.
             </p>
-            <div className={`${styles.heroActions} ${styles.resolveFour}`}>
+            <div className={styles.heroActions} data-gsap-hero>
               <LandingActionLink href="/" className={styles.primaryCta}>Log in to workspace</LandingActionLink>
               <a href="#how-it-works" className={styles.ghostCta}>See how it works <ArrowRightIcon /></a>
             </div>
           </div>
 
-          <div className={`${styles.heroSurface} ${styles.resolveSurface}`}>
+          <div className={styles.heroSurface} data-gsap-hero>
             <iframe
               className={styles.productPreviewFrame}
               data-surface="overview"
               src="/landing/product-preview?surface=overview"
               title="Live Red Agency Ads V2 workspace preview"
               tabIndex={-1}
+              scrolling="no"
             />
           </div>
         </div>
 
-        <ul className={styles.trustRail} aria-label="Workspace guarantees">
+        <ul className={styles.trustRail} aria-label="Workspace guarantees" data-gsap-reveal>
           <li><strong>Deterministic Verdicts</strong><span>Core analysis works without an AI provider</span></li>
           <li><strong>20% budget guardrail</strong><span>Recommendations protect Meta learning stability</span></li>
           <li><strong>English + Vietnamese</strong><span>One language setting from workspace to report</span></li>
@@ -106,7 +119,7 @@ export default function LandingPage() {
 
       <section className={styles.problemSection}>
         <h2>Dashboards show what happened. <span>Red Agency Ads shows what changes next.</span></h2>
-        <div className={styles.problemGrid}>
+        <div className={styles.problemGrid} data-gsap-reveal>
           <article className={styles.fragmentedPanel}>
             <p className={styles.panelLabel}>Today — five surfaces, no owner</p>
             <dl>
@@ -132,7 +145,7 @@ export default function LandingPage() {
       </section>
 
       <section id="how-it-works" className={styles.workflowSection}>
-        <div className={styles.workflowCard}>
+        <div className={styles.workflowCard} data-gsap-reveal>
           <header className={styles.sectionLead}>
             <h2>One loop, from raw evidence to a reviewed action.</h2>
             <p>The same record moves through all four stages. Nothing is retyped, and nothing loses its provenance on the way.</p>
@@ -152,17 +165,18 @@ export default function LandingPage() {
       </section>
 
       <section id="evidence" className={styles.evidenceSection}>
-        <div className={styles.evidenceVisual}>
+        <div className={styles.evidenceVisual} data-gsap-reveal>
           <iframe
             className={styles.productPreviewFrame}
             data-surface="competitor"
             src="/landing/product-preview?surface=competitor"
             title="Live Red Agency Ads V2 competitor evidence preview"
             tabIndex={-1}
+            scrolling="no"
           />
           <p>Competitor evidence — live V2 workspace preview</p>
         </div>
-        <div className={styles.evidenceCopy}>
+        <div className={styles.evidenceCopy} data-gsap-reveal>
           <p className={styles.kicker}>Traceability</p>
           <h2>Every recommendation keeps its evidence attached.</h2>
           <ul>
@@ -176,7 +190,7 @@ export default function LandingPage() {
 
       <section id="decisions" className={styles.decisionsSection}>
         <h2>Leave with a decision your team can defend.</h2>
-        <div className={styles.decisionGrid}>
+        <div className={styles.decisionGrid} data-gsap-reveal>
           <article className={styles.guardrailCard}>
             <p className={styles.panelLabel}>Hard ceiling</p>
             <strong>20<span>%</span></strong>
@@ -196,11 +210,11 @@ export default function LandingPage() {
       </section>
 
       <section id="use-cases" className={styles.useCasesSection}>
-        <header className={styles.sectionLead}>
+        <header className={styles.sectionLead} data-gsap-reveal>
           <h2>Four jobs the workspace already does.</h2>
           <p>Two need a connected Meta account. Two do not—your team can start research before connecting anything.</p>
         </header>
-        <div className={styles.jobGrid}>
+        <div className={styles.jobGrid} data-gsap-reveal>
           {jobs.map(([Icon, number, title, description, requirement]) => (
             <article key={number} className={styles.jobCard}>
               <div><span>{number}</span><Icon /></div>
@@ -212,18 +226,18 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <section className={styles.finalCta}>
+      <section className={styles.finalCta} data-gsap-reveal>
         <div className={styles.finalIcon}><ShieldCheckIcon /></div>
         <h2>Stop translating dashboards into decisions by hand.</h2>
         <p>Bring the evidence, review the Verdict, and leave with the next action.</p>
         <LandingActionLink href="/" className={styles.finalButton}>Log in to Red Agency Ads</LandingActionLink>
       </section>
 
-      <footer className={styles.footer}>
+      <footer className={styles.footer} data-gsap-reveal>
         <div className={styles.footerBrand}><span className={styles.brandMark}><WaypointsIcon /></span><div><strong>Red Agency Ads</strong><small>Decision operations for paid media</small></div></div>
         <nav aria-label="Footer navigation"><Link href="/">Log in</Link><Link href="/privacy">Privacy</Link><Link href="/terms">Terms</Link></nav>
         <div className={styles.footerMeta}><span><FileTextIcon />Client-ready output</span><span><LanguagesIcon />EN + VI</span></div>
       </footer>
-    </main>
+    </LandingMotion>
   )
 }
