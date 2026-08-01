@@ -4,6 +4,7 @@ export const DEFAULT_WORKSPACE_TIME_ZONE = "Asia/Ho_Chi_Minh";
 
 export const profileSettingsSchema = z.object({
   fullName: z.string().trim().min(1, "Enter your full name.").max(120),
+  avatarDataUrl: z.string().max(2_100_000).refine((value) => value.startsWith("data:image/"), "Choose a valid image.").optional(),
   timeZone: z.string().trim().min(1, "Enter a time zone.").max(100),
   weeklyPerformanceDigest: z.boolean(),
   evidenceFreshnessAlerts: z.boolean(),
@@ -87,6 +88,7 @@ export function defaultAccountWorkspaceSettings(input: {
   return {
     profile: {
       fullName: input.name?.trim() || "Workspace member",
+      avatarDataUrl: undefined,
       email: input.email?.trim() || "",
       timeZone: DEFAULT_WORKSPACE_TIME_ZONE,
       weeklyPerformanceDigest: true,

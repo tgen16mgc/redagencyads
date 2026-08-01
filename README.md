@@ -93,7 +93,7 @@ Routes stay thin. Domain logic lives in `lib/*`. UI workflow state lives in `com
 
 - `POST /api/session` validates pasted Meta access token through `validateToken()`.
 - `lib/session.ts` encrypts token with AES-256-GCM using `SESSION_SECRET`.
-- Token is stored in `meta_ads_session` HttpOnly cookie for 12 hours.
+- Token is encrypted, bound to the signed-in workspace account, and stored in the `meta_ads_session` HttpOnly cookie for up to 30 days. Workspace sign-out preserves it; the explicit Forget Meta action removes it.
 - `DELETE /api/session` clears cookie and resets dashboard state.
 
 Call path:

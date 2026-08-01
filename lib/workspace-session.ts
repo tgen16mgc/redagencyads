@@ -10,6 +10,7 @@ export type WorkspaceUser = {
   name: string;
   role: string;
   initials: string;
+  avatarDataUrl?: string;
 };
 
 export type WorkspaceMembership = Database["public"]["Tables"]["workspace_members"]["Row"];
@@ -35,8 +36,14 @@ export function getWorkspaceAuthMode(): WorkspaceAuthMode {
   return "disabled";
 }
 
-export function workspaceIdentityFromMembership(membership: Pick<WorkspaceMembership, "email" | "full_name" | "role">): WorkspaceUser {
+export function workspaceIdentityFromMembership(membership: Pick<WorkspaceMembership, "email" | "full_name" | "role"> & { preferences?: WorkspaceMembership["preferences"] }): WorkspaceUser {
   const name = membership.full_name.trim() || membership.email.split("@")[0] || "Workspace member";
+  const preferences = membership.preferences && typeof membership.preferences === "object" && !Array.isArray(membership.preferences)
+    ? membership.preferences
+    : {};
+  const avatarDataUrl = typeof preferences.avatarDataUrl === "string" && preferences.avatarDataUrl.startsWith("data:image/")
+    ? preferences.avatarDataUrl
+    : undefined;
   const initials = name
     .split(/\s+/)
     .map((part) => part[0])
@@ -50,6 +57,7 @@ export function workspaceIdentityFromMembership(membership: Pick<WorkspaceMember
     name,
     role: workspaceRoleLabel(membership.role),
     initials,
+    avatarDataUrl,
   };
 }
 
@@ -63,7 +71,7 @@ function workspaceRoleLabel(role: string) {
 export async function getActiveWorkspaceMembership(supabase: WorkspaceSupabaseClient, userId: string) {
   const { data, error } = await supabase
     .from("workspace_members")
-    .select("workspace_id,user_id,email,full_name,role,status,created_at,updated_at")
+    .select("workspace_id,user_id,email,full_name,role,status,preferences,created_at,updated_at")
     .eq("user_id", userId)
     .eq("status", "active")
     .order("created_at", { ascending: true })

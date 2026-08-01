@@ -471,7 +471,7 @@ export function DashboardShell() {
   const headerMode = {
     overview: {
       badge: copy.header.overviewCrumb,
-      detail: copy.header.overviewDetail,
+      detail: report?.account.name || workspaceLabel || copy.header.overviewDetail,
       title: copy.header.overviewTitle,
       description: language === "vi"
         ? "Chọn một công việc, kiểm tra capability thật và đưa evidence đến hành động."
@@ -479,7 +479,7 @@ export function DashboardShell() {
     },
     ads: {
       badge: copy.header.adsCrumb,
-      detail: copy.header.adsDetail,
+      detail: report?.account.name || workspaceLabel || copy.header.adsDetail,
       title: copy.header.adsTitle,
       description: language === "vi"
         ? "Theo dõi KPI, chẩn đoán tài khoản và tạo Verdict tối ưu."
@@ -561,6 +561,21 @@ export function DashboardShell() {
       cancelled = true;
     };
   }, []);
+
+  React.useEffect(() => {
+    const user = workspaceSession?.user;
+    if (!user || user.avatarDataUrl) return;
+    try {
+      const raw = window.localStorage.getItem(`decision-workspace-account-settings-v1:${user.email || "local"}`);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as { data?: { profile?: { avatarDataUrl?: unknown } }; avatarDataUrl?: unknown };
+      const value = parsed.data?.profile?.avatarDataUrl ?? parsed.avatarDataUrl;
+      if (typeof value !== "string" || !value.startsWith("data:image/")) return;
+      setWorkspaceSession((current) => current?.user ? { ...current, user: { ...current.user, avatarDataUrl: value } } : current);
+    } catch {
+      // Ignore malformed local development preferences; authenticated settings remain authoritative.
+    }
+  }, [workspaceSession]);
 
   React.useEffect(() => {
     if (!accountMenuOpen) return;
@@ -712,10 +727,7 @@ export function DashboardShell() {
   async function logout() {
     contextChatRef.current?.clearAll();
     setChatOpen(false);
-    const [, workspaceResponse] = await Promise.all([
-      fetch("/api/session", { method: "DELETE" }),
-      fetch("/api/workspace/session", { method: "DELETE" }),
-    ]);
+    const workspaceResponse = await fetch("/api/workspace/session", { method: "DELETE" });
     const nextWorkspaceSession = await workspaceResponse.json().catch(() => null) as WorkspaceSessionStatus | null;
     if (nextWorkspaceSession) setWorkspaceSession(nextWorkspaceSession);
     setAuthenticated(false);
@@ -724,6 +736,22 @@ export function DashboardShell() {
     setAccounts([]);
     setAdsWorkspace(resetAdsWorkspaceOnLogout);
     resetCompetitorWorkspaceOnLogout();
+  }
+
+  async function forgetMetaConnection() {
+    try {
+      await jsonFetch("/api/session", { method: "DELETE" });
+      setAuthenticated(false);
+      setAccounts([]);
+      setAccountId("");
+      setAdsWorkspace(resetAdsWorkspaceOnLogout);
+      void loadCapabilities();
+      toast.success(language === "vi" ? "Đã quên kết nối Meta" : "Meta connection forgotten");
+    } catch (requestError) {
+      const message = requestError instanceof Error ? requestError.message : "Could not forget the Meta connection.";
+      setError(message);
+      toast.error(message);
+    }
   }
 
   function competitorList() {
@@ -978,23 +1006,21 @@ export function DashboardShell() {
           activeView={activeView}
           aiProviderLabel={providerLabel(provider, language, capabilities)}
           appItems={appNavItems}
-          clearSessionLabel={copy.nav.clearSession}
           functionsLabel={copy.nav.functions}
           showWorkflow={activeView === "ads"}
-          showClearSession={authenticated}
           workflowLabel={copy.nav.workflow}
           workflowItems={workflowNavItems}
           aiSetupLabel={copy.nav.aiSetup}
           aiStatusTitle={copy.nav.aiStatusTitle}
           aiStatusState={aiStatusState}
+          userName={workspaceSession.user?.name || "Workspace owner"}
+          userInitials={workspaceSession.user?.initials || "DW"}
+          userAvatarDataUrl={workspaceSession.user?.avatarDataUrl}
           assistantOpen={chatOpen}
           onActiveViewChange={requestView}
           onOpenAssistant={() => setChatOpen((current) => !current)}
-          onLogout={logout}
-          clearSessionTitle={copy.nav.clearSessionTitle}
-          clearSessionDescription={copy.nav.clearSessionDescription}
-          clearSessionCancel={copy.nav.clearSessionCancel}
-          clearSessionConfirm={copy.nav.clearSessionConfirm}
+          onOpenProfile={() => { setSettingsTab("profile"); setSettingsOpen(true); }}
+          onOpenSettings={() => { setSettingsTab("workspace"); setSettingsOpen(true); }}
         />
 
         <div className="v2-app-main">
@@ -1032,7 +1058,7 @@ export function DashboardShell() {
               <LanguageToggle language={language} onChange={setLanguage} />
               <div ref={accountMenuRef} className="relative">
                 <button type="button" className="v2-account-chip" aria-label={`${workspaceSession.user?.name || "Workspace owner"}, ${workspaceSession.user?.role || "Workspace owner"}`} aria-expanded={accountMenuOpen} onClick={() => setAccountMenuOpen((current) => !current)}>
-                  <span className="v2-account-avatar">{workspaceSession.user?.initials || "DW"}</span>
+                  <span className="v2-account-avatar">{workspaceSession.user?.avatarDataUrl ? <img src={workspaceSession.user.avatarDataUrl} alt="" className="size-full object-cover" /> : workspaceSession.user?.initials || "DW"}</span>
                   <span className="min-w-0 flex-1 text-left">
                     <span className="v2-account-name block">{workspaceSession.user?.name || "Workspace owner"}</span>
                     <span className="v2-account-role block">{workspaceSession.user?.role || "Workspace owner"}</span>
@@ -1043,7 +1069,7 @@ export function DashboardShell() {
                   <div className="v2-account-menu">
                     <button type="button" className="absolute top-4 right-4 flex size-8 items-center justify-center rounded-xl border border-border text-muted-foreground hover:text-foreground" aria-label="Close account menu" onClick={() => setAccountMenuOpen(false)}><XIcon className="size-4" /></button>
                     <div className="flex items-center gap-3 border-b border-border pb-4 pr-10">
-                      <span className="v2-account-avatar">{workspaceSession.user?.initials || "DW"}</span>
+                      <span className="v2-account-avatar">{workspaceSession.user?.avatarDataUrl ? <img src={workspaceSession.user.avatarDataUrl} alt="" className="size-full object-cover" /> : workspaceSession.user?.initials || "DW"}</span>
                       <div><div className="text-sm font-semibold">{workspaceSession.user?.name || "Workspace owner"}</div><div className="text-xs text-muted-foreground">{workspaceSession.user?.role || "Workspace owner"} · {workspaceSession.user?.email || "Workspace session"}</div></div>
                     </div>
                     <div className="mt-4 text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">Account</div>
@@ -1204,9 +1230,10 @@ export function DashboardShell() {
           setPendingMetaView("ads");
           setMetaConnectOpen(true);
         }}
-        onProfileSaved={({ name, initials }) => {
+        onForgetMeta={forgetMetaConnection}
+        onProfileSaved={({ name, initials, avatarDataUrl }) => {
           setWorkspaceSession((current) => current?.user
-            ? { ...current, user: { ...current.user, name, initials } }
+            ? { ...current, user: { ...current.user, name, initials, avatarDataUrl } }
             : current);
         }}
       />

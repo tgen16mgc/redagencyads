@@ -48,4 +48,17 @@ describe("account and workspace settings", () => {
       approvalBeforePublishing: true,
     }).success).toBe(false);
   });
+
+  it("accepts account-scoped image data and rejects non-image values", () => {
+    const profile = {
+      fullName: "Tien Duong",
+      timeZone: "Asia/Ho_Chi_Minh",
+      weeklyPerformanceDigest: true,
+      evidenceFreshnessAlerts: true,
+      campaignAnomalyAlerts: false,
+    };
+
+    expect(profileSettingsSchema.safeParse({ ...profile, avatarDataUrl: "data:image/png;base64,avatar" }).success).toBe(true);
+    expect(profileSettingsSchema.safeParse({ ...profile, avatarDataUrl: "https://example.com/avatar.png" }).success).toBe(false);
+  });
 });

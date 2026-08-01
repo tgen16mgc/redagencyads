@@ -52,8 +52,9 @@ export default function PrivacyPolicyPage() {
           <section className={styles.section}>
             <h2>3. Token storage and retention</h2>
             <p>
-              Meta access tokens are validated on the server, encrypted, and stored in an HttpOnly session cookie for up to
-              12 hours. The application does not maintain a user-account database or permanently store your Meta reports.
+              Meta access tokens are validated on the server, encrypted, bound to the signed-in workspace account, and stored
+              in an HttpOnly cookie for up to 30 days so the connection can be restored after sign-out. You can remove the
+              connection at any time from Workspace settings. The application does not permanently store your Meta reports.
               Browser-only preferences and drafts remain on your device until you clear them. Infrastructure providers may
               retain limited request and error logs according to their own retention policies.
             </p>

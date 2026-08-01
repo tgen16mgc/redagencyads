@@ -1,10 +1,14 @@
 import { comparisonDescriptor } from "@/lib/metric-comparison";
-import type { CompareMode, DashboardReport, InterfaceLanguage, NormalizedRow, OutcomeMetricKey } from "@/lib/types";
+import type { CompareMode, DashboardReport, InterfaceLanguage, KpiPack, NormalizedRow, OutcomeMetricKey } from "@/lib/types";
+
+export const FUNNEL_STAGE_STORAGE_KEY = "decision-workspace-funnel-stages";
+
+export type PerformanceStageKey = "exposure" | "reach" | "impressions" | "traffic" | "cart" | "checkout" | "purchase" | "lead" | "conversations" | "replies" | "saturation";
 
 export type StageAvailability = "available" | "not_tracked" | "insufficient";
 
 export type PerformanceStage = {
-  key: "exposure" | "reach" | "impressions" | "traffic" | "cart" | "checkout" | "purchase" | "lead" | "conversations" | "replies" | "saturation";
+  key: PerformanceStageKey;
   label: string;
   name: string;
   category: string;
@@ -23,9 +27,91 @@ type StageArgs = {
   previousReport?: DashboardReport | null;
   compareMode: CompareMode;
   language: InterfaceLanguage;
+  stageKeys?: PerformanceStageKey[] | null;
 };
 
-export function buildPerformanceStages({ report, previousReport, compareMode, language }: StageArgs): PerformanceStage[] {
+const DEFAULT_STAGE_KEYS: Record<KpiPack, PerformanceStageKey[]> = {
+  lead_gen: ["exposure", "traffic", "lead"],
+  messages: ["exposure", "traffic", "conversations", "replies"],
+  sales_roas: ["exposure", "traffic", "cart", "checkout", "purchase"],
+  traffic: ["exposure", "traffic"],
+  awareness: ["reach", "impressions", "saturation"],
+};
+
+const STAGE_CATALOG: Array<{ key: PerformanceStageKey; label: Record<InterfaceLanguage, string>; description: Record<InterfaceLanguage, string> }> = [
+  { key: "exposure", label: { en: "Exposure", vi: "Phân phối" }, description: { en: "Impression delivery", vi: "Lượt hiển thị được phân phối" } },
+  { key: "reach", label: { en: "Reach", vi: "Tiếp cận" }, description: { en: "Unique people reached", vi: "Số người tiếp cận duy nhất" } },
+  { key: "impressions", label: { en: "Impressions", vi: "Lượt hiển thị" }, description: { en: "Total delivered impressions", vi: "Tổng lượt hiển thị" } },
+  { key: "traffic", label: { en: "Link clicks", vi: "Click liên kết" }, description: { en: "Traffic from ads", vi: "Lưu lượng từ quảng cáo" } },
+  { key: "conversations", label: { en: "Conversations", vi: "Hội thoại" }, description: { en: "Messaging conversations started", vi: "Hội thoại bắt đầu" } },
+  { key: "replies", label: { en: "Replies", vi: "Phản hồi" }, description: { en: "Replies from conversations", vi: "Phản hồi từ hội thoại" } },
+  { key: "lead", label: { en: "Leads", vi: "Lead" }, description: { en: "Captured lead outcomes", vi: "Kết quả lead thu được" } },
+  { key: "cart", label: { en: "Add to cart", vi: "Thêm vào giỏ" }, description: { en: "Commerce consideration signal", vi: "Tín hiệu cân nhắc mua" } },
+  { key: "checkout", label: { en: "Checkout", vi: "Thanh toán" }, description: { en: "Checkout initiations", vi: "Lượt bắt đầu thanh toán" } },
+  { key: "purchase", label: { en: "Purchases", vi: "Mua hàng" }, description: { en: "Completed purchase outcomes", vi: "Kết quả mua hàng hoàn tất" } },
+  { key: "saturation", label: { en: "Saturation", vi: "Bão hòa" }, description: { en: "Frequency pressure", vi: "Áp lực tần suất" } },
+];
+
+export function defaultPerformanceStageKeys(pack: KpiPack) {
+  return [...DEFAULT_STAGE_KEYS[pack]];
+}
+
+export function getPerformanceStageCatalog(language: InterfaceLanguage) {
+  return STAGE_CATALOG.map((item) => ({ key: item.key, label: item.label[language], description: item.description[language] }));
+}
+
+export function normalizePerformanceStageKeys(keys: unknown[]): PerformanceStageKey[] {
+  const valid = new Set(STAGE_CATALOG.map((item) => item.key));
+  const seen = new Set<PerformanceStageKey>();
+  return keys.flatMap((key) => {
+    if (typeof key !== "string" || !valid.has(key as PerformanceStageKey) || seen.has(key as PerformanceStageKey)) return [];
+    seen.add(key as PerformanceStageKey);
+    return [key as PerformanceStageKey];
+  });
+}
+
+export function serializePerformanceStageKeys(keys: PerformanceStageKey[]) {
+  return JSON.stringify(normalizePerformanceStageKeys(keys));
+}
+
+export function deserializePerformanceStageKeys(raw: string | null, pack: KpiPack): PerformanceStageKey[] {
+  if (!raw) return defaultPerformanceStageKeys(pack);
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return defaultPerformanceStageKeys(pack);
+    const normalized = normalizePerformanceStageKeys(parsed);
+    return normalized.length ? normalized : defaultPerformanceStageKeys(pack);
+  } catch {
+    return defaultPerformanceStageKeys(pack);
+  }
+}
+
+export function buildPerformanceStages({ stageKeys, ...args }: StageArgs): PerformanceStage[] {
+  const defaults = buildDefaultPerformanceStages(args);
+  const normalized = stageKeys?.length ? normalizePerformanceStageKeys(stageKeys) : [];
+  if (!normalized.length) return defaults;
+
+  const stageMap = new Map<PerformanceStageKey, PerformanceStage>();
+  const packs: KpiPack[] = [args.report.selectedPack, "lead_gen", "messages", "sales_roas", "traffic", "awareness"];
+  for (const pack of packs) {
+    const stages = buildDefaultPerformanceStages({ ...args, report: { ...args.report, selectedPack: pack } });
+    for (const item of stages) if (!stageMap.has(item.key)) stageMap.set(item.key, item);
+  }
+
+  const selected = normalized.flatMap((key) => {
+    const item = stageMap.get(key);
+    return item ? [item] : [];
+  });
+  return selected.map((item, index) => ({
+    ...item,
+    label: `${String(index + 1).padStart(2, "0")} · ${item.name.toUpperCase()}`,
+    relation: index === 0
+      ? item.relation
+      : `${selected[index - 1].name} → ${item.name}`,
+  }));
+}
+
+function buildDefaultPerformanceStages({ report, previousReport, compareMode, language }: Omit<StageArgs, "stageKeys">): PerformanceStage[] {
   const t = report.totals;
   const p = previousReport?.totals;
   const currencyCode = report.account.currency || "VND";

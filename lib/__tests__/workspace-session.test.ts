@@ -26,11 +26,13 @@ describe("workspace sessions", () => {
       email: "tien@redagency.vn",
       full_name: "Tien Duong",
       role: "owner",
+      preferences: { avatarDataUrl: "data:image/png;base64,avatar" },
     })).toEqual({
       email: "tien@redagency.vn",
       name: "Tien Duong",
       role: "Workspace owner",
       initials: "TD",
+      avatarDataUrl: "data:image/png;base64,avatar",
     });
   });
 

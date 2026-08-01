@@ -67,8 +67,15 @@ export function WorkspaceOverview({
 }: WorkspaceOverviewProps) {
   const isVietnamese = language === "vi";
   const availableCount = capabilities.filter((item) => item.state === "available").length;
-  const readinessScore = healthSummary?.score ?? Math.round((availableCount / Math.max(capabilities.length, 1)) * 100);
-  const confidenceLabel = readinessScore >= 80 ? (isVietnamese ? "Cao" : "High") : readinessScore >= 55 ? (isVietnamese ? "Vừa" : "Medium") : (isVietnamese ? "Thấp" : "Low");
+  const totalChecks = healthSummary?.items.length || report?.health.checks.length || capabilities.length;
+  const passedChecks = healthSummary?.counts.healthy ?? report?.health.checks.filter((check) => check.status === "pass").length ?? availableCount;
+  const blockingCount = healthSummary?.counts.danger ?? capabilities.filter((item) => item.state === "needs_connection" || item.state === "needs_setup").length;
+  const watchCount = healthSummary?.counts.warning ?? capabilities.filter((item) => item.state === "degraded" || item.state === "paused" || item.state === "unknown").length;
+  const readinessLabel = blockingCount > 0
+    ? (isVietnamese ? "Đang chặn" : "Blocked")
+    : watchCount > 0
+      ? (isVietnamese ? "Cần rà soát" : "Review")
+      : (isVietnamese ? "Sẵn sàng" : "Ready");
   const accountName = report?.account.name || workspaceLabel || (authenticated ? (isVietnamese ? "Chọn tài khoản" : "Choose account") : (isVietnamese ? "Chưa kết nối" : "Not connected"));
   const period = report ? `${report.dateRange.since} – ${report.dateRange.until}` : (isVietnamese ? "30 ngày gần nhất" : "Last 30 days");
   const campaignScope = report?.selectedCampaigns.length
@@ -147,23 +154,29 @@ export function WorkspaceOverview({
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 text-sm font-medium">
               <SparklesIcon className="size-4 text-primary" />
-              {isVietnamese ? "Độ tin cậy quyết định" : "Decision confidence"}
+              {isVietnamese ? "Mức sẵn sàng hành động" : "Action readiness"}
             </div>
-            <Badge variant={readinessScore >= 75 ? "success" : "outline"}>{confidenceLabel}</Badge>
+            <Badge variant={blockingCount > 0 ? "destructive" : watchCount > 0 ? "outline" : "success"}>{readinessLabel}</Badge>
           </div>
-          <div className="mt-3 text-5xl font-semibold tracking-[-0.055em]">{readinessScore}</div>
+          <div className="mt-3 text-5xl font-semibold tracking-[-0.055em]">{passedChecks}<span className="text-2xl text-muted-foreground">/{Math.max(totalChecks, 1)}</span></div>
           <p className="mt-2 text-sm leading-5 text-muted-foreground">
-            {healthSummary?.summary[language] || (isVietnamese ? `${availableCount}/${capabilities.length} nguồn dữ liệu đã sẵn sàng.` : `${availableCount}/${capabilities.length} data capabilities are ready.`)}
+            {isVietnamese
+              ? `${blockingCount} mục đang chặn · ${watchCount} mục cần theo dõi trước khi thay đổi ngân sách.`
+              : `${blockingCount} blocking · ${watchCount} watch item${watchCount === 1 ? "" : "s"} before the next budget change.`}
           </p>
           <div className="mt-4 flex items-center justify-between text-xs">
-            <span>{isVietnamese ? "Độ phủ tín hiệu" : "Signal coverage"}</span>
-            <span className="font-medium tabular-nums">{readinessScore}%</span>
+            <span>{isVietnamese ? "Kiểm tra đã đạt" : "Checks passed"}</span>
+            <span className="font-medium tabular-nums">{passedChecks}/{Math.max(totalChecks, 1)}</span>
           </div>
           <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
-            <div className="h-full rounded-full bg-primary transition-[width] duration-500" style={{ width: `${readinessScore}%` }} />
+            <div className="h-full rounded-full bg-primary transition-[width] duration-500" style={{ width: `${(passedChecks / Math.max(totalChecks, 1)) * 100}%` }} />
           </div>
           <button type="button" className="mt-4 inline-flex items-center gap-1.5 text-xs font-medium text-primary" onClick={() => onOpen("ads")}>
-            {isVietnamese ? "Xem rủi ro nổi bật" : "Review emerging risks"}
+            {blockingCount > 0
+              ? (isVietnamese ? `Xử lý ${blockingCount} mục đang chặn` : `Resolve ${blockingCount} blocking item${blockingCount === 1 ? "" : "s"}`)
+              : watchCount > 0
+                ? (isVietnamese ? `Rà soát ${watchCount} mục theo dõi` : `Review ${watchCount} watch item${watchCount === 1 ? "" : "s"}`)
+                : (isVietnamese ? "Mở evidence báo cáo" : "Open report evidence")}
             <ArrowRightIcon className="size-3.5" />
           </button>
         </div>

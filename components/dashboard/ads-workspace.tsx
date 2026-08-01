@@ -69,6 +69,14 @@ import { runDiagnostics } from "@/lib/diagnosis";
 import type { HealthScoreSummary } from "@/lib/health-score";
 import { buildKpiComparisons } from "@/lib/metric-comparison";
 import { formatMetric } from "@/lib/metrics";
+import {
+  FUNNEL_STAGE_STORAGE_KEY,
+  defaultPerformanceStageKeys,
+  deserializePerformanceStageKeys,
+  getPerformanceStageCatalog,
+  serializePerformanceStageKeys,
+  type PerformanceStageKey,
+} from "@/lib/performance-stages";
 import { getCompareRange } from "@/lib/report-ranges";
 import { rowDecision } from "@/lib/row-decision";
 import { readStorageSlot } from "@/lib/storage-slot";
@@ -334,6 +342,7 @@ export type AdsWorkspaceState = {
   scopeExpanded: boolean;
   diagnosticsOpen: boolean;
   customKpiKeys: CustomKpiKey[] | null;
+  funnelStageKeys: PerformanceStageKey[] | null;
   customCharts: CustomChartSpec[];
 };
 
@@ -345,7 +354,7 @@ export function initialAdsWorkspaceState(): AdsWorkspaceState {
     since: dates.since,
     until: dates.until,
     pack: "auto",
-    compareMode: "off",
+    compareMode: "previous",
     targetCpa: "",
     targetRoas: "",
     report: null,
@@ -357,6 +366,7 @@ export function initialAdsWorkspaceState(): AdsWorkspaceState {
     scopeExpanded: false,
     diagnosticsOpen: false,
     customKpiKeys: null,
+    funnelStageKeys: null,
     customCharts: typeof window === "undefined"
       ? []
       : readStorageSlot(window.localStorage, {
@@ -487,6 +497,7 @@ export function AdsWorkspace({
     scopeExpanded,
     diagnosticsOpen,
     customKpiKeys,
+    funnelStageKeys,
     customCharts,
   } = state;
   const copy = adsCopy[language];
@@ -521,6 +532,21 @@ export function AdsWorkspace({
   React.useEffect(() => {
     window.localStorage.setItem(CUSTOM_CHARTS_STORAGE_KEY, serializeCharts(customCharts));
   }, [customCharts]);
+
+  React.useEffect(() => {
+    if (!report || funnelStageKeys) return;
+    updateState({
+      funnelStageKeys: deserializePerformanceStageKeys(
+        window.localStorage.getItem(FUNNEL_STAGE_STORAGE_KEY),
+        report.selectedPack,
+      ),
+    });
+  }, [funnelStageKeys, report, updateState]);
+
+  React.useEffect(() => {
+    if (!funnelStageKeys) return;
+    window.localStorage.setItem(FUNNEL_STAGE_STORAGE_KEY, serializePerformanceStageKeys(funnelStageKeys));
+  }, [funnelStageKeys]);
 
   async function fetchReportForRange(range: { since: string; until: string }, overrides: ReportScopePatch = {}) {
     const url = new URL("/api/meta/report", window.location.origin);
@@ -726,17 +752,7 @@ export function AdsWorkspace({
             healthSummary={healthSummary}
             verdict={verdict}
             insights={insights}
-            accountLabel={report.source === "sample"
-              ? selectedCampaignIds.length === 1
-                ? report.selectedCampaigns[0]?.name || copy.campaign.allActive
-                : selectedCampaignIds.length > 1
-                  ? `${selectedCampaignIds.length} ${copy.campaign.selected}`
-                  : copy.campaign.allActive
-              : selectedCampaignIds.length === 1
-                ? campaigns.find((campaign) => campaign.id === selectedCampaignIds[0])?.name || selectedAccount?.name || copy.scope.account
-                : selectedCampaignIds.length > 1
-                  ? `${selectedCampaignIds.length} ${copy.campaign.selected}`
-                  : selectedAccount?.name || copy.campaign.allActive}
+            accountLabel={report.account.name}
             periodLabel={`${report.dateRange.since} – ${report.dateRange.until}`}
             scopeLabel={packLabel(report.selectedPack, language)}
             campaigns={campaigns}
@@ -745,6 +761,7 @@ export function AdsWorkspace({
             until={until}
             pack={pack}
             compareMode={compareMode}
+            funnelStageKeys={funnelStageKeys}
             exporting={exportingPdf}
             reviewing={aiLoading.verdict}
             reportLoading={loading === "report"}
@@ -758,7 +775,10 @@ export function AdsWorkspace({
                 defaultKpis={report.kpis}
                 language={language}
                 selectedKeys={customKpiKeys || effectiveKpis.map((kpi) => kpi.key as CustomKpiKey)}
+                funnelPack={report.selectedPack}
+                funnelStageKeys={funnelStageKeys || defaultPerformanceStageKeys(report.selectedPack)}
                 onSave={onSaveCustomKpis}
+                onSaveFunnelStages={(keys) => updateState({ funnelStageKeys: keys })}
               />
             }
             evidenceExtra={
@@ -786,30 +806,48 @@ function CustomKpiSetSheet({
   defaultKpis,
   language,
   selectedKeys,
+  funnelPack,
+  funnelStageKeys,
   onSave,
+  onSaveFunnelStages,
 }: {
   defaultKpis: KpiCard[];
   language: InterfaceLanguage;
   selectedKeys: CustomKpiKey[];
+  funnelPack: KpiPack;
+  funnelStageKeys: PerformanceStageKey[];
   onSave: (keys: CustomKpiKey[]) => void;
+  onSaveFunnelStages: (keys: PerformanceStageKey[]) => void;
 }) {
   const isVietnamese = language === "vi";
   const [open, setOpen] = React.useState(false);
+  const [tab, setTab] = React.useState<"cards" | "funnel">("cards");
   const [draftKeys, setDraftKeys] = React.useState<CustomKpiKey[]>(selectedKeys);
+  const [draftStageKeys, setDraftStageKeys] = React.useState<PerformanceStageKey[]>(funnelStageKeys);
   const [query, setQuery] = React.useState("");
   const groups = getCustomKpiCatalogGroups(language);
   const selectedSet = React.useMemo(() => new Set(draftKeys), [draftKeys]);
   const catalog = React.useMemo(() => groups.flatMap((group) => group.metrics), [groups]);
-  const adaptiveCards = defaultKpis.filter((kpi): kpi is KpiCard & { key: CustomKpiKey } => kpi.key !== "healthScore");
-  const visibleCards = query.trim()
-    ? catalog.filter((metric) => `${metric.label} ${metric.format}`.toLowerCase().includes(query.trim().toLowerCase()))
-    : adaptiveCards;
+  const recommendedSet = React.useMemo(() => new Set(defaultKpis.map((kpi) => kpi.key)), [defaultKpis]);
+  const normalizedQuery = query.trim().toLowerCase();
+  const visibleGroups = groups
+    .map((group) => ({
+      ...group,
+      metrics: normalizedQuery
+        ? group.metrics.filter((metric) => `${metric.label} ${metric.format}`.toLowerCase().includes(normalizedQuery))
+        : group.metrics,
+    }))
+    .filter((group) => group.metrics.length);
+  const stageCatalog = getPerformanceStageCatalog(language);
+  const stageItems = stageCatalog.map((stage) => ({ label: stage.label, value: stage.key }));
 
   function handleOpenChange(nextOpen: boolean) {
     setOpen(nextOpen);
     if (nextOpen) {
       setDraftKeys(selectedKeys.length ? selectedKeys : deserializeCustomKpiSet(null, defaultKpis));
+      setDraftStageKeys(funnelStageKeys.length ? funnelStageKeys : defaultPerformanceStageKeys(funnelPack));
       setQuery("");
+      setTab("cards");
     }
   }
 
@@ -821,10 +859,21 @@ function CustomKpiSetSheet({
   }
 
   function handleSave() {
-    if (!draftKeys.length) return;
+    if (!draftKeys.length || !draftStageKeys.length) return;
     onSave(draftKeys);
-    toast.success(isVietnamese ? "Đã lưu thẻ KPI" : "KPI cards saved", { description: isVietnamese ? `${draftKeys.length} thẻ sẽ xuất hiện trên mọi tab hiệu quả.` : `${draftKeys.length} cards now follow the active performance scope.` });
+    onSaveFunnelStages(draftStageKeys);
+    toast.success(isVietnamese ? "Đã lưu tùy chỉnh báo cáo" : "Report customization saved", { description: isVietnamese ? `${draftKeys.length} thẻ KPI và ${draftStageKeys.length} giai đoạn phễu đã được cập nhật.` : `${draftKeys.length} KPI cards and ${draftStageKeys.length} funnel stages are now active.` });
     setOpen(false);
+  }
+
+  function changeStage(index: number, key: PerformanceStageKey) {
+    setDraftStageKeys((current) => {
+      const next = [...current];
+      const existingIndex = next.indexOf(key);
+      if (existingIndex >= 0 && existingIndex !== index) next[existingIndex] = next[index];
+      next[index] = key;
+      return next;
+    });
   }
 
   return (
@@ -837,64 +886,84 @@ function CustomKpiSetSheet({
           </Button>
         }
       />
-      <DialogContent className="flex h-[min(700px,calc(100svh-2rem))] max-w-[440px] flex-col gap-3.5 overflow-hidden rounded-2xl border border-border bg-popover p-5" showCloseButton={false}>
+      <DialogContent className="flex h-[min(760px,calc(100svh-2rem))] w-[calc(100vw-2rem)] min-w-0 max-w-[520px] flex-col gap-3.5 overflow-hidden rounded-2xl border border-border bg-popover p-5" showCloseButton={false}>
         <DialogHeader className="gap-0 text-left">
-          <DialogTitle className="text-[22px] font-bold leading-7">{isVietnamese ? "Tùy chỉnh thẻ KPI" : "Customize KPI cards"}</DialogTitle>
+          <DialogTitle className="text-[22px] font-bold leading-7">{isVietnamese ? "Tùy chỉnh báo cáo" : "Customize report"}</DialogTitle>
           <DialogDescription className="mt-3 text-[13px] leading-5">
             {isVietnamese
-              ? "Tạo bộ evidence tập trung. KPI tùy chỉnh chỉ thay đổi phần hiển thị và không đổi KPI pack đang active."
-              : "Build a focused evidence set. Custom KPI cards are display-only and never change the active KPI pack."}
+              ? "Chọn KPI hiển thị và chỉ số đại diện cho từng giai đoạn phễu. KPI pack gốc vẫn được giữ nguyên."
+              : "Choose visible KPI cards and the metric represented by each funnel stage. The underlying KPI pack stays unchanged."}
           </DialogDescription>
         </DialogHeader>
+        <Tabs value={tab} onValueChange={(value) => setTab(value as "cards" | "funnel")} className="min-h-0 flex-1 gap-3">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="cards">{isVietnamese ? "Thẻ KPI" : "KPI cards"}</TabsTrigger>
+            <TabsTrigger value="funnel">{isVietnamese ? "Giai đoạn phễu" : "Funnel stages"}</TabsTrigger>
+          </TabsList>
 
-        <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={isVietnamese ? `Tìm ${catalog.length} chỉ số...` : `Search ${catalog.length} metrics...`} className="h-9" />
-        <div className="text-xs font-bold uppercase tracking-[0.06em] text-muted-foreground">{query.trim() ? (isVietnamese ? "Kết quả" : "Metric results") : (isVietnamese ? "Thẻ KPI thích ứng" : "Adaptive KPI cards")}</div>
+          <TabsContent value="cards" className="min-h-0 flex-1">
+            <div className="flex h-full min-h-0 flex-col gap-3">
+              <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={isVietnamese ? `Tìm ${catalog.length} chỉ số...` : `Search all ${catalog.length} metrics...`} className="h-9" />
+              <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+                {visibleGroups.map((group) => (
+                  <section key={group.id} className="mb-4">
+                    <div className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.06em] text-muted-foreground">{group.label}</div>
+                    <div className="grid gap-1">
+                      {group.metrics.map((metric) => {
+                        const checked = selectedSet.has(metric.key);
+                        const disabled = checked && draftKeys.length === 1;
+                        return (
+                          <button
+                            key={metric.key}
+                            type="button"
+                            aria-pressed={checked}
+                            disabled={disabled}
+                            onClick={() => toggleMetric(metric.key)}
+                            className="flex min-h-12 items-center justify-between gap-3 rounded-2xl px-3 py-2 text-left transition-colors hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-60 aria-pressed:bg-primary/12"
+                          >
+                            <span className="min-w-0"><span className="block text-sm font-medium">{metric.label}</span><span className="block text-xs capitalize text-muted-foreground">{metric.format}</span></span>
+                            <span className="flex shrink-0 items-center gap-2">{recommendedSet.has(metric.key) ? <Badge variant="outline">{isVietnamese ? "Gợi ý" : "Recommended"}</Badge> : null}<span className="flex size-5 items-center justify-center rounded-full border border-border text-primary">{checked ? <CheckIcon className="size-3.5" /> : null}</span></span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </section>
+                ))}
+                {!visibleGroups.length ? <div className="py-8 text-center text-sm text-muted-foreground">{isVietnamese ? "Không tìm thấy KPI phù hợp." : "No matching KPI metrics."}</div> : null}
+              </div>
+            </div>
+          </TabsContent>
 
-        <div className="flex max-h-[272px] flex-col gap-2 overflow-y-auto pr-1">
-          {visibleCards.map((metric, index) => {
-            const checked = selectedSet.has(metric.key);
-            const disabled = checked && draftKeys.length === 1;
-            return (
-              <button
-                key={metric.key}
-                type="button"
-                aria-pressed={checked}
-                disabled={disabled}
-                onClick={() => toggleMetric(metric.key)}
-                className="min-h-12 rounded-[20px] px-3 py-1.5 text-left transition-colors hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-60 aria-pressed:bg-primary/12"
-              >
-                <span className="block text-sm font-medium">{query.trim() ? metric.label : adaptiveKpiLabel(metric, index, language)}</span>
-                <span className="block text-xs text-muted-foreground">{query.trim() ? metric.format : adaptiveKpiDescription(metric, index, language)}</span>
-              </button>
-            );
-          })}
-          {!visibleCards.length ? <div className="py-8 text-center text-sm text-muted-foreground">{isVietnamese ? "Không tìm thấy KPI phù hợp." : "No matching KPI metrics."}</div> : null}
-        </div>
+          <TabsContent value="funnel" className="min-h-0 flex-1">
+            <div className="flex h-full min-h-0 flex-col">
+              <div className="flex items-center justify-between gap-3 pb-3 text-xs text-muted-foreground"><span>{isVietnamese ? "Mỗi vị trí dùng một metric báo cáo." : "Each position uses one report metric."}</span><button type="button" className="font-medium text-primary" onClick={() => setDraftStageKeys(defaultPerformanceStageKeys(funnelPack))}>{isVietnamese ? "Đặt lại" : "Reset"}</button></div>
+              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+                {draftStageKeys.map((key, index) => {
+                  const selectedStage = stageCatalog.find((stage) => stage.key === key);
+                  return (
+                    <Field key={`${index}-${key}`} className="min-w-0 rounded-2xl border border-border p-3">
+                      <FieldLabel>{isVietnamese ? `Giai đoạn ${index + 1}` : `Stage ${index + 1}`}</FieldLabel>
+                      <Select items={stageItems} value={key} onValueChange={(value) => value && changeStage(index, value as PerformanceStageKey)}>
+                        <SelectTrigger className="mt-1 h-10 w-full min-w-0"><SelectValue /></SelectTrigger>
+                        <SelectContent><SelectGroup>{stageCatalog.map((stage) => <SelectItem key={stage.key} value={stage.key}>{stage.label}</SelectItem>)}</SelectGroup></SelectContent>
+                      </Select>
+                      <FieldDescription>{selectedStage?.description}</FieldDescription>
+                    </Field>
+                  );
+                })}
+              </div>
+            </div>
+          </TabsContent>
+        </Tabs>
 
-        <div className="flex items-center justify-between text-xs text-muted-foreground"><span>{draftKeys.length} {isVietnamese ? "đã chọn" : "selected"}</span><span>{draftKeys.length === 1 ? (isVietnamese ? "Tối thiểu 1 KPI" : "Minimum 1 KPI") : (isVietnamese ? "Có thể chỉnh bất cứ lúc nào" : "Editable anytime")}</span></div>
+        <div className="flex items-center justify-between text-xs text-muted-foreground"><span>{draftKeys.length} {isVietnamese ? "KPI đã chọn" : "KPIs selected"}</span><span>{draftStageKeys.length} {isVietnamese ? "giai đoạn" : "funnel stages"}</span></div>
         <div className="grid grid-cols-2 gap-2.5 pt-0.5">
           <Button type="button" variant="secondary" className="rounded-full text-primary" onClick={() => handleOpenChange(false)}>{isVietnamese ? "Hủy" : "Cancel"}</Button>
-          <Button type="button" className="rounded-full" onClick={handleSave} disabled={!draftKeys.length}>{isVietnamese ? "Lưu KPI" : "Save KPIs"}</Button>
+          <Button type="button" className="rounded-full" onClick={handleSave} disabled={!draftKeys.length || !draftStageKeys.length}>{isVietnamese ? "Lưu tùy chỉnh" : "Save changes"}</Button>
         </div>
       </DialogContent>
     </Dialog>
   );
-}
-
-function adaptiveKpiLabel(metric: KpiCard, index: number, language: InterfaceLanguage) {
-  if (index === 2) return language === "vi" ? "Kết quả chính" : "Primary result";
-  if (index === 3) return language === "vi" ? "Chi phí / kết quả" : "Cost / result";
-  if (index === 4) return language === "vi" ? "Tín hiệu chất lượng" : "Quality signal";
-  return metric.label;
-}
-
-function adaptiveKpiDescription(metric: KpiCard, index: number, language: InterfaceLanguage) {
-  if (index === 0) return language === "vi" ? "Sản lượng phân phối · số" : "Delivery volume · number";
-  if (index === 1) return language === "vi" ? "Người tiếp cận duy nhất · số" : "Unique people reached · number";
-  if (index === 2) return language === "vi" ? "Thích ứng theo KPI pack đã chọn" : "Adapts to selected KPI pack";
-  if (index === 3) return language === "vi" ? "CPL, CPA, CPC hoặc cost/message" : "CPL, CPA, CPC or cost/message";
-  if (index === 4) return language === "vi" ? "ROAS, CTR, reply rate hoặc frequency" : "ROAS, CTR, reply rate or frequency";
-  return metric.format;
 }
 
 function ReportScopeDialog({
@@ -956,7 +1025,7 @@ function ReportScopeDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[calc(100svh-2rem)] max-w-[520px] flex-col gap-5 overflow-y-auto rounded-[24px] border border-border bg-popover p-6" showCloseButton={false}>
+      <DialogContent className="flex max-h-[calc(100svh-2rem)] w-[calc(100vw-2rem)] min-w-0 max-w-[520px] flex-col gap-5 overflow-x-hidden overflow-y-auto rounded-[24px] border border-border bg-popover p-4 sm:p-6" showCloseButton={false}>
         <DialogHeader className="flex-row items-center justify-between gap-4 text-left">
           <div className="flex min-w-0 items-center gap-3">
             <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-primary">
@@ -975,10 +1044,10 @@ function ReportScopeDialog({
           </div>
         </DialogHeader>
 
-        <div className="grid gap-5">
-          <section className="grid gap-3.5">
+        <div className="grid min-w-0 gap-5">
+          <section className="grid min-w-0 gap-3.5">
             <div className="text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">{isVietnamese ? "Nguồn & kỳ" : "Source & period"}</div>
-            <Field>
+            <Field className="min-w-0">
               <FieldLabel>{isVietnamese ? "Tài khoản quảng cáo" : "Ad account"}</FieldLabel>
               <Select
                 items={accounts.map((account) => ({ label: account.name, value: account.id }))}
@@ -989,9 +1058,9 @@ function ReportScopeDialog({
                 <SelectContent><SelectGroup>{accounts.map((account) => <SelectItem key={account.id} value={account.id}>{account.name}</SelectItem>)}</SelectGroup></SelectContent>
               </Select>
             </Field>
-            <Field data-invalid={invalidDates || undefined}>
+            <Field className="min-w-0" data-invalid={invalidDates || undefined}>
               <FieldLabel>{isVietnamese ? "Khoảng evidence" : "Evidence window"}</FieldLabel>
-              <div className="grid min-h-10 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center overflow-hidden rounded-xl bg-secondary/75 ring-1 ring-foreground/5 focus-within:ring-2 focus-within:ring-ring">
+              <div className="grid min-h-10 min-w-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center overflow-hidden rounded-xl bg-secondary/75 ring-1 ring-foreground/5 focus-within:ring-2 focus-within:ring-ring">
                 <label className="sr-only" htmlFor="report-scope-since">{isVietnamese ? "Từ ngày" : "Since"}</label>
                 <Input id="report-scope-since" type="date" value={draft.since} onChange={(event) => setDraft((current) => ({ ...current, since: event.target.value }))} className="min-w-0 border-0 bg-transparent shadow-none focus-visible:ring-0" />
                 <span className="px-1 text-sm text-muted-foreground">–</span>
@@ -1002,17 +1071,17 @@ function ReportScopeDialog({
             {invalidDates ? <p className="text-xs text-destructive">{isVietnamese ? "Ngày kết thúc phải bằng hoặc sau ngày bắt đầu." : "Until must be the same as or later than Since."}</p> : null}
           </section>
 
-          <section className="grid gap-3">
+          <section className="grid min-w-0 gap-3">
             <div className="text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">{isVietnamese ? "Quy tắc quyết định" : "Decision rules"}</div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field>
+            <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+              <Field className="min-w-0">
                 <FieldLabel>KPI pack</FieldLabel>
                 <Select items={[{ label: "Auto-detect", value: "auto" }, ...packItems]} value={draft.pack} onValueChange={(value) => value && setDraft((current) => ({ ...current, pack: value as KpiPack | "auto" }))}>
                   <SelectTrigger className="h-10 w-full"><SelectValue /></SelectTrigger>
                   <SelectContent><SelectGroup><SelectItem value="auto">{isVietnamese ? "Tự nhận diện" : "Auto-detect"}</SelectItem>{packItems.map((item) => <SelectItem key={item.value} value={item.value}>{packLabel(item.value, language)}</SelectItem>)}</SelectGroup></SelectContent>
                 </Select>
               </Field>
-              <Field>
+              <Field className="min-w-0">
                 <FieldLabel>{isVietnamese ? "So sánh" : "Compare"}</FieldLabel>
                 <Select items={compareItems} value={draft.compareMode} onValueChange={(value) => value && setDraft((current) => ({ ...current, compareMode: value as CompareMode }))}>
                   <SelectTrigger className="h-10 w-full"><SelectValue /></SelectTrigger>
@@ -1035,7 +1104,7 @@ function ReportScopeDialog({
             </label>
           </section>
 
-          <section className="grid gap-3">
+          <section className="grid min-w-0 gap-3">
             <div className="text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">{isVietnamese ? "Phạm vi campaign" : "Campaign scope"}</div>
             <ReportScopeCampaignPicker
               campaigns={campaigns}
@@ -1048,7 +1117,7 @@ function ReportScopeDialog({
           </section>
         </div>
 
-        <DialogFooter className="mt-auto flex-row items-center justify-between gap-4 pt-1">
+        <DialogFooter className="mt-auto flex-row flex-wrap items-center justify-end gap-3 pt-1">
           <span className="mr-auto text-[11px] text-muted-foreground">{isVietnamese ? "Áp dụng cho lần phân tích tiếp theo" : "Applies to the next analysis"}</span>
           <Button type="button" variant="outline" className="rounded-full" onClick={() => onOpenChange(false)}>{isVietnamese ? "Hủy" : "Cancel"}</Button>
           <Button type="button" className="rounded-full" onClick={save} disabled={!accountId || invalidDates || loading === "report" || loading === "campaigns"}>{loading === "report" ? <Spinner data-icon="inline-start" /> : null}{isVietnamese ? "Lưu phạm vi" : "Save scope"}</Button>

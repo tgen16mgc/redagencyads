@@ -32,7 +32,7 @@ import type { HealthScoreSummary } from "@/lib/health-score";
 import type { ClientReportPdfFile } from "@/lib/client-report";
 import { formatComparisonChangePct, metricMovementIsBad, type MetricComparisonDelta } from "@/lib/metric-comparison";
 import { formatMetric } from "@/lib/metrics";
-import { buildPerformanceStages, type PerformanceStage } from "@/lib/performance-stages";
+import { buildPerformanceStages, type PerformanceStage, type PerformanceStageKey } from "@/lib/performance-stages";
 import { SAMPLE_CAMPAIGNS } from "@/lib/sample-report";
 import type { AiInsightTable, CompareMode, DashboardReport, InterfaceLanguage, KpiCard, KpiPack, MetaCampaign, NormalizedRow, Verdict } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -69,6 +69,7 @@ type PerformanceV2Props = {
   until: string;
   pack: KpiPack | "auto";
   compareMode: CompareMode;
+  funnelStageKeys: PerformanceStageKey[] | null;
   exporting: boolean;
   reviewing: boolean;
   reportLoading: boolean;
@@ -105,6 +106,7 @@ export function PerformanceV2({
   until,
   pack,
   compareMode,
+  funnelStageKeys,
   exporting,
   reviewing,
   reportLoading,
@@ -129,6 +131,7 @@ export function PerformanceV2({
   const [selectedStage, setSelectedStage] = React.useState<Stage | null>(null);
   const [selectedEntity, setSelectedEntity] = React.useState<NormalizedRow | null>(null);
   const [creativeComparisonOpen, setCreativeComparisonOpen] = React.useState(false);
+  const [selectedCreativeIds, setSelectedCreativeIds] = React.useState<string[]>([]);
   const currency = report.account.currency || "VND";
   const scopeCampaigns = campaigns.length
     ? campaigns
@@ -140,7 +143,7 @@ export function PerformanceV2({
           status: "ACTIVE",
           effective_status: "ACTIVE",
         }));
-  const stages = buildPerformanceStages({ report, previousReport, compareMode, language });
+  const stages = buildPerformanceStages({ report, previousReport, compareMode, language, stageKeys: funnelStageKeys });
   const primary = primaryResult(report, language);
   const risks = healthSummary?.items.filter((item) => item.severity !== "healthy") || [];
   const inclusivePeriodDays = Math.max(1, Math.round((new Date(until).getTime() - new Date(since).getTime()) / 86_400_000) + 1);
@@ -160,6 +163,18 @@ export function PerformanceV2({
       window.removeEventListener("v2:refresh-report", refresh);
     };
   }, [onRefresh]);
+
+  React.useEffect(() => {
+    const availableIds = new Set(report.adRows.map((row) => row.id));
+    setSelectedCreativeIds((current) => {
+      const preserved = current.filter((id) => availableIds.has(id)).slice(0, 2);
+      if (preserved.length === 2) return preserved;
+      const ranked = [...report.adRows]
+        .sort((left, right) => rowEfficiency(right, resultKey(report.selectedPack)) - rowEfficiency(left, resultKey(report.selectedPack)))
+        .map((row) => row.id);
+      return [...preserved, ...ranked.filter((id) => !preserved.includes(id))].slice(0, 2);
+    });
+  }, [report.adRows, report.selectedPack]);
 
   async function applyPeriod(days: number) {
     const nextUntil = until || new Date().toISOString().slice(0, 10);
@@ -250,7 +265,7 @@ export function PerformanceV2({
         </TabsContent>
 
         <TabsContent value="creatives" className="mt-4">
-          {activeTab === "creatives" ? <><CreativesTab language={language} report={report} currency={currency} onCompare={() => setCreativeComparisonOpen(true)} onOpenEvidence={() => setActiveTab("evidence")} />
+          {activeTab === "creatives" ? <><CreativesTab language={language} report={report} currency={currency} selectedIds={selectedCreativeIds} onSelectionChange={setSelectedCreativeIds} onCompare={() => setCreativeComparisonOpen(true)} onOpenEvidence={() => setActiveTab("evidence")} />
           {creativesExtra ? <div className="mt-4">{creativesExtra}</div> : null}</> : null}
         </TabsContent>
 
@@ -279,7 +294,7 @@ export function PerformanceV2({
       <ActionPlanSheet open={actionPlanOpen} onOpenChange={setActionPlanOpen} report={report} verdict={verdict} healthSummary={healthSummary} loading={reviewing} onGenerate={onReviewActions} onExport={() => setExportOpen(true)} />
       <StageEvidenceSheet stage={selectedStage} onOpenChange={(open) => !open && setSelectedStage(null)} report={report} onReviewAction={() => { setSelectedStage(null); setActionPlanOpen(true); }} />
       <EntityDetailSheet row={selectedEntity} onOpenChange={(open) => !open && setSelectedEntity(null)} report={report} onOpenAction={() => { setSelectedEntity(null); setActionPlanOpen(true); }} />
-      <CreativeComparisonDialog open={creativeComparisonOpen} onOpenChange={setCreativeComparisonOpen} rows={report.adRows} report={report} onOpenEvidence={() => { setCreativeComparisonOpen(false); setActiveTab("evidence"); }} />
+      <CreativeComparisonDialog open={creativeComparisonOpen} onOpenChange={setCreativeComparisonOpen} rows={report.adRows.filter((row) => selectedCreativeIds.includes(row.id))} report={report} onOpenEvidence={() => { setCreativeComparisonOpen(false); setActiveTab("evidence"); }} />
     </section>
   );
 }
@@ -318,41 +333,43 @@ function OverviewTab({
   const isVietnamese = language === "vi";
   const decisionTitle = verdict?.verdict || primary.decision;
   const actionRows = verdict ? [...verdict.budget_moves, ...verdict.tests].filter(Boolean).slice(0, 2) : risks.slice(0, 2).map((item) => item.detail[language]);
+  const totalChecks = healthSummary?.items.length || report.health.checks.length;
+  const passedChecks = healthSummary?.counts.healthy ?? report.health.checks.filter((check) => check.status === "pass").length;
+  const blockingCount = healthSummary?.counts.danger ?? report.health.checks.filter((check) => check.status === "fail").length;
+  const watchCount = healthSummary?.counts.warning ?? report.health.checks.filter((check) => check.status === "warning").length;
 
   return (
     <div className="grid gap-4">
       <div className="grid gap-3 xl:grid-cols-[minmax(0,1.6fr)_minmax(300px,0.7fr)]">
         <div className="v2-panel p-4 sm:p-5">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div className="max-w-3xl">
-              <Badge variant="outline">{isVietnamese ? "Quyết định chính" : "Primary decision"}</Badge>
-              <h2 className="mt-3 text-lg font-semibold tracking-[-0.025em]">{decisionTitle}</h2>
-              <p className="mt-2 text-sm leading-6 text-muted-foreground">{healthSummary?.summary[language] || report.packReason}</p>
-            </div>
-            <div className="grid shrink-0 grid-cols-3 gap-2">
-              {effectiveKpis.slice(0, 3).map((kpi) => (
-                <MetricTile
-                  key={kpi.key}
-                  label={kpi.label}
-                  value={formatKpi(report, kpi, currency)}
-                  tone={kpi.intent === "danger" ? "warning" : kpi.intent === "good" ? "success" : "primary"}
-                  comparison={kpi.key === "healthScore" ? undefined : kpiComparisons?.get(kpi.key)}
-                />
-              ))}
-            </div>
+          <div className="max-w-3xl">
+            <Badge variant="outline">{isVietnamese ? "Quyết định chính" : "Primary decision"}</Badge>
+            <h2 className="mt-3 text-lg font-semibold tracking-[-0.025em]">{decisionTitle}</h2>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">{healthSummary?.summary[language] || report.packReason}</p>
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
+            {effectiveKpis.map((kpi) => (
+              <MetricTile
+                key={kpi.key}
+                label={kpi.label}
+                value={formatKpi(report, kpi, currency)}
+                tone={kpi.intent === "danger" ? "warning" : kpi.intent === "good" ? "success" : "primary"}
+                comparison={kpi.key === "healthScore" ? undefined : kpiComparisons?.get(kpi.key)}
+              />
+            ))}
           </div>
         </div>
 
         <div className="v2-panel p-4 sm:p-5">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">{isVietnamese ? "Độ tin cậy quyết định" : "Decision confidence"}</span>
-            <Badge variant={healthSummary?.severity === "danger" ? "destructive" : healthSummary?.severity === "warning" ? "outline" : "success"}>{healthSummary?.label[language] || "Live"}</Badge>
+            <span className="text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">{isVietnamese ? "Mức sẵn sàng hành động" : "Action readiness"}</span>
+            <Badge variant={blockingCount > 0 ? "destructive" : watchCount > 0 ? "outline" : "success"}>{blockingCount > 0 ? (isVietnamese ? "Đang chặn" : "Blocked") : watchCount > 0 ? (isVietnamese ? "Cần rà soát" : "Review") : (isVietnamese ? "Sẵn sàng" : "Ready")}</Badge>
           </div>
           <div className="mt-3 flex items-end gap-2">
-            <span className="text-3xl font-semibold tracking-[-0.04em]">{healthSummary?.score ?? report.health.score}</span>
-            <span className="pb-1 text-xs text-muted-foreground">/ 100 · {isVietnamese ? "đủ tín hiệu để hành động" : "enough signal to act"}</span>
+            <span className="text-3xl font-semibold tracking-[-0.04em]">{passedChecks}/{Math.max(totalChecks, 1)}</span>
+            <span className="pb-1 text-xs text-muted-foreground">{isVietnamese ? "kiểm tra đã đạt" : "checks passed"}</span>
           </div>
-          <p className="mt-3 text-xs leading-5 text-warning">{risks[0]?.detail[language] || (isVietnamese ? "Không có rủi ro nổi bật trong phạm vi hiện tại." : "No dominant risk in the current scope.")}</p>
+          <p className="mt-3 text-xs leading-5 text-warning">{blockingCount || watchCount ? (isVietnamese ? `${blockingCount} mục đang chặn · ${watchCount} mục cần theo dõi. ${risks[0]?.detail[language] || ""}` : `${blockingCount} blocking · ${watchCount} watch. ${risks[0]?.detail[language] || ""}`) : (isVietnamese ? "Tất cả kiểm tra chính đã đạt trong phạm vi hiện tại." : "All primary readiness checks pass in the current scope.")}</p>
           <div className="mt-4 flex gap-2">
             <Button type="button" size="sm" onClick={onOpenEvidence}>{isVietnamese ? "Mở evidence" : "Open evidence"}</Button>
             <Button type="button" size="sm" variant="ghost" onClick={onReviewActions}>{isVietnamese ? "Xem rủi ro" : "Review risks"}</Button>
@@ -545,16 +562,25 @@ function DriversTab({ language, report, currency, onSelectEntity }: { language: 
   );
 }
 
-function CreativesTab({ language, report, currency, onCompare, onOpenEvidence }: { language: InterfaceLanguage; report: DashboardReport; currency: string; onCompare: () => void; onOpenEvidence: () => void }) {
+function CreativesTab({ language, report, currency, selectedIds, onSelectionChange, onCompare, onOpenEvidence }: { language: InterfaceLanguage; report: DashboardReport; currency: string; selectedIds: string[]; onSelectionChange: (ids: string[]) => void; onCompare: () => void; onOpenEvidence: () => void }) {
   const isVietnamese = language === "vi";
   const primaryKey = resultKey(report.selectedPack);
   const rows = [...report.adRows]
     .sort((left, right) => rowEfficiency(right, primaryKey) - rowEfficiency(left, primaryKey))
-    .slice(0, 4);
+    .slice(0, 12);
   const [selectedId, setSelectedId] = React.useState(rows[0]?.id || "");
   const selected = rows.find((row) => row.id === selectedId) || rows[0];
   const fatigueCount = rows.filter((row) => row.frequency >= 3).length;
   const concentration = rows.length ? (rows.slice(0, 2).reduce((sum, row) => sum + row.spend, 0) / Math.max(rows.reduce((sum, row) => sum + row.spend, 0), 1)) * 100 : 0;
+
+  function toggleComparison(row: NormalizedRow) {
+    setSelectedId(row.id);
+    if (selectedIds.includes(row.id)) {
+      onSelectionChange(selectedIds.filter((id) => id !== row.id));
+      return;
+    }
+    onSelectionChange(selectedIds.length < 2 ? [...selectedIds, row.id] : [selectedIds[1], row.id]);
+  }
 
   return (
     <div className="grid gap-4">
@@ -567,13 +593,13 @@ function CreativesTab({ language, report, currency, onCompare, onOpenEvidence }:
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.72fr)]">
         <div className="v2-panel p-4 sm:p-5">
-          <div className="flex items-start justify-between"><div><h2 className="v2-section-title">{isVietnamese ? "Hiệu quả creative" : "Creative performance"}</h2><p className="v2-section-copy">{isVietnamese ? "Xếp theo hiệu quả outcome chính, không theo vanity engagement." : "Ranked by primary result efficiency, not vanity engagement."}</p></div><Badge variant="secondary">{isVietnamese ? "Đang active" : "All active"}</Badge></div>
+          <div className="flex items-start justify-between gap-4"><div><h2 className="v2-section-title">{isVietnamese ? "Hiệu quả creative" : "Creative performance"}</h2><p className="v2-section-copy">{isVietnamese ? "Chọn đúng 2 creative để so sánh bằng dữ liệu của báo cáo." : "Select exactly two creatives to compare with report data."}</p></div><div className="flex shrink-0 items-center gap-2"><Badge variant={selectedIds.length === 2 ? "success" : "outline"}>{selectedIds.length}/2 {isVietnamese ? "đã chọn" : "selected"}</Badge><Button type="button" size="sm" variant="outline" disabled={selectedIds.length !== 2} onClick={onCompare}><GitCompareArrowsIcon data-icon="inline-start" />{isVietnamese ? "So sánh" : "Compare"}</Button></div></div>
           <div className="mt-5 grid gap-3 md:grid-cols-2">
             {rows.map((row, index) => (
-              <button key={row.id} type="button" className={cn("grid grid-cols-[94px_minmax(0,1fr)] gap-3 rounded-xl border p-2 text-left transition-colors", selected?.id === row.id ? "border-primary/60 bg-primary/5" : "border-transparent hover:border-border hover:bg-secondary/35")} onClick={() => setSelectedId(row.id)}>
+              <button key={row.id} type="button" aria-pressed={selectedIds.includes(row.id)} className={cn("relative grid grid-cols-[94px_minmax(0,1fr)] gap-3 rounded-xl border p-2 text-left transition-colors", selectedIds.includes(row.id) ? "border-primary/60 bg-primary/5" : selected?.id === row.id ? "border-border bg-secondary/25" : "border-transparent hover:border-border hover:bg-secondary/35")} onClick={() => toggleComparison(row)}>
                 <CreativeThumb row={row} index={index} />
                 <div className="min-w-0 py-1">
-                  <div className="flex items-start justify-between gap-2"><div className="truncate text-sm font-medium">{row.name}</div><Badge variant={row.frequency >= 3 ? "outline" : "success"}>{row.frequency >= 3 ? (isVietnamese ? "Theo dõi" : "Watch") : (isVietnamese ? "Mới" : "Fresh")}</Badge></div>
+                  <div className="flex items-start justify-between gap-2"><div className="truncate text-sm font-medium">{row.name}</div><span className={cn("flex size-5 shrink-0 items-center justify-center rounded-full border", selectedIds.includes(row.id) ? "border-primary bg-primary text-primary-foreground" : "border-border")}>{selectedIds.includes(row.id) ? <CheckCircle2Icon className="size-3.5" /> : null}</span></div>
                   <div className="mt-1 truncate text-xs text-muted-foreground">{row.adsetName || row.campaignName}</div>
                   <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-[10px] uppercase tracking-[0.04em] text-muted-foreground">
                     <span>Spend <b className="block text-xs font-medium normal-case text-foreground">{currencyValue(row.spend, currency)}</b></span>
@@ -588,7 +614,7 @@ function CreativesTab({ language, report, currency, onCompare, onOpenEvidence }:
         </div>
 
         <div className="v2-panel p-4 sm:p-5">
-          <div className="flex items-center justify-between"><h2 className="v2-section-title">{isVietnamese ? "Creative đã chọn" : "Selected creative"}</h2><Badge variant={selected?.frequency && selected.frequency >= 3 ? "outline" : "success"}>{selected?.frequency && selected.frequency >= 3 ? (isVietnamese ? "Theo dõi" : "Watch") : (isVietnamese ? "Mới" : "Fresh")}</Badge></div>
+          <div className="flex items-center justify-between"><h2 className="v2-section-title">{isVietnamese ? "Creative đang xem" : "Creative in focus"}</h2><Badge variant={selected?.frequency && selected.frequency >= 3 ? "outline" : "success"}>{selected?.frequency && selected.frequency >= 3 ? (isVietnamese ? "Theo dõi" : "Watch") : (isVietnamese ? "Mới" : "Fresh")}</Badge></div>
           <div className="mt-4 overflow-hidden rounded-xl bg-primary/12 p-5">
             <div className="flex min-h-36 items-center justify-between gap-5">
               <span className="flex h-28 w-20 items-center justify-center rounded-2xl bg-foreground/80 text-background"><ImageIcon className="size-7" /></span>
@@ -610,7 +636,7 @@ function CreativesTab({ language, report, currency, onCompare, onOpenEvidence }:
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
                 <Button type="button" size="sm" onClick={onOpenEvidence}>{isVietnamese ? "Mở evidence" : "Open evidence"}</Button>
-                <Button type="button" size="sm" variant="outline" onClick={onCompare}>{isVietnamese ? "So sánh creative" : "Compare creatives"}</Button>
+                <Button type="button" size="sm" variant="outline" disabled={selectedIds.length !== 2} onClick={onCompare}>{isVietnamese ? `So sánh (${selectedIds.length}/2)` : `Compare (${selectedIds.length}/2)`}</Button>
               </div>
             </>
           ) : null}

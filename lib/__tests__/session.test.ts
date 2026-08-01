@@ -20,18 +20,19 @@ describe("encrypted token sessions", () => {
   });
 
   it("round-trips an encrypted token payload", () => {
-    const encrypted = encryptSession("meta-token-123");
+    const encrypted = encryptSession("meta-token-123", "workspace-user-1");
 
     expect(encrypted).not.toContain("meta-token-123");
     expect(decryptSession(encrypted)).toEqual({
       token: "meta-token-123",
       issuedAt: new Date("2026-06-05T00:00:00.000Z").getTime(),
+      ownerId: "workspace-user-1",
     });
   });
 
   it("returns null after the cookie max age", () => {
-    const encrypted = encryptSession("meta-token-123");
-    vi.setSystemTime(new Date("2026-06-05T13:00:00.000Z"));
+    const encrypted = encryptSession("meta-token-123", "workspace-user-1");
+    vi.setSystemTime(new Date("2026-07-06T00:00:00.000Z"));
 
     expect(decryptSession(encrypted)).toBeNull();
   });
@@ -42,7 +43,7 @@ describe("encrypted token sessions", () => {
   });
 
   it("returns null for a tampered auth tag instead of throwing", () => {
-    const encrypted = encryptSession("meta-token-123");
+    const encrypted = encryptSession("meta-token-123", "workspace-user-1");
     const raw = Buffer.from(encrypted, "base64url");
     raw[13] ^= 0xff;
     const tampered = raw.toString("base64url");
@@ -51,7 +52,7 @@ describe("encrypted token sessions", () => {
   });
 
   it("returns null when the secret has rotated since the cookie was issued", () => {
-    const encrypted = encryptSession("meta-token-123");
+    const encrypted = encryptSession("meta-token-123", "workspace-user-1");
     process.env.SESSION_SECRET = "rotated-secret";
 
     expect(decryptSession(encrypted)).toBeNull();

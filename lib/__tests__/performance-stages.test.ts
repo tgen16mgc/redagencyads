@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { buildPerformanceStages } from "../performance-stages";
+import {
+  buildPerformanceStages,
+  defaultPerformanceStageKeys,
+  deserializePerformanceStageKeys,
+  getPerformanceStageCatalog,
+  serializePerformanceStageKeys,
+} from "../performance-stages";
 import { buildSampleReport } from "../sample-report";
 
 describe("buildPerformanceStages", () => {
@@ -41,5 +47,25 @@ describe("buildPerformanceStages", () => {
     const stages = buildPerformanceStages({ report, previousReport, compareMode: "previous", language: "en" });
 
     expect(stages.every((stage) => stage.movement.includes("vs previous period"))).toBe(true);
+  });
+
+  it("allows each funnel slot to use another supported report metric", () => {
+    const report = buildSampleReport({ selectedCampaignIds: ["smp-c3"], pack: "messages" });
+    const stages = buildPerformanceStages({
+      report,
+      compareMode: "off",
+      language: "en",
+      stageKeys: ["exposure", "traffic", "conversations", "lead"],
+    });
+
+    expect(stages.map((stage) => stage.key)).toEqual(["exposure", "traffic", "conversations", "lead"]);
+    expect(stages.at(-1)).toMatchObject({ name: "Lead", relation: "Conversation → Lead" });
+  });
+
+  it("serializes valid unique funnel stages and falls back to the active pack", () => {
+    expect(serializePerformanceStageKeys(["traffic", "lead", "traffic"])).toBe(JSON.stringify(["traffic", "lead"]));
+    expect(deserializePerformanceStageKeys(JSON.stringify(["traffic", "unknown", "lead"]), "messages")).toEqual(["traffic", "lead"]);
+    expect(deserializePerformanceStageKeys("invalid", "lead_gen")).toEqual(defaultPerformanceStageKeys("lead_gen"));
+    expect(getPerformanceStageCatalog("en").map((item) => item.key)).toContain("lead");
   });
 });

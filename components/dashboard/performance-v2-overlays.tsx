@@ -105,7 +105,7 @@ export function PeriodScopeDialog({ open, onOpenChange, currentDays, busy, onApp
   ];
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[440px] rounded-3xl border border-border bg-popover p-0" showCloseButton={false}>
+      <DialogContent className="w-[calc(100vw-2rem)] min-w-0 max-w-[440px] overflow-x-hidden rounded-3xl border border-border bg-popover p-0" showCloseButton={false}>
         <DialogHeader className="p-5 pb-3"><DialogTitle className="text-xl font-semibold">Choose reporting period</DialogTitle><DialogDescription className="mt-2 leading-5">Use one consistent window across CPC, Cost/ATC, CPA and ROAS comparisons.</DialogDescription></DialogHeader>
         <div className="px-5"><div className="mb-2 text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">Reporting window</div>{options.map((option) => <button key={option.days} type="button" onClick={() => setDays(option.days)} className={cn("mb-1 w-full rounded-2xl px-3 py-2.5 text-left", days === option.days ? "bg-primary/14" : "hover:bg-secondary/60")}><span className="block text-sm font-medium">Last {option.days} days</span><span className="text-xs text-muted-foreground">{option.detail}</span></button>)}</div>
         <DialogFooter className="mt-5 grid grid-cols-2 border-t border-border p-5"><Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button><Button disabled={busy} onClick={async () => { await onApply(days); onOpenChange(false); }}>{busy ? <Spinner data-icon="inline-start" /> : null}Apply {days} days</Button></DialogFooter>
@@ -137,7 +137,7 @@ export function ComparisonDialog({ open, onOpenChange, current, campaignComparis
   ];
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[440px] rounded-3xl border border-border bg-popover p-0" showCloseButton={false}>
+      <DialogContent className="w-[calc(100vw-2rem)] min-w-0 max-w-[440px] overflow-x-hidden rounded-3xl border border-border bg-popover p-0" showCloseButton={false}>
         <DialogHeader className="p-5 pb-3"><DialogTitle className="text-xl font-semibold">Choose comparison</DialogTitle><DialogDescription className="mt-2 leading-5">Keep metric deltas anchored to one explicit comparison basis.</DialogDescription></DialogHeader>
         <div className="px-5">
           <div className="mb-2 text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">Compare against</div>
@@ -340,7 +340,7 @@ export function CreativeComparisonDialog({ open, onOpenChange, rows, report, onO
   const challenger = sorted.find((row) => row.id !== control?.id) || sorted[1];
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[calc(100svh-2rem)] max-w-[884px] overflow-y-auto rounded-3xl border border-border bg-popover p-6">
+      <DialogContent className="max-h-[calc(100svh-2rem)] w-[calc(100vw-2rem)] min-w-0 max-w-[884px] overflow-x-hidden overflow-y-auto rounded-3xl border border-border bg-popover p-4 sm:p-6">
         <DialogHeader><DialogTitle className="text-xl font-semibold">Compare creatives</DialogTitle><DialogDescription className="mt-1">Decide which creative becomes the control without changing the active KPI pack.</DialogDescription></DialogHeader>
         {control && challenger ? <div className="mt-5 grid gap-5"><div className="grid gap-4 md:grid-cols-2"><CreativeSummary row={control} label="Recommended control" tone="success" currencyCode={report.account.currency || "VND"} /><CreativeSummary row={challenger} label="Challenger · fatigue risk" tone="warning" currencyCode={report.account.currency || "VND"} /></div><div className="rounded-2xl bg-card p-4"><h3 className="font-semibold">Decision matrix</h3><div className="mt-3 overflow-x-auto"><table className="w-full min-w-[560px] text-left text-xs"><thead className="text-muted-foreground"><tr><th className="py-2">Metric</th><th>Control</th><th>Challenger</th><th>Readout</th></tr></thead><tbody>{comparisonRows(control, challenger, report.account.currency || "VND").map((item) => <tr key={item.label} className="border-t border-border/60"><td className="py-2.5 text-muted-foreground">{item.label}</td><td>{item.control}</td><td>{item.challenger}</td><td>{item.readout}</td></tr>)}</tbody></table></div></div><div className="flex gap-3 rounded-2xl border border-primary/30 bg-primary/7 p-4"><GitCompareArrowsIcon className="mt-0.5 size-5 text-primary" /><div><div className="font-semibold">Make {control.name} the control</div><p className="mt-1 text-sm leading-6 text-muted-foreground">It wins the current efficiency comparison. Keep unavailable metrics explicit before scaling.</p></div></div></div> : <div className="py-16 text-center text-sm text-muted-foreground">At least two creative rows are required.</div>}
         <DialogFooter className="mt-6"><Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button><Button onClick={onOpenEvidence}><ShieldCheckIcon data-icon="inline-start" />Open winning evidence</Button></DialogFooter>

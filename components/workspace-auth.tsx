@@ -23,6 +23,7 @@ export type WorkspaceIdentity = {
   name: string;
   role: string;
   initials: string;
+  avatarDataUrl?: string;
 };
 
 export type WorkspaceSessionStatus = {

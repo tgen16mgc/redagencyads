@@ -23,6 +23,11 @@ function stringSetting(record: Record<string, Json | undefined>, key: string, fa
   return typeof record[key] === "string" && record[key].trim() ? record[key].trim() : fallback;
 }
 
+function avatarSetting(record: Record<string, Json | undefined>) {
+  const value = record.avatarDataUrl;
+  return typeof value === "string" && value.startsWith("data:image/") ? value : undefined;
+}
+
 function roleSummary(roles: string[]) {
   const labels = ["owner", "admin", "analyst", "viewer"]
     .map((role) => {
@@ -72,6 +77,7 @@ async function loadSettings() {
   return {
     profile: {
       fullName: membership.full_name,
+      avatarDataUrl: avatarSetting(profilePreferences),
       email: membership.email,
       timeZone: stringSetting(profilePreferences, "timeZone", DEFAULT_WORKSPACE_TIME_ZONE),
       weeklyPerformanceDigest: booleanSetting(profilePreferences, "weeklyPerformanceDigest", true),

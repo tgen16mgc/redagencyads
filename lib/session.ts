@@ -1,8 +1,10 @@
 import { cookies } from "next/headers";
 import crypto from "node:crypto";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getWorkspaceAuthMode } from "@/lib/workspace-session";
 
 const COOKIE_NAME = "meta_ads_session";
-const COOKIE_MAX_AGE_SECONDS = 60 * 60 * 12;
+const COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
 
 export class SessionAuthError extends Error {}
 
@@ -13,6 +15,7 @@ export function sessionErrorStatus(error: unknown) {
 type SessionPayload = {
   token: string;
   issuedAt: number;
+  ownerId: string;
 };
 
 function getKey() {
@@ -23,10 +26,10 @@ function getKey() {
   return crypto.createHash("sha256").update(secret).digest();
 }
 
-export function encryptSession(token: string) {
+export function encryptSession(token: string, ownerId: string) {
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv("aes-256-gcm", getKey(), iv);
-  const payload: SessionPayload = { token, issuedAt: Date.now() };
+  const payload: SessionPayload = { token, issuedAt: Date.now(), ownerId };
   const encrypted = Buffer.concat([cipher.update(JSON.stringify(payload), "utf8"), cipher.final()]);
   const tag = cipher.getAuthTag();
   return Buffer.concat([iv, tag, encrypted]).toString("base64url");
@@ -49,9 +52,20 @@ export function decryptSession(value: string) {
   }
 }
 
+async function currentWorkspaceOwnerId() {
+  const mode = getWorkspaceAuthMode();
+  if (mode === "disabled") return "development:local@redagency.vn";
+  if (mode === "unconfigured") return null;
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase.auth.getUser();
+  return error || !data.user ? null : data.user.id;
+}
+
 export async function setTokenCookie(token: string) {
+  const ownerId = await currentWorkspaceOwnerId();
+  if (!ownerId) throw new SessionAuthError("Sign in to the workspace before connecting Meta.");
   const store = await cookies();
-  store.set(COOKIE_NAME, encryptSession(token), {
+  store.set(COOKIE_NAME, encryptSession(token, ownerId), {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
@@ -71,6 +85,9 @@ export async function requireToken() {
   if (!encrypted) throw new SessionAuthError("Meta access token session missing.");
   const payload = decryptSession(encrypted);
   if (!payload) throw new SessionAuthError("Meta access token session expired.");
+  const ownerId = await currentWorkspaceOwnerId();
+  if (!ownerId) throw new SessionAuthError("Sign in to the workspace before using Meta.");
+  if (payload.ownerId !== ownerId) throw new SessionAuthError("Meta connection belongs to another workspace account.");
   return payload.token;
 }
 

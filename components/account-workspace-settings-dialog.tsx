@@ -53,10 +53,14 @@ function readLocalSettings(fallback: AccountWorkspaceSettingsData) {
     const parsed = JSON.parse(raw) as Partial<LocalSettings>;
     return {
       data: {
-        profile: { ...fallback.profile, ...parsed.data?.profile, email: fallback.profile.email },
+        profile: {
+          ...fallback.profile,
+          ...parsed.data?.profile,
+          avatarDataUrl: parsed.data?.profile.avatarDataUrl || parsed.avatarDataUrl,
+          email: fallback.profile.email,
+        },
         workspace: { ...fallback.workspace, ...parsed.data?.workspace },
       },
-      avatarDataUrl: typeof parsed.avatarDataUrl === "string" ? parsed.avatarDataUrl : undefined,
     } satisfies LocalSettings;
   } catch {
     return { data: fallback } satisfies LocalSettings;
@@ -76,6 +80,7 @@ export function AccountWorkspaceSettingsDialog({
   metaConnected,
   onOpenChange,
   onOpenMeta,
+  onForgetMeta,
   onProfileSaved,
 }: {
   open: boolean;
@@ -84,14 +89,13 @@ export function AccountWorkspaceSettingsDialog({
   metaConnected: boolean;
   onOpenChange: (open: boolean) => void;
   onOpenMeta: () => void;
-  onProfileSaved: (profile: { name: string; initials: string }) => void;
+  onForgetMeta: () => Promise<void>;
+  onProfileSaved: (profile: { name: string; initials: string; avatarDataUrl?: string }) => void;
 }) {
   const fallback = React.useMemo(() => defaultAccountWorkspaceSettings(session.user || {}), [session.user]);
   const [tab, setTab] = React.useState<SettingsTab>(initialTab);
   const [saved, setSaved] = React.useState<AccountWorkspaceSettingsData>(fallback);
   const [draft, setDraft] = React.useState<AccountWorkspaceSettingsData>(fallback);
-  const [avatarDataUrl, setAvatarDataUrl] = React.useState<string>();
-  const [savedAvatarDataUrl, setSavedAvatarDataUrl] = React.useState<string>();
   const [loading, setLoading] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState("");
@@ -108,8 +112,6 @@ export function AccountWorkspaceSettingsDialog({
     const local = readLocalSettings(fallback);
     setSaved(local.data);
     setDraft(local.data);
-    setAvatarDataUrl(local.avatarDataUrl);
-    setSavedAvatarDataUrl(local.avatarDataUrl);
 
     if (!session.required) {
       setLoading(false);
@@ -135,7 +137,7 @@ export function AccountWorkspaceSettingsDialog({
     };
   }, [fallback, initialTab, open, session.required]);
 
-  const profileDirty = JSON.stringify(draft.profile) !== JSON.stringify(saved.profile) || avatarDataUrl !== savedAvatarDataUrl;
+  const profileDirty = JSON.stringify(draft.profile) !== JSON.stringify(saved.profile);
   const workspaceDirty = JSON.stringify(draft.workspace) !== JSON.stringify(saved.workspace);
   const activeDirty = tab === "profile" ? profileDirty : workspaceDirty;
   const activeValid = tab === "profile"
@@ -155,7 +157,10 @@ export function AccountWorkspaceSettingsDialog({
       return;
     }
     const reader = new FileReader();
-    reader.onload = () => setAvatarDataUrl(typeof reader.result === "string" ? reader.result : undefined);
+    reader.onload = () => setDraft((current) => ({
+      ...current,
+      profile: { ...current.profile, avatarDataUrl: typeof reader.result === "string" ? reader.result : undefined },
+    }));
     reader.readAsDataURL(file);
   }
 
@@ -184,15 +189,13 @@ export function AccountWorkspaceSettingsDialog({
         : { profile: saved.profile, workspace: responseData.workspace };
       window.localStorage.setItem(localStorageKey(persisted.profile.email), JSON.stringify({
         data: persisted,
-        avatarDataUrl: tab === "profile" ? avatarDataUrl : savedAvatarDataUrl,
       } satisfies LocalSettings));
       setSaved((current) => tab === "profile"
         ? { ...current, profile: responseData.profile }
         : { ...current, workspace: responseData.workspace });
       setDraft(next);
       if (tab === "profile") {
-        setSavedAvatarDataUrl(avatarDataUrl);
-        onProfileSaved({ name: responseData.profile.fullName, initials: initialsFromName(responseData.profile.fullName) });
+        onProfileSaved({ name: responseData.profile.fullName, initials: initialsFromName(responseData.profile.fullName), avatarDataUrl: responseData.profile.avatarDataUrl });
       }
       toast.success(tab === "profile" ? "Profile settings saved" : "Workspace settings saved");
     } catch (requestError) {
@@ -231,7 +234,7 @@ export function AccountWorkspaceSettingsDialog({
                     <SettingsSectionHeading id="profile-details-heading" title="Profile details" description="Visible to teammates in this workspace." />
                     <div className="flex items-center gap-3 py-1">
                       <span className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-primary/12 text-sm font-medium text-primary">
-                        {avatarDataUrl ? <img src={avatarDataUrl} alt="Profile preview" className="size-full object-cover" /> : initialsFromName(draft.profile.fullName)}
+                        {draft.profile.avatarDataUrl ? <img src={draft.profile.avatarDataUrl} alt="Profile preview" className="size-full object-cover" /> : initialsFromName(draft.profile.fullName)}
                       </span>
                       <input ref={photoInputRef} type="file" accept="image/*" className="sr-only" onChange={choosePhoto} />
                       <Button type="button" variant="outline" size="sm" onClick={() => photoInputRef.current?.click()}>
@@ -292,7 +295,10 @@ export function AccountWorkspaceSettingsDialog({
                           <div className="font-medium">Meta Ads</div>
                           <div className="text-sm text-muted-foreground">{metaConnected ? "Connected for owned accounts" : "Required for owned accounts"}</div>
                         </div>
-                        <Button type="button" size="sm" variant={metaConnected ? "outline" : "default"} onClick={onOpenMeta}>{metaConnected ? "Reconnect" : "Connect Meta"}</Button>
+                        <div className="flex shrink-0 gap-2">
+                          <Button type="button" size="sm" variant={metaConnected ? "outline" : "default"} onClick={onOpenMeta}>{metaConnected ? "Reconnect" : "Connect Meta"}</Button>
+                          {metaConnected ? <Button type="button" size="sm" variant="destructive" onClick={() => void onForgetMeta()}>Forget Meta</Button> : null}
+                        </div>
                       </div>
                     </div>
                   </section>

@@ -1,20 +1,10 @@
 "use client";
 
 import * as React from "react";
-import { LogOutIcon, SettingsIcon, SparklesIcon, WaypointsIcon } from "lucide-react";
+import { SettingsIcon, SparklesIcon, WaypointsIcon } from "lucide-react";
 import type { CapabilityState } from "@/lib/capabilities";
 import type { DashboardWorkflowState, DashboardWorkflowStep } from "@/lib/dashboard-workflow";
 import { cn } from "@/lib/utils";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 
 type SidebarIcon = React.ComponentType<React.SVGProps<SVGSVGElement>>;
 
@@ -33,7 +23,6 @@ type AppSidebarProps<T extends string> = {
   activeView: T;
   aiProviderLabel: string;
   appItems: AppSidebarItem<T>[];
-  clearSessionLabel: string;
   functionsLabel: string;
   showWorkflow: boolean;
   workflowLabel: string;
@@ -41,37 +30,33 @@ type AppSidebarProps<T extends string> = {
   aiSetupLabel: string;
   aiStatusTitle: string;
   aiStatusState: CapabilityState;
-  showClearSession: boolean;
-  clearSessionTitle: string;
-  clearSessionDescription: string;
-  clearSessionCancel: string;
-  clearSessionConfirm: string;
+  userName: string;
+  userInitials: string;
+  userAvatarDataUrl?: string;
   assistantOpen: boolean;
   onActiveViewChange: (value: T) => void;
   onOpenAssistant: () => void;
-  onLogout: () => void;
+  onOpenProfile: () => void;
+  onOpenSettings: () => void;
 };
 
 export function AppSidebar<T extends string>({
   activeView,
   aiProviderLabel,
   appItems,
-  clearSessionLabel,
   functionsLabel,
   aiSetupLabel,
   aiStatusTitle,
   aiStatusState,
-  showClearSession,
-  clearSessionTitle,
-  clearSessionDescription,
-  clearSessionCancel,
-  clearSessionConfirm,
+  userName,
+  userInitials,
+  userAvatarDataUrl,
   assistantOpen,
   onActiveViewChange,
   onOpenAssistant,
-  onLogout,
+  onOpenProfile,
+  onOpenSettings,
 }: AppSidebarProps<T>) {
-  const [logoutOpen, setLogoutOpen] = React.useState(false);
   const aiStatusClass = aiStatusState === "available"
     ? "bg-success"
     : aiStatusState === "degraded"
@@ -128,25 +113,23 @@ export function AppSidebar<T extends string>({
             <SparklesIcon aria-hidden="true" />
             <span className={cn("v2-status-dot", aiStatusClass)} aria-hidden="true" />
           </button>
-          {showClearSession ? (
-            <button
-              type="button"
-              className="v2-rail-button"
-              aria-label={clearSessionLabel}
-              title={clearSessionLabel}
-              onClick={() => setLogoutOpen(true)}
-            >
-              <SettingsIcon aria-hidden="true" />
-            </button>
-          ) : null}
+          <button
+            type="button"
+            className="v2-rail-button"
+            aria-label="Workspace settings"
+            title="Workspace settings"
+            onClick={onOpenSettings}
+          >
+            <SettingsIcon aria-hidden="true" />
+          </button>
           <button
             type="button"
             className="v2-avatar-button"
-            aria-label={showClearSession ? clearSessionLabel : "Tien Duong"}
-            title={showClearSession ? clearSessionLabel : "Tien Duong"}
-            onClick={() => showClearSession && setLogoutOpen(true)}
+            aria-label={`${userName} profile`}
+            title={`${userName} profile`}
+            onClick={onOpenProfile}
           >
-            TD
+            {userAvatarDataUrl ? <img src={userAvatarDataUrl} alt="" className="size-full object-cover" /> : userInitials}
           </button>
         </div>
       </aside>
@@ -164,27 +147,6 @@ export function AppSidebar<T extends string>({
         </button>
         {nav}
       </div>
-
-      <AlertDialog open={logoutOpen} onOpenChange={setLogoutOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{clearSessionTitle}</AlertDialogTitle>
-            <AlertDialogDescription>{clearSessionDescription}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{clearSessionCancel}</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                setLogoutOpen(false);
-                onLogout();
-              }}
-            >
-              <LogOutIcon data-icon="inline-start" />
-              {clearSessionConfirm}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </>
   );
 }
