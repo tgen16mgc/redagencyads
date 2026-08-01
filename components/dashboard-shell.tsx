@@ -96,6 +96,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { WorkspaceAuth, type WorkspaceSessionStatus } from "@/components/workspace-auth";
 import { MetaConnectDialog } from "@/components/meta-connect-dialog";
 import { AccountWorkspaceSettingsDialog, type SettingsTab } from "@/components/account-workspace-settings-dialog";
+import type { AccountWorkspaceSettingsData } from "@/lib/account-workspace-settings";
 
 const workflowItems: { value: DashboardWorkflowStep; label: string; icon: React.ComponentType<React.SVGProps<SVGSVGElement>> }[] = [
   { value: "connect", label: "Connect", icon: KeyRoundIcon },
@@ -285,6 +286,7 @@ const uiCopy = {
 
 export function DashboardShell() {
   const [workspaceSession, setWorkspaceSession] = React.useState<WorkspaceSessionStatus | null>(null);
+  const [workspaceName, setWorkspaceName] = React.useState("Decision Workspace");
   const [workspaceAuthError, setWorkspaceAuthError] = React.useState("");
   const [authenticated, setAuthenticated] = React.useState<boolean | null>(null);
   const [accounts, setAccounts] = React.useState<MetaAccount[]>([]);
@@ -472,7 +474,7 @@ export function DashboardShell() {
     overview: {
       badge: copy.header.overviewCrumb,
       detail: report?.account.name || workspaceLabel || copy.header.overviewDetail,
-      title: copy.header.overviewTitle,
+      title: workspaceName,
       description: language === "vi"
         ? "Chọn một công việc, kiểm tra capability thật và đưa evidence đến hành động."
         : "Choose a job, verify the real capability state, and move evidence toward action.",
@@ -576,6 +578,19 @@ export function DashboardShell() {
       // Ignore malformed local development preferences; authenticated settings remain authoritative.
     }
   }, [workspaceSession]);
+
+  React.useEffect(() => {
+    if (!workspaceSession?.authenticated) return;
+    let cancelled = false;
+    jsonFetch<AccountWorkspaceSettingsData>("/api/workspace/settings", { timeoutMs: 8000 })
+      .then((settings) => {
+        if (!cancelled) setWorkspaceName(settings.workspace.name);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [workspaceSession?.authenticated]);
 
   React.useEffect(() => {
     if (!accountMenuOpen) return;
@@ -1107,6 +1122,7 @@ export function DashboardShell() {
               authenticated={authenticated}
               capabilities={capabilities}
               language={language}
+              userName={workspaceSession.user?.name || "Workspace owner"}
               workspaceLabel={accounts.find((account) => account.id === accountId)?.name}
               report={overviewReport}
               healthSummary={overviewHealthSummary}
@@ -1236,6 +1252,7 @@ export function DashboardShell() {
             ? { ...current, user: { ...current.user, name, initials, avatarDataUrl } }
             : current);
         }}
+        onWorkspaceSaved={({ name }) => setWorkspaceName(name)}
       />
       <MetaConnectDialog
         open={metaConnectOpen}

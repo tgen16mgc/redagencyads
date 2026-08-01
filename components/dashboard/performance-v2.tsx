@@ -8,10 +8,8 @@ import {
   CheckCircle2Icon,
   ClipboardListIcon,
   DownloadIcon,
-  EyeIcon,
   FileChartColumnIncreasingIcon,
   GitCompareArrowsIcon,
-  ImageIcon,
   Layers3Icon,
   RefreshCwIcon,
   ShieldAlertIcon,
@@ -33,6 +31,7 @@ import type { ClientReportPdfFile } from "@/lib/client-report";
 import { formatComparisonChangePct, metricMovementIsBad, type MetricComparisonDelta } from "@/lib/metric-comparison";
 import { formatMetric } from "@/lib/metrics";
 import { buildPerformanceStages, type PerformanceStage, type PerformanceStageKey } from "@/lib/performance-stages";
+import { buildPlatformEfficiencyPoints } from "@/lib/segment-efficiency";
 import { SAMPLE_CAMPAIGNS } from "@/lib/sample-report";
 import type { AiInsightTable, CompareMode, DashboardReport, InterfaceLanguage, KpiCard, KpiPack, MetaCampaign, NormalizedRow, Verdict } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -47,6 +46,7 @@ import {
   PeriodScopeDialog,
   StageEvidenceSheet,
 } from "@/components/dashboard/performance-v2-overlays";
+import { MetaCreativeCover, MetaCreativeFocusPreview } from "@/components/dashboard/meta-creative-media";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -166,15 +166,8 @@ export function PerformanceV2({
 
   React.useEffect(() => {
     const availableIds = new Set(report.adRows.map((row) => row.id));
-    setSelectedCreativeIds((current) => {
-      const preserved = current.filter((id) => availableIds.has(id)).slice(0, 2);
-      if (preserved.length === 2) return preserved;
-      const ranked = [...report.adRows]
-        .sort((left, right) => rowEfficiency(right, resultKey(report.selectedPack)) - rowEfficiency(left, resultKey(report.selectedPack)))
-        .map((row) => row.id);
-      return [...preserved, ...ranked.filter((id) => !preserved.includes(id))].slice(0, 2);
-    });
-  }, [report.adRows, report.selectedPack]);
+    setSelectedCreativeIds((current) => current.filter((id) => availableIds.has(id)).slice(0, 2));
+  }, [report.adRows]);
 
   async function applyPeriod(days: number) {
     const nextUntil = until || new Date().toISOString().slice(0, 10);
@@ -294,7 +287,7 @@ export function PerformanceV2({
       <ActionPlanSheet open={actionPlanOpen} onOpenChange={setActionPlanOpen} report={report} verdict={verdict} healthSummary={healthSummary} loading={reviewing} onGenerate={onReviewActions} onExport={() => setExportOpen(true)} />
       <StageEvidenceSheet stage={selectedStage} onOpenChange={(open) => !open && setSelectedStage(null)} report={report} onReviewAction={() => { setSelectedStage(null); setActionPlanOpen(true); }} />
       <EntityDetailSheet row={selectedEntity} onOpenChange={(open) => !open && setSelectedEntity(null)} report={report} onOpenAction={() => { setSelectedEntity(null); setActionPlanOpen(true); }} />
-      <CreativeComparisonDialog open={creativeComparisonOpen} onOpenChange={setCreativeComparisonOpen} rows={report.adRows.filter((row) => selectedCreativeIds.includes(row.id))} report={report} onOpenEvidence={() => { setCreativeComparisonOpen(false); setActiveTab("evidence"); }} />
+      <CreativeComparisonDialog open={creativeComparisonOpen} onOpenChange={setCreativeComparisonOpen} rows={selectedCreativeIds.map((id) => report.adRows.find((row) => row.id === id)).filter((row): row is NormalizedRow => Boolean(row))} report={report} onOpenEvidence={() => { setCreativeComparisonOpen(false); setActiveTab("evidence"); }} />
     </section>
   );
 }
@@ -498,7 +491,8 @@ function DriversTab({ language, report, currency, onSelectEntity }: { language: 
   const strongest = [...rows].sort((left, right) => rowEfficiency(right, primaryKey) - rowEfficiency(left, primaryKey))[0];
   const weakest = [...rows].sort((left, right) => rowEfficiency(left, primaryKey) - rowEfficiency(right, primaryKey))[0];
   const topShare = rows.reduce((sum, row) => sum + Number(row[primaryKey] || 0), 0);
-  const segmentPoints = buildSegmentPoints(report.platformRows.slice(0, 4), primaryKey);
+  const segmentPoints = buildPlatformEfficiencyPoints(report.platformRows, primaryKey);
+  const strongestSegment = [...segmentPoints].sort((left, right) => right.efficiency - left.efficiency)[0];
 
   return (
     <div className="grid gap-4">
@@ -539,22 +533,33 @@ function DriversTab({ language, report, currency, onSelectEntity }: { language: 
         </div>
 
         <div className="v2-panel p-4 sm:p-5">
-          <div className="flex items-center justify-between"><h2 className="v2-section-title">{isVietnamese ? "Hiệu quả phân khúc" : "Segment efficiency"}</h2><Badge variant="secondary">Platform</Badge></div>
-          <p className="mt-2 text-xs text-muted-foreground">{isVietnamese ? "Bên phải hiệu quả hơn · cao hơn tốn kém hơn." : "Right is more efficient · higher is more costly."}</p>
-          <div className="relative mt-5 h-48 overflow-hidden border-b border-l border-border">
-            {[25, 50, 75].map((offset) => <span key={offset} className="absolute inset-x-0 border-t border-border/70" style={{ top: `${offset}%` }} />)}
-            {segmentPoints.map(({ row, left, bottom, tone }) => {
-              return (
-                <div key={row.id} className="absolute -translate-x-1/2 translate-y-1/2" style={{ left: `${left}%`, bottom: `${bottom}%` }}>
-                  <span className={cn("block size-3.5 rounded-full border-2 border-card", tone === "warning" ? "bg-warning" : "bg-primary")} />
-                  <span className={cn("absolute top-0 -translate-y-0.5 whitespace-nowrap text-[9px] text-muted-foreground", left > 68 ? "right-4" : "left-4")}>{segmentLabel(row.name)}</span>
-                </div>
-              );
-            })}
-          </div>
+          <div className="flex items-center justify-between"><h2 className="v2-section-title">{isVietnamese ? "Hiệu quả phân khúc" : "Segment efficiency"}</h2><Badge variant="secondary">{segmentPoints.length} {isVietnamese ? "nền tảng" : "platforms"}</Badge></div>
+          <p className="mt-2 text-xs text-muted-foreground">{isVietnamese ? "Mỗi điểm gộp dữ liệu Meta thật theo platform. Bên phải hiệu quả hơn; cao hơn tốn kém hơn." : "Each point aggregates real Meta rows by platform. Right is more efficient; higher is more costly."}</p>
+          {segmentPoints.length ? (
+            <>
+              <div className="relative mt-5 h-48 border-b border-l border-border" aria-label="Platform efficiency chart">
+                {[25, 50, 75].map((offset) => <span key={offset} className="absolute inset-x-0 border-t border-border/70" style={{ top: `${offset}%` }} />)}
+                <span className="absolute -left-2 top-1/2 -translate-x-1/2 -translate-y-1/2 -rotate-90 whitespace-nowrap text-[9px] text-muted-foreground">{isVietnamese ? "Chi phí / kết quả" : "Cost / result"}</span>
+                <span className="absolute bottom-[-18px] left-1/2 -translate-x-1/2 whitespace-nowrap text-[9px] text-muted-foreground">{isVietnamese ? "Kết quả / chi tiêu" : "Results / spend"}</span>
+                {segmentPoints.map(({ row, label, left, bottom, tone, unitCost }) => (
+                  <div key={row.id} className="absolute -translate-x-1/2 translate-y-1/2" style={{ left: `${left}%`, bottom: `${bottom}%` }} title={`${label}: ${compact(Number(row[primaryKey] || 0))} ${primaryLabel(report.selectedPack, language)} · ${currencyValue(unitCost, currency)} / result`}>
+                    <span className={cn("block size-3.5 rounded-full border-2 border-card", tone === "warning" ? "bg-warning" : "bg-primary")} />
+                    <span className={cn("absolute top-0 -translate-y-0.5 whitespace-nowrap text-[9px] text-muted-foreground", left > 68 ? "right-4" : "left-4")}>{label}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-7 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-muted-foreground">
+                {segmentPoints.map((point) => <span key={`${point.row.id}-legend`}><b className="font-medium text-foreground">{point.label}</b> · {compact(Number(point.row[primaryKey] || 0))} · {currencyValue(point.unitCost, currency)}/{isVietnamese ? "kết quả" : "result"}</span>)}
+              </div>
+            </>
+          ) : (
+            <div className="mt-5 flex h-48 items-center justify-center rounded-xl border border-dashed border-border bg-secondary/20 px-6 text-center text-xs leading-5 text-muted-foreground">
+              {isVietnamese ? "Không có kết quả theo platform được theo dõi cho KPI pack này. Dữ liệu thiếu không được thay bằng điểm giả." : "No tracked platform outcomes are available for this KPI pack. Missing data is not replaced with synthetic points."}
+            </div>
+          )}
           <div className="mt-5">
             <div className="text-sm font-medium">{isVietnamese ? "Insight chính" : "Top insight"}</div>
-            <p className="mt-1 text-xs leading-5 text-muted-foreground">{strongest ? `${strongest.name} ${isVietnamese ? "đang tạo hiệu quả tốt nhất trong phạm vi hiện tại." : "is producing the strongest efficiency in the current scope."}` : "—"}</p>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">{strongestSegment ? `${strongestSegment.label}: ${compact(Number(strongestSegment.row[primaryKey] || 0))} ${primaryLabel(report.selectedPack, language)} · ${currencyValue(strongestSegment.unitCost, currency)} ${isVietnamese ? "mỗi kết quả." : "per result."}` : (isVietnamese ? "Chưa đủ dữ liệu platform để xếp hạng hiệu quả." : "Not enough platform data to rank efficiency.")}</p>
           </div>
         </div>
       </div>
@@ -579,7 +584,7 @@ function CreativesTab({ language, report, currency, selectedIds, onSelectionChan
       onSelectionChange(selectedIds.filter((id) => id !== row.id));
       return;
     }
-    onSelectionChange(selectedIds.length < 2 ? [...selectedIds, row.id] : [selectedIds[1], row.id]);
+    onSelectionChange(selectedIds.length < 2 ? [...selectedIds, row.id] : [selectedIds[0], row.id]);
   }
 
   return (
@@ -593,13 +598,15 @@ function CreativesTab({ language, report, currency, selectedIds, onSelectionChan
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.72fr)]">
         <div className="v2-panel p-4 sm:p-5">
-          <div className="flex items-start justify-between gap-4"><div><h2 className="v2-section-title">{isVietnamese ? "Hiệu quả creative" : "Creative performance"}</h2><p className="v2-section-copy">{isVietnamese ? "Chọn đúng 2 creative để so sánh bằng dữ liệu của báo cáo." : "Select exactly two creatives to compare with report data."}</p></div><div className="flex shrink-0 items-center gap-2"><Badge variant={selectedIds.length === 2 ? "success" : "outline"}>{selectedIds.length}/2 {isVietnamese ? "đã chọn" : "selected"}</Badge><Button type="button" size="sm" variant="outline" disabled={selectedIds.length !== 2} onClick={onCompare}><GitCompareArrowsIcon data-icon="inline-start" />{isVietnamese ? "So sánh" : "Compare"}</Button></div></div>
+          <div className="flex items-start justify-between gap-4"><div><h2 className="v2-section-title">{isVietnamese ? "Hiệu quả creative" : "Creative performance"}</h2><p className="v2-section-copy">{isVietnamese ? "Chọn creative đầu tiên làm Control 1, sau đó chọn Challenger 2." : "Select the first creative as Control 1, then choose Challenger 2."}</p></div><div className="flex shrink-0 items-center gap-2"><Badge variant={selectedIds.length === 2 ? "success" : "outline"}>{selectedIds.length}/2 {isVietnamese ? "đã chọn" : "selected"}</Badge><Button type="button" size="sm" variant="outline" disabled={selectedIds.length !== 2} onClick={onCompare}><GitCompareArrowsIcon data-icon="inline-start" />{isVietnamese ? "So sánh" : "Compare"}</Button></div></div>
           <div className="mt-5 grid gap-3 md:grid-cols-2">
-            {rows.map((row, index) => (
+            {rows.map((row) => {
+              const selectionIndex = selectedIds.indexOf(row.id);
+              return (
               <button key={row.id} type="button" aria-pressed={selectedIds.includes(row.id)} className={cn("relative grid grid-cols-[94px_minmax(0,1fr)] gap-3 rounded-xl border p-2 text-left transition-colors", selectedIds.includes(row.id) ? "border-primary/60 bg-primary/5" : selected?.id === row.id ? "border-border bg-secondary/25" : "border-transparent hover:border-border hover:bg-secondary/35")} onClick={() => toggleComparison(row)}>
-                <CreativeThumb row={row} index={index} />
+                <MetaCreativeCover report={report} row={row} className="h-28" />
                 <div className="min-w-0 py-1">
-                  <div className="flex items-start justify-between gap-2"><div className="truncate text-sm font-medium">{row.name}</div><span className={cn("flex size-5 shrink-0 items-center justify-center rounded-full border", selectedIds.includes(row.id) ? "border-primary bg-primary text-primary-foreground" : "border-border")}>{selectedIds.includes(row.id) ? <CheckCircle2Icon className="size-3.5" /> : null}</span></div>
+                  <div className="flex items-start justify-between gap-2"><div className="truncate text-sm font-medium">{row.name}</div>{selectionIndex >= 0 ? <Badge variant={selectionIndex === 0 ? "success" : "secondary"}>{selectionIndex === 0 ? (isVietnamese ? "Control 1" : "Control 1") : (isVietnamese ? "Challenger 2" : "Challenger 2")}</Badge> : <span className="flex size-5 shrink-0 items-center justify-center rounded-full border border-border" />}</div>
                   <div className="mt-1 truncate text-xs text-muted-foreground">{row.adsetName || row.campaignName}</div>
                   <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-[10px] uppercase tracking-[0.04em] text-muted-foreground">
                     <span>Spend <b className="block text-xs font-medium normal-case text-foreground">{currencyValue(row.spend, currency)}</b></span>
@@ -609,18 +616,14 @@ function CreativesTab({ language, report, currency, selectedIds, onSelectionChan
                   </div>
                 </div>
               </button>
-            ))}
+              );
+            })}
           </div>
         </div>
 
         <div className="v2-panel p-4 sm:p-5">
           <div className="flex items-center justify-between"><h2 className="v2-section-title">{isVietnamese ? "Creative đang xem" : "Creative in focus"}</h2><Badge variant={selected?.frequency && selected.frequency >= 3 ? "outline" : "success"}>{selected?.frequency && selected.frequency >= 3 ? (isVietnamese ? "Theo dõi" : "Watch") : (isVietnamese ? "Mới" : "Fresh")}</Badge></div>
-          <div className="mt-4 overflow-hidden rounded-xl bg-primary/12 p-5">
-            <div className="flex min-h-36 items-center justify-between gap-5">
-              <span className="flex h-28 w-20 items-center justify-center rounded-2xl bg-foreground/80 text-background"><ImageIcon className="size-7" /></span>
-              <div className="max-w-56"><div className="text-base font-semibold">{isVietnamese ? "Hook rõ. Kết quả có thể truy vết." : "Clear hook. Traceable outcome."}</div><div className="mt-3 text-xs text-muted-foreground">Meta preview · {selected?.adFormat || "Creative"}</div></div>
-            </div>
-          </div>
+          {selected ? <div className="mt-4"><MetaCreativeFocusPreview report={report} row={selected} language={language} /></div> : null}
           {selected ? (
             <>
               <h3 className="mt-4 text-sm font-semibold">{selected.name}</h3>
@@ -650,8 +653,12 @@ function EvidenceTab({ language, report, healthSummary, currency }: { language: 
   const isVietnamese = language === "vi";
   const [level, setLevel] = React.useState<"campaign" | "adset" | "ad" | "daily">("campaign");
   const [methodologyOpen, setMethodologyOpen] = React.useState(false);
+  const [allRowsVisible, setAllRowsVisible] = React.useState(false);
   const rows = level === "campaign" ? report.campaignRows : level === "adset" ? report.adsetRows : level === "ad" ? report.adRows : report.dailyRows;
+  const visibleRows = allRowsVisible ? rows : rows.slice(0, 8);
   const primaryKey = resultKey(report.selectedPack);
+
+  React.useEffect(() => setAllRowsVisible(false), [level, report]);
 
   return (
     <div className="grid gap-4">
@@ -671,10 +678,13 @@ function EvidenceTab({ language, report, healthSummary, currency }: { language: 
           <div className="overflow-x-auto">
             <table className="w-full min-w-[700px] text-left text-xs">
               <thead className="border-b border-border text-[10px] uppercase tracking-[0.05em] text-muted-foreground"><tr><th className="py-3 font-medium">Entity</th><th className="py-3 font-medium">Spend</th><th className="py-3 font-medium">Impressions</th><th className="py-3 font-medium">Link clicks</th><th className="py-3 font-medium">{primaryLabel(report.selectedPack, language)}</th><th className="py-3 font-medium">CPA</th><th className="py-3 font-medium">ROAS</th></tr></thead>
-              <tbody>{rows.slice(0, 8).map((row) => <tr key={`${row.id}-${row.date || ""}`} className="border-b border-border/55 last:border-0"><td className="py-3 pr-4"><div className="font-medium">{level === "daily" ? row.date : row.name}</div><div className="mt-0.5 text-muted-foreground">{row.level} · {row.date || "Active"}</div></td><td className="py-3 pr-4 tabular-nums">{currencyValue(row.spend, currency)}</td><td className="py-3 pr-4 tabular-nums">{compact(row.impressions)}</td><td className="py-3 pr-4 tabular-nums">{compact(row.linkClicks)}</td><td className="py-3 pr-4 tabular-nums">{compact(Number(row[primaryKey] || 0))}</td><td className="py-3 pr-4 tabular-nums">{primaryRowCost(row, report.selectedPack, currency)}</td><td className="py-3 tabular-nums">{row.roas.toFixed(1)}</td></tr>)}</tbody>
+              <tbody>{visibleRows.map((row) => <tr key={`${row.id}-${row.date || ""}`} className="border-b border-border/55 last:border-0"><td className="py-3 pr-4"><div className="font-medium">{level === "daily" ? row.date : row.name}</div><div className="mt-0.5 text-muted-foreground">{row.level} · {row.date || "Active"}</div></td><td className="py-3 pr-4 tabular-nums">{currencyValue(row.spend, currency)}</td><td className="py-3 pr-4 tabular-nums">{compact(row.impressions)}</td><td className="py-3 pr-4 tabular-nums">{compact(row.linkClicks)}</td><td className="py-3 pr-4 tabular-nums">{compact(Number(row[primaryKey] || 0))}</td><td className="py-3 pr-4 tabular-nums">{primaryRowCost(row, report.selectedPack, currency)}</td><td className="py-3 tabular-nums">{row.roas.toFixed(1)}</td></tr>)}</tbody>
             </table>
           </div>
-          <div className="mt-3 text-[11px] text-muted-foreground">{rows.length} {isVietnamese ? "hàng" : "rows"} · {report.account.currency || "VND"} · {report.account.timezone_name || "account timezone"}</div>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+            <div className="text-[11px] text-muted-foreground">{visibleRows.length}/{rows.length} {isVietnamese ? "hàng đang hiển thị" : "rows shown"} · {report.account.currency || "VND"} · {report.account.timezone_name || "account timezone"}</div>
+            {rows.length > 8 ? <Button type="button" variant="ghost" size="sm" onClick={() => setAllRowsVisible((current) => !current)}>{allRowsVisible ? (isVietnamese ? "Thu gọn" : "Show less") : (isVietnamese ? `Hiện tất cả ${rows.length}` : `Show all ${rows.length}`)}</Button> : null}
+          </div>
         </div>
 
         <div className="v2-panel p-4 sm:p-5">
@@ -775,11 +785,6 @@ function ReportStat({ label, value }: { label: string; value: string }) {
   return <div><div className="text-[10px] font-medium uppercase tracking-[0.05em] text-muted-foreground">{label}</div><div className="mt-1 text-sm font-semibold tabular-nums">{value}</div></div>;
 }
 
-function CreativeThumb({ row, index }: { row: NormalizedRow; index: number }) {
-  const palette = ["#155e75", "#7c2d12", "#1e3a8a", "#7f1d1d", "#365314", "#4c1d95"];
-  return <div className="relative flex h-28 items-center justify-center overflow-hidden rounded-xl" style={{ background: palette[index % palette.length] }}><span className="absolute -right-5 -top-4 size-24 rounded-full bg-primary/35" /><span className="relative flex h-16 w-11 items-center justify-center rounded-xl bg-foreground/80 text-background">{row.adFormat?.toLowerCase().includes("video") ? <EyeIcon className="size-5" /> : <ImageIcon className="size-5" />}</span><span className="absolute bottom-2 left-2 text-[9px] font-medium uppercase text-white/70">{row.adFormat || "creative"}</span></div>;
-}
-
 function primaryResult(report: DashboardReport, language: InterfaceLanguage) {
   const isVietnamese = language === "vi";
   if (report.selectedPack === "sales_roas") return { key: "purchases" as keyof NormalizedRow, costKey: "cpaPurchase" as keyof NormalizedRow, label: isVietnamese ? "Mua hàng" : "Purchases", costLabel: "CPA", decision: isVietnamese ? "Bảo vệ ngân sách. Xử lý điểm rò rỉ trước khi scale." : "Protect budget. Fix the weakest conversion step before scaling." };
@@ -828,41 +833,6 @@ function primaryLabel(pack: DashboardReport["selectedPack"], language: Interface
 function rowEfficiency(row: NormalizedRow, key: keyof NormalizedRow) {
   const result = Number(row[key] || 0);
   return result > 0 ? result / Math.max(row.spend, 1) : 0;
-}
-
-function buildSegmentPoints(rows: NormalizedRow[], primaryKey: keyof NormalizedRow) {
-  const values = rows.map((row) => {
-    const result = Number(row[primaryKey] || 0);
-    return {
-      row,
-      efficiency: result > 0 ? result / Math.max(row.spend, 1) : row.reach / Math.max(row.spend, 1),
-      unitCost: result > 0 ? row.spend / result : row.cpm,
-    };
-  });
-  const efficiencies = values.map((item) => item.efficiency);
-  const unitCosts = values.map((item) => item.unitCost);
-  const minEfficiency = efficiencies.length ? Math.min(...efficiencies) : 0;
-  const maxEfficiency = efficiencies.length ? Math.max(...efficiencies) : 0;
-  const minUnitCost = unitCosts.length ? Math.min(...unitCosts) : 0;
-  const maxUnitCost = unitCosts.length ? Math.max(...unitCosts) : 0;
-  const efficiencyRange = maxEfficiency - minEfficiency;
-  const costRange = maxUnitCost - minUnitCost;
-
-  return values.map((item, index) => {
-    const distributed = values.length > 1 ? index / (values.length - 1) : 0.5;
-    const normalizedEfficiency = efficiencyRange > 0.000001 ? (item.efficiency - minEfficiency) / efficiencyRange : distributed;
-    const normalizedCost = costRange > 0.000001 ? (item.unitCost - minUnitCost) / costRange : 0.25 + distributed * 0.5;
-    return {
-      row: item.row,
-      left: 18 + normalizedEfficiency * 62,
-      bottom: 16 + normalizedCost * 64,
-      tone: normalizedEfficiency < 0.45 || normalizedCost > 0.62 ? "warning" as const : "primary" as const,
-    };
-  });
-}
-
-function segmentLabel(value: string) {
-  return value.replaceAll("_", " ").replace(/^./, (character) => character.toUpperCase());
 }
 
 function contributionScore(row: NormalizedRow, key: keyof NormalizedRow) {

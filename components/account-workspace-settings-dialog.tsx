@@ -82,6 +82,7 @@ export function AccountWorkspaceSettingsDialog({
   onOpenMeta,
   onForgetMeta,
   onProfileSaved,
+  onWorkspaceSaved,
 }: {
   open: boolean;
   initialTab: SettingsTab;
@@ -91,6 +92,7 @@ export function AccountWorkspaceSettingsDialog({
   onOpenMeta: () => void;
   onForgetMeta: () => Promise<void>;
   onProfileSaved: (profile: { name: string; initials: string; avatarDataUrl?: string }) => void;
+  onWorkspaceSaved: (workspace: { name: string }) => void;
 }) {
   const fallback = React.useMemo(() => defaultAccountWorkspaceSettings(session.user || {}), [session.user]);
   const [tab, setTab] = React.useState<SettingsTab>(initialTab);
@@ -196,6 +198,8 @@ export function AccountWorkspaceSettingsDialog({
       setDraft(next);
       if (tab === "profile") {
         onProfileSaved({ name: responseData.profile.fullName, initials: initialsFromName(responseData.profile.fullName), avatarDataUrl: responseData.profile.avatarDataUrl });
+      } else {
+        onWorkspaceSaved({ name: responseData.workspace.name });
       }
       toast.success(tab === "profile" ? "Profile settings saved" : "Workspace settings saved");
     } catch (requestError) {

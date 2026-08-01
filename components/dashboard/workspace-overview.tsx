@@ -26,6 +26,7 @@ type WorkspaceOverviewProps = {
   authenticated: boolean;
   capabilities: CapabilityStatus[];
   language: "en" | "vi";
+  userName: string;
   workspaceLabel?: string;
   report: DashboardReport | null;
   healthSummary: HealthScoreSummary | null;
@@ -59,6 +60,7 @@ export function WorkspaceOverview({
   authenticated,
   capabilities,
   language,
+  userName,
   workspaceLabel,
   report,
   healthSummary,
@@ -110,7 +112,7 @@ export function WorkspaceOverview({
       <section className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-[clamp(1.75rem,3vw,2.25rem)] font-semibold leading-tight tracking-[-0.045em]">
-            {isVietnamese ? "Chào buổi sáng, Tiến." : "Good morning, Tien."}
+            {isVietnamese ? `Chào buổi sáng, ${userName}.` : `Good morning, ${userName}.`}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {isVietnamese ? "Phạm vi báo cáo đã sẵn sàng. Xem tín hiệu rồi quyết định thay đổi hôm nay." : "Your reporting scope is ready. Review the signals, then decide what changes today."}

@@ -167,6 +167,7 @@ export function LandingProductPreview({ surface }: { surface: "overview" | "comp
           authenticated
           capabilities={capabilities}
           language="en"
+          userName="Tien Duong"
           workspaceLabel="Tien Duong"
           report={report}
           healthSummary={healthSummary}

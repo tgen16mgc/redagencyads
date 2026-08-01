@@ -1025,8 +1025,8 @@ function ReportScopeDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[calc(100svh-2rem)] w-[calc(100vw-2rem)] min-w-0 max-w-[520px] flex-col gap-5 overflow-x-hidden overflow-y-auto rounded-[24px] border border-border bg-popover p-4 sm:p-6" showCloseButton={false}>
-        <DialogHeader className="flex-row items-center justify-between gap-4 text-left">
+      <DialogContent className="flex h-[min(720px,calc(100dvh-2rem))] w-[calc(100vw-2rem)] min-w-0 max-w-[520px] flex-col gap-0 overflow-hidden rounded-[24px] border border-border bg-popover p-0 shadow-2xl" showCloseButton={false}>
+        <DialogHeader className="shrink-0 flex-row items-center justify-between gap-4 border-b border-border px-4 py-4 text-left sm:px-6">
           <div className="flex min-w-0 items-center gap-3">
             <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-primary">
               <SlidersHorizontalIcon className="size-[19px]" />
@@ -1044,81 +1044,83 @@ function ReportScopeDialog({
           </div>
         </DialogHeader>
 
-        <div className="grid min-w-0 gap-5">
-          <section className="grid min-w-0 gap-3.5">
-            <div className="text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">{isVietnamese ? "Nguồn & kỳ" : "Source & period"}</div>
-            <Field className="min-w-0">
-              <FieldLabel>{isVietnamese ? "Tài khoản quảng cáo" : "Ad account"}</FieldLabel>
-              <Select
-                items={accounts.map((account) => ({ label: account.name, value: account.id }))}
-                value={accountId}
-                onValueChange={(value) => value && onAccountIdChange(value)}
-              >
-                <SelectTrigger className="h-10 w-full"><SelectValue /></SelectTrigger>
-                <SelectContent><SelectGroup>{accounts.map((account) => <SelectItem key={account.id} value={account.id}>{account.name}</SelectItem>)}</SelectGroup></SelectContent>
-              </Select>
-            </Field>
-            <Field className="min-w-0" data-invalid={invalidDates || undefined}>
-              <FieldLabel>{isVietnamese ? "Khoảng evidence" : "Evidence window"}</FieldLabel>
-              <div className="grid min-h-10 min-w-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center overflow-hidden rounded-xl bg-secondary/75 ring-1 ring-foreground/5 focus-within:ring-2 focus-within:ring-ring">
-                <label className="sr-only" htmlFor="report-scope-since">{isVietnamese ? "Từ ngày" : "Since"}</label>
-                <Input id="report-scope-since" type="date" value={draft.since} onChange={(event) => setDraft((current) => ({ ...current, since: event.target.value }))} className="min-w-0 border-0 bg-transparent shadow-none focus-visible:ring-0" />
-                <span className="px-1 text-sm text-muted-foreground">–</span>
-                <label className="sr-only" htmlFor="report-scope-until">{isVietnamese ? "Đến ngày" : "Until"}</label>
-                <Input id="report-scope-until" type="date" value={draft.until} onChange={(event) => setDraft((current) => ({ ...current, until: event.target.value }))} className="min-w-0 border-0 bg-transparent shadow-none focus-visible:ring-0" />
+        <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-4 py-5 sm:px-6">
+          <div className="grid min-w-0 gap-5">
+            <section className="grid min-w-0 gap-3.5">
+              <div className="text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">{isVietnamese ? "Nguồn & kỳ" : "Source & period"}</div>
+              <Field className="min-w-0">
+                <FieldLabel>{isVietnamese ? "Tài khoản quảng cáo" : "Ad account"}</FieldLabel>
+                <Select
+                  items={accounts.map((account) => ({ label: account.name, value: account.id }))}
+                  value={accountId}
+                  onValueChange={(value) => value && onAccountIdChange(value)}
+                >
+                  <SelectTrigger className="h-10 w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectGroup>{accounts.map((account) => <SelectItem key={account.id} value={account.id}>{account.name}</SelectItem>)}</SelectGroup></SelectContent>
+                </Select>
+              </Field>
+              <Field className="min-w-0" data-invalid={invalidDates || undefined}>
+                <FieldLabel>{isVietnamese ? "Khoảng evidence" : "Evidence window"}</FieldLabel>
+                <div className="grid min-h-10 min-w-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center overflow-hidden rounded-xl bg-secondary/75 ring-1 ring-foreground/5 focus-within:ring-2 focus-within:ring-ring">
+                  <label className="sr-only" htmlFor="report-scope-since">{isVietnamese ? "Từ ngày" : "Since"}</label>
+                  <Input id="report-scope-since" type="date" value={draft.since} onChange={(event) => setDraft((current) => ({ ...current, since: event.target.value }))} className="min-w-0 border-0 bg-transparent shadow-none focus-visible:ring-0" />
+                  <span className="px-1 text-sm text-muted-foreground">–</span>
+                  <label className="sr-only" htmlFor="report-scope-until">{isVietnamese ? "Đến ngày" : "Until"}</label>
+                  <Input id="report-scope-until" type="date" value={draft.until} onChange={(event) => setDraft((current) => ({ ...current, until: event.target.value }))} className="min-w-0 border-0 bg-transparent shadow-none focus-visible:ring-0" />
+                </div>
+              </Field>
+              {invalidDates ? <p className="text-xs text-destructive">{isVietnamese ? "Ngày kết thúc phải bằng hoặc sau ngày bắt đầu." : "Until must be the same as or later than Since."}</p> : null}
+            </section>
+
+            <section className="grid min-w-0 gap-3">
+              <div className="text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">{isVietnamese ? "Quy tắc quyết định" : "Decision rules"}</div>
+              <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+                <Field className="min-w-0">
+                  <FieldLabel>KPI pack</FieldLabel>
+                  <Select items={[{ label: "Auto-detect", value: "auto" }, ...packItems]} value={draft.pack} onValueChange={(value) => value && setDraft((current) => ({ ...current, pack: value as KpiPack | "auto" }))}>
+                    <SelectTrigger className="h-10 w-full"><SelectValue /></SelectTrigger>
+                    <SelectContent><SelectGroup><SelectItem value="auto">{isVietnamese ? "Tự nhận diện" : "Auto-detect"}</SelectItem>{packItems.map((item) => <SelectItem key={item.value} value={item.value}>{packLabel(item.value, language)}</SelectItem>)}</SelectGroup></SelectContent>
+                  </Select>
+                </Field>
+                <Field className="min-w-0">
+                  <FieldLabel>{isVietnamese ? "So sánh" : "Compare"}</FieldLabel>
+                  <Select items={compareItems} value={draft.compareMode} onValueChange={(value) => value && setDraft((current) => ({ ...current, compareMode: value as CompareMode }))}>
+                    <SelectTrigger className="h-10 w-full"><SelectValue /></SelectTrigger>
+                    <SelectContent><SelectGroup>{compareItems.map((item) => <SelectItem key={item.value} value={item.value}>{compareLabel(item.value, language)}</SelectItem>)}</SelectGroup></SelectContent>
+                  </Select>
+                </Field>
               </div>
-            </Field>
-            {invalidDates ? <p className="text-xs text-destructive">{isVietnamese ? "Ngày kết thúc phải bằng hoặc sau ngày bắt đầu." : "Until must be the same as or later than Since."}</p> : null}
-          </section>
+              <label className="flex cursor-pointer items-start gap-3">
+                <input
+                  type="checkbox"
+                  className="mt-1 accent-[var(--primary)]"
+                  checked={thresholdsEnabled}
+                  onChange={(event) => {
+                    const enabled = event.target.checked;
+                    setThresholdsEnabled(enabled);
+                    if (enabled) setDraft((current) => ({ ...current, targetCpa: current.targetCpa || "40", targetRoas: current.targetRoas || "2.5" }));
+                  }}
+                />
+                <span><span className="block text-sm font-medium">{isVietnamese ? "Áp dụng ngưỡng quyết định" : "Apply decision thresholds"}</span><span className="mt-0.5 block text-sm text-muted-foreground">{isVietnamese ? `Dùng CPA ${draft.targetCpa || "40"} và ROAS ${draft.targetRoas || "2.5"} làm guardrail khi scale.` : `Use CPA ${draft.targetCpa || "40"} and ROAS ${draft.targetRoas || "2.5"} as scale guardrails.`}</span></span>
+              </label>
+            </section>
 
-          <section className="grid min-w-0 gap-3">
-            <div className="text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">{isVietnamese ? "Quy tắc quyết định" : "Decision rules"}</div>
-            <div className="grid min-w-0 gap-3 sm:grid-cols-2">
-              <Field className="min-w-0">
-                <FieldLabel>KPI pack</FieldLabel>
-                <Select items={[{ label: "Auto-detect", value: "auto" }, ...packItems]} value={draft.pack} onValueChange={(value) => value && setDraft((current) => ({ ...current, pack: value as KpiPack | "auto" }))}>
-                  <SelectTrigger className="h-10 w-full"><SelectValue /></SelectTrigger>
-                  <SelectContent><SelectGroup><SelectItem value="auto">{isVietnamese ? "Tự nhận diện" : "Auto-detect"}</SelectItem>{packItems.map((item) => <SelectItem key={item.value} value={item.value}>{packLabel(item.value, language)}</SelectItem>)}</SelectGroup></SelectContent>
-                </Select>
-              </Field>
-              <Field className="min-w-0">
-                <FieldLabel>{isVietnamese ? "So sánh" : "Compare"}</FieldLabel>
-                <Select items={compareItems} value={draft.compareMode} onValueChange={(value) => value && setDraft((current) => ({ ...current, compareMode: value as CompareMode }))}>
-                  <SelectTrigger className="h-10 w-full"><SelectValue /></SelectTrigger>
-                  <SelectContent><SelectGroup>{compareItems.map((item) => <SelectItem key={item.value} value={item.value}>{compareLabel(item.value, language)}</SelectItem>)}</SelectGroup></SelectContent>
-                </Select>
-              </Field>
-            </div>
-            <label className="flex cursor-pointer items-start gap-3">
-              <input
-                type="checkbox"
-                className="mt-1 accent-[var(--primary)]"
-                checked={thresholdsEnabled}
-                onChange={(event) => {
-                  const enabled = event.target.checked;
-                  setThresholdsEnabled(enabled);
-                  if (enabled) setDraft((current) => ({ ...current, targetCpa: current.targetCpa || "40", targetRoas: current.targetRoas || "2.5" }));
-                }}
+            <section className="grid min-w-0 gap-3">
+              <div className="text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">{isVietnamese ? "Phạm vi campaign" : "Campaign scope"}</div>
+              <ReportScopeCampaignPicker
+                campaigns={campaigns}
+                currency={currency}
+                language={language}
+                loading={loading === "campaigns"}
+                selectedIds={draft.selectedCampaignIds}
+                onChange={(ids) => setDraft((current) => ({ ...current, selectedCampaignIds: ids }))}
               />
-              <span><span className="block text-sm font-medium">{isVietnamese ? "Áp dụng ngưỡng quyết định" : "Apply decision thresholds"}</span><span className="mt-0.5 block text-sm text-muted-foreground">{isVietnamese ? `Dùng CPA ${draft.targetCpa || "40"} và ROAS ${draft.targetRoas || "2.5"} làm guardrail khi scale.` : `Use CPA ${draft.targetCpa || "40"} and ROAS ${draft.targetRoas || "2.5"} as scale guardrails.`}</span></span>
-            </label>
-          </section>
-
-          <section className="grid min-w-0 gap-3">
-            <div className="text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">{isVietnamese ? "Phạm vi campaign" : "Campaign scope"}</div>
-            <ReportScopeCampaignPicker
-              campaigns={campaigns}
-              currency={currency}
-              language={language}
-              loading={loading === "campaigns"}
-              selectedIds={draft.selectedCampaignIds}
-              onChange={(ids) => setDraft((current) => ({ ...current, selectedCampaignIds: ids }))}
-            />
-          </section>
+            </section>
+          </div>
         </div>
 
-        <DialogFooter className="mt-auto flex-row flex-wrap items-center justify-end gap-3 pt-1">
-          <span className="mr-auto text-[11px] text-muted-foreground">{isVietnamese ? "Áp dụng cho lần phân tích tiếp theo" : "Applies to the next analysis"}</span>
+        <DialogFooter className="shrink-0 flex-row items-center justify-end gap-2 border-t border-border bg-popover px-4 py-4 sm:px-6">
+          <span className="mr-auto hidden text-[11px] text-muted-foreground sm:block">{isVietnamese ? "Áp dụng cho lần phân tích tiếp theo" : "Applies to the next analysis"}</span>
           <Button type="button" variant="outline" className="rounded-full" onClick={() => onOpenChange(false)}>{isVietnamese ? "Hủy" : "Cancel"}</Button>
           <Button type="button" className="rounded-full" onClick={save} disabled={!accountId || invalidDates || loading === "report" || loading === "campaigns"}>{loading === "report" ? <Spinner data-icon="inline-start" /> : null}{isVietnamese ? "Lưu phạm vi" : "Save scope"}</Button>
         </DialogFooter>
@@ -1150,8 +1152,8 @@ function ReportScopeCampaignPicker({ campaigns, currency, language, loading, sel
   }
 
   return (
-    <div>
-      <div className="rounded-2xl border border-border bg-card p-3.5">
+    <div className="min-w-0">
+      <div className="min-w-0 overflow-hidden rounded-2xl border border-border bg-card p-3.5">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <Badge variant={scopedCampaigns.length ? "success" : "secondary"}>{scopedCampaigns.length} {isVietnamese ? "active" : "active"}</Badge>
@@ -1167,8 +1169,8 @@ function ReportScopeCampaignPicker({ campaigns, currency, language, loading, sel
       </div>
 
       {expanded ? (
-        <div className="mt-3 rounded-2xl border border-border bg-secondary/35 p-3">
-          <div className="flex gap-2">
+        <div className="mt-3 min-w-0 overflow-hidden rounded-2xl border border-border bg-secondary/35 p-3">
+          <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-2">
             <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={isVietnamese ? "Tìm campaign..." : "Search campaigns..."} />
             <Button type="button" variant="secondary" size="sm" onClick={() => onChange([])} disabled={loading}>{isVietnamese ? "Tất cả active" : "All active"}</Button>
           </div>
@@ -1176,10 +1178,10 @@ function ReportScopeCampaignPicker({ campaigns, currency, language, loading, sel
             {visibleCampaigns.map((campaign) => {
               const selected = selectedIds.length ? selectedSet.has(campaign.id) : isActiveCampaign(campaign);
               return (
-                <button key={campaign.id} type="button" aria-pressed={selected} onClick={() => toggle(campaign.id)} className="grid grid-cols-[20px_minmax(0,1fr)_auto] items-center gap-2 rounded-xl px-2.5 py-2 text-left hover:bg-secondary aria-pressed:bg-primary/10">
+                <button key={campaign.id} type="button" aria-pressed={selected} onClick={() => toggle(campaign.id)} className="grid w-full min-w-0 grid-cols-[20px_minmax(0,1fr)_auto] items-center gap-2 overflow-hidden rounded-xl px-2.5 py-2 text-left hover:bg-secondary aria-pressed:bg-primary/10">
                   <span className="flex size-4 items-center justify-center rounded border border-border text-primary">{selected ? <CheckIcon className="size-3" /> : null}</span>
                   <span className="min-w-0"><span className="block truncate text-sm font-medium">{campaign.name}</span><span className="block truncate text-xs text-muted-foreground">{campaign.objective || (isVietnamese ? "Không có objective" : "No objective")} {formatCampaignBudget(campaign, currency, language)}</span></span>
-                  <Badge variant={isActiveCampaign(campaign) ? "secondary" : "outline"}>{campaignStatus(campaign)}</Badge>
+                  <Badge className="max-w-20 truncate" variant={isActiveCampaign(campaign) ? "secondary" : "outline"}>{campaignStatus(campaign)}</Badge>
                 </button>
               );
             })}

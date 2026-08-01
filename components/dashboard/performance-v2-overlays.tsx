@@ -14,9 +14,11 @@ import {
 } from "lucide-react";
 import type { HealthScoreSummary } from "@/lib/health-score";
 import type { ClientReportPdfFile } from "@/lib/client-report";
+import { buildCreativeComparisonVerdict } from "@/lib/creative-comparison";
 import type { PerformanceStage } from "@/lib/performance-stages";
 import type { CompareMode, DashboardReport, InterfaceLanguage, KpiPack, MetaCampaign, NormalizedRow, Verdict } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { MetaCreativeCover } from "@/components/dashboard/meta-creative-media";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -335,15 +337,39 @@ export function EntityDetailSheet({ row, onOpenChange, report, onOpenAction }: {
 }
 
 export function CreativeComparisonDialog({ open, onOpenChange, rows, report, onOpenEvidence }: { open: boolean; onOpenChange: (open: boolean) => void; rows: NormalizedRow[]; report: DashboardReport; onOpenEvidence: () => void }) {
-  const sorted = [...rows].sort((a, b) => creativeScore(b) - creativeScore(a));
-  const control = sorted[0];
-  const challenger = sorted.find((row) => row.id !== control?.id) || sorted[1];
+  const control = rows[0];
+  const challenger = rows[1];
+  const currencyCode = report.account.currency || "VND";
+  const verdict = control && challenger ? buildCreativeComparisonVerdict(control, challenger, report.selectedPack, currencyCode) : null;
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[calc(100svh-2rem)] w-[calc(100vw-2rem)] min-w-0 max-w-[884px] overflow-x-hidden overflow-y-auto rounded-3xl border border-border bg-popover p-4 sm:p-6">
-        <DialogHeader><DialogTitle className="text-xl font-semibold">Compare creatives</DialogTitle><DialogDescription className="mt-1">Decide which creative becomes the control without changing the active KPI pack.</DialogDescription></DialogHeader>
-        {control && challenger ? <div className="mt-5 grid gap-5"><div className="grid gap-4 md:grid-cols-2"><CreativeSummary row={control} label="Recommended control" tone="success" currencyCode={report.account.currency || "VND"} /><CreativeSummary row={challenger} label="Challenger · fatigue risk" tone="warning" currencyCode={report.account.currency || "VND"} /></div><div className="rounded-2xl bg-card p-4"><h3 className="font-semibold">Decision matrix</h3><div className="mt-3 overflow-x-auto"><table className="w-full min-w-[560px] text-left text-xs"><thead className="text-muted-foreground"><tr><th className="py-2">Metric</th><th>Control</th><th>Challenger</th><th>Readout</th></tr></thead><tbody>{comparisonRows(control, challenger, report.account.currency || "VND").map((item) => <tr key={item.label} className="border-t border-border/60"><td className="py-2.5 text-muted-foreground">{item.label}</td><td>{item.control}</td><td>{item.challenger}</td><td>{item.readout}</td></tr>)}</tbody></table></div></div><div className="flex gap-3 rounded-2xl border border-primary/30 bg-primary/7 p-4"><GitCompareArrowsIcon className="mt-0.5 size-5 text-primary" /><div><div className="font-semibold">Make {control.name} the control</div><p className="mt-1 text-sm leading-6 text-muted-foreground">It wins the current efficiency comparison. Keep unavailable metrics explicit before scaling.</p></div></div></div> : <div className="py-16 text-center text-sm text-muted-foreground">At least two creative rows are required.</div>}
-        <DialogFooter className="mt-6"><Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button><Button onClick={onOpenEvidence}><ShieldCheckIcon data-icon="inline-start" />Open winning evidence</Button></DialogFooter>
+      <DialogContent className="flex max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] min-w-0 max-w-[884px] flex-col overflow-hidden rounded-3xl border border-border bg-popover p-0">
+        <DialogHeader className="shrink-0 border-b border-border px-5 py-5 pr-14 sm:px-6">
+          <DialogTitle className="text-xl font-semibold">Compare creatives</DialogTitle>
+          <DialogDescription className="mt-1">Creative 1 stays the control; Creative 2 is the challenger. The verdict uses only this selected pair and the active KPI pack.</DialogDescription>
+        </DialogHeader>
+        {control && challenger && verdict ? (
+          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6">
+            <div className="grid gap-4 md:grid-cols-2">
+              <CreativeSummary report={report} row={control} label="Creative 1 · Control" selectedRole="Control" currencyCode={currencyCode} />
+              <CreativeSummary report={report} row={challenger} label="Creative 2 · Challenger" selectedRole="Challenger" currencyCode={currencyCode} />
+            </div>
+            <div className="mt-5 rounded-2xl bg-card p-4">
+              <div className="flex items-center justify-between gap-3"><h3 className="font-semibold">Decision matrix</h3><Badge variant="outline">{report.selectedPack.replaceAll("_", " ")}</Badge></div>
+              <div className="mt-3 overflow-x-auto">
+                <table className="w-full min-w-[620px] text-left text-xs">
+                  <thead className="text-muted-foreground"><tr><th className="py-2">Metric</th><th>Creative 1 · Control</th><th>Creative 2 · Challenger</th><th>Readout</th></tr></thead>
+                  <tbody>{comparisonRows(control, challenger, verdict, currencyCode).map((item) => <tr key={item.label} className="border-t border-border/60"><td className="py-2.5 text-muted-foreground">{item.label}</td><td>{item.control}</td><td>{item.challenger}</td><td>{item.readout}</td></tr>)}</tbody>
+                </table>
+              </div>
+            </div>
+            <div className={cn("mt-5 flex gap-3 rounded-2xl border p-4", verdict.winner === "insufficient" || verdict.winner === "tie" ? "border-warning/40 bg-warning/8" : "border-primary/30 bg-primary/7")}>
+              <GitCompareArrowsIcon className={cn("mt-0.5 size-5 shrink-0", verdict.winner === "insufficient" || verdict.winner === "tie" ? "text-warning" : "text-primary")} />
+              <div><div className="font-semibold">{verdict.title}</div><p className="mt-1 text-sm leading-6 text-muted-foreground">{verdict.detail}</p></div>
+            </div>
+          </div>
+        ) : <div className="py-16 text-center text-sm text-muted-foreground">Select exactly two creative rows to compare.</div>}
+        <DialogFooter className="shrink-0 border-t border-border px-5 py-4 sm:px-6"><Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button><Button onClick={onOpenEvidence}><ShieldCheckIcon data-icon="inline-start" />Open selected evidence</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   );
@@ -353,17 +379,38 @@ function AccordionList({ items }: { items: [string, string][] }) {
   return <div className="divide-y divide-border border-y border-border">{items.map(([label, detail]) => <Collapsible key={label}><CollapsibleTrigger className="flex w-full items-center justify-between py-3 text-left text-sm font-medium">{label}<span className="text-muted-foreground">⌄</span></CollapsibleTrigger><CollapsibleContent className="pb-3 text-xs leading-5 text-muted-foreground">{detail || "No additional evidence is available."}</CollapsibleContent></Collapsible>)}</div>;
 }
 
-function CreativeSummary({ row, label, tone, currencyCode }: { row: NormalizedRow; label: string; tone: "success" | "warning"; currencyCode: string }) {
-  return <div><div className="mb-2 text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">{label}</div><div className="grid grid-cols-[104px_minmax(0,1fr)] gap-4 rounded-2xl bg-card p-3"><div className={cn("flex min-h-36 items-end rounded-2xl p-3 text-xs uppercase text-white/75", tone === "success" ? "bg-cyan-900" : "bg-orange-900")}>{row.adFormat || "Creative"}</div><div className="py-2"><div className="flex items-center justify-between"><h3 className="font-semibold">{row.name}</h3><Badge variant={tone === "success" ? "success" : "outline"}>{tone === "success" ? "Fresh" : "Watch"}</Badge></div><p className="mt-1 text-sm text-muted-foreground">{row.adsetName || row.campaignName}</p><div className="mt-4 grid grid-cols-2 gap-3 text-[10px] uppercase text-muted-foreground"><span>Spend<b className="block text-xs normal-case text-foreground">{currency(row.spend, currencyCode)}</b></span><span>Impressions<b className="block text-xs normal-case text-foreground">{compact(row.impressions)}</b></span><span>CTR<b className="block text-xs normal-case text-foreground">{row.ctr.toFixed(2)}%</b></span><span>Frequency<b className="block text-xs normal-case text-foreground">{row.frequency.toFixed(1)}</b></span></div></div></div></div>;
+function CreativeSummary({ report, row, label, selectedRole, currencyCode }: { report: DashboardReport; row: NormalizedRow; label: string; selectedRole: "Control" | "Challenger"; currencyCode: string }) {
+  return <div><div className="mb-2 text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">{label}</div><div className="grid grid-cols-[104px_minmax(0,1fr)] gap-4 rounded-2xl bg-card p-3"><MetaCreativeCover report={report} row={row} className="min-h-36" /><div className="min-w-0 py-2"><div className="flex items-start justify-between gap-2"><h3 className="min-w-0 truncate font-semibold">{row.name}</h3><Badge variant={selectedRole === "Control" ? "success" : "secondary"}>{selectedRole}</Badge></div><p className="mt-1 truncate text-sm text-muted-foreground">{row.adsetName || row.campaignName}</p><div className="mt-4 grid grid-cols-2 gap-3 text-[10px] uppercase text-muted-foreground"><span>Spend<b className="block text-xs normal-case text-foreground">{currency(row.spend, currencyCode)}</b></span><span>Impressions<b className="block text-xs normal-case text-foreground">{compact(row.impressions)}</b></span><span>CTR<b className="block text-xs normal-case text-foreground">{row.ctr.toFixed(2)}%</b></span><span>Frequency<b className="block text-xs normal-case text-foreground">{row.frequency.toFixed(1)}</b></span></div></div></div></div>;
 }
 
-function comparisonRows(control: NormalizedRow, challenger: NormalizedRow, currencyCode: string) {
+function comparisonRows(control: NormalizedRow, challenger: NormalizedRow, verdict: ReturnType<typeof buildCreativeComparisonVerdict>, currencyCode: string) {
   return [
+    { label: verdict.resultLabel, control: trackedNumber(verdict.controlResult), challenger: trackedNumber(verdict.challengerResult), readout: resultReadout(verdict.controlResult, verdict.challengerResult) },
+    { label: verdict.costLabel, control: trackedCurrency(verdict.controlCost, currencyCode), challenger: trackedCurrency(verdict.challengerCost, currencyCode), readout: costReadout(verdict.controlCost, verdict.challengerCost) },
     { label: "CTR", control: `${control.ctr.toFixed(2)}%`, challenger: `${challenger.ctr.toFixed(2)}%`, readout: `${Math.abs(control.ctr - challenger.ctr).toFixed(2)} pp · ${control.ctr >= challenger.ctr ? "Control" : "Challenger"}` },
     { label: "CPM", control: currency(control.cpm, currencyCode), challenger: currency(challenger.cpm, currencyCode), readout: control.cpm <= challenger.cpm ? "Lower · Control" : "Lower · Challenger" },
     { label: "Frequency", control: control.frequency.toFixed(1), challenger: challenger.frequency.toFixed(1), readout: `${Math.abs(control.frequency - challenger.frequency).toFixed(1)} lower · ${control.frequency <= challenger.frequency ? "Control" : "Challenger"}` },
-    { label: "Primary results", control: compact(control.purchases || control.leads || control.messages || control.linkClicks || control.reach), challenger: compact(challenger.purchases || challenger.leads || challenger.messages || challenger.linkClicks || challenger.reach), readout: "Selected KPI pack" },
   ];
+}
+
+function trackedNumber(value: number | null) {
+  return value === null ? "Not tracked" : compact(value);
+}
+
+function trackedCurrency(value: number | null, currencyCode: string) {
+  return value === null ? "Unavailable" : currency(value, currencyCode);
+}
+
+function resultReadout(control: number | null, challenger: number | null) {
+  if (control === null || challenger === null) return "Tracking unavailable";
+  if (control === challenger) return "Equal observed volume";
+  return `Higher · ${control > challenger ? "Control" : "Challenger"}`;
+}
+
+function costReadout(control: number | null, challenger: number | null) {
+  if (control === null || challenger === null) return "Cost unavailable";
+  if (control === challenger) return "Equal observed cost";
+  return `Lower · ${control < challenger ? "Control" : "Challenger"}`;
 }
 
 function actionSignals(report: DashboardReport) {
@@ -641,11 +688,6 @@ function actionTitle(action: string, index: number) {
 function topPlacement(report: DashboardReport) {
   const top = [...report.platformRows].sort((a, b) => b.spend - a.spend)[0];
   return top ? `${top.name} carries the largest tracked share at ${currency(top.spend, report.account.currency || "VND")}.` : "Placement evidence is unavailable for this scope.";
-}
-
-function creativeScore(row: NormalizedRow) {
-  const result = row.purchases || row.leads || row.messages || row.linkClicks || row.reach;
-  return result / Math.max(row.spend, 1) + row.ctr / 100 - Math.max(0, row.frequency - 2.5) / 10;
 }
 
 function compact(value: number) {
