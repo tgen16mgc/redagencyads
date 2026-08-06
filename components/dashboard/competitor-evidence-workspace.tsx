@@ -820,7 +820,7 @@ export function CompetitorEvidenceWorkspace({
                   const provenance = ad.evidence!;
                   return (
                     <article key={ad.id} className="overflow-hidden rounded-xl border bg-background/45" data-evidence-id={ad.id}>
-                      <div className={cn(libraryView === "list" && "grid sm:grid-cols-[220px_minmax(0,1fr)]")}>
+                      <div className={cn(libraryView === "list" && "grid grid-cols-[112px_minmax(0,1fr)] sm:grid-cols-[220px_minmax(0,1fr)]")}>
                         <EvidenceMedia ad={ad} language={language} onRefresh={onCollect} />
                         <div className="flex min-w-0 flex-col p-3">
                           <div className="flex flex-wrap items-start justify-between gap-2">
