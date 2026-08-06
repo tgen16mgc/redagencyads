@@ -69,7 +69,10 @@ export default function LandingPage() {
             <a href="#decisions">Decisions</a>
             <a href="#use-cases">Use cases</a>
           </div>
-          <LandingActionLink href="/" className={styles.navCta}>Log in</LandingActionLink>
+          <div className={styles.navActions}>
+            <Link href="/" className={styles.navLogin}>Log in</Link>
+            <LandingActionLink href="/?auth=register" className={styles.navCta}>Create account</LandingActionLink>
+          </div>
         </nav>
       </header>
 
@@ -89,13 +92,14 @@ export default function LandingPage() {
               />
             </h1>
             <p data-gsap-hero>
-              Turn performance, verified competitor evidence, and TikTok signals into traceable
-              Verdicts, guarded budget moves, and client-ready action plans.
+              See what changed, understand why, and move one evidence-backed action forward without
+              rebuilding the story across dashboards, sheets, and client decks.
             </p>
             <div className={styles.heroActions} data-gsap-hero>
-              <LandingActionLink href="/" className={styles.primaryCta}>Log in to workspace</LandingActionLink>
+              <LandingActionLink href="/?auth=register" className={styles.primaryCta}>Create your account</LandingActionLink>
               <a href="#how-it-works" className={styles.ghostCta}>See how it works <ArrowRightIcon /></a>
             </div>
+            <p className={styles.heroAccessNote} data-gsap-hero>No invite required · start with viewer access · connect Meta when ready</p>
           </div>
 
           <div className={styles.heroSurface} data-gsap-hero>
@@ -184,7 +188,7 @@ export default function LandingPage() {
               <li key={title}><span><CheckIcon /></span><div><h3>{title}</h3><p>{description}</p></div></li>
             ))}
           </ul>
-          <LandingActionLink href="/" className={styles.inlineCta}>Log in to workspace</LandingActionLink>
+          <LandingActionLink href="/?auth=register" className={styles.inlineCta}>Create your account</LandingActionLink>
         </div>
       </section>
 
@@ -230,12 +234,12 @@ export default function LandingPage() {
         <div className={styles.finalIcon}><ShieldCheckIcon /></div>
         <h2>Stop translating dashboards into decisions by hand.</h2>
         <p>Bring the evidence, review the Verdict, and leave with the next action.</p>
-        <LandingActionLink href="/" className={styles.finalButton}>Log in to Red Agency Ads</LandingActionLink>
+        <LandingActionLink href="/?auth=register" className={styles.finalButton}>Create your Red Agency Ads account</LandingActionLink>
       </section>
 
       <footer className={styles.footer} data-gsap-reveal>
         <div className={styles.footerBrand}><span className={styles.brandMark}><WaypointsIcon /></span><div><strong>Red Agency Ads</strong><small>Decision operations for paid media</small></div></div>
-        <nav aria-label="Footer navigation"><Link href="/">Log in</Link><Link href="/privacy">Privacy</Link><Link href="/terms">Terms</Link></nav>
+        <nav aria-label="Footer navigation"><Link href="/?auth=register">Create account</Link><Link href="/">Log in</Link><Link href="/privacy">Privacy</Link><Link href="/terms">Terms</Link></nav>
         <div className={styles.footerMeta}><span><FileTextIcon />Client-ready output</span><span><LanguagesIcon />EN + VI</span></div>
       </footer>
     </LandingMotion>

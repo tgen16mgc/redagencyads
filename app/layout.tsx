@@ -1,11 +1,17 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { Geist } from "next/font/google";
+import localFont from "next/font/local";
 import { cn } from "@/lib/utils";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 
-const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
+const geist = localFont({
+  src: "../node_modules/next/dist/next-devtools/server/font/geist-latin.woff2",
+  variable: "--font-sans",
+  display: "swap",
+  preload: false,
+  weight: "100 900",
+});
 
 export const metadata: Metadata = {
   title: "Decision Operations Workspace",

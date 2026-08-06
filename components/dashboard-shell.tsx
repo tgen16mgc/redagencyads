@@ -6,7 +6,6 @@ import {
   ActivityIcon,
   ArrowLeftIcon,
   BarChart3Icon,
-  BellIcon,
   BotMessageSquareIcon,
   CalendarClockIcon,
   BrainIcon,
@@ -34,6 +33,12 @@ import {
 } from "lucide-react";
 import { AppSidebar, type AppSidebarItem, type WorkflowSidebarItem } from "@/components/dashboard/app-sidebar";
 import { WorkspaceOverview } from "@/components/dashboard/workspace-overview";
+import {
+  WorkspaceNotifications,
+  WorkspaceSearch,
+  type WorkspaceCommand,
+  type WorkspaceNotification,
+} from "@/components/dashboard/workspace-command-center";
 import { IntelligenceWorkspace } from "@/components/dashboard/intelligence-workspace";
 import { StickyActionDock } from "@/components/dashboard/sticky-action-dock";
 import { ContextChat, type ContextChatHandle } from "@/components/dashboard/context-chat";
@@ -996,9 +1001,8 @@ export function DashboardShell() {
     return (
       <WorkspaceAuth
         status={workspaceSession}
-        theme={theme}
         initialError={workspaceAuthError}
-        onThemeChange={() => setTheme((current) => current === "dark" ? "light" : "dark")}
+        initialView={typeof window !== "undefined" && new URLSearchParams(window.location.search).get("auth") === "register" ? "register" : "sign-in"}
         onAuthenticated={(next) => {
           setWorkspaceAuthError("");
           setWorkspaceSession(next);
@@ -1013,6 +1017,136 @@ export function DashboardShell() {
 
   const gateBlocked =
     !canOpenDashboardView({ authenticated, activeView }) && !(activeView === "ads" && sampleReportActive);
+
+  const campaignSearchItems = new Map<string, { id: string; name: string }>();
+  adsWorkspace.campaigns.forEach((campaign) => campaignSearchItems.set(campaign.id, { id: campaign.id, name: campaign.name }));
+  report?.campaignRows.forEach((campaign) => campaignSearchItems.set(campaign.id, { id: campaign.id, name: campaign.name }));
+
+  const workspaceCommands: WorkspaceCommand[] = [
+    ...appSections.map(({ value }) => ({
+      id: `navigate-${value}`,
+      group: "Navigate" as const,
+      label: appSectionLabel(value, language),
+      description: searchDestinationDescription(value, language),
+      icon: value === "overview" ? "overview" as const : value === "ads" ? "performance" as const : "workspace" as const,
+      keywords: [value, "workspace"],
+      onSelect: () => requestView(value),
+    })),
+    ...accounts.map((account) => ({
+      id: `account-${account.id}`,
+      group: "Accounts and campaigns" as const,
+      label: account.name,
+      description: language === "vi" ? "Tài khoản Meta - mở phạm vi Performance" : "Meta account - open Performance scope",
+      icon: "account" as const,
+      keywords: [account.id, "Meta account"],
+      onSelect: () => {
+        setAccountId(account.id);
+        setAdsWorkspace((current) => ({ ...current, scopeExpanded: true }));
+        requestView("ads");
+      },
+    })),
+    ...[...campaignSearchItems.values()].map((campaign) => ({
+      id: `campaign-${campaign.id}`,
+      group: "Accounts and campaigns" as const,
+      label: campaign.name,
+      description: language === "vi" ? "Campaign - đặt làm phạm vi Performance" : "Campaign - set as the Performance scope",
+      icon: "campaign" as const,
+      keywords: [campaign.id, "campaign"],
+      onSelect: () => {
+        setAdsWorkspace((current) => ({ ...current, selectedCampaignIds: [campaign.id], scopeExpanded: true }));
+        requestView("ads");
+      },
+    })),
+    {
+      id: "action-settings",
+      group: "Actions",
+      label: language === "vi" ? "Mở cài đặt workspace" : "Open workspace settings",
+      description: language === "vi" ? "Nguồn dữ liệu, quy tắc và quyền truy cập" : "Data sources, decision rules, and access",
+      icon: "settings",
+      keywords: ["profile", "team", "source", "rules"],
+      onSelect: () => { setSettingsTab("workspace"); setSettingsOpen(true); },
+    },
+    {
+      id: "action-assistant",
+      group: "Actions",
+      label: language === "vi" ? "Hỏi Decision Assistant" : "Ask the Decision Assistant",
+      description: language === "vi" ? "Mở trợ lý với context của workspace hiện tại" : "Open the assistant with the current workspace context",
+      icon: "assistant",
+      keywords: ["chat", "help", "assistant"],
+      onSelect: () => setChatOpen(true),
+    },
+    {
+      id: "action-performance-scope",
+      group: "Actions",
+      label: language === "vi" ? "Sửa phạm vi Performance" : "Edit Performance scope",
+      description: language === "vi" ? "Tài khoản, campaign, kỳ và KPI pack" : "Account, campaigns, period, and KPI pack",
+      icon: "performance",
+      keywords: ["date", "compare", "KPI", "filter"],
+      onSelect: () => {
+        setAdsWorkspace((current) => ({ ...current, scopeExpanded: true }));
+        requestView("ads");
+      },
+    },
+    ...(reportHasData ? [{
+      id: "action-export-report",
+      group: "Actions" as const,
+      label: language === "vi" ? "Xuất báo cáo hiện tại" : "Export the current report",
+      description: language === "vi" ? "Mở bản xuất client-ready từ report đang tải" : "Open the client-ready export for the loaded report",
+      icon: "export" as const,
+      keywords: ["PDF", "download", "client report"],
+      onSelect: () => {
+        requestView("ads");
+        window.requestAnimationFrame(() => window.dispatchEvent(new Event("v2:open-export")));
+      },
+    }] : []),
+  ];
+
+  const workspaceNotifications: WorkspaceNotification[] = [];
+  if (!authenticated) {
+    workspaceNotifications.push({
+      id: "meta-not-connected",
+      title: language === "vi" ? "Chưa kết nối Meta" : "Meta is not connected",
+      description: language === "vi" ? "Kết nối nguồn owned để chẩn đoán hiệu quả và tạo Verdict." : "Connect owned performance data to diagnose results and create a Verdict.",
+      severity: "warning",
+      view: "overview",
+      onSelect: () => { setPendingMetaView("ads"); setMetaConnectOpen(true); },
+    });
+  }
+  if (reportHasData && healthSummary) {
+    healthSummary.items
+      .filter((item) => item.severity !== "healthy")
+      .slice(0, 4)
+      .forEach((item) => workspaceNotifications.push({
+        id: `${report?.account.id || "report"}-${report?.dateRange.until || "current"}-${item.id}`,
+        title: item.title[language],
+        description: item.detail[language],
+        severity: item.severity === "danger" ? "critical" : "warning",
+        view: "ads",
+        onSelect: () => requestView("ads"),
+      }));
+    if (!adsWorkspace.verdict) {
+      workspaceNotifications.push({
+        id: `${report?.account.id || "report"}-${report?.dateRange.until || "current"}-verdict-review`,
+        title: language === "vi" ? "Report đang chờ Verdict" : "Report is waiting for a Verdict",
+        description: language === "vi" ? "Rà soát chẩn đoán và tạo action plan có evidence trước khi đổi ngân sách." : "Review the diagnosis and create an evidence-backed action plan before changing budget.",
+        severity: "info",
+        view: "ads",
+        onSelect: () => requestView("ads"),
+      });
+    }
+  } else if (authenticated) {
+    workspaceNotifications.push({
+      id: "performance-report-not-loaded",
+      title: language === "vi" ? "Chưa có report hiệu quả" : "No performance report loaded",
+      description: language === "vi" ? "Chọn phạm vi và kéo report để bắt đầu vòng chẩn đoán." : "Choose a scope and pull a report to start the diagnosis loop.",
+      severity: "info",
+      view: "ads",
+      onSelect: () => {
+        setAdsWorkspace((current) => ({ ...current, scopeExpanded: true }));
+        requestView("ads");
+      },
+    });
+  }
 
   return (
     <>
@@ -1049,28 +1183,24 @@ export function DashboardShell() {
             </div>
 
             <div className="v2-topbar-actions">
-              {activeView === "overview" ? (
-                <>
-                  <button type="button" className="v2-icon-button" aria-label="Search" onClick={() => toast.info(language === "vi" ? "Tìm kiếm sẽ có trong bản cập nhật tiếp theo." : "Workspace search is coming next.") }>
-                    <SearchIcon />
-                  </button>
-                  <button type="button" className="v2-icon-button" aria-label="Notifications" onClick={() => toast.info(language === "vi" ? "Không có thông báo mới." : "No new notifications.") }>
-                    <BellIcon />
-                  </button>
-                </>
-              ) : null}
+              <WorkspaceSearch commands={workspaceCommands} language={language} />
+              <WorkspaceNotifications
+                items={workspaceNotifications}
+                language={language}
+                storageKey={`decision-workspace-notifications-v1:${workspaceSession.user?.email || "local"}`}
+              />
               {activeView === "ads" && reportHasData ? (
                 <>
-                  <button type="button" className="v2-icon-button" aria-label={language === "vi" ? "Làm mới báo cáo" : "Refresh report"} onClick={() => window.dispatchEvent(new Event("v2:refresh-report"))}>
+                  <button type="button" className="v2-icon-button v2-topbar-secondary-action" aria-label={language === "vi" ? "Làm mới báo cáo" : "Refresh report"} onClick={() => window.dispatchEvent(new Event("v2:refresh-report"))}>
                     <RefreshCcwIcon />
                   </button>
-                  <Button type="button" variant="outline" size="sm" onClick={() => window.dispatchEvent(new Event("v2:open-export"))} disabled={exportingPdf}>
+                  <Button type="button" variant="outline" size="sm" className="v2-topbar-secondary-action" onClick={() => window.dispatchEvent(new Event("v2:open-export"))} disabled={exportingPdf}>
                     {exportingPdf ? <Spinner data-icon="inline-start" /> : <DownloadIcon data-icon="inline-start" />}
                     {language === "vi" ? "Xuất" : "Export"}
                   </Button>
                 </>
               ) : null}
-              <LanguageToggle language={language} onChange={setLanguage} />
+              <span className="v2-topbar-secondary-action"><LanguageToggle language={language} onChange={setLanguage} /></span>
               <div ref={accountMenuRef} className="relative">
                 <button type="button" className="v2-account-chip" aria-label={`${workspaceSession.user?.name || "Workspace owner"}, ${workspaceSession.user?.role || "Workspace owner"}`} aria-expanded={accountMenuOpen} onClick={() => setAccountMenuOpen((current) => !current)}>
                   <span className="v2-account-avatar">{workspaceSession.user?.avatarDataUrl ? <img src={workspaceSession.user.avatarDataUrl} alt="" className="size-full object-cover" /> : workspaceSession.user?.initials || "DW"}</span>
@@ -1097,7 +1227,7 @@ export function DashboardShell() {
               </div>
               <button
                 type="button"
-                className="v2-icon-button"
+                className="v2-icon-button v2-topbar-secondary-action"
                 aria-label={theme === "dark" ? "Use light theme" : "Use dark theme"}
                 onClick={() => setTheme((current) => current === "dark" ? "light" : "dark")}
               >
@@ -2284,6 +2414,18 @@ function clampWholeNumber(value: number, min: number, max: number) {
 
 function appSectionLabel(value: ActiveView, language: ReportLanguage) {
   return uiCopy[language].nav[value];
+}
+
+function searchDestinationDescription(value: ActiveView, language: ReportLanguage) {
+  const descriptions: Record<ActiveView, { en: string; vi: string }> = {
+    overview: { en: "Daily decision pulse and workspace readiness", vi: "Decision pulse và mức sẵn sàng hằng ngày" },
+    ads: { en: "Performance diagnosis, evidence, and guarded actions", vi: "Chẩn đoán hiệu quả, evidence và hành động có guardrail" },
+    competitor: { en: "Verified public competitor evidence", vi: "Evidence đối thủ công khai đã xác minh" },
+    tiktok: { en: "Public TikTok profile and creative signals", vi: "Tín hiệu profile và creative TikTok public" },
+    intelligence: { en: "Cross-channel canonical intelligence", vi: "Intelligence đa kênh theo schema chung" },
+    publisher: { en: "Reviewed Facebook Page publishing operations", vi: "Vận hành đăng Facebook Page đã rà soát" },
+  };
+  return descriptions[value][language];
 }
 
 function workflowLabel(value: (typeof workflowItems)[number]["value"], language: ReportLanguage) {

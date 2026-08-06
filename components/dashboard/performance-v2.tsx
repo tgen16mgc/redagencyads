@@ -330,17 +330,48 @@ function OverviewTab({
   const passedChecks = healthSummary?.counts.healthy ?? report.health.checks.filter((check) => check.status === "pass").length;
   const blockingCount = healthSummary?.counts.danger ?? report.health.checks.filter((check) => check.status === "fail").length;
   const watchCount = healthSummary?.counts.warning ?? report.health.checks.filter((check) => check.status === "warning").length;
+  const primaryRisk = risks[0];
+  const constraintTitle = primaryRisk?.title[language] || (isVietnamese ? "Không có rào cản nghiêm trọng" : "No critical constraint detected");
+  const constraintDetail = primaryRisk?.detail[language] || healthSummary?.summary[language] || report.packReason;
+  const guardedAction = actionRows[0] || decisionTitle;
 
   return (
     <div className="grid gap-4">
-      <div className="grid gap-3 xl:grid-cols-[minmax(0,1.6fr)_minmax(300px,0.7fr)]">
-        <div className="v2-panel p-4 sm:p-5">
-          <div className="max-w-3xl">
-            <Badge variant="outline">{isVietnamese ? "Quyết định chính" : "Primary decision"}</Badge>
-            <h2 className="mt-3 text-lg font-semibold tracking-[-0.025em]">{decisionTitle}</h2>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">{healthSummary?.summary[language] || report.packReason}</p>
+      <div className="v2-primary-constraint" data-severity={blockingCount > 0 ? "danger" : watchCount > 0 ? "warning" : "healthy"}>
+        <div className="v2-primary-constraint-main">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant={blockingCount > 0 ? "destructive" : watchCount > 0 ? "outline" : "success"}>
+              {blockingCount > 0 ? (isVietnamese ? "Rào cản chính" : "Primary constraint") : watchCount > 0 ? (isVietnamese ? "Ưu tiên rà soát" : "Review priority") : (isVietnamese ? "Không có blocker" : "No blocker")}
+            </Badge>
+            <span className="v2-primary-constraint-score">{healthSummary?.score ?? report.health.score}/100 health</span>
           </div>
-          <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
+          <h2>{constraintTitle}</h2>
+          <p>{constraintDetail}</p>
+          <div className="v2-primary-constraint-evidence">
+            <span><b>{passedChecks}/{Math.max(totalChecks, 1)}</b>{isVietnamese ? " kiểm tra đạt" : " checks pass"}</span>
+            <span><b>{primary.label}</b>{isVietnamese ? " outcome chính" : " primary outcome"}</span>
+            <span><b>{packLabel(report.selectedPack)}</b>{isVietnamese ? " lens quyết định" : " decision lens"}</span>
+          </div>
+          <button type="button" className="v2-primary-verdict" onClick={onReviewActions}>
+            <span>{isVietnamese ? "Verdict hiện tại" : "Current Verdict"}</span>
+            <strong>{decisionTitle}</strong>
+            <ArrowRightIcon />
+          </button>
+        </div>
+
+        <aside className="v2-primary-action">
+          <span className="v2-primary-action-label">{isVietnamese ? "Hành động có guardrail" : "Guarded next action"}</span>
+          <h3>{guardedAction}</h3>
+          <p>{isVietnamese ? "Rà evidence trước khi áp dụng. Mọi thay đổi ngân sách đều bị giới hạn ở 20% mỗi bước." : "Review the evidence before applying it. Every budget change stays within the 20% per-step guardrail."}</p>
+          <div className="v2-primary-action-guardrail"><ShieldAlertIcon /><span><b>20%</b>{isVietnamese ? " trần thay đổi ngân sách" : " budget-move ceiling"}</span></div>
+          <div className="mt-auto flex flex-wrap gap-2 pt-4">
+            <Button type="button" size="sm" onClick={onReviewActions}>{isVietnamese ? "Rà hành động" : "Review action"}</Button>
+            <Button type="button" size="sm" variant="outline" onClick={onOpenEvidence}>{isVietnamese ? "Mở evidence" : "Open evidence"}</Button>
+          </div>
+        </aside>
+
+        <div className="v2-primary-metrics">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
             {effectiveKpis.map((kpi) => (
               <MetricTile
                 key={kpi.key}
@@ -350,22 +381,6 @@ function OverviewTab({
                 comparison={kpi.key === "healthScore" ? undefined : kpiComparisons?.get(kpi.key)}
               />
             ))}
-          </div>
-        </div>
-
-        <div className="v2-panel p-4 sm:p-5">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">{isVietnamese ? "Mức sẵn sàng hành động" : "Action readiness"}</span>
-            <Badge variant={blockingCount > 0 ? "destructive" : watchCount > 0 ? "outline" : "success"}>{blockingCount > 0 ? (isVietnamese ? "Đang chặn" : "Blocked") : watchCount > 0 ? (isVietnamese ? "Cần rà soát" : "Review") : (isVietnamese ? "Sẵn sàng" : "Ready")}</Badge>
-          </div>
-          <div className="mt-3 flex items-end gap-2">
-            <span className="text-3xl font-semibold tracking-[-0.04em]">{passedChecks}/{Math.max(totalChecks, 1)}</span>
-            <span className="pb-1 text-xs text-muted-foreground">{isVietnamese ? "kiểm tra đã đạt" : "checks passed"}</span>
-          </div>
-          <p className="mt-3 text-xs leading-5 text-warning">{blockingCount || watchCount ? (isVietnamese ? `${blockingCount} mục đang chặn · ${watchCount} mục cần theo dõi. ${risks[0]?.detail[language] || ""}` : `${blockingCount} blocking · ${watchCount} watch. ${risks[0]?.detail[language] || ""}`) : (isVietnamese ? "Tất cả kiểm tra chính đã đạt trong phạm vi hiện tại." : "All primary readiness checks pass in the current scope.")}</p>
-          <div className="mt-4 flex gap-2">
-            <Button type="button" size="sm" onClick={onOpenEvidence}>{isVietnamese ? "Mở evidence" : "Open evidence"}</Button>
-            <Button type="button" size="sm" variant="ghost" onClick={onReviewActions}>{isVietnamese ? "Xem rủi ro" : "Review risks"}</Button>
           </div>
         </div>
       </div>
