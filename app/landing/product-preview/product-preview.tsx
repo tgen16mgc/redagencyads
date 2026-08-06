@@ -171,8 +171,11 @@ export function LandingProductPreview({ surface }: { surface: "overview" | "comp
           workspaceLabel="Tien Duong"
           report={report}
           healthSummary={healthSummary}
+          savedReports={[]}
+          restoredReportId={null}
           onOpen={noop}
           onEditScope={noop}
+          onRestoreReport={noop}
         />
       ) : (
         <CompetitorEvidenceWorkspace

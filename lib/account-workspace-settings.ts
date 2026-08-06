@@ -31,6 +31,15 @@ export type WorkspaceSettings = z.infer<typeof workspaceSettingsSchema> & {
   memberCount: number;
   roleSummary: string;
   canManage: boolean;
+  members: WorkspaceMemberSummary[];
+};
+
+export type WorkspaceMemberSummary = {
+  userId: string;
+  email: string;
+  fullName: string;
+  role: "owner" | "admin" | "analyst" | "viewer";
+  status: string;
 };
 
 export type AccountWorkspaceSettingsData = {
@@ -103,6 +112,13 @@ export function defaultAccountWorkspaceSettings(input: {
       memberCount: 1,
       roleSummary,
       canManage,
+      members: [{
+        userId: "local",
+        email: input.email?.trim() || "local@redagency.vn",
+        fullName: input.name?.trim() || "Local workspace",
+        role: canManage ? "owner" : "viewer",
+        status: "active",
+      }],
     },
   };
 }

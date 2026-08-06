@@ -280,22 +280,23 @@ export function WorkspaceNotifications({
                 const isRead = readIds.has(item.id);
                 const StatusIcon = item.severity === "critical" ? ShieldAlertIcon : item.severity === "warning" ? TriangleAlertIcon : item.severity === "success" ? CircleCheckIcon : CircleAlertIcon;
                 return (
-                  <button
+                  <Button
                     key={item.id}
                     type="button"
+                    variant="ghost"
                     className="v2-notification-item"
                     data-severity={item.severity}
                     data-read={isRead}
-                    onClick={() => {
+                    onPress={() => {
                       markRead(item.id);
                       setIsOpen(false);
-                      item.onSelect();
+                      window.requestAnimationFrame(item.onSelect);
                     }}
                   >
                     <span className="v2-notification-icon"><StatusIcon /></span>
                     <span className="min-w-0"><strong>{item.title}</strong><small>{item.description}</small></span>
                     {!isRead ? <i aria-label={isVietnamese ? "Chưa đọc" : "Unread"} /> : null}
-                  </button>
+                  </Button>
                 );
               })}
             </div>

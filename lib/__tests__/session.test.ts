@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { decryptSession, encryptSession } from "../session";
+import {
+  decryptSession,
+  decryptStoredCredential,
+  encryptSession,
+  encryptStoredCredential,
+} from "../session";
 
 const originalSecret = process.env.SESSION_SECRET;
 
@@ -56,5 +61,24 @@ describe("encrypted token sessions", () => {
     process.env.SESSION_SECRET = "rotated-secret";
 
     expect(decryptSession(encrypted)).toBeNull();
+  });
+
+  it("round-trips a durable account credential without a browser expiry", () => {
+    const encrypted = encryptStoredCredential("meta-token-123", "workspace-user-1");
+    vi.setSystemTime(new Date("2027-06-05T00:00:00.000Z"));
+
+    expect(encrypted).not.toContain("meta-token-123");
+    expect(decryptStoredCredential(encrypted)).toEqual({
+      token: "meta-token-123",
+      ownerId: "workspace-user-1",
+      version: 1,
+    });
+  });
+
+  it("rejects a stored credential after the encryption secret rotates", () => {
+    const encrypted = encryptStoredCredential("meta-token-123", "workspace-user-1");
+    process.env.SESSION_SECRET = "rotated-secret";
+
+    expect(decryptStoredCredential(encrypted)).toBeNull();
   });
 });

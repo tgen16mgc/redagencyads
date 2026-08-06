@@ -19,6 +19,7 @@ import type { CapabilityState, CapabilityStatus } from "@/lib/capabilities";
 import type { DashboardView } from "@/lib/dashboard-access";
 import type { HealthScoreSummary } from "@/lib/health-score";
 import type { DashboardReport } from "@/lib/types";
+import type { SavedReportSnapshot } from "@/lib/report-history";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
@@ -30,8 +31,11 @@ type WorkspaceOverviewProps = {
   workspaceLabel?: string;
   report: DashboardReport | null;
   healthSummary: HealthScoreSummary | null;
+  savedReports: SavedReportSnapshot[];
+  restoredReportId: string | null;
   onOpen: (view: DashboardView) => void;
   onEditScope: () => void;
+  onRestoreReport: (report: SavedReportSnapshot) => void;
 };
 
 const stateRank: Record<CapabilityState, number> = {
@@ -64,8 +68,11 @@ export function WorkspaceOverview({
   workspaceLabel,
   report,
   healthSummary,
+  savedReports,
+  restoredReportId,
   onOpen,
   onEditScope,
+  onRestoreReport,
 }: WorkspaceOverviewProps) {
   const isVietnamese = language === "vi";
   const availableCount = capabilities.filter((item) => item.state === "available").length;
@@ -106,6 +113,16 @@ export function WorkspaceOverview({
           titleText: capabilityName(item.key),
           detailText: capabilityStateDetail(item.state, language),
         }));
+  const primaryAttention = attentionItems[0];
+  const readinessDetail = blockingCount > 0
+    ? (isVietnamese
+        ? `Đang bị chặn bởi ${blockingCount} mục: ${primaryAttention?.titleText || "cần hoàn tất thiết lập dữ liệu"}.`
+        : `Blocked by ${blockingCount}: ${primaryAttention?.titleText || "complete the required data setup"}.`)
+    : watchCount > 0
+      ? (isVietnamese
+          ? `Sẵn sàng sau một lần rà soát: ${primaryAttention?.titleText || "kiểm tra tín hiệu cảnh báo"}. Không có mục đang chặn.`
+          : `Ready after one review: ${primaryAttention?.titleText || "review the warning signal"}. No blocking checks.`)
+      : (isVietnamese ? "Sẵn sàng hành động: tất cả kiểm tra bắt buộc đã đạt." : "Ready to act: all required checks passed.");
 
   return (
     <div className="flex flex-col gap-5">
@@ -115,7 +132,9 @@ export function WorkspaceOverview({
             {isVietnamese ? `Chào buổi sáng, ${userName}.` : `Good morning, ${userName}.`}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {isVietnamese ? "Phạm vi báo cáo đã sẵn sàng. Xem tín hiệu rồi quyết định thay đổi hôm nay." : "Your reporting scope is ready. Review the signals, then decide what changes today."}
+            {report
+              ? (isVietnamese ? "Báo cáo gần nhất đã sẵn sàng để tiếp tục." : "Your latest report is ready to continue.")
+              : (isVietnamese ? "Chọn phạm vi để tạo báo cáo thật đầu tiên." : "Choose a scope to create your first real report.")}
           </p>
         </div>
         <div className="flex gap-2">
@@ -132,8 +151,8 @@ export function WorkspaceOverview({
 
       <section className="v2-panel grid overflow-hidden lg:grid-cols-[minmax(0,1fr)_392px]">
         <div className="p-5 sm:p-6">
-          <Badge variant={authenticated || report ? "success" : "secondary"}>
-            {authenticated || report ? (isVietnamese ? "Phạm vi sẵn sàng" : "Scope ready") : (isVietnamese ? "Có thể xem demo" : "Demo ready")}
+          <Badge variant={report ? "success" : "secondary"}>
+            {report ? (isVietnamese ? "Báo cáo sẵn sàng" : "Report ready") : authenticated ? (isVietnamese ? "Đang chờ phạm vi" : "Scope required") : (isVietnamese ? "Chưa kết nối" : "Not connected")}
           </Badge>
           <h2 className="mt-4 max-w-3xl text-2xl font-semibold leading-[1.18] tracking-[-0.035em] sm:text-[30px]">
             {report
@@ -161,11 +180,7 @@ export function WorkspaceOverview({
             <Badge variant={blockingCount > 0 ? "destructive" : watchCount > 0 ? "outline" : "success"}>{readinessLabel}</Badge>
           </div>
           <div className="mt-3 text-5xl font-semibold tracking-[-0.055em]">{passedChecks}<span className="text-2xl text-muted-foreground">/{Math.max(totalChecks, 1)}</span></div>
-          <p className="mt-2 text-sm leading-5 text-muted-foreground">
-            {isVietnamese
-              ? `${blockingCount} mục đang chặn · ${watchCount} mục cần theo dõi trước khi thay đổi ngân sách.`
-              : `${blockingCount} blocking · ${watchCount} watch item${watchCount === 1 ? "" : "s"} before the next budget change.`}
-          </p>
+          <p className="mt-2 text-sm leading-5 text-muted-foreground">{readinessDetail}</p>
           <div className="mt-4 flex items-center justify-between text-xs">
             <span>{isVietnamese ? "Kiểm tra đã đạt" : "Checks passed"}</span>
             <span className="font-medium tabular-nums">{passedChecks}/{Math.max(totalChecks, 1)}</span>
@@ -222,7 +237,7 @@ export function WorkspaceOverview({
               <h2 className="v2-section-title">{isVietnamese ? "Báo cáo gần đây" : "Recent reports"}</h2>
               <p className="v2-section-copy">{isVietnamese ? "Tiếp tục từ evidence mới nhất." : "Continue from the latest evidence."}</p>
             </div>
-            <Badge variant="outline">{report?.source === "sample" ? 2 : report ? 1 : 0} {isVietnamese ? "báo cáo" : "reports"}</Badge>
+            <Badge variant="outline">{savedReports.length || (report ? 1 : 0)} {isVietnamese ? "báo cáo" : "reports"}</Badge>
           </div>
 
           {report ? (
@@ -246,6 +261,7 @@ export function WorkspaceOverview({
               <Button type="button" variant="outline" size="sm" className="mt-4 w-full" onClick={() => onOpen("ads")}>
                 {isVietnamese ? "Mở báo cáo" : "Open report"}
               </Button>
+              {restoredReportId ? <p className="mt-3 text-center text-[11px] text-success">{isVietnamese ? "Đã khôi phục từ lịch sử workspace" : "Restored from workspace history"}</p> : null}
             </div>
           ) : (
             <div className="v2-subtle-panel mt-4 flex min-h-56 flex-col items-center justify-center p-6 text-center">
@@ -259,6 +275,22 @@ export function WorkspaceOverview({
               </Button>
             </div>
           )}
+
+          {savedReports.length > 1 ? (
+            <div className="mt-3 grid gap-2">
+              {savedReports.slice(0, 3).map((snapshot) => (
+                <button
+                  key={snapshot.id}
+                  type="button"
+                  className="flex items-center justify-between gap-3 rounded-xl border border-border/70 px-3 py-2 text-left text-xs hover:border-primary/45 hover:bg-secondary/45"
+                  onClick={() => onRestoreReport(snapshot)}
+                >
+                  <span className="min-w-0"><strong className="block truncate">{snapshot.accountName}</strong><small className="text-muted-foreground">{snapshot.dateSince} – {snapshot.dateUntil}</small></span>
+                  <span className="shrink-0 text-primary">{isVietnamese ? "Khôi phục" : "Restore"}</span>
+                </button>
+              ))}
+            </div>
+          ) : null}
 
           <div className="mt-4 flex flex-col gap-3 text-xs">
             <div className="flex items-center justify-between gap-3">

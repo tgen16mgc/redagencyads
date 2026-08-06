@@ -102,6 +102,7 @@ import { WorkspaceAuth, type WorkspaceSessionStatus } from "@/components/workspa
 import { MetaConnectDialog } from "@/components/meta-connect-dialog";
 import { AccountWorkspaceSettingsDialog, type SettingsTab } from "@/components/account-workspace-settings-dialog";
 import type { AccountWorkspaceSettingsData } from "@/lib/account-workspace-settings";
+import type { SavedReportSnapshot } from "@/lib/report-history";
 
 const workflowItems: { value: DashboardWorkflowStep; label: string; icon: React.ComponentType<React.SVGProps<SVGSVGElement>> }[] = [
   { value: "connect", label: "Connect", icon: KeyRoundIcon },
@@ -149,6 +150,7 @@ type ReportLanguage = (typeof languageValues)[number];
 const COMPETITOR_SPY_TIMEOUT_MS = 5 * 60 * 1000;
 const LANGUAGE_STORAGE_KEY = "decision-workspace-language";
 const THEME_STORAGE_KEY = "decision-workspace-theme";
+const SIDEBAR_STORAGE_KEY = "decision-workspace-sidebar-expanded";
 
 const uiCopy = {
   en: {
@@ -309,6 +311,9 @@ export function DashboardShell() {
     return window.localStorage.getItem(THEME_STORAGE_KEY) === "light" ? "light" : "dark";
   });
   const [accountMenuOpen, setAccountMenuOpen] = React.useState(false);
+  const [sidebarExpanded, setSidebarExpanded] = React.useState(() =>
+    typeof window !== "undefined" && window.localStorage.getItem(SIDEBAR_STORAGE_KEY) === "true",
+  );
   const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [settingsTab, setSettingsTab] = React.useState<SettingsTab>("profile");
   const [metaConnectOpen, setMetaConnectOpen] = React.useState(false);
@@ -318,6 +323,10 @@ export function DashboardShell() {
     typeof window === "undefined" ? "overview" : initialDashboardViewFromSearch(window.location.search),
   );
   const [adsWorkspace, setAdsWorkspace] = React.useState<AdsWorkspaceState>(initialAdsWorkspaceState);
+  const [savedReports, setSavedReports] = React.useState<SavedReportSnapshot[]>([]);
+  const [reportHistoryLoaded, setReportHistoryLoaded] = React.useState(false);
+  const [restoredReportId, setRestoredReportId] = React.useState<string | null>(null);
+  const reportHistoryRestoreAttemptedRef = React.useRef(false);
   const [sampleReportActive, setSampleReportActive] = React.useState(false);
   const [competitorNames, setCompetitorNames] = React.useState("");
   const [competitorMarket, setCompetitorMarket] = React.useState("");
@@ -365,12 +374,8 @@ export function DashboardShell() {
     return adsWorkspace.customKpiKeys?.length ? buildCustomKpiCards(adsWorkspace.customKpiKeys) : report.kpis;
   }, [adsWorkspace.customKpiKeys, report]);
   const healthSummary = React.useMemo(() => report ? summarizeHealth(report) : null, [report]);
-  const overviewReport = React.useMemo(() => {
-    if (report) return report;
-    const sample = buildSampleReport();
-    return { ...sample, selectedCampaigns: [SAMPLE_CAMPAIGNS[1]] };
-  }, [report]);
-  const overviewHealthSummary = React.useMemo(() => summarizeHealth(overviewReport), [overviewReport]);
+  const overviewReport = report;
+  const overviewHealthSummary = React.useMemo(() => overviewReport ? summarizeHealth(overviewReport) : null, [overviewReport]);
   const reportHasData = report ? hasReportSignal(report.totals) : false;
 
   const decisionTargets = React.useMemo<DecisionTargets>(() => {
@@ -485,9 +490,9 @@ export function DashboardShell() {
         : "Choose a job, verify the real capability state, and move evidence toward action.",
     },
     ads: {
-      badge: copy.header.adsCrumb,
-      detail: report?.account.name || workspaceLabel || copy.header.adsDetail,
-      title: copy.header.adsTitle,
+      badge: language === "vi" ? "Hiệu quả" : "Performance",
+      detail: report ? `${report.dateRange.since} – ${report.dateRange.until}` : (language === "vi" ? "Chưa có báo cáo" : "No report loaded"),
+      title: report?.account.name || workspaceLabel || copy.header.adsTitle,
       description: language === "vi"
         ? "Theo dõi KPI, chẩn đoán tài khoản và tạo Verdict tối ưu."
         : "Track KPIs, diagnose account health, and generate optimization Verdicts.",
@@ -547,6 +552,10 @@ export function DashboardShell() {
   }, [theme]);
 
   React.useEffect(() => {
+    window.localStorage.setItem(SIDEBAR_STORAGE_KEY, String(sidebarExpanded));
+  }, [sidebarExpanded]);
+
+  React.useEffect(() => {
     let cancelled = false;
     jsonFetch<WorkspaceSessionStatus>("/api/workspace/session", { timeoutMs: 8000 })
       .then((data) => {
@@ -596,6 +605,69 @@ export function DashboardShell() {
       cancelled = true;
     };
   }, [workspaceSession?.authenticated]);
+
+  const restoreSavedReport = React.useCallback((snapshot: SavedReportSnapshot, announce = true) => {
+    setAccountId(snapshot.report.account.id);
+    setAdsWorkspace((current) => ({
+      ...current,
+      report: snapshot.report,
+      previousReport: snapshot.previousReport,
+      verdict: snapshot.verdict,
+      insights: snapshot.insights,
+      selectedCampaignIds: snapshot.report.selectedCampaigns.map((campaign) => campaign.id),
+      since: snapshot.report.dateRange.since,
+      until: snapshot.report.dateRange.until,
+      pack: snapshot.report.selectedPack,
+      compareMode: snapshot.previousReport ? "previous" : "off",
+      scopeExpanded: false,
+    }));
+    setRestoredReportId(snapshot.id);
+    if (announce) {
+      toast.success(language === "vi" ? "Đã khôi phục báo cáo" : "Saved report restored", {
+        description: `${snapshot.accountName} · ${snapshot.dateSince} – ${snapshot.dateUntil}`,
+      });
+    }
+  }, [language]);
+
+  const loadSavedReports = React.useCallback(async () => {
+    try {
+      const data = await jsonFetch<{ reports: SavedReportSnapshot[] }>("/api/workspace/reports", { timeoutMs: 8000 });
+      setSavedReports(data.reports);
+    } catch {
+      setSavedReports([]);
+    } finally {
+      setReportHistoryLoaded(true);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (!workspaceSession?.authenticated) return;
+    void loadSavedReports();
+  }, [loadSavedReports, workspaceSession?.authenticated]);
+
+  React.useEffect(() => {
+    if (!reportHistoryLoaded || reportHistoryRestoreAttemptedRef.current) return;
+    reportHistoryRestoreAttemptedRef.current = true;
+    if (!report && !sampleReportActive && savedReports[0]) restoreSavedReport(savedReports[0], false);
+  }, [report, reportHistoryLoaded, restoreSavedReport, sampleReportActive, savedReports]);
+
+  React.useEffect(() => {
+    if (!workspaceSession?.authenticated || !report || report.source === "sample") return;
+    const timer = window.setTimeout(() => {
+      void jsonFetch<{ saved: boolean }>("/api/workspace/reports", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          report,
+          previousReport: adsWorkspace.previousReport,
+          verdict: adsWorkspace.verdict,
+          insights: adsWorkspace.insights,
+        }),
+        timeoutMs: 10000,
+      }).then(() => loadSavedReports()).catch(() => undefined);
+    }, 700);
+    return () => window.clearTimeout(timer);
+  }, [adsWorkspace.insights, adsWorkspace.previousReport, adsWorkspace.verdict, loadSavedReports, report, workspaceSession?.authenticated]);
 
   React.useEffect(() => {
     if (!accountMenuOpen) return;
@@ -1150,7 +1222,7 @@ export function DashboardShell() {
 
   return (
     <>
-      <div className="v2-shell">
+      <div className="v2-shell" data-sidebar-expanded={sidebarExpanded}>
         <AppSidebar
           activeView={activeView}
           aiProviderLabel={providerLabel(provider, language, capabilities)}
@@ -1166,7 +1238,9 @@ export function DashboardShell() {
           userInitials={workspaceSession.user?.initials || "DW"}
           userAvatarDataUrl={workspaceSession.user?.avatarDataUrl}
           assistantOpen={chatOpen}
+          expanded={sidebarExpanded}
           onActiveViewChange={requestView}
+          onExpandedChange={setSidebarExpanded}
           onOpenAssistant={() => setChatOpen((current) => !current)}
           onOpenProfile={() => { setSettingsTab("profile"); setSettingsOpen(true); }}
           onOpenSettings={() => { setSettingsTab("workspace"); setSettingsOpen(true); }}
@@ -1248,20 +1322,56 @@ export function DashboardShell() {
           {gateBlocked ? (
             <div className="min-h-[480px]" aria-hidden="true" />
           ) : activeView === "overview" ? (
-            <WorkspaceOverview
-              authenticated={authenticated}
-              capabilities={capabilities}
-              language={language}
-              userName={workspaceSession.user?.name || "Workspace owner"}
-              workspaceLabel={accounts.find((account) => account.id === accountId)?.name}
-              report={overviewReport}
-              healthSummary={overviewHealthSummary}
-              onOpen={requestView}
-              onEditScope={() => {
-                if (authenticated) setAdsWorkspace((current) => ({ ...current, scopeExpanded: true }));
-                requestView("ads");
-              }}
-            />
+            <>
+              <WorkspaceOverview
+                authenticated={authenticated}
+                capabilities={capabilities}
+                language={language}
+                userName={workspaceSession.user?.name || "Workspace owner"}
+                workspaceLabel={accounts.find((account) => account.id === accountId)?.name}
+                report={overviewReport}
+                healthSummary={overviewHealthSummary}
+                savedReports={savedReports}
+                restoredReportId={restoredReportId}
+                onRestoreReport={(snapshot) => restoreSavedReport(snapshot)}
+                onOpen={requestView}
+                onEditScope={() => {
+                  if (!authenticated) {
+                    setPendingMetaView("ads");
+                    setMetaConnectOpen(true);
+                    return;
+                  }
+                  setAdsWorkspace((current) => ({ ...current, scopeExpanded: true }));
+                }}
+              />
+              {authenticated && adsWorkspace.scopeExpanded ? (
+                <AdsWorkspace
+                  scopeOnly
+                  language={language}
+                  provider={provider}
+                  accounts={accounts}
+                  accountId={accountId}
+                  loading={loading}
+                  state={adsWorkspace}
+                  effectiveKpis={effectiveKpis}
+                  healthSummary={healthSummary}
+                  reportHasData={reportHasData}
+                  decisionTargets={decisionTargets}
+                  exportingPdf={exportingPdf}
+                  chatShortcutsDisabled={chatOpen}
+                  onProviderChange={setProvider}
+                  onAccountIdChange={setAccountId}
+                  onLoadingChange={setLoading}
+                  onError={setError}
+                  onStateChange={setAdsWorkspace}
+                  onSaveCustomKpis={saveCustomKpis}
+                  onExportPdf={exportPdf}
+                  onOpenAssistant={() => setChatOpen((current) => !current)}
+                  onCancelInitialScope={() => setAdsWorkspace((current) => ({ ...current, scopeExpanded: false }))}
+                  onReportReady={() => setActiveView("ads")}
+                />
+              ) : null}
+            </>
           ) : activeView === "ads" ? (
             <>
             {sampleReportActive ? (
@@ -1529,42 +1639,50 @@ function LoadingScreen({ language }: { language: ReportLanguage }) {
   const isVietnamese = language === "vi";
 
   return (
-    <main className="grid min-h-svh place-items-center bg-background p-4">
-      <div
-        className="w-full max-w-md rounded-2xl border bg-card p-6 sm:p-8"
-        role="status"
-        aria-live="polite"
-      >
-        <div className="mb-6 flex items-center gap-3">
-          <span className="flex size-10 items-center justify-center rounded-xl border bg-background text-muted-foreground">
-            <WaypointsIcon className="size-5" aria-hidden="true" />
-          </span>
-          <div>
-            <div className="text-sm font-medium text-foreground">Decision Operations Workspace</div>
-            <div className="text-xs text-muted-foreground">Evidence to action</div>
+    <div className="v2-shell" role="status" aria-live="polite">
+      <aside className="v2-app-rail" aria-hidden="true">
+        <div className="v2-rail-primary">
+          <span className="v2-brand-button"><WaypointsIcon /></span>
+          <div className="grid gap-3">
+            {Array.from({ length: 6 }, (_, index) => <Skeleton key={index} className="size-12 rounded-[14px]" />)}
           </div>
         </div>
-
-        <div className="mb-6">
-          <h1 className="text-xl font-semibold tracking-tight text-foreground">{copy.title}</h1>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">{copy.description}</p>
-        </div>
-
-        <div className="mb-4 flex items-center gap-2 text-sm font-medium text-foreground">
-          <Spinner className="size-4" />
-          {isVietnamese ? "Đang chuẩn bị workspace..." : "Preparing your workspace..."}
-        </div>
-        <div className="flex flex-col gap-3">
-          <Skeleton className="h-12 rounded-2xl" />
-          <Skeleton className="h-20 rounded-2xl" />
-          <div className="grid grid-cols-3 gap-3">
-            <Skeleton className="h-14 rounded-xl" />
-            <Skeleton className="h-14 rounded-xl" />
-            <Skeleton className="h-14 rounded-xl" />
+        <Skeleton className="size-9 rounded-full" />
+      </aside>
+      <div className="v2-app-main">
+        <header className="v2-topbar">
+          <div className="min-w-0 flex-1">
+            <Skeleton className="h-3 w-36 rounded-full" />
+            <Skeleton className="mt-2 h-6 w-56 max-w-[55vw] rounded-lg" />
           </div>
+          <div className="flex items-center gap-2">
+            <Skeleton className="size-10 rounded-xl" />
+            <Skeleton className="size-10 rounded-xl" />
+            <Skeleton className="h-10 w-28 rounded-xl max-sm:hidden" />
+          </div>
+        </header>
+        <main className="v2-page">
+          <div className="mb-6 flex items-center gap-3 text-sm font-medium">
+            <Spinner className="size-4" />
+            <span><strong>{copy.title}</strong><small className="ml-2 text-muted-foreground">{isVietnamese ? "Đang chuẩn bị workspace..." : copy.description}</small></span>
+          </div>
+          <Skeleton className="h-9 w-72 max-w-[75vw] rounded-xl" />
+          <Skeleton className="mt-3 h-4 w-[34rem] max-w-full rounded-full" />
+          <div className="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1fr)_392px]">
+            <Skeleton className="h-72 rounded-2xl" />
+            <Skeleton className="h-72 rounded-2xl" />
+          </div>
+          <div className="mt-4 grid gap-4 md:grid-cols-3">
+            <Skeleton className="h-40 rounded-2xl" />
+            <Skeleton className="h-40 rounded-2xl" />
+            <Skeleton className="h-40 rounded-2xl" />
+          </div>
+        </main>
+        <div className="v2-mobile-nav" aria-hidden="true">
+          {Array.from({ length: 5 }, (_, index) => <Skeleton key={index} className="size-11 shrink-0 rounded-xl" />)}
         </div>
       </div>
-    </main>
+    </div>
   );
 }
 

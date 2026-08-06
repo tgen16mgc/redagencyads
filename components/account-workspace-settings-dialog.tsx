@@ -8,6 +8,7 @@ import {
   KeyRoundIcon,
   ShieldCheckIcon,
   TriangleAlertIcon,
+  UsersRoundIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -102,6 +103,8 @@ export function AccountWorkspaceSettingsDialog({
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState("");
   const [passwordOpen, setPasswordOpen] = React.useState(false);
+  const [membersOpen, setMembersOpen] = React.useState(false);
+  const [memberSavingId, setMemberSavingId] = React.useState("");
   const photoInputRef = React.useRef<HTMLInputElement>(null);
 
   React.useEffect(() => {
@@ -206,6 +209,33 @@ export function AccountWorkspaceSettingsDialog({
       setError(requestError instanceof Error ? requestError.message : "Settings could not be saved.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function updateMemberRole(userId: string, role: "admin" | "analyst" | "viewer") {
+    if (memberSavingId) return;
+    setMemberSavingId(userId);
+    setError("");
+    try {
+      await readJsonResponse<{ updated: true }>(await fetch("/api/workspace/members", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ userId, role }),
+      }));
+      const update = (data: AccountWorkspaceSettingsData) => ({
+        ...data,
+        workspace: {
+          ...data.workspace,
+          members: data.workspace.members.map((member) => member.userId === userId ? { ...member, role } : member),
+        },
+      });
+      setSaved(update);
+      setDraft(update);
+      toast.success("Member role updated");
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Member role could not be updated.");
+    } finally {
+      setMemberSavingId("");
     }
   }
 
@@ -315,7 +345,7 @@ export function AccountWorkspaceSettingsDialog({
                         <div className="font-medium">{draft.workspace.memberCount} active {draft.workspace.memberCount === 1 ? "member" : "members"}</div>
                         <div className="text-sm text-muted-foreground">{draft.workspace.roleSummary}</div>
                       </div>
-                      <Button type="button" variant="outline" size="sm" onClick={() => toast.info("Member access is managed from the workspace_members roster.")}>Manage</Button>
+                      <Button type="button" variant="outline" size="sm" disabled={!draft.workspace.canManage} onClick={() => setMembersOpen(true)}><UsersRoundIcon data-icon="inline-start" />Manage</Button>
                     </div>
                     <div className="pt-4">
                       <SettingsSwitch checked={draft.workspace.requireTwoFactorAuthentication} disabled={!draft.workspace.canManage} label="Require two-factor authentication" onCheckedChange={(checked) => setDraft((current) => ({ ...current, workspace: { ...current.workspace, requireTwoFactorAuthentication: checked } }))} />
@@ -357,6 +387,40 @@ export function AccountWorkspaceSettingsDialog({
       </Dialog>
 
       <ChangePasswordDialog open={passwordOpen} onOpenChange={setPasswordOpen} />
+      <Dialog open={membersOpen} onOpenChange={setMembersOpen}>
+        <DialogContent className="w-[calc(100vw-1.5rem)] max-w-[620px] rounded-3xl border border-border bg-popover p-6">
+          <DialogHeader>
+            <DialogTitle>Workspace members</DialogTitle>
+            <DialogDescription>Change active member roles. Ownership transfer stays locked behind a separate review.</DialogDescription>
+          </DialogHeader>
+          <div className="mt-2 grid max-h-[min(480px,60svh)] gap-2 overflow-y-auto">
+            {draft.workspace.members.map((member) => (
+              <div key={member.userId} className="grid gap-3 rounded-2xl border border-border bg-card/60 p-3 sm:grid-cols-[minmax(0,1fr)_150px] sm:items-center">
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-medium">{member.fullName || member.email}</div>
+                  <div className="truncate text-xs text-muted-foreground">{member.email} · {member.status}</div>
+                </div>
+                {member.role === "owner" ? (
+                  <div className="rounded-xl bg-primary/10 px-3 py-2 text-center text-xs font-medium text-primary">Workspace owner</div>
+                ) : (
+                  <select
+                    aria-label={`Role for ${member.fullName || member.email}`}
+                    className="h-10 rounded-xl border border-border bg-background px-3 text-sm"
+                    value={member.role}
+                    disabled={Boolean(memberSavingId)}
+                    onChange={(event) => void updateMemberRole(member.userId, event.target.value as "admin" | "analyst" | "viewer")}
+                  >
+                    <option value="admin">Admin</option>
+                    <option value="analyst">Analyst</option>
+                    <option value="viewer">Viewer</option>
+                  </select>
+                )}
+              </div>
+            ))}
+          </div>
+          <DialogFooter><Button type="button" variant="outline" onClick={() => setMembersOpen(false)}>Done</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

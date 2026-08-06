@@ -65,7 +65,7 @@ async function loadSettings() {
 
   const [{ data: workspace, error: workspaceError }, { data: members, error: membersError }] = await Promise.all([
     supabase.from("workspaces").select("id,name,settings").eq("id", membership.workspace_id).single(),
-    supabase.from("workspace_members").select("role").eq("workspace_id", membership.workspace_id).eq("status", "active"),
+    supabase.from("workspace_members").select("user_id,email,full_name,role,status").eq("workspace_id", membership.workspace_id).eq("status", "active").order("created_at", { ascending: true }),
   ]);
   if (workspaceError || !workspace) throw new Error("Workspace settings could not be loaded.");
 
@@ -92,6 +92,13 @@ async function loadSettings() {
       memberCount: roles.length,
       roleSummary: roleSummary(roles),
       canManage,
+      members: (members || []).map((member) => ({
+        userId: member.user_id,
+        email: member.email,
+        fullName: member.full_name,
+        role: member.role as "owner" | "admin" | "analyst" | "viewer",
+        status: member.status,
+      })),
     },
   } satisfies AccountWorkspaceSettingsData;
 }

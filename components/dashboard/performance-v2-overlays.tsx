@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { Modal as HeroModal } from "@heroui/react";
 import { toast } from "sonner";
 import {
   ArrowRightIcon,
@@ -277,11 +278,12 @@ export function ActionPlanSheet({ open, onOpenChange, report, verdict, healthSum
   const activeActionIndex = selectedAction ?? 0;
   const activeTitle = activeAction ? actionTitle(activeAction, activeActionIndex) : "";
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full overflow-y-auto border-l border-border bg-popover sm:max-w-[480px]">
+    <HeroModal.Backdrop isOpen={open} onOpenChange={onOpenChange} variant="blur">
+      <HeroModal.Container size="lg" placement="center" scroll="inside">
+        <HeroModal.Dialog className="border border-border bg-popover">
         {activeAction ? <>
-          <SheetHeader className="p-6"><Badge className="mb-2 w-fit" variant="secondary">Action evidence</Badge><SheetTitle className="text-xl font-semibold">{activeTitle}</SheetTitle><SheetDescription>High confidence · {actionSignals(report).length} evidence points</SheetDescription></SheetHeader>
-          <div className="grid gap-5 px-6 pb-6">
+          <HeroModal.Header className="p-6"><div><Badge className="mb-2 w-fit" variant="secondary">Action evidence</Badge><HeroModal.Heading className="text-xl font-semibold">{activeTitle}</HeroModal.Heading><p className="mt-1 text-sm text-muted-foreground">High confidence · {actionSignals(report).length} evidence points</p></div><HeroModal.CloseTrigger /></HeroModal.Header>
+          <HeroModal.Body className="grid gap-5 px-6 pb-6">
             <div className="rounded-2xl bg-card p-4"><div className="flex items-center justify-between"><span className="text-[10px] uppercase tracking-[0.06em] text-muted-foreground">{activeActionIndex === 1 ? "Scale guardrail" : "Expected impact"}</span><Badge variant="success">High confidence</Badge></div><div className="mt-3 text-base font-semibold">{actionImpact(report, activeActionIndex)}</div><p className="mt-2 text-xs leading-5 text-muted-foreground">This is a guarded directional estimate based on the selected scope, not a guaranteed outcome.</p></div>
             <div><div className="mb-2 flex items-center justify-between"><h3 className="font-semibold">{activeActionIndex === 1 ? "Signals to monitor" : "Evidence attached"}</h3><Badge>{actionSignals(report).length} points</Badge></div>{actionSignals(report).map((signal) => <div key={signal.title} className="rounded-xl px-3 py-2.5"><div className="text-sm font-medium">{signal.title}</div><div className="mt-0.5 text-xs text-muted-foreground">{signal.detail}</div></div>)}</div>
             <AccordionList items={[
@@ -292,11 +294,11 @@ export function ActionPlanSheet({ open, onOpenChange, report, verdict, healthSum
               ["Recommended test", activeAction],
               ["Success measure", actionSuccessMeasure(report)],
             ]} />
-          </div>
-          <SheetFooter className="flex-row justify-end border-t border-border bg-popover p-6"><Button variant="outline" onClick={() => setSelectedAction(null)}>Back to plan</Button><Button onClick={() => { setReviewedActions((current) => new Set(current).add(activeActionIndex)); toast.success("Action marked reviewed", { description: activeTitle }); setSelectedAction(null); }}><CheckCircle2Icon data-icon="inline-start" />Mark reviewed</Button></SheetFooter>
+          </HeroModal.Body>
+          <HeroModal.Footer className="flex-row justify-end border-t border-border bg-popover p-6"><Button variant="outline" onClick={() => setSelectedAction(null)}>Back to plan</Button><Button onClick={() => { setReviewedActions((current) => new Set(current).add(activeActionIndex)); toast.success("Action marked reviewed", { description: activeTitle }); setSelectedAction(null); }}><CheckCircle2Icon data-icon="inline-start" />Mark reviewed</Button></HeroModal.Footer>
         </> : <>
-          <SheetHeader className="p-6"><Badge className="mb-2 w-fit" variant="secondary">{packLabel(report.selectedPack)} plan</Badge><SheetTitle className="text-xl font-semibold">Review recommended actions</SheetTitle><SheetDescription>{packLabel(report.selectedPack)} · {actions.length} ready · evidence-backed</SheetDescription></SheetHeader>
-          <div className="grid gap-5 px-6 pb-6">
+          <HeroModal.Header className="p-6"><div><Badge className="mb-2 w-fit" variant="secondary">{packLabel(report.selectedPack)} plan</Badge><HeroModal.Heading className="text-xl font-semibold">Review recommended actions</HeroModal.Heading><p className="mt-1 text-sm text-muted-foreground">{packLabel(report.selectedPack)} · {actions.length} ready · evidence-backed</p></div><HeroModal.CloseTrigger /></HeroModal.Header>
+          <HeroModal.Body className="grid gap-5 px-6 pb-6">
             <div className="rounded-2xl bg-card p-4"><div className="flex items-center justify-between"><span className="text-[10px] uppercase tracking-[0.06em] text-muted-foreground">Primary decision</span><Badge variant="success">High confidence</Badge></div><div className="mt-3 text-base font-semibold">{decision}</div><p className="mt-2 text-xs leading-5 text-muted-foreground">The plan follows the active KPI pack, scope, comparison and evidence.</p></div>
             <div><div className="mb-2 flex items-center justify-between"><h3 className="font-semibold">Action queue</h3><Badge>{actions.length} ready</Badge></div>{loading ? <div className="flex items-center gap-2 rounded-xl bg-secondary/50 p-4 text-sm text-muted-foreground"><Spinner />Generating the evidence-backed plan...</div> : actions.length ? actions.map((action, index) => <button key={`${action}-${index}`} type="button" className="group flex w-full items-start justify-between rounded-xl px-3 py-2.5 text-left hover:bg-secondary/60" onClick={() => setSelectedAction(index)}><span><span className="flex items-center gap-2 text-sm font-medium">{actionTitle(action, index)}{reviewedActions.has(index) ? <Badge variant="success">Reviewed</Badge> : null}</span><span className="mt-0.5 block text-xs text-muted-foreground">{action}</span></span><ArrowRightIcon className="mt-1 size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" /></button>) : <p className="text-sm text-muted-foreground">No dominant action is ready yet.</p>}</div>
             <AccordionList items={[
@@ -307,11 +309,12 @@ export function ActionPlanSheet({ open, onOpenChange, report, verdict, healthSum
               ["Assumptions", verdict?.assumptions.join(" ") || report.packReason],
               ["Export method", "The PDF preserves the active scope, KPI pack, evidence and action plan."],
             ]} />
-          </div>
-          <SheetFooter className="flex-row justify-end border-t border-border bg-popover p-6"><Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button><Button onClick={onExport}><DownloadIcon data-icon="inline-start" />Export plan</Button></SheetFooter>
+          </HeroModal.Body>
+          <HeroModal.Footer className="flex-row justify-end border-t border-border bg-popover p-6"><Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button><Button onClick={onExport}><DownloadIcon data-icon="inline-start" />Export plan</Button></HeroModal.Footer>
         </>}
-      </SheetContent>
-    </Sheet>
+        </HeroModal.Dialog>
+      </HeroModal.Container>
+    </HeroModal.Backdrop>
   );
 }
 

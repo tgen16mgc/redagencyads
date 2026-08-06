@@ -82,8 +82,17 @@ export async function getActiveWorkspaceMembership(supabase: WorkspaceSupabaseCl
   return data;
 }
 
+export async function ensureActiveWorkspaceMembership(supabase: WorkspaceSupabaseClient, userId: string) {
+  const existing = await getActiveWorkspaceMembership(supabase, userId);
+  if (existing) return existing;
+
+  const { error } = await supabase.rpc("ensure_workspace_membership", {});
+  if (error) throw new Error("Workspace access could not be opened for this account.");
+  return getActiveWorkspaceMembership(supabase, userId);
+}
+
 export async function requireWorkspaceMembership(supabase: WorkspaceSupabaseClient, user: User) {
-  const membership = await getActiveWorkspaceMembership(supabase, user.id);
+  const membership = await ensureActiveWorkspaceMembership(supabase, user.id);
   if (!membership) throw new Error("Workspace access is not approved for this account.");
   return membership;
 }
@@ -127,7 +136,7 @@ export async function workspaceSessionStatus(client?: WorkspaceSupabaseClient): 
     return { ...base, authenticated: false, signedInAt: null, user: null };
   }
 
-  const membership = await getActiveWorkspaceMembership(supabase, data.user.id);
+  const membership = await ensureActiveWorkspaceMembership(supabase, data.user.id);
   if (!membership) {
     return { ...base, authenticated: false, signedInAt: null, user: null };
   }

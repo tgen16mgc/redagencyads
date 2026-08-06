@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { SettingsIcon, SparklesIcon, WaypointsIcon } from "lucide-react";
+import { PanelLeftCloseIcon, PanelLeftOpenIcon, SettingsIcon, SparklesIcon, WaypointsIcon } from "lucide-react";
 import type { CapabilityState } from "@/lib/capabilities";
 import type { DashboardWorkflowState, DashboardWorkflowStep } from "@/lib/dashboard-workflow";
 import { cn } from "@/lib/utils";
@@ -34,7 +34,9 @@ type AppSidebarProps<T extends string> = {
   userInitials: string;
   userAvatarDataUrl?: string;
   assistantOpen: boolean;
+  expanded: boolean;
   onActiveViewChange: (value: T) => void;
+  onExpandedChange: (expanded: boolean) => void;
   onOpenAssistant: () => void;
   onOpenProfile: () => void;
   onOpenSettings: () => void;
@@ -52,7 +54,12 @@ export function AppSidebar<T extends string>({
   userInitials,
   userAvatarDataUrl,
   assistantOpen,
+  expanded,
+  showWorkflow,
+  workflowLabel,
+  workflowItems,
   onActiveViewChange,
+  onExpandedChange,
   onOpenAssistant,
   onOpenProfile,
   onOpenSettings,
@@ -78,7 +85,7 @@ export function AppSidebar<T extends string>({
             onClick={() => onActiveViewChange(value)}
           >
             <Icon aria-hidden="true" />
-            <span className="sr-only">{label}</span>
+            <span className="v2-rail-label">{label}</span>
           </button>
         );
       })}
@@ -87,18 +94,49 @@ export function AppSidebar<T extends string>({
 
   return (
     <>
-      <aside className="v2-app-rail" data-print-hidden>
+      <aside className="v2-app-rail" data-expanded={expanded} data-print-hidden>
         <div className="v2-rail-primary">
-          <button
-            type="button"
-            className="v2-brand-button"
-            aria-label="Decision Workspace"
-            title="Decision Workspace"
-            onClick={() => onActiveViewChange(appItems[0].value)}
-          >
-            <WaypointsIcon aria-hidden="true" />
-          </button>
+          <div className="v2-rail-brand-row">
+            <button
+              type="button"
+              className="v2-brand-button"
+              aria-label="Decision Workspace"
+              title="Decision Workspace"
+              onClick={() => onActiveViewChange(appItems[0].value)}
+            >
+              <WaypointsIcon aria-hidden="true" />
+              <span className="v2-rail-brand-label">Decision Workspace</span>
+            </button>
+            <button
+              type="button"
+              className="v2-rail-collapse"
+              aria-label={expanded ? "Collapse sidebar" : "Expand sidebar"}
+              aria-pressed={expanded}
+              onClick={() => onExpandedChange(!expanded)}
+            >
+              {expanded ? <PanelLeftCloseIcon aria-hidden="true" /> : <PanelLeftOpenIcon aria-hidden="true" />}
+            </button>
+          </div>
           {nav}
+          {showWorkflow ? (
+            <div className="v2-rail-workflow">
+              <div className="v2-rail-section-label">{workflowLabel}</div>
+              {workflowItems.map(({ value, label, icon: Icon, state, stateLabel }) => (
+                <button
+                  key={value}
+                  type="button"
+                  className="v2-rail-workflow-item"
+                  data-state={state}
+                  title={`${label}: ${stateLabel}`}
+                  onClick={() => onActiveViewChange("ads" as T)}
+                >
+                  <Icon aria-hidden="true" />
+                  <span className="v2-rail-label">{label}</span>
+                  <span className="v2-workflow-state">{stateLabel}</span>
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
 
         <div className="v2-rail-account">
@@ -112,6 +150,7 @@ export function AppSidebar<T extends string>({
           >
             <SparklesIcon aria-hidden="true" />
             <span className={cn("v2-status-dot", aiStatusClass)} aria-hidden="true" />
+            <span className="v2-rail-label">{aiSetupLabel}</span>
           </button>
           <button
             type="button"
@@ -121,6 +160,7 @@ export function AppSidebar<T extends string>({
             onClick={onOpenSettings}
           >
             <SettingsIcon aria-hidden="true" />
+            <span className="v2-rail-label">Workspace settings</span>
           </button>
           <button
             type="button"
@@ -130,6 +170,7 @@ export function AppSidebar<T extends string>({
             onClick={onOpenProfile}
           >
             {userAvatarDataUrl ? <img src={userAvatarDataUrl} alt="" className="size-full object-cover" /> : userInitials}
+            <span className="v2-rail-profile-label">{userName}</span>
           </button>
         </div>
       </aside>

@@ -456,6 +456,8 @@ export function AdsWorkspace({
   onExportPdf,
   onOpenAssistant,
   onCancelInitialScope,
+  onReportReady,
+  scopeOnly = false,
 }: {
   language: InterfaceLanguage;
   provider: Provider;
@@ -478,6 +480,8 @@ export function AdsWorkspace({
   onExportPdf: () => Promise<ClientReportPdfFile>;
   onOpenAssistant: () => void;
   onCancelInitialScope: () => void;
+  onReportReady?: () => void;
+  scopeOnly?: boolean;
 }) {
   const {
     campaigns,
@@ -502,6 +506,7 @@ export function AdsWorkspace({
   } = state;
   const copy = adsCopy[language];
   const reportStartRef = React.useRef<HTMLDivElement>(null);
+  const autoVerdictKeyRef = React.useRef("");
   const [reportFlow, setReportFlow] = React.useState<"idle" | "pulling" | "ready" | "error">("idle");
   const [reportFlowError, setReportFlowError] = React.useState("");
   const verdictProgress = useTimedProgress(aiLoading.verdict);
@@ -584,6 +589,7 @@ export function AdsWorkspace({
           sampleComparison = buildSampleReport({ selectedCampaignIds: sampleSelectedIds, pack: samplePack, dateRange: getCompareRange({ since: nextSince, until: nextUntil }, nextCompareMode) });
         }
         updateState({ report: current, previousReport: sampleComparison, scopeExpanded: false });
+        onReportReady?.();
         toast.success(language === "vi" ? "Đã áp dụng thay đổi" : "Changes applied", { description: language === "vi" ? "Báo cáo mẫu đã được dựng lại với phạm vi mới." : "The sample report was rebuilt with the new scope and comparison." });
         setReportFlow("ready");
         window.setTimeout(() => setReportFlow("idle"), 900);
@@ -606,6 +612,7 @@ export function AdsWorkspace({
     try {
       const current = await fetchReportForRange({ since: nextSince, until: nextUntil }, overrides);
       updateState({ report: current.report, scopeExpanded: false });
+      onReportReady?.();
       window.setTimeout(() => reportStartRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
       if (nextCompareMode !== "off") {
         const selectedIds = overrides.selectedCampaignIds ?? selectedCampaignIds;
@@ -655,6 +662,14 @@ export function AdsWorkspace({
       onStateChange((current) => ({ ...current, aiLoading: { ...current.aiLoading, verdict: false } }));
     }
   }
+
+  React.useEffect(() => {
+    if (!report || !reportHasData || verdict || aiLoading.verdict) return;
+    const key = `${report.account.id}:${report.dateRange.since}:${report.dateRange.until}:${report.selectedPack}`;
+    if (autoVerdictKeyRef.current === key) return;
+    autoVerdictKeyRef.current = key;
+    void runAi();
+  }, [aiLoading.verdict, report, reportHasData, verdict]);
 
   async function runInsights() {
     if (!report || !reportHasData || aiLoading.insights) return;
@@ -722,7 +737,7 @@ export function AdsWorkspace({
             void pullReport(patch);
           }}
         />
-      {report && !reportHasData ? (
+      {!scopeOnly && report && !reportHasData ? (
         <Card className="border-border bg-card">
           <CardContent>
             <Empty className="min-h-72">
@@ -741,7 +756,7 @@ export function AdsWorkspace({
           </CardContent>
         </Card>
       ) : null}
-      {report && reportHasData ? (
+      {!scopeOnly && report && reportHasData ? (
         <div ref={reportStartRef} className="workbench-fade-up scroll-mt-4">
           <PerformanceV2
             language={language}

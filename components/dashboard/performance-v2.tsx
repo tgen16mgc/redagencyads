@@ -10,13 +10,16 @@ import {
   DownloadIcon,
   FileChartColumnIncreasingIcon,
   GitCompareArrowsIcon,
+  LayoutGridIcon,
   Layers3Icon,
+  ListIcon,
   RefreshCwIcon,
   ShieldAlertIcon,
   SlidersHorizontalIcon,
   SparklesIcon,
   TriangleAlertIcon,
 } from "lucide-react";
+import { Label as HeroLabel, Switch as HeroSwitch } from "@heroui/react";
 import {
   CartesianGrid,
   Line,
@@ -181,10 +184,10 @@ export function PerformanceV2({
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-[-0.035em] sm:text-[28px]">
-            {isVietnamese ? "Tìm điểm rò rỉ. Bảo vệ khoản chi tiếp theo." : "Find the leak. Protect the next dollar."}
+            {isVietnamese ? "Điều gì cần thay đổi tiếp theo?" : "What should change next?"}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {isVietnamese ? "Theo delivery đến outcome đã chọn, rồi xử lý rào cản quan trọng nhất." : "Follow delivery to the selected outcome, then act on the constraint that matters."}
+            {isVietnamese ? "Theo dõi chi tiêu từ lượt tiếp cận đến kết quả, rồi xử lý điểm nghẽn lớn nhất." : "Trace spend from reach to result, then fix the biggest constraint."}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -215,10 +218,10 @@ export function PerformanceV2({
 
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             {customizeAction}
-            <button type="button" className="v2-subtle-panel max-w-[280px] truncate px-3 py-2 text-left text-xs text-muted-foreground hover:border-primary/50 hover:text-foreground" title={accountLabel} onClick={() => setCampaignsOpen(true)}>{accountLabel}</button>
-            <button type="button" className="v2-subtle-panel px-3 py-2 text-xs text-muted-foreground hover:border-primary/50 hover:text-foreground" onClick={() => setPeriodOpen(true)}>{periodLabel}</button>
-            <button type="button" className="v2-subtle-panel flex items-center gap-1.5 px-3 py-2 text-xs text-muted-foreground hover:border-primary/50 hover:text-foreground" onClick={() => setComparisonOpen(true)}><GitCompareArrowsIcon className="size-3.5" />{comparisonLabel(compareMode)}</button>
-            <button type="button" className="h-7" onClick={() => setKpiOpen(true)}><Badge variant="secondary" className="h-7">{scopeLabel}</Badge></button>
+            <button type="button" className="v2-subtle-panel max-w-[280px] truncate px-3 py-2 text-left text-xs text-muted-foreground hover:border-primary/50 hover:text-foreground" title={accountLabel} onClick={() => setCampaignsOpen(true)}><b className="font-medium text-foreground">Account:</b> {accountLabel}</button>
+            <button type="button" className="v2-subtle-panel px-3 py-2 text-xs text-muted-foreground hover:border-primary/50 hover:text-foreground" aria-label={`${isVietnamese ? "Đổi khoảng ngày" : "Change date range"}: ${periodLabel}`} onClick={() => setPeriodOpen(true)}><b className="font-medium text-foreground">{isVietnamese ? "Ngày:" : "Dates:"}</b> {periodLabel}</button>
+            <button type="button" className="v2-subtle-panel flex items-center gap-1.5 px-3 py-2 text-xs text-muted-foreground hover:border-primary/50 hover:text-foreground" onClick={() => setComparisonOpen(true)}><GitCompareArrowsIcon className="size-3.5" /><b className="font-medium text-foreground">{isVietnamese ? "So sánh:" : "Compare:"}</b> {comparisonLabel(compareMode)}</button>
+            <button type="button" className="h-7" onClick={() => setKpiOpen(true)}><Badge variant="secondary" className="h-7">{isVietnamese ? "KPI:" : "KPI:"} {scopeLabel}</Badge></button>
           </div>
         </div>
 
@@ -324,7 +327,7 @@ function OverviewTab({
   onReviewActions: () => void;
 }) {
   const isVietnamese = language === "vi";
-  const decisionTitle = verdict?.verdict || primary.decision;
+  const decisionTitle = compactSentence(verdict?.verdict || primary.decision, 150);
   const actionRows = verdict ? [...verdict.budget_moves, ...verdict.tests].filter(Boolean).slice(0, 2) : risks.slice(0, 2).map((item) => item.detail[language]);
   const totalChecks = healthSummary?.items.length || report.health.checks.length;
   const passedChecks = healthSummary?.counts.healthy ?? report.health.checks.filter((check) => check.status === "pass").length;
@@ -348,9 +351,9 @@ function OverviewTab({
           <h2>{constraintTitle}</h2>
           <p>{constraintDetail}</p>
           <div className="v2-primary-constraint-evidence">
-            <span><b>{passedChecks}/{Math.max(totalChecks, 1)}</b>{isVietnamese ? " kiểm tra đạt" : " checks pass"}</span>
-            <span><b>{primary.label}</b>{isVietnamese ? " outcome chính" : " primary outcome"}</span>
-            <span><b>{packLabel(report.selectedPack)}</b>{isVietnamese ? " lens quyết định" : " decision lens"}</span>
+            <span><b>{passedChecks}/{Math.max(totalChecks, 1)}</b>{isVietnamese ? " kiểm tra sức khỏe đạt" : " health checks passed"}</span>
+            <span><b>{primary.label}</b>{isVietnamese ? " chỉ số kết quả chính" : " primary result metric"}</span>
+            <span><b>{packLabel(report.selectedPack)}</b>{isVietnamese ? " bộ quy tắc KPI" : " KPI ruleset"}</span>
           </div>
           <button type="button" className="v2-primary-verdict" onClick={onReviewActions}>
             <span>{isVietnamese ? "Verdict hiện tại" : "Current Verdict"}</span>
@@ -586,15 +589,23 @@ function CreativesTab({ language, report, currency, selectedIds, onSelectionChan
   const isVietnamese = language === "vi";
   const primaryKey = resultKey(report.selectedPack);
   const rows = [...report.adRows]
-    .sort((left, right) => rowEfficiency(right, primaryKey) - rowEfficiency(left, primaryKey))
-    .slice(0, 12);
+    .sort((left, right) => rowEfficiency(right, primaryKey) - rowEfficiency(left, primaryKey));
   const [selectedId, setSelectedId] = React.useState(rows[0]?.id || "");
+  const [comparisonMode, setComparisonMode] = React.useState(false);
+  const [viewMode, setViewMode] = React.useState<"grid" | "list">("grid");
+  const [showAll, setShowAll] = React.useState(false);
   const selected = rows.find((row) => row.id === selectedId) || rows[0];
   const fatigueCount = rows.filter((row) => row.frequency >= 3).length;
   const concentration = rows.length ? (rows.slice(0, 2).reduce((sum, row) => sum + row.spend, 0) / Math.max(rows.reduce((sum, row) => sum + row.spend, 0), 1)) * 100 : 0;
 
-  function toggleComparison(row: NormalizedRow) {
+  const visibleRows = showAll ? rows : rows.slice(0, 6);
+  const hashedAssets = report.creativeHashing?.hashedAssets ?? rows.length;
+  const totalAssets = report.creativeHashing?.totalAssets ?? rows.length;
+  const concentrationStatus = concentration >= 65 ? (isVietnamese ? "Quá tập trung" : "Concentrated") : concentration >= 45 ? (isVietnamese ? "Cần theo dõi" : "Watch") : (isVietnamese ? "Cân bằng" : "Balanced");
+
+  function activateCreative(row: NormalizedRow) {
     setSelectedId(row.id);
+    if (!comparisonMode) return;
     if (selectedIds.includes(row.id)) {
       onSelectionChange(selectedIds.filter((id) => id !== row.id));
       return;
@@ -605,23 +616,27 @@ function CreativesTab({ language, report, currency, selectedIds, onSelectionChan
   return (
     <div className="grid gap-4">
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <SignalCard eyebrow={isVietnamese ? "Creative tốt nhất" : "Top creative"} title={rows[0]?.name || "—"} detail={rows[0] ? primaryRowCost(rows[0], report.selectedPack, currency) : "—"} tone="success" />
-        <SignalCard eyebrow={isVietnamese ? "Rủi ro fatigue" : "Fatigue risk"} title={`${fatigueCount} ${isVietnamese ? "creative" : "creatives"}`} detail={isVietnamese ? "Frequency cao hơn norm" : "Frequency above account norm"} tone="warning" />
-        <SignalCard eyebrow={isVietnamese ? "Độ phủ preview" : "Preview coverage"} title={`${report.creativeHashing?.hashedAssets || rows.length} of ${report.creativeHashing?.totalAssets || rows.length}`} detail={report.creativeHashing?.limitation || (isVietnamese ? "Creative có thể truy vết" : "Traceable creative inventory")} tone="primary" />
-        <SignalCard eyebrow={isVietnamese ? "Tập trung chi tiêu" : "Spend concentration"} title={`${concentration.toFixed(0)}%`} detail={isVietnamese ? "Hai creative lớn nhất" : "Top two creatives"} tone="warning" />
+        <SignalCard eyebrow={isVietnamese ? "Creative hiệu quả nhất" : "Best performer"} title={rows[0]?.name || "—"} detail={rows[0] ? `${primaryRowCost(rows[0], report.selectedPack, currency)} per result` : "No delivery"} tone="success" />
+        <SignalCard eyebrow={isVietnamese ? "Cần làm mới" : "Needs refresh"} title={`${fatigueCount} / ${rows.length}`} detail={fatigueCount ? (isVietnamese ? "Frequency từ 3.0 trở lên" : "Frequency is 3.0 or higher") : (isVietnamese ? "Chưa thấy fatigue" : "No fatigue threshold reached")} tone={fatigueCount ? "warning" : "success"} />
+        <SignalCard eyebrow={isVietnamese ? "Có thể xem preview" : "Preview available"} title={`${hashedAssets} / ${totalAssets}`} detail={hashedAssets === totalAssets ? (isVietnamese ? "Tất cả creative đều xem được" : "All creative previews are available") : (isVietnamese ? "Một số asset chưa có preview" : "Some assets have no returned preview")} tone={hashedAssets === totalAssets ? "success" : "primary"} />
+        <SignalCard eyebrow={isVietnamese ? "Phân bổ chi tiêu" : "Spend distribution"} title={concentrationStatus} detail={`${concentration.toFixed(0)}% ${isVietnamese ? "nằm ở 2 creative đầu" : "is held by the top two creatives"}`} tone={concentration >= 65 ? "warning" : "primary"} />
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.72fr)]">
+      <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(300px,0.72fr)_minmax(0,1.48fr)]">
         <div className="v2-panel p-4 sm:p-5">
-          <div className="flex items-start justify-between gap-4"><div><h2 className="v2-section-title">{isVietnamese ? "Hiệu quả creative" : "Creative performance"}</h2><p className="v2-section-copy">{isVietnamese ? "Chọn creative đầu tiên làm Control 1, sau đó chọn Challenger 2." : "Select the first creative as Control 1, then choose Challenger 2."}</p></div><div className="flex shrink-0 items-center gap-2"><Badge variant={selectedIds.length === 2 ? "success" : "outline"}>{selectedIds.length}/2 {isVietnamese ? "đã chọn" : "selected"}</Badge><Button type="button" size="sm" variant="outline" disabled={selectedIds.length !== 2} onClick={onCompare}><GitCompareArrowsIcon data-icon="inline-start" />{isVietnamese ? "So sánh" : "Compare"}</Button></div></div>
-          <div className="mt-5 grid gap-3 md:grid-cols-2">
-            {rows.map((row) => {
+          <div className="flex flex-col gap-3"><div><h2 className="v2-section-title">{isVietnamese ? "Hiệu quả creative" : "Creative performance"}</h2><p className="v2-section-copy">{comparisonMode ? (isVietnamese ? "Chọn đúng hai creative để so sánh." : "Select exactly two creatives to compare.") : (isVietnamese ? "Chọn một creative để xem chi tiết. Bật so sánh khi cần." : "Choose one creative to inspect. Turn on compare mode only when needed.")}</p></div><div className="flex flex-wrap items-center gap-2">
+            <HeroSwitch isSelected={comparisonMode} onChange={(next) => { setComparisonMode(next); if (!next) onSelectionChange([]); }} size="sm"><HeroSwitch.Control><HeroSwitch.Thumb /></HeroSwitch.Control><HeroLabel>{isVietnamese ? "Chế độ so sánh" : "Compare mode"}</HeroLabel></HeroSwitch>
+            <div className="ml-auto flex items-center gap-1 rounded-xl border border-border p-1"><button type="button" className={cn("rounded-lg p-1.5", viewMode === "grid" && "bg-secondary text-foreground")} aria-label="Grid view" onClick={() => setViewMode("grid")}><LayoutGridIcon className="size-4" /></button><button type="button" className={cn("rounded-lg p-1.5", viewMode === "list" && "bg-secondary text-foreground")} aria-label="List view" onClick={() => setViewMode("list")}><ListIcon className="size-4" /></button></div>
+            {comparisonMode ? <><Badge variant={selectedIds.length === 2 ? "success" : "outline"}>{selectedIds.length}/2 {isVietnamese ? "đã chọn" : "selected"}</Badge><Button type="button" size="sm" variant="outline" disabled={selectedIds.length !== 2} onClick={onCompare}><GitCompareArrowsIcon data-icon="inline-start" />{isVietnamese ? "So sánh" : "Compare"}</Button></> : null}
+          </div></div>
+          <div className={cn("mt-5 grid gap-3", viewMode === "grid" && "md:grid-cols-2")}>
+            {visibleRows.map((row) => {
               const selectionIndex = selectedIds.indexOf(row.id);
               return (
-              <button key={row.id} type="button" aria-pressed={selectedIds.includes(row.id)} className={cn("relative grid grid-cols-[94px_minmax(0,1fr)] gap-3 rounded-xl border p-2 text-left transition-colors", selectedIds.includes(row.id) ? "border-primary/60 bg-primary/5" : selected?.id === row.id ? "border-border bg-secondary/25" : "border-transparent hover:border-border hover:bg-secondary/35")} onClick={() => toggleComparison(row)}>
+              <button key={row.id} type="button" aria-pressed={comparisonMode ? selectedIds.includes(row.id) : selected?.id === row.id} className={cn("relative grid grid-cols-[94px_minmax(0,1fr)] gap-3 rounded-xl border p-2 text-left transition-colors", comparisonMode && selectedIds.includes(row.id) ? "border-primary/60 bg-primary/5" : selected?.id === row.id ? "border-border bg-secondary/25" : "border-transparent hover:border-border hover:bg-secondary/35")} onClick={() => activateCreative(row)}>
                 <MetaCreativeCover report={report} row={row} className="h-28" />
                 <div className="min-w-0 py-1">
-                  <div className="flex items-start justify-between gap-2"><div className="truncate text-sm font-medium">{row.name}</div>{selectionIndex >= 0 ? <Badge variant={selectionIndex === 0 ? "success" : "secondary"}>{selectionIndex === 0 ? (isVietnamese ? "Control 1" : "Control 1") : (isVietnamese ? "Challenger 2" : "Challenger 2")}</Badge> : <span className="flex size-5 shrink-0 items-center justify-center rounded-full border border-border" />}</div>
+                  <div className="flex items-start justify-between gap-2"><div className="truncate text-sm font-medium">{row.name}</div>{comparisonMode ? (selectionIndex >= 0 ? <Badge variant={selectionIndex === 0 ? "success" : "secondary"}>{selectionIndex === 0 ? "Control 1" : "Challenger 2"}</Badge> : <span className="flex size-5 shrink-0 items-center justify-center rounded-full border border-border" />) : null}</div>
                   <div className="mt-1 truncate text-xs text-muted-foreground">{row.adsetName || row.campaignName}</div>
                   <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-[10px] uppercase tracking-[0.04em] text-muted-foreground">
                     <span>Spend <b className="block text-xs font-medium normal-case text-foreground">{currencyValue(row.spend, currency)}</b></span>
@@ -634,9 +649,10 @@ function CreativesTab({ language, report, currency, selectedIds, onSelectionChan
               );
             })}
           </div>
+          {rows.length > 6 ? <Button type="button" variant="ghost" size="sm" className="mt-4 w-full" onClick={() => setShowAll((current) => !current)}>{showAll ? (isVietnamese ? "Thu gọn" : "Show less") : (isVietnamese ? `Xem thêm ${rows.length - 6} creative` : `Show ${rows.length - 6} more creatives`)}</Button> : null}
         </div>
 
-        <div className="v2-panel p-4 sm:p-5">
+        <div className="v2-panel min-w-0 p-4 sm:p-5">
           <div className="flex items-center justify-between"><h2 className="v2-section-title">{isVietnamese ? "Creative đang xem" : "Creative in focus"}</h2><Badge variant={selected?.frequency && selected.frequency >= 3 ? "outline" : "success"}>{selected?.frequency && selected.frequency >= 3 ? (isVietnamese ? "Theo dõi" : "Watch") : (isVietnamese ? "Mới" : "Fresh")}</Badge></div>
           {selected ? <div className="mt-4"><MetaCreativeFocusPreview report={report} row={selected} language={language} /></div> : null}
           {selected ? (
@@ -654,7 +670,7 @@ function CreativesTab({ language, report, currency, selectedIds, onSelectionChan
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
                 <Button type="button" size="sm" onClick={onOpenEvidence}>{isVietnamese ? "Mở evidence" : "Open evidence"}</Button>
-                <Button type="button" size="sm" variant="outline" disabled={selectedIds.length !== 2} onClick={onCompare}>{isVietnamese ? `So sánh (${selectedIds.length}/2)` : `Compare (${selectedIds.length}/2)`}</Button>
+                {comparisonMode ? <Button type="button" size="sm" variant="outline" disabled={selectedIds.length !== 2} onClick={onCompare}>{isVietnamese ? `So sánh (${selectedIds.length}/2)` : `Compare (${selectedIds.length}/2)`}</Button> : null}
               </div>
             </>
           ) : null}
@@ -884,6 +900,13 @@ function packLabel(pack: DashboardReport["selectedPack"]) {
 
 function compact(value: number) {
   return new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(Number.isFinite(value) ? value : 0);
+}
+
+function compactSentence(value: string, maxLength: number) {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxLength) return normalized;
+  const shortened = normalized.slice(0, maxLength - 1).replace(/\s+\S*$/, "");
+  return `${shortened || normalized.slice(0, maxLength - 1)}…`;
 }
 
 function currencyValue(value: number, currency: string) {

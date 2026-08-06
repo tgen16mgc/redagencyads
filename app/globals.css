@@ -2353,6 +2353,13 @@
   border-right: 1px solid var(--border);
   background: var(--sidebar);
   padding: 20px;
+  transition: width 180ms ease, padding 180ms ease;
+}
+
+.v2-shell[data-sidebar-expanded="true"] .v2-app-rail {
+  width: 264px;
+  align-items: stretch;
+  padding-inline: 16px;
 }
 
 .v2-rail-primary,
@@ -2365,6 +2372,14 @@
 
 .v2-rail-primary {
   gap: 24px;
+}
+
+.v2-rail-brand-row {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .v2-rail-nav {
@@ -2415,6 +2430,117 @@
   background: transparent;
 }
 
+.v2-rail-label,
+.v2-rail-brand-label,
+.v2-rail-profile-label,
+.v2-rail-section-label,
+.v2-workflow-state {
+  display: none;
+}
+
+.v2-shell[data-sidebar-expanded="true"] .v2-rail-brand-row {
+  flex-direction: row;
+}
+
+.v2-shell[data-sidebar-expanded="true"] .v2-rail-primary,
+.v2-shell[data-sidebar-expanded="true"] .v2-rail-account,
+.v2-shell[data-sidebar-expanded="true"] .v2-rail-nav {
+  align-items: stretch;
+}
+
+.v2-shell[data-sidebar-expanded="true"] .v2-brand-button,
+.v2-shell[data-sidebar-expanded="true"] .v2-rail-button {
+  width: 100%;
+  justify-content: flex-start;
+  gap: 12px;
+  padding-inline: 14px;
+}
+
+.v2-shell[data-sidebar-expanded="true"] .v2-brand-button {
+  width: 196px;
+}
+
+.v2-shell[data-sidebar-expanded="true"] .v2-rail-label,
+.v2-shell[data-sidebar-expanded="true"] .v2-rail-brand-label,
+.v2-shell[data-sidebar-expanded="true"] .v2-rail-profile-label,
+.v2-shell[data-sidebar-expanded="true"] .v2-rail-section-label,
+.v2-shell[data-sidebar-expanded="true"] .v2-workflow-state {
+  display: inline-flex;
+}
+
+.v2-rail-collapse {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.v2-rail-collapse:hover {
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  color: var(--primary);
+}
+
+.v2-rail-collapse svg {
+  width: 18px;
+  height: 18px;
+}
+
+.v2-rail-workflow {
+  display: grid;
+  gap: 5px;
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+
+.v2-rail-section-label {
+  padding: 0 12px 5px;
+  color: var(--muted-foreground);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.v2-rail-workflow-item {
+  display: none;
+  min-height: 38px;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  padding: 8px 10px;
+  color: var(--muted-foreground);
+  text-align: left;
+  cursor: pointer;
+}
+
+.v2-shell[data-sidebar-expanded="true"] .v2-rail-workflow-item {
+  display: grid;
+}
+
+.v2-rail-workflow-item svg {
+  width: 16px;
+  height: 16px;
+}
+
+.v2-rail-workflow-item[data-state="complete"] svg,
+.v2-rail-workflow-item[data-state="active"] svg {
+  color: var(--primary);
+}
+
+.v2-workflow-state {
+  color: var(--muted-foreground);
+  font-size: 10px;
+}
+
 .v2-rail-button svg {
   width: 19px;
   height: 19px;
@@ -2459,9 +2585,35 @@
   font-weight: 600;
 }
 
+.v2-shell[data-sidebar-expanded="true"] .v2-avatar-button {
+  width: 100%;
+  justify-content: flex-start;
+  gap: 12px;
+  border-radius: 14px;
+  padding: 0 10px;
+}
+
+.v2-avatar-button img {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+}
+
+.v2-rail-profile-label {
+  color: var(--foreground);
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .v2-app-main {
   min-width: 0;
   padding-left: 88px;
+  transition: padding-left 180ms ease;
+}
+
+.v2-shell[data-sidebar-expanded="true"] .v2-app-main {
+  padding-left: 264px;
 }
 
 .v2-topbar {
@@ -3244,6 +3396,10 @@
     padding-bottom: 0;
   }
 
+  .v2-shell[data-sidebar-expanded="true"] .v2-app-main {
+    padding-left: 0;
+  }
+
   .v2-mobile-nav {
     position: fixed;
     inset: auto 12px 12px;
@@ -3273,6 +3429,10 @@
     width: 44px;
     height: 44px;
     border-radius: 13px;
+  }
+
+  .v2-mobile-nav .v2-rail-label {
+    display: none !important;
   }
 
   .v2-mobile-nav .v2-rail-button.is-active::before {
