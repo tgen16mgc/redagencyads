@@ -873,6 +873,19 @@ function projectDiagnosticEvidence(diagnostic: Diagnostic, language: InterfaceLa
 }
 
 function projectHealthEvidence(id: string, fallbackTitle: string, fallbackDetail: string, language: InterfaceLanguage) {
+  if (id === "health-M25") {
+    const count = Number(fallbackDetail.match(/\d+/)?.[0]);
+    if (Number.isFinite(count)) {
+      const detail = language === "vi"
+        ? count >= 10
+          ? `${count} mẫu quảng cáo đang hoạt động trong phạm vi này. Độ phủ đã đạt mốc hướng dẫn 10 mẫu cho lần rà soát hiện tại.`
+          : `Chỉ có ${count} mẫu quảng cáo đang hoạt động trong phạm vi này. Hãy bổ sung các ý tưởng khác biệt trước khi tăng ngân sách; hướng tới ít nhất 10 mẫu nếu ngân sách cho phép.`
+        : count >= 10
+          ? `${count} ads are active in this scope. Creative coverage meets the 10-ad guideline for this review.`
+          : `Only ${count} ads are active in this scope. Add more distinct creative concepts before scaling; aim for at least 10 when budget allows.`;
+      return `${language === "vi" ? "Độ phủ mẫu quảng cáo" : "Creative coverage"}: ${detail}`;
+    }
+  }
   const healthCopy: Record<string, { en: [string, string]; vi: [string, string] }> = {
     "health-M-CR4": {
       en: ["CTR benchmark", fallbackDetail.replace("Pack benchmark pass >=", "Target for this KPI pack: at least")],
@@ -881,10 +894,6 @@ function projectHealthEvidence(id: string, fallbackTitle: string, fallbackDetail
     "health-M-CR2": {
       en: ["New-audience frequency", fallbackDetail],
       vi: ["Tần suất tìm khách hàng mới", fallbackDetail.replace("Average frequency", "Tần suất trung bình").replace(/(\d+)\.(\d+)/g, "$1,$2")],
-    },
-    "health-M25": {
-      en: ["Creative volume", fallbackDetail.replace(/(\d+) ads found in selected scope\. Target: 10\+ diverse creatives where budget supports it\./, "$1 ads in the selected scope. Guideline: at least 10 varied ads when budget allows.")],
-      vi: ["Số lượng mẫu quảng cáo", fallbackDetail.replace(/(\d+) ads found in selected scope\. Target: 10\+ diverse creatives where budget supports it\./, "$1 mẫu quảng cáo trong phạm vi đã chọn. Mục tiêu: từ 10 mẫu đa dạng khi ngân sách cho phép.")],
     },
     "health-M11": {
       en: ["Campaign structure", fallbackDetail.replace(/(\d+) selected campaigns\. Meta prefers fewer campaigns per goal\./, "$1 selected campaigns. Fewer campaigns per objective can help Meta learn.")],

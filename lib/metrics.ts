@@ -204,6 +204,7 @@ export function scoreHealth(args: {
   };
   const ctrT = ctrThresholds[args.pack ?? "lead_gen"];
   const ctrStatus = (args.totals.ctr >= ctrT.pass ? "pass" : args.totals.ctr >= ctrT.warn ? "warning" : "fail") as CheckStatus;
+  const creativeCoverage = creativeCoverageCopy(args.adRows.length);
 
   const checks = [
     {
@@ -220,9 +221,9 @@ export function scoreHealth(args: {
     },
     {
       id: "M25",
-      label: "Creative/ad volume proxy",
+      label: creativeCoverage.label,
       status: (args.adRows.length >= 10 ? "pass" : args.adRows.length >= 3 ? "warning" : "fail") as CheckStatus,
-      detail: `${args.adRows.length} ads found in selected scope. Target: 10+ diverse creatives where budget supports it.`,
+      detail: creativeCoverage.detail,
     },
     {
       id: "M11",
@@ -243,6 +244,20 @@ export function scoreHealth(args: {
   }, 0);
   const grade = points >= 90 ? "A" : points >= 75 ? "B" : points >= 60 ? "C" : points >= 40 ? "D" : "F";
   return { score: points, grade, checks };
+}
+
+export function creativeCoverageCopy(adCount: number) {
+  const noun = adCount === 1 ? "ad is" : "ads are";
+  if (adCount >= 10) {
+    return {
+      label: "Creative coverage",
+      detail: `${adCount} ${noun} active in this scope. Creative coverage meets the 10-ad guideline for this review.`,
+    };
+  }
+  return {
+    label: "Creative coverage",
+    detail: `Only ${adCount} ${noun} active in this scope. Add more distinct creative concepts before scaling; aim for at least 10 when budget allows.`,
+  };
 }
 
 function metricLocale(currency = "VND") {

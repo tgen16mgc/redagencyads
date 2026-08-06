@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildCompetitorSpyPrompt, buildInsightPrompt, buildPrompt, detectKpiPack, formatMetric, formatSharePct, formatRatePct, formatCompactNumber, getKpiCards, normalizeRows, scoreHealth, sumRows } from "../metrics";
+import { buildCompetitorSpyPrompt, buildInsightPrompt, buildPrompt, creativeCoverageCopy, detectKpiPack, formatMetric, formatSharePct, formatRatePct, formatCompactNumber, getKpiCards, normalizeRows, scoreHealth, sumRows } from "../metrics";
 import type { DashboardReport, InsightRow, NormalizedRow } from "../types";
 
 function normalized(overrides: Partial<NormalizedRow>): NormalizedRow {
@@ -380,6 +380,28 @@ describe("scoreHealth", () => {
     });
 
     expect(health.score).toBe(100);
+  });
+
+  it("uses direct creative-coverage guidance instead of the legacy proxy copy", () => {
+    const health = scoreHealth({
+      totals: normalized({ ctr: 1.2, frequency: 2 }),
+      campaignRows: [normalized({ id: "c1" })],
+      adsetRows: [],
+      adRows: Array.from({ length: 3 }, (_, i) => normalized({ id: `ad-${i}` })),
+    });
+    const creativeCoverage = health.checks.find((check) => check.id === "M25");
+
+    expect(creativeCoverage).toMatchObject({
+      label: "Creative coverage",
+      status: "warning",
+      detail: "Only 3 ads are active in this scope. Add more distinct creative concepts before scaling; aim for at least 10 when budget allows.",
+    });
+    expect(creativeCoverage?.detail).not.toContain("Target: 10+");
+  });
+
+  it("uses correct singular grammar and acknowledges sufficient coverage", () => {
+    expect(creativeCoverageCopy(1).detail).toBe("Only 1 ad is active in this scope. Add more distinct creative concepts before scaling; aim for at least 10 when budget allows.");
+    expect(creativeCoverageCopy(10).detail).toBe("10 ads are active in this scope. Creative coverage meets the 10-ad guideline for this review.");
   });
 });
 

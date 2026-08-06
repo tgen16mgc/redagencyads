@@ -102,7 +102,7 @@ import { WorkspaceAuth, type WorkspaceSessionStatus } from "@/components/workspa
 import { MetaConnectDialog } from "@/components/meta-connect-dialog";
 import { AccountWorkspaceSettingsDialog, type SettingsTab } from "@/components/account-workspace-settings-dialog";
 import type { AccountWorkspaceSettingsData } from "@/lib/account-workspace-settings";
-import type { SavedReportSnapshot } from "@/lib/report-history";
+import { normalizeSavedReportCopy, type SavedReportSnapshot } from "@/lib/report-history";
 
 const workflowItems: { value: DashboardWorkflowStep; label: string; icon: React.ComponentType<React.SVGProps<SVGSVGElement>> }[] = [
   { value: "connect", label: "Connect", icon: KeyRoundIcon },
@@ -605,18 +605,20 @@ export function DashboardShell() {
   }, [workspaceSession?.authenticated]);
 
   const restoreSavedReport = React.useCallback((snapshot: SavedReportSnapshot, announce = true) => {
-    setAccountId(snapshot.report.account.id);
+    const restoredReport = normalizeSavedReportCopy(snapshot.report);
+    const restoredPreviousReport = snapshot.previousReport ? normalizeSavedReportCopy(snapshot.previousReport) : null;
+    setAccountId(restoredReport.account.id);
     setAdsWorkspace((current) => ({
       ...current,
-      report: snapshot.report,
-      previousReport: snapshot.previousReport,
+      report: restoredReport,
+      previousReport: restoredPreviousReport,
       verdict: snapshot.verdict,
       insights: snapshot.insights,
-      selectedCampaignIds: snapshot.report.selectedCampaigns.map((campaign) => campaign.id),
-      since: snapshot.report.dateRange.since,
-      until: snapshot.report.dateRange.until,
-      pack: snapshot.report.selectedPack,
-      compareMode: snapshot.previousReport ? "previous" : "off",
+      selectedCampaignIds: restoredReport.selectedCampaigns.map((campaign) => campaign.id),
+      since: restoredReport.dateRange.since,
+      until: restoredReport.dateRange.until,
+      pack: restoredReport.selectedPack,
+      compareMode: restoredPreviousReport ? "previous" : "off",
       scopeExpanded: false,
     }));
     setRestoredReportId(snapshot.id);

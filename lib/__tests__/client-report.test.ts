@@ -261,7 +261,9 @@ describe("buildClientReportViewModel", () => {
         ],
       },
     })).map((diagnostic) => diagnostic.id));
-    expect(model.diagnostics.find((diagnostic) => diagnostic.id === "creativeVolume")?.title).toBe("Số lượng mẫu quảng cáo");
+    expect(model.diagnostics.find((diagnostic) => diagnostic.id === "creativeVolume")?.title).toBe("Độ phủ mẫu quảng cáo");
+    expect(model.diagnostics.find((diagnostic) => diagnostic.id === "healthTriage")?.evidence.join(" ")).toContain("Độ phủ mẫu quảng cáo: Chỉ có 8 mẫu quảng cáo đang hoạt động");
+    expect(model.diagnostics.find((diagnostic) => diagnostic.id === "healthTriage")?.evidence.join(" ")).not.toContain("Target: 10+");
     expect(model.diagnostics.find((diagnostic) => diagnostic.id === "dailyDiagnosis")?.severity).toBe("insufficient");
     expect(model.selectedPackReason).toBe("Hành động của khách hàng tiềm năng là tín hiệu kết quả đầy đủ mạnh nhất trong phạm vi này.");
     expect(model.primaryCostLabel).toBe("CPL");
@@ -377,7 +379,7 @@ describe("buildClientReportViewModel", () => {
     expect(diagnosticText).not.toContain("thử nghiệmimonial");
     expect(diagnosticText).toContain("Testimonial ad");
     expect(diagnosticText).toContain("Mốc tham chiếu CTR");
-    expect(diagnosticText).toContain("Số lượng mẫu quảng cáo");
+    expect(diagnosticText).toContain("Độ phủ mẫu quảng cáo");
     expect(model.customCharts[0].title).toBe("Lượng lead vs CPL");
     expect(model.customCharts[0].series[0].label).toBe("Khách hàng tiềm năng");
   });

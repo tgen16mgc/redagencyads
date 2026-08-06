@@ -1,4 +1,5 @@
 import type { AiInsightTable, DashboardReport, Verdict } from "@/lib/types";
+import { creativeCoverageCopy } from "@/lib/metrics";
 
 export type SavedReportSnapshot = {
   id: string;
@@ -21,4 +22,17 @@ export function reportSnapshotKey(report: DashboardReport) {
     report.dateRange.until,
     report.selectedPack,
   ].join(":");
+}
+
+export function normalizeSavedReportCopy(report: DashboardReport): DashboardReport {
+  const creativeCoverage = creativeCoverageCopy(report.adRows.length);
+  return {
+    ...report,
+    health: {
+      ...report.health,
+      checks: report.health.checks.map((check) => check.id === "M25"
+        ? { ...check, label: creativeCoverage.label, detail: creativeCoverage.detail }
+        : check),
+    },
+  };
 }

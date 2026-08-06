@@ -293,7 +293,7 @@ function creativeVolumeDiagnostic(report: DashboardReport): Diagnostic {
     id: "creativeVolume",
     severity: assessment.severity,
     eyebrow: { en: "Creative Capacity", vi: "Năng lực mẫu quảng cáo" },
-    title: { en: "Creative volume", vi: "Số lượng mẫu quảng cáo" },
+    title: { en: "Creative coverage", vi: "Độ phủ mẫu quảng cáo" },
     description: {
       en: "Proxy for active/spent creative count per ad set; does not measure similarity or Advantage+ type yet.",
       vi: "Ước tính số mẫu quảng cáo có phân phối hoặc chi tiêu trong mỗi nhóm quảng cáo; chưa đo mức độ tương đồng hoặc loại Advantage+.",
