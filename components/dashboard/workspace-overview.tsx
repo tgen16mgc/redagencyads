@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import {
   AlertTriangleIcon,
   ArrowRightIcon,
@@ -14,6 +15,7 @@ import {
   SlidersHorizontalIcon,
   SparklesIcon,
   TargetIcon,
+  Trash2Icon,
 } from "lucide-react";
 import type { CapabilityState, CapabilityStatus } from "@/lib/capabilities";
 import type { DashboardView } from "@/lib/dashboard-access";
@@ -22,6 +24,16 @@ import type { DashboardReport } from "@/lib/types";
 import type { SavedReportSnapshot } from "@/lib/report-history";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 type WorkspaceOverviewProps = {
   authenticated: boolean;
@@ -36,6 +48,7 @@ type WorkspaceOverviewProps = {
   onOpen: (view: DashboardView) => void;
   onEditScope: () => void;
   onRestoreReport: (report: SavedReportSnapshot) => void;
+  onClearReportHistory: () => Promise<boolean>;
 };
 
 const stateRank: Record<CapabilityState, number> = {
@@ -73,7 +86,10 @@ export function WorkspaceOverview({
   onOpen,
   onEditScope,
   onRestoreReport,
+  onClearReportHistory,
 }: WorkspaceOverviewProps) {
+  const [clearHistoryOpen, setClearHistoryOpen] = React.useState(false);
+  const [clearingHistory, setClearingHistory] = React.useState(false);
   const isVietnamese = language === "vi";
   const availableCount = capabilities.filter((item) => item.state === "available").length;
   const totalChecks = healthSummary?.items.length || report?.health.checks.length || capabilities.length;
@@ -237,7 +253,15 @@ export function WorkspaceOverview({
               <h2 className="v2-section-title">{isVietnamese ? "Báo cáo gần đây" : "Recent reports"}</h2>
               <p className="v2-section-copy">{isVietnamese ? "Tiếp tục từ evidence mới nhất." : "Continue from the latest evidence."}</p>
             </div>
-            <Badge variant="outline">{savedReports.length || (report ? 1 : 0)} {isVietnamese ? "báo cáo" : "reports"}</Badge>
+            <div className="flex shrink-0 items-center gap-1.5">
+              {savedReports.length ? (
+                <Button type="button" variant="ghost" size="xs" className="text-muted-foreground hover:text-destructive" onClick={() => setClearHistoryOpen(true)}>
+                  <Trash2Icon data-icon="inline-start" />
+                  {isVietnamese ? "Xóa lịch sử" : "Clear history"}
+                </Button>
+              ) : null}
+              <Badge variant="outline">{savedReports.length || (report ? 1 : 0)} {isVietnamese ? "báo cáo" : "reports"}</Badge>
+            </div>
           </div>
 
           {report ? (
@@ -302,6 +326,37 @@ export function WorkspaceOverview({
               <span className="text-muted-foreground">{report ? (isVietnamese ? "Đã cập nhật" : "Updated") : (isVietnamese ? "Mặc định" : "Default")}</span>
             </div>
           </div>
+
+          <AlertDialog open={clearHistoryOpen} onOpenChange={setClearHistoryOpen}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>{isVietnamese ? "Xóa lịch sử báo cáo?" : "Clear saved report history?"}</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {isVietnamese
+                    ? "Các snapshot đã lưu sẽ bị xóa khỏi tài khoản này. Báo cáo đang mở vẫn giữ nguyên cho đến khi bạn rời hoặc chạy phạm vi mới."
+                    : "Saved snapshots will be removed from this account. The report currently open stays available until you leave it or run a new scope."}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={clearingHistory}>{isVietnamese ? "Giữ lại" : "Keep history"}</AlertDialogCancel>
+                <AlertDialogAction
+                  variant="destructive"
+                  disabled={clearingHistory}
+                  onClick={async () => {
+                    setClearingHistory(true);
+                    try {
+                      if (await onClearReportHistory()) setClearHistoryOpen(false);
+                    } finally {
+                      setClearingHistory(false);
+                    }
+                  }}
+                >
+                  <Trash2Icon data-icon="inline-start" />
+                  {clearingHistory ? (isVietnamese ? "Đang xóa..." : "Clearing...") : (isVietnamese ? "Xóa lịch sử" : "Clear history")}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       </section>
     </div>

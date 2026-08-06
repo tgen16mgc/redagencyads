@@ -9,7 +9,7 @@ const { createSupabaseServerClient, ensureActiveWorkspaceMembership, getWorkspac
 vi.mock("@/lib/supabase/server", () => ({ createSupabaseServerClient }));
 vi.mock("@/lib/workspace-session", () => ({ ensureActiveWorkspaceMembership, getWorkspaceAuthMode }));
 
-import { GET, POST } from "./route";
+import { DELETE, GET, POST } from "./route";
 
 describe("/api/workspace/reports", () => {
   beforeEach(() => {
@@ -78,5 +78,22 @@ describe("/api/workspace/reports", () => {
       verdict: { verdict: "Hold" },
       insights: { rows: [] },
     }), { onConflict: "user_id,account_id,date_since,date_until,selected_pack" });
+  });
+
+  it("clears only the signed-in user's saved report history", async () => {
+    const eq = vi.fn().mockResolvedValue({ error: null });
+    const remove = vi.fn().mockReturnValue({ eq });
+    createSupabaseServerClient.mockResolvedValue({
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: "user-1" } }, error: null }) },
+      from: vi.fn().mockReturnValue({ delete: remove }),
+    });
+
+    const response = await DELETE();
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ cleared: true });
+    expect(remove).toHaveBeenCalledOnce();
+    expect(eq).toHaveBeenCalledWith("user_id", "user-1");
+    expect(ensureActiveWorkspaceMembership).toHaveBeenCalledWith(expect.anything(), "user-1");
   });
 });

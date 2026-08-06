@@ -90,3 +90,23 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Report history could not be saved." }, { status: 400, headers: noStoreHeaders });
   }
 }
+
+export async function DELETE() {
+  try {
+    if (getWorkspaceAuthMode() !== "supabase") return NextResponse.json({ cleared: false }, { headers: noStoreHeaders });
+    const supabase = await createSupabaseServerClient();
+    const { data: authData, error: authError } = await supabase.auth.getUser();
+    if (authError || !authData.user) throw new Error("Sign in again to clear report history.");
+    await ensureActiveWorkspaceMembership(supabase, authData.user.id);
+
+    const { error } = await supabase
+      .from("workspace_report_snapshots")
+      .delete()
+      .eq("user_id", authData.user.id);
+    if (error) throw new Error("Report history could not be cleared.");
+
+    return NextResponse.json({ cleared: true }, { headers: noStoreHeaders });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Report history could not be cleared." }, { status: 400, headers: noStoreHeaders });
+  }
+}

@@ -640,6 +640,26 @@ export function DashboardShell() {
     }
   }, []);
 
+  const clearSavedReportHistory = React.useCallback(async () => {
+    try {
+      await jsonFetch<{ cleared: boolean }>("/api/workspace/reports", {
+        method: "DELETE",
+        timeoutMs: 10000,
+      });
+      setSavedReports([]);
+      setRestoredReportId(null);
+      toast.success(language === "vi" ? "Đã xóa lịch sử báo cáo" : "Saved report history cleared", {
+        description: language === "vi" ? "Báo cáo đang mở vẫn giữ nguyên trong phiên này." : "The report currently open remains available in this session.",
+      });
+      return true;
+    } catch (error) {
+      toast.error(language === "vi" ? "Không thể xóa lịch sử báo cáo" : "Report history could not be cleared", {
+        description: error instanceof Error ? error.message : undefined,
+      });
+      return false;
+    }
+  }, [language]);
+
   React.useEffect(() => {
     if (!workspaceSession?.authenticated) return;
     void loadSavedReports();
@@ -1334,6 +1354,7 @@ export function DashboardShell() {
                 savedReports={savedReports}
                 restoredReportId={restoredReportId}
                 onRestoreReport={(snapshot) => restoreSavedReport(snapshot)}
+                onClearReportHistory={clearSavedReportHistory}
                 onOpen={requestView}
                 onEditScope={() => {
                   if (!authenticated) {

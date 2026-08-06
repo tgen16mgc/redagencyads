@@ -634,12 +634,12 @@ function CreativesTab({ language, report, currency, selectedIds, onSelectionChan
             <div className="ml-auto flex items-center gap-1 rounded-xl border border-border p-1"><button type="button" className={cn("rounded-lg p-1.5", viewMode === "grid" && "bg-secondary text-foreground")} aria-label="Grid view" onClick={() => setViewMode("grid")}><LayoutGridIcon className="size-4" /></button><button type="button" className={cn("rounded-lg p-1.5", viewMode === "list" && "bg-secondary text-foreground")} aria-label="List view" onClick={() => setViewMode("list")}><ListIcon className="size-4" /></button></div>
             {comparisonMode ? <><Badge variant={selectedIds.length === 2 ? "success" : "outline"}>{selectedIds.length}/2 {isVietnamese ? "đã chọn" : "selected"}</Badge><Button type="button" size="sm" variant="outline" disabled={selectedIds.length !== 2} onClick={onCompare}><GitCompareArrowsIcon data-icon="inline-start" />{isVietnamese ? "So sánh" : "Compare"}</Button></> : null}
           </div></div>
-          <div className={cn("mt-5 grid gap-3", viewMode === "grid" && "md:grid-cols-2")}>
+          <div className={cn("mt-5 grid gap-3", viewMode === "grid" && "sm:grid-cols-2")}>
             {visibleRows.map((row) => {
               const selectionIndex = selectedIds.indexOf(row.id);
               return (
-              <button key={row.id} type="button" aria-pressed={comparisonMode ? selectedIds.includes(row.id) : selected?.id === row.id} className={cn("relative grid grid-cols-[94px_minmax(0,1fr)] gap-3 rounded-xl border p-2 text-left transition-colors", comparisonMode && selectedIds.includes(row.id) ? "border-primary/60 bg-primary/5" : selected?.id === row.id ? "border-border bg-secondary/25" : "border-transparent hover:border-border hover:bg-secondary/35")} onClick={() => activateCreative(row)}>
-                <MetaCreativeCover report={report} row={row} className="h-28" />
+              <button key={row.id} type="button" aria-pressed={comparisonMode ? selectedIds.includes(row.id) : selected?.id === row.id} className={cn("relative grid min-w-0 gap-3 rounded-xl border p-2 text-left transition-colors", viewMode === "list" && "grid-cols-[82px_minmax(0,1fr)]", comparisonMode && selectedIds.includes(row.id) ? "border-primary/60 bg-primary/5" : selected?.id === row.id ? "border-border bg-secondary/25" : "border-transparent hover:border-border hover:bg-secondary/35")} onClick={() => activateCreative(row)}>
+                <MetaCreativeCover report={report} row={row} className={viewMode === "grid" ? "h-32 w-full" : "h-24"} />
                 <div className="min-w-0 py-1">
                   <div className="flex items-start justify-between gap-2"><div className="truncate text-sm font-medium">{row.name}</div>{comparisonMode ? (selectionIndex >= 0 ? <Badge variant={selectionIndex === 0 ? "success" : "secondary"}>{selectionIndex === 0 ? "Control 1" : "Challenger 2"}</Badge> : <span className="flex size-5 shrink-0 items-center justify-center rounded-full border border-border" />) : null}</div>
                   <div className="mt-1 truncate text-xs text-muted-foreground">{row.adsetName || row.campaignName}</div>
