@@ -193,8 +193,7 @@ const uiCopy = {
       verdict: "Verdict",
     },
     header: {
-      overviewCrumb: "Meta Ads",
-      overviewDetail: "Tien Duong",
+      overviewCrumb: "Overview",
       adsCrumb: "Meta Graph API",
       adsDetail: "campaign-first analysis",
       competitorCrumb: "Verified research",
@@ -261,8 +260,7 @@ const uiCopy = {
       verdict: "Verdict",
     },
     header: {
-      overviewCrumb: "Meta Ads",
-      overviewDetail: "Tien Duong",
+      overviewCrumb: "Tổng quan",
       adsCrumb: "Meta Graph API",
       adsDetail: "phân tích theo campaign",
       competitorCrumb: "Nghiên cứu công khai",
@@ -483,7 +481,7 @@ export function DashboardShell() {
   const headerMode = {
     overview: {
       badge: copy.header.overviewCrumb,
-      detail: report?.account.name || workspaceLabel || copy.header.overviewDetail,
+      detail: "",
       title: workspaceName,
       description: language === "vi"
         ? "Chọn một công việc, kiểm tra capability thật và đưa evidence đến hành động."
@@ -1250,10 +1248,10 @@ export function DashboardShell() {
           <header className="v2-topbar" data-print-hidden>
             <div className="v2-topbar-copy">
               <div className="min-w-0">
-                <div className="v2-topbar-eyebrow">{headerMode.badge} · {headerMode.detail}</div>
+                <div className="v2-topbar-eyebrow">{headerMode.detail ? `${headerMode.badge} · ${headerMode.detail}` : headerMode.badge}</div>
                 <div className="v2-topbar-title">{headerMode.title}</div>
               </div>
-              <span className="v2-live-chip">{headerSession.label}</span>
+              {activeView === "overview" ? null : <span className="v2-live-chip">{headerSession.label}</span>}
             </div>
 
             <div className="v2-topbar-actions">
