@@ -1,4 +1,5 @@
 import { buildPrompt, detectKpiPack, getKpiCards, scoreHealth, sumRows } from "@/lib/metrics";
+import { flattenAudienceTargeting } from "@/lib/cross-channel";
 import type { DashboardReport, KpiPack, MetaAccount, MetaCampaign, NormalizedRow, OutcomeMetricKey } from "@/lib/types";
 
 export const SAMPLE_ACCOUNT: MetaAccount = {
@@ -47,6 +48,19 @@ const AD_SEEDS: AdSeed[] = [
   { adId: "smp-ad-311", adName: "Video • Tư vấn da 1:1", adsetId: "smp-as-31", adsetName: "Zalo — TP.HCM", campaignId: "smp-c3", campaignName: "Message | Zalo Consults", spend: 3_400_000, impressions: 190_000, reach: 106_000, clicks: 2_900, linkClicks: 1_850, messages: 118, replies: 96, leads: 4 },
   { adId: "smp-ad-321", adName: "Ảnh • Đặt lịch nhanh", adsetId: "smp-as-32", adsetName: "Zalo — Hà Nội", campaignId: "smp-c3", campaignName: "Message | Zalo Consults", spend: 2_800_000, impressions: 160_000, reach: 89_000, clicks: 2_300, linkClicks: 1_450, messages: 92, replies: 72, leads: 2 },
 ];
+
+const SAMPLE_ADSET_CONFIGURATION: Record<string, {
+  dailyBudget: number;
+  optimizationGoal: string;
+  targeting: Record<string, unknown>;
+}> = {
+  "smp-as-11": { dailyBudget: 750_000, optimizationGoal: "OFFSITE_CONVERSIONS", targeting: { age_min: 25, age_max: 45, genders: [2], geo_locations: { cities: [{ name: "Ho Chi Minh City" }], location_types: ["home", "recent"] }, custom_audiences: [{ name: "Lookalike · Leads 3%" }], publisher_platforms: ["facebook", "instagram"] } },
+  "smp-as-12": { dailyBudget: 750_000, optimizationGoal: "OFFSITE_CONVERSIONS", targeting: { age_min: 22, age_max: 45, genders: [2], geo_locations: { cities: [{ name: "Ho Chi Minh City" }] }, targeting_automation: { advantage_audience: 1 }, publisher_platforms: ["facebook", "instagram"] } },
+  "smp-as-21": { dailyBudget: 480_000, optimizationGoal: "OFFSITE_CONVERSIONS", targeting: { age_min: 22, age_max: 44, geo_locations: { countries: ["VN"] }, flexible_spec: [{ interests: [{ name: "Skin care" }, { name: "Beauty salon" }, { name: "Acne treatment" }] }], publisher_platforms: ["facebook", "instagram"] } },
+  "smp-as-22": { dailyBudget: 320_000, optimizationGoal: "OFFSITE_CONVERSIONS", targeting: { age_min: 20, age_max: 55, geo_locations: { countries: ["VN"] }, custom_audiences: [{ name: "Website visitors · 30 days" }, { name: "Video viewers · 50%" }], publisher_platforms: ["facebook", "instagram"] } },
+  "smp-as-31": { dailyBudget: 250_000, optimizationGoal: "CONVERSATIONS", targeting: { age_min: 21, age_max: 50, geo_locations: { cities: [{ name: "Ho Chi Minh City" }] }, publisher_platforms: ["facebook", "instagram", "messenger"], device_platforms: ["mobile"] } },
+  "smp-as-32": { dailyBudget: 250_000, optimizationGoal: "CONVERSATIONS", targeting: { age_min: 21, age_max: 50, geo_locations: { cities: [{ name: "Hanoi" }] }, publisher_platforms: ["facebook", "instagram", "messenger"], device_platforms: ["mobile"] } },
+};
 
 function safeDivide(numerator: number, denominator: number) {
   return denominator > 0 ? numerator / denominator : 0;
@@ -242,6 +256,27 @@ export function buildSampleReport(options: { selectedCampaignIds?: string[]; pac
     }, sumBases(seeds)),
   );
 
+  const adsetConfigurations = adsetRows.map((row) => {
+    const sample = SAMPLE_ADSET_CONFIGURATION[row.id];
+    return {
+      id: row.id,
+      name: row.name,
+      campaignId: row.campaignId || "",
+      campaignName: row.campaignName || "Campaign unavailable",
+      status: "ACTIVE",
+      dailyBudget: sample?.dailyBudget || 0,
+      lifetimeBudget: 0,
+      optimizationGoal: sample?.optimizationGoal,
+      billingEvent: "IMPRESSIONS",
+      bidStrategy: "LOWEST_COST_WITHOUT_CAP",
+      targeting: sample?.targeting,
+    };
+  });
+  const adsetTargeting = adsetConfigurations.map((adset) => ({
+    adSetId: adset.id,
+    criteria: Array.from(new Set(flattenAudienceTargeting(adset.targeting))).sort(),
+  }));
+
   const campaignRows = [...groupBy(scopedSeeds, (seed) => seed.campaignId).entries()].map(([campaignId, seeds]) =>
     makeRow("campaign", {
       id: campaignId,
@@ -327,5 +362,7 @@ export function buildSampleReport(options: { selectedCampaignIds?: string[]; pac
     health,
     prompt,
     pulledAt: new Date().toISOString(),
+    adsetConfigurations,
+    adsetTargeting,
   };
 }

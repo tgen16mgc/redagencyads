@@ -50,6 +50,7 @@ import {
   StageEvidenceSheet,
 } from "@/components/dashboard/performance-v2-overlays";
 import { MetaCreativeCover, MetaCreativeFocusPreview } from "@/components/dashboard/meta-creative-media";
+import { CampaignSetupTab } from "@/components/dashboard/campaign-setup";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -89,7 +90,7 @@ type PerformanceV2Props = {
 
 type Stage = PerformanceStage;
 
-const tabValues = ["overview", "funnel", "drivers", "creatives", "evidence"] as const;
+const tabValues = ["overview", "funnel", "drivers", "setup", "creatives", "evidence"] as const;
 
 export function PerformanceV2({
   language,
@@ -258,6 +259,10 @@ export function PerformanceV2({
         <TabsContent value="drivers" className="mt-4">
           {activeTab === "drivers" ? <><DriversTab language={language} report={report} currency={currency} onSelectEntity={setSelectedEntity} />
           {driversExtra ? <div className="mt-4">{driversExtra}</div> : null}</> : null}
+        </TabsContent>
+
+        <TabsContent value="setup" className="mt-4">
+          {activeTab === "setup" ? <CampaignSetupTab language={language} report={report} /> : null}
         </TabsContent>
 
         <TabsContent value="creatives" className="mt-4">
@@ -835,7 +840,7 @@ function formatKpi(report: DashboardReport, kpi: KpiCard, currency: string) {
 }
 
 function tabLabel(tab: (typeof tabValues)[number], language: InterfaceLanguage) {
-  const labels = { overview: { en: "Overview", vi: "Tổng quan" }, funnel: { en: "Funnel", vi: "Phễu" }, drivers: { en: "Drivers", vi: "Động lực" }, creatives: { en: "Creatives", vi: "Creative" }, evidence: { en: "Evidence", vi: "Evidence" } };
+  const labels = { overview: { en: "Overview", vi: "Tổng quan" }, funnel: { en: "Funnel", vi: "Phễu" }, drivers: { en: "Drivers", vi: "Động lực" }, setup: { en: "Setup", vi: "Thiết lập" }, creatives: { en: "Creatives", vi: "Creative" }, evidence: { en: "Evidence", vi: "Evidence" } };
   return labels[tab][language];
 }
 

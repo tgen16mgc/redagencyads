@@ -16,7 +16,7 @@ import {
   scoreHealth,
   sumRows,
 } from "@/lib/metrics";
-import { buildAdSetPreviewsWithCreatives } from "@/lib/adset-preview";
+import { buildAdSetConfigurations, buildAdSetPreviewsWithCreatives } from "@/lib/adset-preview";
 import { flattenAudienceTargeting } from "@/lib/cross-channel";
 import {
   boundedMediaHashNumber,
@@ -106,7 +106,7 @@ export async function getAdSets(
     path: `/${id}/adsets`,
     params: {
       fields:
-        "id,name,campaign_id,campaign_name,status,effective_status,daily_budget,lifetime_budget,targeting",
+        "id,name,campaign_id,campaign_name,status,effective_status,daily_budget,lifetime_budget,optimization_goal,billing_event,bid_strategy,start_time,end_time,targeting",
       filtering,
       limit: 100,
     },
@@ -425,6 +425,10 @@ export async function buildReport(params: {
     previewHtmls,
     selectedCampaigns,
   );
+  const adsetConfigurations = buildAdSetConfigurations(
+    activeAdSetsData,
+    selectedCampaigns,
+  );
 
   const campaignRows = normalizeRows(campaignInsights, "campaign");
   const adsetRows = normalizeRows(adsetInsights, "adset");
@@ -474,6 +478,7 @@ export async function buildReport(params: {
     prompt,
     pulledAt: new Date().toISOString(),
     adsetPreviews,
+    adsetConfigurations,
     adsetTargeting,
     creativeHashing: hashedActiveAds.summary,
   };

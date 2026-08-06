@@ -167,7 +167,7 @@ export function WorkspaceSearch({ commands, language }: { commands: WorkspaceCom
       <Modal.Backdrop isOpen={isOpen} onOpenChange={(next) => next ? setIsOpen(true) : close()}>
         <Modal.Container placement="top">
           <Modal.Dialog className="v2-command-dialog">
-            <Modal.CloseTrigger />
+            <Modal.CloseTrigger className="v2-command-close" />
             <Modal.Header className="v2-command-header">
               <Modal.Icon className="v2-command-icon"><SearchIcon /></Modal.Icon>
               <div>
@@ -176,15 +176,16 @@ export function WorkspaceSearch({ commands, language }: { commands: WorkspaceCom
               </div>
             </Modal.Header>
             <Modal.Body className="v2-command-body">
-              <SearchField fullWidth value={query} onChange={setQuery} aria-label={isVietnamese ? "Tìm kiếm workspace" : "Search workspace"}>
-                <SearchField.Group className="v2-command-search">
+              <SearchField fullWidth className="min-w-0" value={query} onChange={setQuery} aria-label={isVietnamese ? "Tìm kiếm workspace" : "Search workspace"}>
+                <SearchField.Group className="v2-command-search w-full min-w-0">
                   <SearchField.SearchIcon />
                   <SearchField.Input
                     ref={inputRef}
+                    className="min-w-0 flex-1"
                     placeholder={isVietnamese ? "Tìm campaign, tài khoản hoặc hành động..." : "Search campaigns, accounts, or actions..."}
                     onKeyDown={handleSearchKeyDown}
                   />
-                  <SearchField.ClearButton />
+                  <SearchField.ClearButton className="v2-command-clear" />
                   <Kbd className="v2-command-kbd" variant="light"><Kbd.Abbr keyValue="command" /><Kbd.Content>K</Kbd.Content></Kbd>
                 </SearchField.Group>
               </SearchField>

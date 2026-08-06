@@ -169,7 +169,9 @@ export function AppSidebar<T extends string>({
             title={`${userName} profile`}
             onClick={onOpenProfile}
           >
-            {userAvatarDataUrl ? <img src={userAvatarDataUrl} alt="" className="size-full object-cover" /> : userInitials}
+            <span className="v2-sidebar-avatar">
+              {userAvatarDataUrl ? <img src={userAvatarDataUrl} alt="" className="size-full object-cover" /> : userInitials}
+            </span>
             <span className="v2-rail-profile-label">{userName}</span>
           </button>
         </div>

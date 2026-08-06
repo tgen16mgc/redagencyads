@@ -104,6 +104,11 @@ export type MetaAdSet = {
   effective_status?: string;
   daily_budget?: string;
   lifetime_budget?: string;
+  optimization_goal?: string;
+  billing_event?: string;
+  bid_strategy?: string;
+  start_time?: string;
+  end_time?: string;
   targeting?: Record<string, unknown>;
 };
 
@@ -136,6 +141,22 @@ export type AdSetWithPreviews = {
   dailyBudget: number;
   lifetimeBudget: number;
   ads: AdPreview[];
+};
+
+export type AdSetConfiguration = {
+  id: string;
+  name: string;
+  campaignId: string;
+  campaignName: string;
+  status: string;
+  dailyBudget: number;
+  lifetimeBudget: number;
+  optimizationGoal?: string;
+  billingEvent?: string;
+  bidStrategy?: string;
+  startTime?: string;
+  endTime?: string;
+  targeting?: Record<string, unknown>;
 };
 
 export type InsightAction = {
@@ -275,6 +296,7 @@ export type DashboardReport = {
   prompt: string;
   pulledAt: string;
   adsetPreviews?: AdSetWithPreviews[];
+  adsetConfigurations?: AdSetConfiguration[];
   adsetTargeting?: Array<{ adSetId: string; criteria: string[] }>;
   creativeHashing?: {
     source: "meta_thumbnail_sha256";

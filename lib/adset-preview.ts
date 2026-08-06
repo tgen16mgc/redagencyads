@@ -1,4 +1,5 @@
 import type {
+  AdSetConfiguration,
   AdSetPreview,
   AdSetWithPreviews,
   MetaAdSet,
@@ -67,6 +68,35 @@ export function activeAdSetPreviews(
         a.name.localeCompare(b.name),
     )
     .slice(0, limit);
+}
+
+export function buildAdSetConfigurations(
+  adsets: MetaAdSet[],
+  campaignNames?: CampaignNameSource,
+): AdSetConfiguration[] {
+  const campaigns = campaignNameMap(campaignNames);
+
+  return adsets
+    .map((adset) => ({
+      id: adset.id,
+      name: adset.name,
+      campaignId: adset.campaign_id || "",
+      campaignName: resolveCampaignName(adset, campaigns),
+      status: adset.effective_status || adset.status || "UNKNOWN",
+      dailyBudget: Number(adset.daily_budget || 0),
+      lifetimeBudget: Number(adset.lifetime_budget || 0),
+      optimizationGoal: adset.optimization_goal,
+      billingEvent: adset.billing_event,
+      bidStrategy: adset.bid_strategy,
+      startTime: adset.start_time,
+      endTime: adset.end_time,
+      targeting: adset.targeting,
+    }))
+    .sort(
+      (a, b) =>
+        a.campaignName.localeCompare(b.campaignName) ||
+        a.name.localeCompare(b.name),
+    );
 }
 
 export function buildAdSetPreviewsWithCreatives(

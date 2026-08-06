@@ -215,7 +215,7 @@ function EvidenceMedia({
           : language === "vi" ? "Không có preview media." : "No media preview returned."}
       </p>
       {failed && onRefresh ? (
-        <Button type="button" variant="outline" size="sm" onClick={onRefresh}>
+        <Button type="button" variant="outline" size="sm" className="min-h-11" onClick={onRefresh}>
           <RefreshCcwIcon data-icon="inline-start" />
           {language === "vi" ? "Làm mới media" : "Refresh media"}
         </Button>
@@ -552,7 +552,7 @@ export function CompetitorEvidenceWorkspace({
         ) : null}
 
         {!onboarding ? (
-          <div className="grid grid-cols-2 gap-px border-t bg-border md:grid-cols-5" aria-label={isVietnamese ? "Tóm tắt lần thu thập" : "Collection summary"}>
+          <div className="grid grid-cols-3 gap-px border-t bg-border md:grid-cols-5" aria-label={isVietnamese ? "Tóm tắt lần thu thập" : "Collection summary"}>
             {[
               { label: isVietnamese ? "Đã thu thập" : "Collected", value: collectedAds.length },
               { label: isVietnamese ? "Khớp" : "Matched", value: matchedAds.length },
@@ -560,7 +560,7 @@ export function CompetitorEvidenceWorkspace({
               { label: isVietnamese ? "Đã xác minh" : "Verified", value: acceptedAds.length },
               { label: isVietnamese ? "Đã loại" : "Discarded", value: rejectedAds.length },
             ].map((metric, index) => (
-              <div key={metric.label} className={cn("bg-card px-4 py-3", index === 4 && "col-span-2 md:col-span-1")}>
+              <div key={metric.label} className={cn("bg-card px-3 py-3 md:px-4", index === 4 && "col-span-2 md:col-span-1")}>
                 <div className="font-mono text-lg font-semibold tabular-nums">{metric.value}</div>
                 <div className="text-xs text-muted-foreground">{metric.label}</div>
               </div>
@@ -570,8 +570,8 @@ export function CompetitorEvidenceWorkspace({
 
         <Separator />
 
-        <div className={cn("grid xl:min-h-[660px]", onboarding ? "xl:grid-cols-1" : "xl:grid-cols-[240px_minmax(420px,1fr)_340px]")}>
-          <aside className={cn("hidden border-r p-4 xl:block", onboarding && "xl:hidden")} aria-label={isVietnamese ? "Bộ lọc evidence" : "Evidence filters"}>
+        <div className={cn("grid xl:min-h-[660px]", onboarding ? "xl:grid-cols-1" : "xl:grid-cols-[minmax(0,1fr)_320px] min-[1720px]:grid-cols-[220px_minmax(0,1fr)_320px]")}>
+          <aside className={cn("hidden border-r p-4 min-[1720px]:block", onboarding && "min-[1720px]:hidden")} aria-label={isVietnamese ? "Bộ lọc evidence" : "Evidence filters"}>
             <div className="flex flex-col gap-6">
               <div>
                 <div className="flex items-center justify-between gap-2">
@@ -686,10 +686,10 @@ export function CompetitorEvidenceWorkspace({
                   spacing={1}
                   aria-label={isVietnamese ? "Kiểu hiển thị thư viện" : "Library view"}
                 >
-                  <ToggleGroupItem value="grid" aria-label={isVietnamese ? "Dạng lưới" : "Grid view"}>
+                  <ToggleGroupItem value="grid" className="min-h-11 min-w-11" aria-label={isVietnamese ? "Dạng lưới" : "Grid view"}>
                     <LayoutGridIcon />
                   </ToggleGroupItem>
-                  <ToggleGroupItem value="list" aria-label={isVietnamese ? "Dạng danh sách" : "List view"}>
+                  <ToggleGroupItem value="list" className="min-h-11 min-w-11" aria-label={isVietnamese ? "Dạng danh sách" : "List view"}>
                     <ListIcon />
                   </ToggleGroupItem>
                 </ToggleGroup>
@@ -703,14 +703,14 @@ export function CompetitorEvidenceWorkspace({
                 variant="outline"
                 size="sm"
                 spacing={1}
-                className="mt-4 flex-wrap justify-start xl:hidden"
+                className="mt-4 flex-nowrap justify-start overflow-x-auto pb-1 min-[1720px]:hidden"
                 aria-label={isVietnamese ? "Lọc theo trạng thái" : "Filter by status"}
               >
-                <ToggleGroupItem value="all" className="min-h-11">{isVietnamese ? "Tất cả ads" : "All ads"} {totalRecordCount}</ToggleGroupItem>
-                <ToggleGroupItem value="matched" className="min-h-11">{isVietnamese ? "Khớp" : "Matched"} {matchedCount}</ToggleGroupItem>
-                <ToggleGroupItem value="accepted" className="min-h-11">{isVietnamese ? "Đã xác minh" : "Verified"} {acceptedCount}</ToggleGroupItem>
-                <ToggleGroupItem value="needs_review" className="min-h-11">{isVietnamese ? "Cần duyệt" : "Review"} {reviewCount}</ToggleGroupItem>
-                <ToggleGroupItem value="rejected" className="min-h-11">{isVietnamese ? "Đã loại" : "Discarded"} {rejectedAds.length}</ToggleGroupItem>
+                <ToggleGroupItem value="all" className="min-h-11 shrink-0">{isVietnamese ? "Tất cả ads" : "All ads"} {totalRecordCount}</ToggleGroupItem>
+                <ToggleGroupItem value="matched" className="min-h-11 shrink-0">{isVietnamese ? "Khớp" : "Matched"} {matchedCount}</ToggleGroupItem>
+                <ToggleGroupItem value="accepted" className="min-h-11 shrink-0">{isVietnamese ? "Đã xác minh" : "Verified"} {acceptedCount}</ToggleGroupItem>
+                <ToggleGroupItem value="needs_review" className="min-h-11 shrink-0">{isVietnamese ? "Cần duyệt" : "Review"} {reviewCount}</ToggleGroupItem>
+                <ToggleGroupItem value="rejected" className="min-h-11 shrink-0">{isVietnamese ? "Đã loại" : "Discarded"} {rejectedAds.length}</ToggleGroupItem>
               </ToggleGroup>
             ) : null}
 
@@ -726,11 +726,12 @@ export function CompetitorEvidenceWorkspace({
                   variant="outline"
                   size="sm"
                   spacing={1}
+                  className="max-w-full flex-nowrap overflow-x-auto pb-1"
                   aria-label={isVietnamese ? "Lọc theo loại creative" : "Filter by creative type"}
                 >
-                  <ToggleGroupItem value="all">{isVietnamese ? "Tất cả" : "All"} {collectedAds.length}</ToggleGroupItem>
-                  <ToggleGroupItem value="video">{isVietnamese ? "Video / Reel" : "Video / Reels"} {videoAdCount}</ToggleGroupItem>
-                  <ToggleGroupItem value="image">{isVietnamese ? "Ảnh" : "Images"} {imageAdCount}</ToggleGroupItem>
+                  <ToggleGroupItem value="all" className="min-h-11 shrink-0">{isVietnamese ? "Tất cả" : "All"} {collectedAds.length}</ToggleGroupItem>
+                  <ToggleGroupItem value="video" className="min-h-11 shrink-0">{isVietnamese ? "Video / Reel" : "Video / Reels"} {videoAdCount}</ToggleGroupItem>
+                  <ToggleGroupItem value="image" className="min-h-11 shrink-0">{isVietnamese ? "Ảnh" : "Images"} {imageAdCount}</ToggleGroupItem>
                 </ToggleGroup>
               </div>
             ) : null}
@@ -761,11 +762,11 @@ export function CompetitorEvidenceWorkspace({
                       : "The creatives are still available in the library, but their advertisers do not match the selected competitor. Add the exact advertiser page URL for a precise retry."}
                   </p>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <Button type="button" size="sm" onClick={addExactLibraryUrl}>
+                    <Button type="button" size="sm" className="min-h-11" onClick={addExactLibraryUrl}>
                       <LinkIcon data-icon="inline-start" />
                       {isVietnamese ? "Thêm URL Ad Library chính xác" : "Add exact Ad Library URL"}
                     </Button>
-                    <Button type="button" variant="outline" size="sm" onClick={browseCollectedAds}>
+                    <Button type="button" variant="outline" size="sm" className="min-h-11" onClick={browseCollectedAds}>
                       <LayoutGridIcon data-icon="inline-start" />
                       {isVietnamese ? `Xem ${collectedAds.length} ads đã thu thập` : `Browse ${collectedAds.length} collected ads`}
                     </Button>
@@ -848,7 +849,7 @@ export function CompetitorEvidenceWorkspace({
                           </div>
                           <div className="mt-auto flex flex-wrap items-center justify-between gap-2 pt-4">
                             <span className="text-xs text-muted-foreground">{formatTimestamp(provenance.collectedAt, language)}</span>
-                            <Button type="button" variant="outline" size="sm" onClick={() => setSelectedEvidenceId(ad.id)}>
+                            <Button type="button" variant="outline" size="sm" className="min-h-11" onClick={() => setSelectedEvidenceId(ad.id)}>
                               <ShieldCheckIcon data-icon="inline-start" />
                               {provenance.status === "needs_review"
                                 ? isVietnamese ? "Duyệt ad" : "Review ad"
@@ -862,7 +863,7 @@ export function CompetitorEvidenceWorkspace({
                 })}
                 {remainingAdCount > 0 ? (
                   <div className="col-span-full flex justify-center pt-2">
-                    <Button type="button" variant="outline" onClick={() => setVisibleAdLimit((current) => current + 12)}>
+                    <Button type="button" variant="outline" className="min-h-11" onClick={() => setVisibleAdLimit((current) => current + 12)}>
                       <PlusIcon data-icon="inline-start" />
                       {isVietnamese ? `Tải thêm ${Math.min(12, remainingAdCount)} ads` : `Load ${Math.min(12, remainingAdCount)} more ads`}
                     </Button>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activeAdSetPreviews, buildAdSetPreviewsWithCreatives } from "../adset-preview";
+import { activeAdSetPreviews, buildAdSetConfigurations, buildAdSetPreviewsWithCreatives } from "../adset-preview";
 import type { MetaAdSet, MetaCampaign } from "../types";
 
 const adsets: MetaAdSet[] = [
@@ -99,6 +99,32 @@ describe("activeAdSetPreviews", () => {
     ];
 
     expect(activeAdSetPreviews(unresolved)[0].campaignName).toBe("Campaign unavailable · …479330");
+  });
+});
+
+describe("buildAdSetConfigurations", () => {
+  it("keeps active and paused ad sets so users can inspect the full campaign setup", () => {
+    const result = buildAdSetConfigurations([
+      ...adsets,
+      {
+        id: "4",
+        name: "Configured set",
+        campaign_id: "c1",
+        effective_status: "ACTIVE",
+        optimization_goal: "OFFSITE_CONVERSIONS",
+        billing_event: "IMPRESSIONS",
+        bid_strategy: "LOWEST_COST_WITHOUT_CAP",
+        targeting: { age_min: 25, geo_locations: { countries: ["VN"] } },
+      },
+    ]);
+
+    expect(result.map((item) => item.id)).toEqual(expect.arrayContaining(["1", "2", "3", "4"]));
+    expect(result.find((item) => item.id === "4")).toMatchObject({
+      optimizationGoal: "OFFSITE_CONVERSIONS",
+      billingEvent: "IMPRESSIONS",
+      bidStrategy: "LOWEST_COST_WITHOUT_CAP",
+      targeting: { age_min: 25, geo_locations: { countries: ["VN"] } },
+    });
   });
 });
 
