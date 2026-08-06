@@ -22,3 +22,5 @@ skills-lock.json
 !.aidesigner/.gitkeep
 .data/
 .env*
+# heroui-agents-md
+.heroui-docs/
