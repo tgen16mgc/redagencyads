@@ -290,7 +290,10 @@ export function WorkspaceNotifications({
                     onClick={() => {
                       markRead(item.id);
                       setIsOpen(false);
-                      item.onSelect();
+                      // Defer until the popover has closed. Running the action
+                      // synchronously lets React Aria's focus restoration dismiss
+                      // whatever the notification just opened.
+                      window.requestAnimationFrame(item.onSelect);
                     }}
                   >
                     <span className="v2-notification-icon"><StatusIcon /></span>
