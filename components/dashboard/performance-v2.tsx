@@ -30,6 +30,7 @@ import {
   YAxis,
 } from "recharts";
 import { inclusiveDays, isPeriodPreset } from "@/lib/period-scope";
+import { conciseVerdict } from "@/lib/verdict-summary";
 import type { HealthScoreSummary } from "@/lib/health-score";
 import type { ClientReportPdfFile } from "@/lib/client-report";
 import { formatComparisonChangePct, metricMovementIsBad, type MetricComparisonDelta } from "@/lib/metric-comparison";
@@ -330,7 +331,7 @@ function OverviewTab({
   onReviewActions: () => void;
 }) {
   const isVietnamese = language === "vi";
-  const decisionTitle = compactSentence(verdict?.verdict || primary.decision, 150);
+  const decisionTitle = conciseVerdict(verdict?.verdict || primary.decision);
   const actionRows = verdict ? [...verdict.budget_moves, ...verdict.tests].filter(Boolean).slice(0, 2) : risks.slice(0, 2).map((item) => item.detail[language]);
   const totalChecks = healthSummary?.items.length || report.health.checks.length;
   const passedChecks = healthSummary?.counts.healthy ?? report.health.checks.filter((check) => check.status === "pass").length;
@@ -628,7 +629,7 @@ function CreativesTab({ language, report, currency, selectedIds, onSelectionChan
       <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(300px,0.72fr)_minmax(0,1.48fr)]">
         <div className="v2-panel p-4 sm:p-5">
           <div className="flex flex-col gap-3"><div><h2 className="v2-section-title">{isVietnamese ? "Hiệu quả creative" : "Creative performance"}</h2><p className="v2-section-copy">{comparisonMode ? (isVietnamese ? "Chọn đúng hai creative để so sánh." : "Select exactly two creatives to compare.") : (isVietnamese ? "Chọn một creative để xem chi tiết. Bật so sánh khi cần." : "Choose one creative to inspect. Turn on compare mode only when needed.")}</p></div><div className="flex flex-wrap items-center gap-2">
-            <HeroSwitch isSelected={comparisonMode} onChange={(next) => { setComparisonMode(next); if (!next) onSelectionChange([]); }} size="sm"><HeroSwitch.Control><HeroSwitch.Thumb /></HeroSwitch.Control><HeroLabel>{isVietnamese ? "Chế độ so sánh" : "Compare mode"}</HeroLabel></HeroSwitch>
+            <HeroSwitch isSelected={comparisonMode} onChange={(next) => { setComparisonMode(next); if (!next) onSelectionChange([]); }} size="sm"><HeroSwitch.Content><HeroSwitch.Control><HeroSwitch.Thumb /></HeroSwitch.Control><HeroLabel>{isVietnamese ? "Chế độ so sánh" : "Compare mode"}</HeroLabel></HeroSwitch.Content></HeroSwitch>
             <div className="ml-auto flex items-center gap-1 rounded-xl border border-border p-1"><button type="button" className={cn("rounded-lg p-1.5", viewMode === "grid" && "bg-secondary text-foreground")} aria-label="Grid view" onClick={() => setViewMode("grid")}><LayoutGridIcon className="size-4" /></button><button type="button" className={cn("rounded-lg p-1.5", viewMode === "list" && "bg-secondary text-foreground")} aria-label="List view" onClick={() => setViewMode("list")}><ListIcon className="size-4" /></button></div>
             {comparisonMode ? <><Badge variant={selectedIds.length === 2 ? "success" : "outline"}>{selectedIds.length}/2 {isVietnamese ? "đã chọn" : "selected"}</Badge><Button type="button" size="sm" variant="outline" disabled={selectedIds.length !== 2} onClick={onCompare}><GitCompareArrowsIcon data-icon="inline-start" />{isVietnamese ? "So sánh" : "Compare"}</Button></> : null}
           </div></div>
