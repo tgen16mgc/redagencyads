@@ -41,7 +41,7 @@ import { SAMPLE_CAMPAIGNS } from "@/lib/sample-report";
 import type { AiInsightTable, CompareMode, DashboardReport, InterfaceLanguage, KpiCard, KpiPack, MetaCampaign, NormalizedRow, Verdict } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import {
-  ActionPlanSheet,
+  ActionPlanModal,
   CampaignScopeDialog,
   ComparisonDialog,
   CreativeComparisonDialog,
@@ -291,7 +291,7 @@ export function PerformanceV2({
       <KpiPackDialog open={kpiOpen} onOpenChange={setKpiOpen} current={pack} busy={reportLoading} onApply={(nextPack) => onApplyScope({ pack: nextPack })} />
       <ComparisonDialog open={comparisonOpen} onOpenChange={setComparisonOpen} current={compareMode} campaignComparisonAvailable={campaignComparisonAvailable} busy={reportLoading} onApply={(nextMode) => onApplyScope({ compareMode: nextMode })} />
       <ExportDiagnosisDialog open={exportOpen} onOpenChange={setExportOpen} report={report} accountLabel={accountLabel} periodLabel={periodLabel} exporting={exporting} onPreparePdf={onExport} />
-      <ActionPlanSheet open={actionPlanOpen} onOpenChange={setActionPlanOpen} report={report} verdict={verdict} healthSummary={healthSummary} loading={reviewing} onGenerate={onReviewActions} onExport={() => setExportOpen(true)} />
+      <ActionPlanModal open={actionPlanOpen} onOpenChange={setActionPlanOpen} report={report} verdict={verdict} healthSummary={healthSummary} loading={reviewing} onGenerate={onReviewActions} onExport={() => setExportOpen(true)} />
       <StageEvidenceSheet stage={selectedStage} onOpenChange={(open) => !open && setSelectedStage(null)} report={report} onReviewAction={() => { setSelectedStage(null); setActionPlanOpen(true); }} />
       <EntityDetailSheet row={selectedEntity} onOpenChange={(open) => !open && setSelectedEntity(null)} report={report} onOpenAction={() => { setSelectedEntity(null); setActionPlanOpen(true); }} />
       <CreativeComparisonDialog open={creativeComparisonOpen} onOpenChange={setCreativeComparisonOpen} rows={selectedCreativeIds.map((id) => report.adRows.find((row) => row.id === id)).filter((row): row is NormalizedRow => Boolean(row))} report={report} onOpenEvidence={() => { setCreativeComparisonOpen(false); setActiveTab("evidence"); }} />

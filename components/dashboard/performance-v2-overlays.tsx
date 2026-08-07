@@ -359,7 +359,7 @@ function FileReady({ file, label }: { file: ClientReportPdfFile; label: string }
   return <div className="mt-5 rounded-2xl bg-card p-4"><div className="text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">{label}</div><div className="mt-2 text-sm font-medium">{file.filename}</div><div className="mt-1 text-xs text-muted-foreground">{formatBytes(file.blob.size)}</div></div>;
 }
 
-export function ActionPlanSheet({ open, onOpenChange, report, verdict, healthSummary, loading, onGenerate, onExport }: { open: boolean; onOpenChange: (open: boolean) => void; report: DashboardReport; verdict: Verdict | null; healthSummary: HealthScoreSummary | null; loading: boolean; onGenerate: () => void; onExport: () => void }) {
+export function ActionPlanModal({ open, onOpenChange, report, verdict, healthSummary, loading, onGenerate, onExport }: { open: boolean; onOpenChange: (open: boolean) => void; report: DashboardReport; verdict: Verdict | null; healthSummary: HealthScoreSummary | null; loading: boolean; onGenerate: () => void; onExport: () => void }) {
   const requestedRef = React.useRef(false);
   const [selectedAction, setSelectedAction] = React.useState<number | null>(null);
   const [reviewedActions, setReviewedActions] = React.useState<Set<number>>(() => new Set());
