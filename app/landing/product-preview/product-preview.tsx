@@ -176,6 +176,7 @@ export function LandingProductPreview({ surface }: { surface: "overview" | "comp
           onOpen={noop}
           onEditScope={noop}
           onRestoreReport={noop}
+          onClearReportHistory={async () => false}
         />
       ) : (
         <CompetitorEvidenceWorkspace

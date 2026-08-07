@@ -104,6 +104,15 @@
   --sidebar-accent-foreground: #18181b;
   --sidebar-border: #e4e4e7;
   --sidebar-ring: #006fee;
+  --destructive: #c02434;
+  --destructive-foreground: #ffffff;
+  --success: #116e37;
+  --success-foreground: #ffffff;
+  --warning: #8a5a00;
+  --warning-foreground: #ffffff;
+  --info: #0a5fc4;
+  --info-foreground: #ffffff;
+  --chart-reference: #5b6472;
   color-scheme: light;
 }
 
@@ -2722,15 +2731,32 @@
 
 .v2-live-chip {
   display: inline-flex;
-  height: 20px;
+  height: 22px;
   align-items: center;
+  gap: 5px;
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
   border-radius: 999px;
-  background: color-mix(in srgb, var(--success) 12%, transparent);
-  color: color-mix(in srgb, var(--success) 70%, var(--foreground));
-  padding: 0 6px;
+  background: var(--card);
+  color: var(--muted-foreground);
+  padding: 0 8px;
   font-size: 10px;
   font-weight: 600;
   white-space: nowrap;
+}
+
+.v2-live-chip > i {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: currentcolor;
+}
+
+.v2-live-chip[data-state="success"] {
+  border-color: color-mix(in srgb, var(--success) 30%, transparent);
+  background: color-mix(in srgb, var(--success) 10%, var(--card));
+  color: var(--success);
 }
 
 .v2-topbar-actions {

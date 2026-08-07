@@ -195,19 +195,14 @@ const uiCopy = {
     header: {
       overviewCrumb: "Overview",
       adsCrumb: "Meta Graph API",
-      adsDetail: "campaign-first analysis",
       competitorCrumb: "Verified research",
-      competitorDetail: "Apify evidence review",
       tiktokCrumb: "TikTok public intelligence",
-      tiktokDetail: "Apify profiles and ad intelligence",
       publisherCrumb: "Meta Pages API",
-      publisherDetail: "server-side Page publishing",
       overviewTitle: "Decision command center",
       adsTitle: "Performance diagnosis",
       competitorTitle: "Competitor evidence",
       tiktokTitle: "TikTok tracker",
       intelligenceCrumb: "Canonical data layer",
-      intelligenceDetail: "owned performance and public intelligence",
       intelligenceTitle: "Cross-channel intelligence",
       publisherTitle: "Publishing operations",
       session: "HttpOnly token session",
@@ -262,19 +257,14 @@ const uiCopy = {
     header: {
       overviewCrumb: "Tổng quan",
       adsCrumb: "Meta Graph API",
-      adsDetail: "phân tích theo campaign",
       competitorCrumb: "Nghiên cứu công khai",
-      competitorDetail: "duyệt evidence Apify",
       tiktokCrumb: "Tình báo public TikTok",
-      tiktokDetail: "profile và ad intelligence qua Apify",
       publisherCrumb: "Meta Pages API",
-      publisherDetail: "đăng Page qua server",
       overviewTitle: "Decision command center",
       adsTitle: "Chẩn đoán hiệu quả",
       competitorTitle: "Evidence đối thủ",
       tiktokTitle: "Theo dõi TikTok",
       intelligenceCrumb: "Canonical data layer",
-      intelligenceDetail: "hiệu quả owned và intelligence public",
       intelligenceTitle: "Intelligence đa kênh",
       publisherTitle: "Vận hành đăng bài",
       session: "Session token HttpOnly",
@@ -479,54 +469,15 @@ export function DashboardShell() {
     [language, workflowSteps],
   );
   const headerMode = {
-    overview: {
-      badge: copy.header.overviewCrumb,
-      detail: "",
-      title: workspaceName,
-      description: language === "vi"
-        ? "Chọn một công việc, kiểm tra capability thật và đưa evidence đến hành động."
-        : "Choose a job, verify the real capability state, and move evidence toward action.",
-    },
+    overview: { badge: copy.header.overviewCrumb, title: workspaceName },
     ads: {
       badge: language === "vi" ? "Hiệu quả" : "Performance",
-      detail: report ? `${report.dateRange.since} – ${report.dateRange.until}` : (language === "vi" ? "Chưa có báo cáo" : "No report loaded"),
       title: report?.account.name || workspaceLabel || copy.header.adsTitle,
-      description: language === "vi"
-        ? "Theo dõi KPI, chẩn đoán tài khoản và tạo Verdict tối ưu."
-        : "Track KPIs, diagnose account health, and generate optimization Verdicts.",
     },
-    competitor: {
-      badge: copy.header.competitorCrumb,
-      detail: copy.header.competitorDetail,
-      title: copy.header.competitorTitle,
-      description: language === "vi"
-        ? "Thu thập ads qua Apify, xác minh advertiser và phân tích chỉ evidence đã chấp nhận."
-        : "Collect ads through Apify, verify advertiser provenance, and analyze only accepted evidence.",
-    },
-    tiktok: {
-      badge: copy.header.tiktokCrumb,
-      detail: copy.header.tiktokDetail,
-      title: copy.header.tiktokTitle,
-      description: language === "vi"
-        ? "Kéo profile, video và ad intelligence TikTok public để nghiên cứu creative và đối thủ."
-        : "Pull public TikTok profiles, videos, and ad intelligence for creative and competitor research.",
-    },
-    intelligence: {
-      badge: copy.header.intelligenceCrumb,
-      detail: copy.header.intelligenceDetail,
-      title: copy.header.intelligenceTitle,
-      description: language === "vi"
-        ? "So sánh các nguồn dữ liệu theo schema chung và nhìn rõ ranh giới giữa hiệu quả owned với creative intelligence public."
-        : "Compare sources through one canonical schema while keeping owned performance separate from public creative intelligence.",
-    },
-    publisher: {
-      badge: copy.header.publisherCrumb,
-      detail: copy.header.publisherDetail,
-      title: copy.header.publisherTitle,
-      description: language === "vi"
-        ? "Đăng ngay hoặc lên lịch bài Facebook Page bằng token Meta đang kết nối."
-        : "Publish now or schedule Facebook Page posts with the connected Meta token.",
-    },
+    competitor: { badge: copy.header.competitorCrumb, title: copy.header.competitorTitle },
+    tiktok: { badge: copy.header.tiktokCrumb, title: copy.header.tiktokTitle },
+    intelligence: { badge: copy.header.intelligenceCrumb, title: copy.header.intelligenceTitle },
+    publisher: { badge: copy.header.publisherCrumb, title: copy.header.publisherTitle },
   }[activeView];
   const headerSession = authenticated
     ? { label: copy.header.connected, variant: "success" as const }
@@ -1270,10 +1221,15 @@ export function DashboardShell() {
           <header className="v2-topbar" data-print-hidden>
             <div className="v2-topbar-copy">
               <div className="min-w-0">
-                <div className="v2-topbar-eyebrow">{headerMode.detail ? `${headerMode.badge} · ${headerMode.detail}` : headerMode.badge}</div>
-                <div className="v2-topbar-title">{headerMode.title}</div>
+                <div className="v2-topbar-eyebrow">{headerMode.badge}</div>
+                <div className="v2-topbar-title" title={headerMode.title}>{headerMode.title}</div>
               </div>
-              {activeView === "overview" ? null : <span className="v2-live-chip">{headerSession.label}</span>}
+              {activeView === "overview" ? null : (
+                <span className="v2-live-chip" data-state={headerSession.variant} title={headerSession.label}>
+                  <i aria-hidden="true" />
+                  {headerSession.label}
+                </span>
+              )}
             </div>
 
             <div className="v2-topbar-actions">

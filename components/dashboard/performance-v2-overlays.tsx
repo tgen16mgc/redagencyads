@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Modal as HeroModal } from "@heroui/react";
+import { DateField, DateRangePicker, Label, Modal as HeroModal, RangeCalendar } from "@heroui/react";
+import { type DateValue, getLocalTimeZone, parseDate, today } from "@internationalized/date";
 import { toast } from "sonner";
 import {
   ArrowRightIcon,
@@ -18,6 +19,7 @@ import type { ClientReportPdfFile } from "@/lib/client-report";
 import { buildCreativeComparisonVerdict } from "@/lib/creative-comparison";
 import type { PerformanceStage } from "@/lib/performance-stages";
 import type { CompareMode, DashboardReport, InterfaceLanguage, KpiPack, MetaCampaign, NormalizedRow, Verdict } from "@/lib/types";
+import { isPeriodPreset, rangeFromDays } from "@/lib/period-scope";
 import { cn } from "@/lib/utils";
 import { MetaCreativeCover } from "@/components/dashboard/meta-creative-media";
 import { Badge } from "@/components/ui/badge";
@@ -98,24 +100,125 @@ export function CampaignScopeDialog({ open, onOpenChange, campaigns, selectedIds
   );
 }
 
-export function PeriodScopeDialog({ open, onOpenChange, currentDays, busy, onApply }: { open: boolean; onOpenChange: (open: boolean) => void; currentDays: number; busy: boolean; onApply: (days: number) => Promise<void> }) {
-  const [days, setDays] = React.useState(currentDays);
-  React.useEffect(() => { if (open) setDays(currentDays); }, [open, currentDays]);
+export function PeriodScopeDialog({ open, onOpenChange, currentDays, since, until, busy, onApply }: { open: boolean; onOpenChange: (open: boolean) => void; currentDays: number; since: string; until: string; busy: boolean; onApply: (range: { since: string; until: string }) => Promise<void> }) {
+  const [days, setDays] = React.useState<number | "custom">(currentDays);
+  const [range, setRange] = React.useState<{ start: DateValue; end: DateValue } | null>(null);
+  const [rangeError, setRangeError] = React.useState("");
+
+  React.useEffect(() => {
+    if (!open) return;
+    setDays(isPeriodPreset(currentDays) ? currentDays : "custom");
+    setRangeError("");
+    setRange(safeRange(since, until));
+  }, [open, currentDays, since, until]);
+
   const options = [
     { days: 7, detail: "Fast signal · higher volatility" },
     { days: 30, detail: "Recommended · stable diagnosis window" },
     { days: 90, detail: "Trend context · slower to react" },
   ];
+
+  const maxDate = today(getLocalTimeZone());
+  const customSelected = days === "custom";
+  const appliedRange = customSelected && range ? { since: range.start.toString(), until: range.end.toString() } : null;
+  const applyDisabled = busy || (customSelected && !appliedRange);
+
+  async function apply() {
+    if (customSelected) {
+      if (!range) {
+        setRangeError("Choose a start and end date.");
+        return;
+      }
+      if (range.end.compare(range.start) < 0) {
+        setRangeError("The end date must be on or after the start date.");
+        return;
+      }
+      if (range.end.compare(maxDate) > 0) {
+        setRangeError("The end date cannot be in the future.");
+        return;
+      }
+      await onApply({ since: range.start.toString(), until: range.end.toString() });
+    } else {
+      await onApply(rangeFromDays(days as number, until));
+    }
+    onOpenChange(false);
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[calc(100vw-2rem)] min-w-0 max-w-[440px] overflow-x-hidden rounded-3xl border border-border bg-popover p-0" showCloseButton={false}>
         <DialogHeader className="p-5 pb-3"><DialogTitle className="text-xl font-semibold">Choose reporting period</DialogTitle><DialogDescription className="mt-2 leading-5">Use one consistent window across CPC, Cost/ATC, CPA and ROAS comparisons.</DialogDescription></DialogHeader>
-        <div className="px-5"><div className="mb-2 text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">Reporting window</div>{options.map((option) => <button key={option.days} type="button" onClick={() => setDays(option.days)} className={cn("mb-1 w-full rounded-2xl px-3 py-2.5 text-left", days === option.days ? "bg-primary/14" : "hover:bg-secondary/60")}><span className="block text-sm font-medium">Last {option.days} days</span><span className="text-xs text-muted-foreground">{option.detail}</span></button>)}</div>
-        <DialogFooter className="mt-5 grid grid-cols-2 border-t border-border p-5"><Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button><Button disabled={busy} onClick={async () => { await onApply(days); onOpenChange(false); }}>{busy ? <Spinner data-icon="inline-start" /> : null}Apply {days} days</Button></DialogFooter>
+        <div className="max-h-[60vh] overflow-y-auto px-5">
+          <div className="mb-2 text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">Reporting window</div>
+          {options.map((option) => <button key={option.days} type="button" onClick={() => { setDays(option.days); setRangeError(""); }} className={cn("mb-1 w-full rounded-2xl px-3 py-2.5 text-left", days === option.days ? "bg-primary/14" : "hover:bg-secondary/60")}><span className="block text-sm font-medium">Last {option.days} days</span><span className="text-xs text-muted-foreground">{option.detail}</span></button>)}
+          <button type="button" onClick={() => { setDays("custom"); setRangeError(""); }} className={cn("mb-1 w-full rounded-2xl px-3 py-2.5 text-left", customSelected ? "bg-primary/14" : "hover:bg-secondary/60")}><span className="block text-sm font-medium">Custom range</span><span className="text-xs text-muted-foreground">Pick exact start and end dates</span></button>
+          {customSelected ? (
+            <div className="mb-1 rounded-2xl border border-border p-3">
+              <DateRangePicker
+                value={range}
+                onChange={(next) => { setRange(next); setRangeError(""); }}
+                maxValue={maxDate}
+                aria-label="Custom reporting range"
+              >
+                <Label className="text-xs text-muted-foreground">Start and end date</Label>
+                <DateField.Group fullWidth>
+                  <DateField.Input slot="start">
+                    {(segment) => <DateField.Segment segment={segment} />}
+                  </DateField.Input>
+                  <DateRangePicker.RangeSeparator />
+                  <DateField.Input slot="end">
+                    {(segment) => <DateField.Segment segment={segment} />}
+                  </DateField.Input>
+                  <DateField.Suffix>
+                    <DateRangePicker.Trigger>
+                      <DateRangePicker.TriggerIndicator />
+                    </DateRangePicker.Trigger>
+                  </DateField.Suffix>
+                </DateField.Group>
+                <DateRangePicker.Popover>
+                  <RangeCalendar aria-label="Custom reporting range">
+                    <RangeCalendar.Header>
+                      <RangeCalendar.YearPickerTrigger>
+                        <RangeCalendar.YearPickerTriggerHeading />
+                        <RangeCalendar.YearPickerTriggerIndicator />
+                      </RangeCalendar.YearPickerTrigger>
+                      <RangeCalendar.NavButton slot="previous" />
+                      <RangeCalendar.NavButton slot="next" />
+                    </RangeCalendar.Header>
+                    <RangeCalendar.Grid>
+                      <RangeCalendar.GridHeader>
+                        {(day) => <RangeCalendar.HeaderCell>{day}</RangeCalendar.HeaderCell>}
+                      </RangeCalendar.GridHeader>
+                      <RangeCalendar.GridBody>
+                        {(date) => <RangeCalendar.Cell date={date} />}
+                      </RangeCalendar.GridBody>
+                    </RangeCalendar.Grid>
+                    <RangeCalendar.YearPickerGrid>
+                      <RangeCalendar.YearPickerGridBody>
+                        {({ year }) => <RangeCalendar.YearPickerCell year={year} />}
+                      </RangeCalendar.YearPickerGridBody>
+                    </RangeCalendar.YearPickerGrid>
+                  </RangeCalendar>
+                </DateRangePicker.Popover>
+              </DateRangePicker>
+              {rangeError ? <p role="alert" className="mt-2 text-xs text-destructive">{rangeError}</p> : null}
+            </div>
+          ) : null}
+        </div>
+        <DialogFooter className="mt-5 grid grid-cols-2 border-t border-border p-5"><Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button><Button disabled={applyDisabled} onClick={apply}>{busy ? <Spinner data-icon="inline-start" /> : null}{customSelected ? "Apply range" : `Apply ${days} days`}</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
+
+function safeRange(since: string, until: string): { start: DateValue; end: DateValue } | null {
+  try {
+    return { start: parseDate(since), end: parseDate(until) };
+  } catch {
+    return null;
+  }
+}
+
 
 export function KpiPackDialog({ open, onOpenChange, current, busy, onApply }: { open: boolean; onOpenChange: (open: boolean) => void; current: KpiPack | "auto"; busy: boolean; onApply: (pack: KpiPack | "auto") => Promise<void> }) {
   return (

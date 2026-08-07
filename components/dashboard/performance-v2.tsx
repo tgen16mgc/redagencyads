@@ -29,6 +29,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { inclusiveDays, isPeriodPreset } from "@/lib/period-scope";
 import type { HealthScoreSummary } from "@/lib/health-score";
 import type { ClientReportPdfFile } from "@/lib/client-report";
 import { formatComparisonChangePct, metricMovementIsBad, type MetricComparisonDelta } from "@/lib/metric-comparison";
@@ -150,8 +151,8 @@ export function PerformanceV2({
   const stages = buildPerformanceStages({ report, previousReport, compareMode, language, stageKeys: funnelStageKeys });
   const primary = primaryResult(report, language);
   const risks = healthSummary?.items.filter((item) => item.severity !== "healthy") || [];
-  const inclusivePeriodDays = Math.max(1, Math.round((new Date(until).getTime() - new Date(since).getTime()) / 86_400_000) + 1);
-  const periodDays = [7, 30, 90].reduce((closest, option) => Math.abs(option - inclusivePeriodDays) < Math.abs(closest - inclusivePeriodDays) ? option : closest);
+  const inclusivePeriodDays = inclusiveDays({ since, until });
+  const periodDays = isPeriodPreset(inclusivePeriodDays) ? inclusivePeriodDays : 0;
   const activeCampaignCount = scopeCampaigns.filter((campaign) => String(campaign.effective_status || campaign.status || "").toUpperCase() === "ACTIVE").length;
   const campaignComparisonAvailable = selectedCampaignIds.length > 0 && selectedCampaignIds.length < activeCampaignCount;
 
@@ -173,11 +174,8 @@ export function PerformanceV2({
     setSelectedCreativeIds((current) => current.filter((id) => availableIds.has(id)).slice(0, 2));
   }, [report.adRows]);
 
-  async function applyPeriod(days: number) {
-    const nextUntil = until || new Date().toISOString().slice(0, 10);
-    const nextSinceDate = new Date(`${nextUntil}T00:00:00`);
-    nextSinceDate.setDate(nextSinceDate.getDate() - days + 1);
-    await onApplyScope({ since: nextSinceDate.toISOString().slice(0, 10), until: nextUntil });
+  async function applyPeriod(range: { since: string; until: string }) {
+    await onApplyScope(range);
   }
 
   return (
@@ -288,7 +286,7 @@ export function PerformanceV2({
       </div>
 
       <CampaignScopeDialog open={campaignsOpen} onOpenChange={setCampaignsOpen} campaigns={scopeCampaigns} selectedIds={selectedCampaignIds} currency={currency} busy={reportLoading} onApply={(ids) => onApplyScope({ selectedCampaignIds: ids })} />
-      <PeriodScopeDialog open={periodOpen} onOpenChange={setPeriodOpen} currentDays={periodDays} busy={reportLoading} onApply={applyPeriod} />
+      <PeriodScopeDialog open={periodOpen} onOpenChange={setPeriodOpen} currentDays={periodDays} since={since} until={until} busy={reportLoading} onApply={applyPeriod} />
       <KpiPackDialog open={kpiOpen} onOpenChange={setKpiOpen} current={pack} busy={reportLoading} onApply={(nextPack) => onApplyScope({ pack: nextPack })} />
       <ComparisonDialog open={comparisonOpen} onOpenChange={setComparisonOpen} current={compareMode} campaignComparisonAvailable={campaignComparisonAvailable} busy={reportLoading} onApply={(nextMode) => onApplyScope({ compareMode: nextMode })} />
       <ExportDiagnosisDialog open={exportOpen} onOpenChange={setExportOpen} report={report} accountLabel={accountLabel} periodLabel={periodLabel} exporting={exporting} onPreparePdf={onExport} />
