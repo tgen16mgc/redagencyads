@@ -30,6 +30,7 @@ import {
   YAxis,
 } from "recharts";
 import { inclusiveDays, isPeriodPreset } from "@/lib/period-scope";
+import { FATIGUE_FREQUENCY_THRESHOLD, buildCreativeSignals } from "@/lib/creative-signals";
 import { conciseVerdict } from "@/lib/verdict-summary";
 import type { HealthScoreSummary } from "@/lib/health-score";
 import type { ClientReportPdfFile } from "@/lib/client-report";
@@ -599,13 +600,18 @@ function CreativesTab({ language, report, currency, selectedIds, onSelectionChan
   const [viewMode, setViewMode] = React.useState<"grid" | "list">("grid");
   const [showAll, setShowAll] = React.useState(false);
   const selected = rows.find((row) => row.id === selectedId) || rows[0];
-  const fatigueCount = rows.filter((row) => row.frequency >= 3).length;
-  const concentration = rows.length ? (rows.slice(0, 2).reduce((sum, row) => sum + row.spend, 0) / Math.max(rows.reduce((sum, row) => sum + row.spend, 0), 1)) * 100 : 0;
+  const signals = buildCreativeSignals(rows);
+  const fatigueCount = signals.fatigueCount;
+  const concentration = signals.concentration;
 
   const visibleRows = showAll ? rows : rows.slice(0, 6);
   const hashedAssets = report.creativeHashing?.hashedAssets ?? rows.length;
   const totalAssets = report.creativeHashing?.totalAssets ?? rows.length;
-  const concentrationStatus = concentration >= 65 ? (isVietnamese ? "Quá tập trung" : "Concentrated") : concentration >= 45 ? (isVietnamese ? "Cần theo dõi" : "Watch") : (isVietnamese ? "Cân bằng" : "Balanced");
+  const concentrationLabel = signals.concentrationStatus === "concentrated"
+    ? (isVietnamese ? "Quá tập trung" : "Concentrated")
+    : signals.concentrationStatus === "watch"
+      ? (isVietnamese ? "Cần theo dõi" : "Watch")
+      : (isVietnamese ? "Cân bằng" : "Balanced");
 
   function activateCreative(row: NormalizedRow) {
     setSelectedId(row.id);
@@ -620,10 +626,10 @@ function CreativesTab({ language, report, currency, selectedIds, onSelectionChan
   return (
     <div className="grid gap-4">
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <SignalCard eyebrow={isVietnamese ? "Creative hiệu quả nhất" : "Best performer"} title={rows[0]?.name || "—"} detail={rows[0] ? `${primaryRowCost(rows[0], report.selectedPack, currency)} per result` : "No delivery"} tone="success" />
-        <SignalCard eyebrow={isVietnamese ? "Cần làm mới" : "Needs refresh"} title={`${fatigueCount} / ${rows.length}`} detail={fatigueCount ? (isVietnamese ? "Frequency từ 3.0 trở lên" : "Frequency is 3.0 or higher") : (isVietnamese ? "Chưa thấy fatigue" : "No fatigue threshold reached")} tone={fatigueCount ? "warning" : "success"} />
-        <SignalCard eyebrow={isVietnamese ? "Có thể xem preview" : "Preview available"} title={`${hashedAssets} / ${totalAssets}`} detail={hashedAssets === totalAssets ? (isVietnamese ? "Tất cả creative đều xem được" : "All creative previews are available") : (isVietnamese ? "Một số asset chưa có preview" : "Some assets have no returned preview")} tone={hashedAssets === totalAssets ? "success" : "primary"} />
-        <SignalCard eyebrow={isVietnamese ? "Phân bổ chi tiêu" : "Spend distribution"} title={concentrationStatus} detail={`${concentration.toFixed(0)}% ${isVietnamese ? "nằm ở 2 creative đầu" : "is held by the top two creatives"}`} tone={concentration >= 65 ? "warning" : "primary"} />
+        <SignalCard eyebrow={isVietnamese ? "Creative hiệu quả nhất" : "Best performer"} title={rows[0]?.name || "—"} detail={rows[0] ? `${primaryRowCost(rows[0], report.selectedPack, currency)} ${isVietnamese ? `mỗi ${primaryLabel(report.selectedPack, language).toLowerCase()}` : `per ${primaryLabel(report.selectedPack, language).toLowerCase()}`}` : (isVietnamese ? "Chưa phân phối" : "No delivery yet")} tone="success" />
+        <SignalCard eyebrow={isVietnamese ? "Cần làm mới" : "Needs refresh"} title={`${fatigueCount} / ${rows.length}`} detail={fatigueCount ? (isVietnamese ? `Frequency từ ${FATIGUE_FREQUENCY_THRESHOLD.toFixed(1)} trở lên` : `Frequency at or above ${FATIGUE_FREQUENCY_THRESHOLD.toFixed(1)}`) : (isVietnamese ? `Chưa creative nào chạm ${FATIGUE_FREQUENCY_THRESHOLD.toFixed(1)}` : `No creative has reached ${FATIGUE_FREQUENCY_THRESHOLD.toFixed(1)}`)} tone={fatigueCount ? "warning" : "success"} />
+        <SignalCard eyebrow={isVietnamese ? "Có thể xem preview" : "Preview available"} title={`${hashedAssets} / ${totalAssets}`} detail={hashedAssets === totalAssets ? (isVietnamese ? "Mọi creative đều có preview" : "Every creative has a preview") : (isVietnamese ? `${totalAssets - hashedAssets} creative chưa được Meta trả preview` : `Meta returned no preview for ${totalAssets - hashedAssets}`)} tone={hashedAssets === totalAssets ? "success" : "primary"} />
+        <SignalCard eyebrow={isVietnamese ? "Phân bổ chi tiêu" : "Spend distribution"} title={concentrationLabel} detail={`${concentration.toFixed(0)}% ${isVietnamese ? `chi tiêu nằm ở ${signals.topSpendShareCount} creative chi nhiều nhất` : `of spend sits in the top ${signals.topSpendShareCount} creatives`}`} tone={concentration >= 65 ? "warning" : "primary"} />
       </div>
 
       <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(300px,0.72fr)_minmax(0,1.48fr)]">
