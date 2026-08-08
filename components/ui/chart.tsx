@@ -214,6 +214,7 @@ function ChartTooltipContent({
             const formattedName = Array.isArray(formatted)
               ? formatted[1]
               : undefined
+            const hasFormattedValue = formattedValue !== null && formattedValue !== undefined
 
             return (
               <div
@@ -259,12 +260,13 @@ function ChartTooltipContent({
                       {formattedName ?? itemConfig?.label ?? item.name}
                     </span>
                   </div>
-                  {item.value != null && (
+                  {(item.value != null || hasFormattedValue) && (
                     <span className="shrink-0 font-mono font-medium text-foreground tabular-nums">
-                      {formattedValue ??
-                        (typeof item.value === "number"
+                      {hasFormattedValue
+                        ? formattedValue
+                        : typeof item.value === "number"
                           ? item.value.toLocaleString()
-                          : String(item.value))}
+                          : String(item.value)}
                     </span>
                   )}
                 </div>

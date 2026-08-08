@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compactDate, detectCpmSaturation, detectTrendAnnotation, getPackChartSpec, roundForFormat, sortByDrilldown, truncateLabel } from "../chart-spec";
+import { chartMetricUnavailableLabel, chartMetricValue, compactDate, detectCpmSaturation, detectTrendAnnotation, getPackChartSpec, roundForFormat, sortByDrilldown, truncateLabel } from "../chart-spec";
 import type { NormalizedRow } from "../types";
 
 function row(overrides: Partial<NormalizedRow>): NormalizedRow {
@@ -52,6 +52,20 @@ describe("chart helpers", () => {
     const rows = [row({ id: "zero", spend: 999, cpl: 0 }), row({ id: "signal", spend: 10, cpl: 20 })];
 
     expect([...rows].sort((a, b) => sortByDrilldown(a, b, "cpl", false))[0].id).toBe("signal");
+  });
+
+  it("returns null for chart ratios with no denominator while preserving real zero counts", () => {
+    const noResults = row({ spend: 100, impressions: 1000, cpm: 100, leads: 0, cpl: 0 });
+
+    expect(chartMetricValue(noResults, "leads")).toBe(0);
+    expect(chartMetricValue(noResults, "cpl")).toBeNull();
+    expect(chartMetricValue(noResults, "cpm")).toBe(100);
+    expect(chartMetricValue(row({ spend: 100, impressions: 0, cpm: 0 }), "cpm")).toBeNull();
+  });
+
+  it("provides localized reasons for unavailable chart metrics", () => {
+    expect(chartMetricUnavailableLabel("cpl", "en")).toBe("No leads recorded");
+    expect(chartMetricUnavailableLabel("cpm", "vi")).toBe("Không ghi nhận lượt hiển thị");
   });
 
   it("rounds and formats lightweight labels", () => {

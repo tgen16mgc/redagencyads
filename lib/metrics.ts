@@ -66,6 +66,8 @@ function roasValue(row: InsightRow) {
 export function normalizeRows(rows: InsightRow[], level: NormalizedRow["level"]): NormalizedRow[] {
   return rows.map((row, index) => {
     const spend = Number(row.spend || 0);
+    const impressions = Number(row.impressions || 0);
+    const clicks = Number(row.clicks || 0);
     const messages = actionValue(row.actions, ACTION_TYPES.messages);
     const replies = actionValue(row.actions, ACTION_TYPES.replies);
     const leads = actionValue(row.actions, ACTION_TYPES.leads);
@@ -89,14 +91,14 @@ export function normalizeRows(rows: InsightRow[], level: NormalizedRow["level"])
       region: row.region,
       country: row.country,
       spend,
-      impressions: Number(row.impressions || 0),
+      impressions,
       reach: Number(row.reach || 0),
       frequency: Number(row.frequency || 0),
-      clicks: Number(row.clicks || 0),
+      clicks,
       linkClicks: Number(row.inline_link_clicks || actionValue(row.actions, ["link_click"])),
       ctr: Number(row.ctr || 0),
-      cpc: Number(row.cpc || 0),
-      cpm: Number(row.cpm || 0),
+      cpc: Number(row.cpc || 0) || safeDivide(spend, clicks),
+      cpm: Number(row.cpm || 0) || safeDivide(spend, impressions) * 1000,
       messages,
       replies,
       leads,

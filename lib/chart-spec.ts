@@ -165,6 +165,41 @@ export function metricValue(row: NormalizedRow, key: ChartKey) {
   return Number(row[key] || 0);
 }
 
+const CHART_METRIC_DENOMINATORS: Partial<Record<ChartKey, keyof NormalizedRow>> = {
+  replyRate: "messages",
+  costPerMessage: "messages",
+  costPerReply: "replies",
+  cpl: "leads",
+  cpaPurchase: "purchases",
+  cpc: "clicks",
+  cpm: "impressions",
+  ctr: "impressions",
+  frequency: "reach",
+};
+
+const UNAVAILABLE_METRIC_COPY: Partial<Record<ChartKey, { en: string; vi: string }>> = {
+  replyRate: { en: "No messages recorded", vi: "Không ghi nhận tin nhắn" },
+  costPerMessage: { en: "No messages recorded", vi: "Không ghi nhận tin nhắn" },
+  costPerReply: { en: "No replies recorded", vi: "Không ghi nhận phản hồi" },
+  cpl: { en: "No leads recorded", vi: "Không ghi nhận lead" },
+  cpaPurchase: { en: "No purchases recorded", vi: "Không ghi nhận đơn hàng" },
+  cpc: { en: "No clicks recorded", vi: "Không ghi nhận click" },
+  cpm: { en: "No impressions recorded", vi: "Không ghi nhận lượt hiển thị" },
+  ctr: { en: "No impressions recorded", vi: "Không ghi nhận lượt hiển thị" },
+  frequency: { en: "No reach recorded", vi: "Không ghi nhận lượt tiếp cận" },
+};
+
+/** Returns null when a ratio has no valid denominator so charts render a truthful gap. */
+export function chartMetricValue(row: NormalizedRow, key: ChartKey): number | null {
+  const denominatorKey = CHART_METRIC_DENOMINATORS[key];
+  if (denominatorKey && Number(row[denominatorKey] || 0) <= 0) return null;
+  return metricValue(row, key);
+}
+
+export function chartMetricUnavailableLabel(key: ChartKey, language: InterfaceLanguage): string {
+  return UNAVAILABLE_METRIC_COPY[key]?.[language] || (language === "vi" ? "Không có dữ liệu" : "No data");
+}
+
 export function sortByDrilldown(a: NormalizedRow, b: NormalizedRow, key: ChartKey, higherIsBetter: boolean) {
   const left = metricValue(a, key);
   const right = metricValue(b, key);

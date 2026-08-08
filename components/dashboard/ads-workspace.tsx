@@ -39,6 +39,8 @@ import { detectBaselineAnomalies, anomalyBadgeText } from "@/lib/baseline-anomal
 import type { CapabilityStatus } from "@/lib/capabilities";
 import { performanceChartConfig } from "@/lib/chart-palette";
 import {
+  chartMetricUnavailableLabel,
+  chartMetricValue,
   compactDate,
   detectTrendAnnotation,
   formatChartValue,
@@ -48,6 +50,7 @@ import {
   roundMetric,
   sortByDrilldown,
   truncateLabel,
+  type ChartFormat,
   type ChartKey,
 } from "@/lib/chart-spec";
 import { analyzeComparisonRootCauses } from "@/lib/comparison-root-cause";
@@ -1869,9 +1872,32 @@ function modeLabel(mode: CompareMode, language: InterfaceLanguage = "en") {
   return language === "vi" ? "Tắt" : "Off";
 }
 
-function averageRows(rows: NormalizedRow[], key: keyof NormalizedRow): number {
-  if (!rows.length) return 0;
-  return rows.reduce((sum, row) => sum + Number(row[key] || 0), 0) / rows.length;
+function averageRows(rows: NormalizedRow[], key: ChartKey): number | null {
+  const values = rows
+    .map((row) => chartMetricValue(row, key))
+    .filter((value): value is number => value !== null);
+  if (!values.length) return null;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function roundedChartMetric(
+  row: NormalizedRow,
+  key: ChartKey,
+  round: (value: number) => number,
+): number | null {
+  const value = chartMetricValue(row, key);
+  return value === null ? null : round(value);
+}
+
+function performanceTooltipValue(
+  value: unknown,
+  key: ChartKey,
+  format: ChartFormat,
+  currency: string,
+  language: InterfaceLanguage,
+): string {
+  if (value == null) return `— · ${chartMetricUnavailableLabel(key, language)}`;
+  return formatChartValue(Number(value), format, currency);
 }
 
 function PerformanceCharts({ report, language }: { report: DashboardReport; language: InterfaceLanguage }) {
@@ -1894,15 +1920,15 @@ function PerformanceCharts({ report, language }: { report: DashboardReport; lang
     clicks: row.clicks,
     impressions: row.impressions,
     reach: row.reach,
-    costPerMessage: Math.round(row.costPerMessage),
-    costPerReply: Math.round(row.costPerReply),
-    cpl: Math.round(row.cpl),
-    cpaPurchase: Math.round(row.cpaPurchase),
-    cpc: roundMetric(row.cpc),
-    cpm: roundMetric(row.cpm),
-    roas: roundMetric(row.roas),
-    frequency: roundMetric(row.frequency),
-    ctr: roundMetric(row.ctr),
+    costPerMessage: roundedChartMetric(row, "costPerMessage", Math.round),
+    costPerReply: roundedChartMetric(row, "costPerReply", Math.round),
+    cpl: roundedChartMetric(row, "cpl", Math.round),
+    cpaPurchase: roundedChartMetric(row, "cpaPurchase", Math.round),
+    cpc: roundedChartMetric(row, "cpc", roundMetric),
+    cpm: roundedChartMetric(row, "cpm", roundMetric),
+    roas: roundedChartMetric(row, "roas", roundMetric),
+    frequency: roundedChartMetric(row, "frequency", roundMetric),
+    ctr: roundedChartMetric(row, "ctr", roundMetric),
   }));
   const adsetData = [...report.adsetRows]
     .sort((a, b) => sortByDrilldown(a, b, spec.drilldownKey, spec.higherIsBetter))
@@ -1964,19 +1990,22 @@ function PerformanceCharts({ report, language }: { report: DashboardReport; lang
                 <YAxis yAxisId="outcomes" orientation="right" hide domain={paddedPositiveDomain(trendReferenceValue)} />
                 {trendReferenceValue ? <ReferenceLine yAxisId="outcomes" y={trendReferenceValue} stroke="var(--chart-reference)" strokeDasharray="2 4" /> : null}
                 <ChartTooltip
+                  filterNull={false}
                   content={
                     <ChartTooltipContent
-                      formatter={(value, name) => (
-                        <span className="tabular-nums">
-                          {formatChartValue(Number(value), name === "spend" ? "currency" : spec.metricFormats[name as ChartKey] || "number", currency)}
-                        </span>
+                      formatter={(value, name) => performanceTooltipValue(
+                        value,
+                        name as ChartKey,
+                        name === "spend" ? "currency" : spec.metricFormats[name as ChartKey] || "number",
+                        currency,
+                        language,
                       )}
                     />
                   }
                 />
                 <Bar yAxisId="spend" dataKey="spend" fill="var(--color-spend)" radius={[3, 3, 0, 0]} />
                 {spec.trendKeys.map((key) => (
-                  <Line key={key} yAxisId="outcomes" type="monotone" dataKey={key} stroke={`var(--color-${key})`} strokeWidth={trendAnnotation?.key === key ? 3 : 2} dot={false} />
+                  <Line key={key} yAxisId="outcomes" type="monotone" dataKey={key} connectNulls={false} stroke={`var(--color-${key})`} strokeWidth={trendAnnotation?.key === key ? 3 : 2} dot={false} />
                 ))}
               </ComposedChart>
             </ChartContainer>
@@ -2003,18 +2032,21 @@ function PerformanceCharts({ report, language }: { report: DashboardReport; lang
                 <YAxis hide domain={paddedPositiveDomain(efficiencyReferenceValue)} />
                 {efficiencyReferenceValue ? <ReferenceLine y={efficiencyReferenceValue} stroke="var(--chart-reference)" strokeDasharray="2 4" /> : null}
                 <ChartTooltip
+                  filterNull={false}
                   content={
                     <ChartTooltipContent
-                      formatter={(value, name) => (
-                        <span className="tabular-nums">
-                          {formatChartValue(Number(value), spec.metricFormats[name as ChartKey] || "currency", currency)}
-                        </span>
+                      formatter={(value, name) => performanceTooltipValue(
+                        value,
+                        name as ChartKey,
+                        spec.metricFormats[name as ChartKey] || "currency",
+                        currency,
+                        language,
                       )}
                     />
                   }
                 />
                 {spec.efficiencyKeys.map((key) => (
-                  <Line key={key} type="monotone" dataKey={key} stroke={`var(--color-${key})`} strokeWidth={2} dot={false} />
+                  <Line key={key} type="monotone" dataKey={key} connectNulls={false} stroke={`var(--color-${key})`} strokeWidth={2} dot={{ r: 2.5, strokeWidth: 0 }} />
                 ))}
               </LineChart>
             </ChartContainer>
@@ -2042,18 +2074,21 @@ function PerformanceCharts({ report, language }: { report: DashboardReport; lang
                 {spec.referenceLine ? <ReferenceLine y={spec.referenceLine.value} stroke="var(--destructive)" strokeDasharray="4 4" /> : null}
                 {spec.diagnosticKeys.includes("ctr") ? <ReferenceLine y={1} stroke="var(--chart-reference)" strokeDasharray="2 4" /> : null}
                 <ChartTooltip
+                  filterNull={false}
                   content={
                     <ChartTooltipContent
-                      formatter={(value, name) => (
-                        <span className="tabular-nums">
-                          {formatChartValue(Number(value), spec.metricFormats[name as ChartKey] || "number", currency)}
-                        </span>
+                      formatter={(value, name) => performanceTooltipValue(
+                        value,
+                        name as ChartKey,
+                        spec.metricFormats[name as ChartKey] || "number",
+                        currency,
+                        language,
                       )}
                     />
                   }
                 />
                 {spec.diagnosticKeys.map((key) => (
-                  <Line key={key} type="monotone" dataKey={key} stroke={`var(--color-${key})`} strokeWidth={2} dot={false} />
+                  <Line key={key} type="monotone" dataKey={key} connectNulls={false} stroke={`var(--color-${key})`} strokeWidth={2} dot={false} />
                 ))}
               </LineChart>
             </ChartContainer>

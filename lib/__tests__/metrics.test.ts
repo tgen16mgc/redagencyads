@@ -127,6 +127,21 @@ describe("normalizeRows edge cases", () => {
     expect(row.cpaPurchase).toBeCloseTo(100 / 4);
   });
 
+  it("derives CPC and CPM when Meta omits the ratio fields", () => {
+    const [row] = normalizeRows([
+      {
+        campaign_id: "c1",
+        campaign_name: "Delivery",
+        spend: "100",
+        clicks: "200",
+        impressions: "10000",
+      },
+    ], "campaign");
+
+    expect(row.cpc).toBeCloseTo(0.5);
+    expect(row.cpm).toBeCloseTo(10);
+  });
+
   it("falls back to the link_click action when inline_link_clicks is missing", () => {
     const rows: InsightRow[] = [
       {

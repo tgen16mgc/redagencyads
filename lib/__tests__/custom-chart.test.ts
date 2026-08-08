@@ -271,6 +271,19 @@ describe("buildCustomChartData", () => {
     expect(point.leads).toBe(13);
     expect(point.roas).toBe(2.35);
   });
+
+  it("uses null gaps for undefined cost ratios without fabricating zero values", () => {
+    const rows = [row({ date: "2026-06-05", spend: 100, impressions: 1000, cpm: 100, leads: 0, cpl: 0 })];
+    const [point] = buildCustomChartData(rows, spec({ series: [
+      { key: "leads", axis: "left" },
+      { key: "cpl", axis: "right" },
+      { key: "cpm", axis: "right" },
+    ] }));
+
+    expect(point.leads).toBe(0);
+    expect(point.cpl).toBeNull();
+    expect(point.cpm).toBe(100);
+  });
 });
 
 describe("buildChartConfig", () => {

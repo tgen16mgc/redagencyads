@@ -96,7 +96,7 @@ export type ClientReportCustomChart = {
     axis: CustomChartSpec["series"][number]["axis"];
     format: ReturnType<typeof metricFormat>;
   }>;
-  data: Array<Record<string, number | string>>;
+  data: Array<Record<string, number | string | null>>;
   referenceNote: string | null;
 };
 

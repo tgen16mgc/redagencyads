@@ -14,7 +14,7 @@ import {
   YAxis,
 } from "recharts";
 import type { InterfaceLanguage, NormalizedRow } from "@/lib/types";
-import { type ChartKey, formatChartValue } from "@/lib/chart-spec";
+import { chartMetricUnavailableLabel, type ChartKey, formatChartValue } from "@/lib/chart-spec";
 import {
   type CustomAxis,
   type CustomChartSpec,
@@ -47,10 +47,12 @@ function CustomChartEmpty({ message, height }: { message: string; height: number
   );
 }
 
-function tooltipFormatter(currency: string) {
+function tooltipFormatter(currency: string, language: InterfaceLanguage) {
   return (value: unknown, name: unknown) => (
     <span className="tabular-nums">
-      {formatChartValue(Number(value), metricFormat(name as ChartKey), currency)}
+      {value == null
+        ? `— · ${chartMetricUnavailableLabel(name as ChartKey, language)}`
+        : formatChartValue(Number(value), metricFormat(name as ChartKey), currency)}
     </span>
   );
 }
@@ -97,7 +99,7 @@ function CustomChartPlot({
   });
   const grid = <CartesianGrid vertical={false} strokeDasharray={compact ? "3 3" : undefined} />;
   const xAxis = <XAxis dataKey="x" hide={compact} tickLine={false} axisLine={false} tickMargin={8} minTickGap={16} />;
-  const tooltip = compact ? null : <ChartTooltip content={<ChartTooltipContent formatter={tooltipFormatter(currency)} />} />;
+  const tooltip = compact ? null : <ChartTooltip filterNull={false} content={<ChartTooltipContent formatter={tooltipFormatter(currency, language)} />} />;
   const margin = compact ? { left: 2, right: 2, top: 4, bottom: 0 } : { left: 8, right: 8, top: 8, bottom: 0 };
   const chartClassName = "h-full w-full";
 
@@ -114,7 +116,7 @@ function CustomChartPlot({
       return (
         <AreaChart data={data} margin={margin}>
           {grid}{xAxis}{axes}{tooltip}
-          {spec.series.map((series) => <Area key={series.key} yAxisId={series.axis} type="monotone" dataKey={series.key} stroke={`var(--color-${series.key})`} fill={`var(--color-${series.key})`} fillOpacity={0.15} strokeWidth={2} />)}
+          {spec.series.map((series) => <Area key={series.key} yAxisId={series.axis} type="monotone" dataKey={series.key} connectNulls={false} stroke={`var(--color-${series.key})`} fill={`var(--color-${series.key})`} fillOpacity={0.15} strokeWidth={2} dot={compact ? false : { r: 2, strokeWidth: 0 }} />)}
         </AreaChart>
       );
     }
@@ -124,14 +126,14 @@ function CustomChartPlot({
           {grid}{xAxis}{axes}{tooltip}
           {spec.series.map((series) => series.axis === "left"
             ? <Bar key={series.key} yAxisId={series.axis} dataKey={series.key} fill={`var(--color-${series.key})`} radius={[3, 3, 0, 0]} />
-            : <Line key={series.key} yAxisId={series.axis} type="monotone" dataKey={series.key} stroke={`var(--color-${series.key})`} strokeWidth={2} dot={false} />)}
+            : <Line key={series.key} yAxisId={series.axis} type="monotone" dataKey={series.key} connectNulls={false} stroke={`var(--color-${series.key})`} strokeWidth={2} dot={compact ? false : { r: 2, strokeWidth: 0 }} />)}
         </ComposedChart>
       );
     }
     return (
       <LineChart data={data} margin={margin}>
         {grid}{xAxis}{axes}{tooltip}
-        {spec.series.map((series) => <Line key={series.key} yAxisId={series.axis} type="monotone" dataKey={series.key} stroke={`var(--color-${series.key})`} strokeWidth={2} dot={false} />)}
+        {spec.series.map((series) => <Line key={series.key} yAxisId={series.axis} type="monotone" dataKey={series.key} connectNulls={false} stroke={`var(--color-${series.key})`} strokeWidth={2} dot={compact ? false : { r: 2, strokeWidth: 0 }} />)}
       </LineChart>
     );
   })();

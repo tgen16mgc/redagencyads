@@ -1,6 +1,6 @@
 import type { InterfaceLanguage, NormalizedRow } from "@/lib/types";
 import type { ChartConfig } from "@/components/ui/chart";
-import { type ChartFormat, type ChartKey, compactDate, metricValue, roundForFormat } from "@/lib/chart-spec";
+import { type ChartFormat, type ChartKey, chartMetricValue, compactDate, roundForFormat } from "@/lib/chart-spec";
 
 export type CustomChartType = "line" | "bar" | "area" | "composed";
 export type CustomAxis = "left" | "right";
@@ -373,13 +373,14 @@ export function presetToSpec(preset: ChartPreset, language: InterfaceLanguage, i
   });
 }
 
-export function buildCustomChartData(rows: NormalizedRow[], spec: CustomChartSpec): Array<Record<string, number | string>> {
+export function buildCustomChartData(rows: NormalizedRow[], spec: CustomChartSpec): Array<Record<string, number | string | null>> {
   return rows
     .filter((row) => Boolean(row.date))
     .map((row) => {
-      const point: Record<string, number | string> = { x: compactDate(row.date) };
+      const point: Record<string, number | string | null> = { x: compactDate(row.date) };
       for (const s of spec.series) {
-        point[s.key] = roundForFormat(metricValue(row, s.key), metricFormat(s.key));
+        const value = chartMetricValue(row, s.key);
+        point[s.key] = value === null ? null : roundForFormat(value, metricFormat(s.key));
       }
       return point;
     });

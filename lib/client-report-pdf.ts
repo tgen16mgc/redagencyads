@@ -573,7 +573,10 @@ function drawCustomChart(doc: jsPDF, model: ClientReportViewModel, block: PdfBlo
 
   const maxima = { left: 1, right: 1 };
   chart.series.forEach((series) => {
-    maxima[series.axis] = Math.max(maxima[series.axis], ...chart.data.map((point) => Number(point[series.key] || 0)));
+    const values = chart.data
+      .map((point) => point[series.key])
+      .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+    maxima[series.axis] = Math.max(maxima[series.axis], ...values);
   });
   const leftSeries = chart.series.find((series) => series.axis === "left");
   const rightSeries = chart.series.find((series) => series.axis === "right");
@@ -584,23 +587,34 @@ function drawCustomChart(doc: jsPDF, model: ClientReportViewModel, block: PdfBlo
   const slot = chartWidth / chart.data.length;
   chart.series.forEach((series, seriesIndex) => {
     const color = palette[seriesIndex % palette.length];
-    const points = chart.data.map((point, index) => ({
-      x: chartX + index * slot + slot / 2,
-      y: chartY + chartHeight - (Number(point[series.key] || 0) / maxima[series.axis]) * chartHeight,
-    }));
+    const points = chart.data.map((point, index) => {
+      const rawValue = point[series.key];
+      const value = typeof rawValue === "number" && Number.isFinite(rawValue) ? rawValue : null;
+      return {
+        x: chartX + index * slot + slot / 2,
+        y: value === null ? null : chartY + chartHeight - (value / maxima[series.axis]) * chartHeight,
+        value,
+      };
+    });
     const drawBars = chart.type === "bar" || (chart.type === "composed" && seriesIndex === 0);
     if (drawBars) {
-      points.forEach((point, index) => {
-        const value = Number(chart.data[index][series.key] || 0);
-        const height = Math.max(1, (value / maxima[series.axis]) * chartHeight);
+      points.forEach((point) => {
+        if (point.value === null || point.value <= 0) return;
+        const height = (point.value / maxima[series.axis]) * chartHeight;
         fill(doc, color);
         doc.roundedRect(point.x - Math.max(2, slot / (chart.series.length + 2)) / 2 + seriesIndex * 2, chartY + chartHeight - height, Math.max(2, slot / (chart.series.length + 2)), height, 1, 1, "F");
       });
     } else {
       drawColor(doc, color);
       doc.setLineWidth(1.7);
-      points.forEach((point, index) => {
-        if (index) doc.line(points[index - 1].x, points[index - 1].y, point.x, point.y);
+      let previousPoint: { x: number; y: number } | null = null;
+      points.forEach((point) => {
+        if (point.y === null) {
+          previousPoint = null;
+          return;
+        }
+        if (previousPoint) doc.line(previousPoint.x, previousPoint.y, point.x, point.y);
+        previousPoint = { x: point.x, y: point.y };
       });
       doc.setLineWidth(0.75);
     }
