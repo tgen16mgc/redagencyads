@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Button, Card, Chip, Disclosure, Tooltip } from "@heroui/react";
+import { Button, Card, Chip, Disclosure, SearchField, Tooltip } from "@heroui/react";
 import {
   CalendarRangeIcon,
   CircleDollarSignIcon,
@@ -13,7 +13,13 @@ import {
   UsersRoundIcon,
   type LucideIcon,
 } from "lucide-react";
-import { buildCampaignSetup, type AdSetSetup, type CampaignSetup } from "@/lib/campaign-setup";
+import {
+  buildCampaignSetup,
+  filterCampaignSetup,
+  statusChipStyle,
+  type AdSetSetup,
+  type CampaignSetup,
+} from "@/lib/campaign-setup";
 import type { DashboardReport, InterfaceLanguage } from "@/lib/types";
 
 export function CampaignSetupTab({
@@ -23,8 +29,10 @@ export function CampaignSetupTab({
   report: DashboardReport;
   language: InterfaceLanguage;
 }) {
+  const [searchQuery, setSearchQuery] = React.useState("");
   const isVietnamese = language === "vi";
   const campaigns = buildCampaignSetup(report);
+  const visibleCampaigns = filterCampaignSetup(campaigns, searchQuery);
   const adSetCount = campaigns.reduce((sum, campaign) => sum + campaign.adsets.length, 0);
   const targetingCount = campaigns.reduce(
     (sum, campaign) => sum + campaign.adsets.filter((adset) => adset.targeting.ageRange !== "Not provided by Meta" || adset.targeting.locations.length || adset.targeting.audiences.length || adset.targeting.placements.length).length,
@@ -41,30 +49,51 @@ export function CampaignSetupTab({
       </div>
 
       <Card className="gap-0 overflow-hidden border border-border bg-surface p-0 shadow-none" variant="default">
-        <Card.Header className="flex-row items-start gap-3 border-b border-border p-4 sm:p-5">
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-accent-soft text-accent">
-            <Settings2Icon className="size-5" aria-hidden="true" />
-          </span>
-          <div className="min-w-0">
-            <Card.Title className="v2-section-title">{isVietnamese ? "Thiết lập campaign và ad set" : "Campaign and ad-set setup"}</Card.Title>
-            <Card.Description className="v2-section-copy">
-              {isVietnamese
-                ? "Chế độ gọn là mặc định. Chọn một ad set để xem đầy đủ ngân sách, delivery và targeting Meta đang trả về."
-                : "Compact mode is the default. Select an ad set to inspect the full budget, delivery, and targeting returned by Meta."}
-            </Card.Description>
+        <Card.Header className="flex-col items-stretch gap-4 border-b border-border p-4 sm:p-5 lg:flex-row lg:items-start lg:justify-between">
+          <div className="flex min-w-0 items-start gap-3">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-accent-soft text-accent">
+              <Settings2Icon className="size-5" aria-hidden="true" />
+            </span>
+            <div className="min-w-0">
+              <Card.Title className="v2-section-title">{isVietnamese ? "Thiết lập campaign và ad set" : "Campaign and ad-set setup"}</Card.Title>
+              <Card.Description className="v2-section-copy">
+                {isVietnamese
+                  ? "Chế độ gọn là mặc định. Chọn một ad set để xem đầy đủ ngân sách, delivery và targeting Meta đang trả về."
+                  : "Compact mode is the default. Select an ad set to inspect the full budget, delivery, and targeting returned by Meta."}
+              </Card.Description>
+            </div>
           </div>
+          <SearchField
+            aria-label={isVietnamese ? "Tìm campaign hoặc ad set" : "Search campaigns or ad sets"}
+            className="w-full shrink-0 lg:max-w-sm"
+            name="campaign-setup-search"
+            value={searchQuery}
+            variant="secondary"
+            onChange={setSearchQuery}
+          >
+            <SearchField.Group className="w-full">
+              <SearchField.SearchIcon />
+              <SearchField.Input
+                className="w-full"
+                placeholder={isVietnamese ? "Tìm campaign hoặc ad set..." : "Search campaign or ad set..."}
+              />
+              <SearchField.ClearButton />
+            </SearchField.Group>
+          </SearchField>
         </Card.Header>
 
         <Card.Content className="gap-0 p-0">
-          {campaigns.length ? (
+          {visibleCampaigns.length ? (
             <div className="divide-y divide-border">
-              {campaigns.map((campaign) => (
+              {visibleCampaigns.map((campaign) => (
                 <CampaignGroup key={campaign.id} campaign={campaign} currency={currency} language={language} />
               ))}
             </div>
           ) : (
             <div className="p-8 text-center text-sm text-muted">
-              {isVietnamese ? "Chưa có campaign trong phạm vi report này." : "No campaigns are available in this report scope."}
+              {campaigns.length
+                ? (isVietnamese ? "Không tìm thấy campaign hoặc ad set phù hợp." : "No campaign or ad set matches this search.")
+                : (isVietnamese ? "Chưa có campaign trong phạm vi report này." : "No campaigns are available in this report scope.")}
             </div>
           )}
         </Card.Content>
@@ -215,10 +244,9 @@ function SetupField({ icon: Icon, label, values }: { icon: LucideIcon; label: st
 }
 
 function StatusChip({ status }: { status: string }) {
-  const normalized = status.toUpperCase();
-  const color = normalized === "ACTIVE" ? "success" : normalized.includes("PAUSED") || normalized.includes("DISABLED") ? "warning" : "default";
+  const { color, variant } = statusChipStyle(status);
   return (
-    <Chip color={color} size="sm" variant="soft">
+    <Chip color={color} size="sm" variant={variant}>
       <Chip.Label>{statusLabel(status)}</Chip.Label>
     </Chip>
   );
@@ -272,14 +300,28 @@ function missing(language: InterfaceLanguage) {
 }
 
 function localizeTargeting(value: string, language: InterfaceLanguage) {
+  if (value.startsWith("People: ")) return peopleLocationLabel(value.slice(8), language);
   if (language !== "vi") return value;
   if (value === "Not provided by Meta") return "Meta chưa cung cấp";
   if (value === "All genders / not restricted") return "Tất cả giới tính / không giới hạn";
   if (value === "Men") return "Nam";
   if (value === "Women") return "Nữ";
   if (value.startsWith("Excluded: ")) return `Loại trừ: ${value.slice(10)}`;
-  if (value.startsWith("People: ")) return `Loại vị trí: ${humanize(value.slice(8))}`;
   return value;
+}
+
+function peopleLocationLabel(value: string, language: InterfaceLanguage) {
+  const normalized = value.toLocaleLowerCase();
+  if (language === "vi") {
+    if (normalized === "home") return "Người sống tại vị trí này";
+    if (normalized === "recent") return "Người gần đây ở vị trí này";
+    if (normalized === "frequently_in") return "Người thường xuyên ở vị trí này";
+    return `Loại vị trí: ${humanize(value)}`;
+  }
+  if (normalized === "home") return "People living in this location";
+  if (normalized === "recent") return "People recently in this location";
+  if (normalized === "frequently_in") return "People frequently in this location";
+  return `People: ${humanize(value)}`;
 }
 
 function statusLabel(status: string) {
