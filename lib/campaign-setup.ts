@@ -42,6 +42,47 @@ function stringValues(value: unknown): string[] {
   return Object.values(record).flatMap(stringValues);
 }
 
+function recordValue(value: unknown): Record<string, unknown> | undefined {
+  if (typeof value === "string") {
+    try {
+      return recordValue(JSON.parse(value));
+    } catch {
+      return undefined;
+    }
+  }
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+function compactCoordinate(value: unknown) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number.toFixed(5).replace(/0+$/u, "").replace(/\.$/u, "") : "";
+}
+
+function distanceLabel(radius: unknown, unit: unknown) {
+  const amount = Number(radius);
+  if (!Number.isFinite(amount) || amount <= 0) return "";
+  const normalized = String(unit || "").toLowerCase();
+  const suffix = normalized.startsWith("kilo") ? "km" : normalized.startsWith("mile") ? "mi" : normalized.startsWith("meter") ? "m" : normalized;
+  return `${amount} ${suffix || "radius"}`;
+}
+
+function locationValues(value: unknown): string[] {
+  if (Array.isArray(value)) return value.flatMap(locationValues);
+  if (typeof value === "string" || typeof value === "number") return [String(value)];
+  const record = recordValue(value);
+  if (!record) return [];
+  const name = [record.name, record.region, record.country_code]
+    .filter((item): item is string => typeof item === "string" && Boolean(item.trim()))
+    .filter((item, index, items) => items.findIndex((candidate) => candidate.toLowerCase() === item.toLowerCase()) === index)
+    .join(", ");
+  const coordinates = [compactCoordinate(record.latitude), compactCoordinate(record.longitude)].filter(Boolean).join(", ");
+  const base = name || coordinates || (typeof record.key === "string" ? record.key : "");
+  const radius = distanceLabel(record.radius, record.distance_unit);
+  return base ? [`${base}${radius ? ` · ${radius} radius` : ""}`] : Object.values(record).flatMap(locationValues);
+}
+
 function nested(value: unknown, path: string[]): unknown {
   return path.reduce<unknown>((current, key) => {
     if (!current || typeof current !== "object" || Array.isArray(current)) return undefined;
@@ -51,6 +92,10 @@ function nested(value: unknown, path: string[]): unknown {
 
 function valuesAt(value: unknown, paths: string[][]): string[] {
   return paths.flatMap((path) => stringValues(nested(value, path)));
+}
+
+function locationsAt(value: unknown, paths: string[][]): string[] {
+  return paths.flatMap((path) => locationValues(nested(value, path)));
 }
 
 function collectNamed(value: unknown, parentKey = ""): string[] {
@@ -84,34 +129,35 @@ function criteriaValues(map: Map<string, string[]>, fragments: string[]) {
   return unique([...map.entries()].flatMap(([key, values]) => fragments.some((fragment) => key.includes(fragment)) ? values : []));
 }
 
-export function summarizeTargeting(targeting: Record<string, unknown> | undefined, criteria: string[] = []): TargetingSummary {
+export function summarizeTargeting(targeting: unknown, criteria: string[] = []): TargetingSummary {
+  const normalizedTargeting = recordValue(targeting);
   const fallback = criteriaMap(criteria);
-  const ageMin = Number(nested(targeting, ["age_min"]) ?? fallback.get("age_min")?.[0]);
-  const ageMax = Number(nested(targeting, ["age_max"]) ?? fallback.get("age_max")?.[0]);
-  const genderCodes = valuesAt(targeting, [["genders"]]);
+  const ageMin = Number(nested(normalizedTargeting, ["age_min"]) ?? fallback.get("age_min")?.[0]);
+  const ageMax = Number(nested(normalizedTargeting, ["age_max"]) ?? fallback.get("age_max")?.[0]);
+  const genderCodes = valuesAt(normalizedTargeting, [["genders"]]);
   const genders = unique((genderCodes.length ? genderCodes : criteriaValues(fallback, ["genders"])).map((value) => {
     if (value === "1") return "Men";
     if (value === "2") return "Women";
     return value;
   }));
-  const includedLocations = valuesAt(targeting, [["geo_locations", "countries"], ["geo_locations", "regions"], ["geo_locations", "cities"], ["geo_locations", "zips"]]);
-  const excludedLocations = valuesAt(targeting, [["excluded_geo_locations", "countries"], ["excluded_geo_locations", "regions"], ["excluded_geo_locations", "cities"], ["excluded_geo_locations", "zips"]]);
-  const locationTypes = valuesAt(targeting, [["geo_locations", "location_types"]]);
+  const includedLocations = locationsAt(normalizedTargeting, [["geo_locations", "countries"], ["geo_locations", "regions"], ["geo_locations", "cities"], ["geo_locations", "zips"], ["geo_locations", "custom_locations"], ["geo_locations", "geo_markets"]]);
+  const excludedLocations = locationsAt(normalizedTargeting, [["excluded_geo_locations", "countries"], ["excluded_geo_locations", "regions"], ["excluded_geo_locations", "cities"], ["excluded_geo_locations", "zips"], ["excluded_geo_locations", "custom_locations"], ["excluded_geo_locations", "geo_markets"]]);
+  const locationTypes = valuesAt(normalizedTargeting, [["geo_locations", "location_types"]]);
   const rawLocations = [
     ...includedLocations,
     ...locationTypes.map((value) => `People: ${value}`),
     ...excludedLocations.map((value) => `Excluded: ${value}`),
   ];
   const fallbackLocations = [
-    ...criteriaValues(fallback, ["geo_locations.countries", "geo_locations.regions", "geo_locations.cities", "geo_locations.zips"]),
-    ...criteriaValues(fallback, ["excluded_geo_locations.countries", "excluded_geo_locations.regions", "excluded_geo_locations.cities", "excluded_geo_locations.zips"]).map((value) => `Excluded: ${value}`),
+    ...criteriaValues(fallback, ["geo_locations.countries", "geo_locations.regions", "geo_locations.cities", "geo_locations.zips", "geo_locations.custom_locations.name", "geo_locations.geo_markets"]),
+    ...criteriaValues(fallback, ["excluded_geo_locations.countries", "excluded_geo_locations.regions", "excluded_geo_locations.cities", "excluded_geo_locations.zips", "excluded_geo_locations.custom_locations.name", "excluded_geo_locations.geo_markets"]).map((value) => `Excluded: ${value}`),
   ];
   const locations = unique([
     ...(rawLocations.length ? rawLocations : fallbackLocations),
   ]);
-  const rawPlacements = valuesAt(targeting, [["publisher_platforms"], ["facebook_positions"], ["instagram_positions"], ["messenger_positions"], ["device_platforms"]]);
+  const rawPlacements = valuesAt(normalizedTargeting, [["publisher_platforms"], ["facebook_positions"], ["instagram_positions"], ["messenger_positions"], ["device_platforms"]]);
   const placements = unique(rawPlacements.length ? rawPlacements : criteriaValues(fallback, ["publisher_platforms", "facebook_positions", "instagram_positions", "messenger_positions", "device_platforms"]));
-  const rawAudiences = collectNamed(targeting);
+  const rawAudiences = collectNamed(normalizedTargeting);
   const audiences = unique(rawAudiences.length ? rawAudiences : criteriaValues(fallback, ["interests.name", "behaviors.name", "custom_audiences.name", "life_events.name", "industries.name", "work_positions.name"]));
 
   return {
@@ -161,6 +207,11 @@ export function buildCampaignSetup(report: DashboardReport): CampaignSetup[] {
   for (const row of report.adsetRows) {
     const id = row.adsetId || row.id;
     if (!configurations.has(id)) configurations.set(id, fallbackConfiguration(row, row.campaignName || "Campaign unavailable"));
+  }
+
+  const scopedCampaignIds = new Set(campaigns.keys());
+  for (const [id, configuration] of configurations) {
+    if (scopedCampaignIds.size && !scopedCampaignIds.has(configuration.campaignId)) configurations.delete(id);
   }
 
   for (const configuration of configurations.values()) {

@@ -103,6 +103,7 @@ import { MetaConnectDialog } from "@/components/meta-connect-dialog";
 import { AccountWorkspaceSettingsDialog, type SettingsTab } from "@/components/account-workspace-settings-dialog";
 import type { AccountWorkspaceSettingsData } from "@/lib/account-workspace-settings";
 import { normalizeSavedReportCopy, type SavedReportSnapshot } from "@/lib/report-history";
+import { reportCampaignSelectionForAccount } from "@/lib/report-refresh";
 
 const workflowItems: { value: DashboardWorkflowStep; label: string; icon: React.ComponentType<React.SVGProps<SVGSVGElement>> }[] = [
   { value: "connect", label: "Connect", icon: KeyRoundIcon },
@@ -755,7 +756,11 @@ export function DashboardShell() {
     setLoading("campaigns");
     jsonFetch<{ campaigns: MetaCampaign[] }>(`/api/meta/campaigns?accountId=${encodeURIComponent(accountId)}`)
       .then((data) => {
-        setAdsWorkspace((current) => ({ ...current, campaigns: data.campaigns, selectedCampaignIds: [] }));
+        setAdsWorkspace((current) => ({
+          ...current,
+          campaigns: data.campaigns,
+          selectedCampaignIds: reportCampaignSelectionForAccount(accountId, current.report),
+        }));
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(""));
