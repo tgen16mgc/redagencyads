@@ -33,6 +33,11 @@ export type CampaignSetup = {
   adsets: AdSetSetup[];
 };
 
+export type StatusChipStyle = {
+  color: "success" | "danger" | "default";
+  variant: "primary" | "soft";
+};
+
 function stringValues(value: unknown): string[] {
   if (Array.isArray(value)) return value.flatMap(stringValues);
   if (typeof value === "string" || typeof value === "number") return [String(value)];
@@ -145,11 +150,14 @@ function criteriaValuesUnder(map: Map<string, string[]>, prefixes: string[]) {
   return unique([...map.entries()].flatMap(([key, values]) => prefixes.some((prefix) => key === prefix || key.startsWith(`${prefix}.`)) ? values : []));
 }
 
-function criteriaCustomLocations(map: Map<string, string[]>, prefix: string) {
+function criteriaStructuredLocations(map: Map<string, string[]>, prefix: string) {
   const values = (field: string) => map.get(`${prefix}.${field}`) || [];
   const fields = {
     name: values("name"),
     address: values("address_string"),
+    region: values("region"),
+    countryCode: values("country_code"),
+    country: values("country"),
     latitude: values("latitude"),
     longitude: values("longitude"),
     radius: values("radius"),
@@ -159,6 +167,9 @@ function criteriaCustomLocations(map: Map<string, string[]>, prefix: string) {
   return Array.from({ length: count }, (_, index) => locationValues({
     name: fields.name[index],
     address_string: fields.address[index],
+    region: fields.region[index],
+    country_code: fields.countryCode[index],
+    country: fields.country[index],
     latitude: fields.latitude[index],
     longitude: fields.longitude[index],
     radius: fields.radius[index],
@@ -186,8 +197,8 @@ export function summarizeTargeting(targeting: unknown, criteria: string[] = []):
     if (value === "2") return "Women";
     return value;
   }));
-  const includedLocations = locationsAt(normalizedTargeting, [["geo_locations", "countries"], ["geo_locations", "regions"], ["geo_locations", "cities"], ["geo_locations", "zips"], ["geo_locations", "custom_locations"], ["geo_locations", "geo_markets"]]);
-  const excludedLocations = locationsAt(normalizedTargeting, [["excluded_geo_locations", "countries"], ["excluded_geo_locations", "regions"], ["excluded_geo_locations", "cities"], ["excluded_geo_locations", "zips"], ["excluded_geo_locations", "custom_locations"], ["excluded_geo_locations", "geo_markets"]]);
+  const includedLocations = locationsAt(normalizedTargeting, [["geo_locations", "countries"], ["geo_locations", "regions"], ["geo_locations", "cities"], ["geo_locations", "subcities"], ["geo_locations", "zips"], ["geo_locations", "custom_locations"], ["geo_locations", "places"], ["geo_locations", "geo_markets"]]);
+  const excludedLocations = locationsAt(normalizedTargeting, [["excluded_geo_locations", "countries"], ["excluded_geo_locations", "regions"], ["excluded_geo_locations", "cities"], ["excluded_geo_locations", "subcities"], ["excluded_geo_locations", "zips"], ["excluded_geo_locations", "custom_locations"], ["excluded_geo_locations", "places"], ["excluded_geo_locations", "geo_markets"]]);
   const locationTypes = valuesAt(normalizedTargeting, [["geo_locations", "location_types"]]);
   const rawLocations = [
     ...includedLocations,
@@ -196,10 +207,14 @@ export function summarizeTargeting(targeting: unknown, criteria: string[] = []):
   ];
   const fallbackLocations = [
     ...criteriaValuesUnder(fallback, ["geo_locations.countries", "geo_locations.regions", "geo_locations.cities", "geo_locations.zips", "geo_locations.geo_markets"]),
-    ...criteriaCustomLocations(fallback, "geo_locations.custom_locations"),
+    ...criteriaStructuredLocations(fallback, "geo_locations.subcities"),
+    ...criteriaStructuredLocations(fallback, "geo_locations.custom_locations"),
+    ...criteriaStructuredLocations(fallback, "geo_locations.places"),
     ...criteriaValuesUnder(fallback, ["geo_locations.location_types"]).map((value) => `People: ${value}`),
     ...criteriaValuesUnder(fallback, ["excluded_geo_locations.countries", "excluded_geo_locations.regions", "excluded_geo_locations.cities", "excluded_geo_locations.zips", "excluded_geo_locations.geo_markets"]).map((value) => `Excluded: ${value}`),
-    ...criteriaCustomLocations(fallback, "excluded_geo_locations.custom_locations").map((value) => `Excluded: ${value}`),
+    ...criteriaStructuredLocations(fallback, "excluded_geo_locations.subcities").map((value) => `Excluded: ${value}`),
+    ...criteriaStructuredLocations(fallback, "excluded_geo_locations.custom_locations").map((value) => `Excluded: ${value}`),
+    ...criteriaStructuredLocations(fallback, "excluded_geo_locations.places").map((value) => `Excluded: ${value}`),
   ];
   const locations = uniqueInsensitive([...rawLocations, ...fallbackLocations]);
   const advantagePlus = enabledValue(
@@ -221,6 +236,41 @@ export function summarizeTargeting(targeting: unknown, criteria: string[] = []):
     placements,
     audiences,
   };
+}
+
+function statusPriority(status: string) {
+  return status.toUpperCase() === "ACTIVE" ? 0 : 1;
+}
+
+function stableStatusSort<T>(items: T[], getStatus: (item: T) => string) {
+  return items
+    .map((item, index) => ({ item, index }))
+    .sort((a, b) => statusPriority(getStatus(a.item)) - statusPriority(getStatus(b.item)) || a.index - b.index)
+    .map(({ item }) => item);
+}
+
+export function statusChipStyle(status: string): StatusChipStyle {
+  const normalized = status.toUpperCase();
+  if (normalized === "ACTIVE") return { color: "success", variant: "primary" };
+  if (normalized.includes("PAUSED") || normalized.includes("DISABLED")) {
+    return { color: "danger", variant: "primary" };
+  }
+  return { color: "default", variant: "soft" };
+}
+
+export function filterCampaignSetup(campaigns: CampaignSetup[], query: string): CampaignSetup[] {
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  if (!normalizedQuery) return campaigns;
+
+  return campaigns.flatMap((campaign) => {
+    const campaignMatches = [campaign.name, campaign.id]
+      .some((value) => value.toLocaleLowerCase().includes(normalizedQuery));
+    if (campaignMatches) return [campaign];
+
+    const adsets = campaign.adsets.filter((adset) => [adset.name, adset.id]
+      .some((value) => value.toLocaleLowerCase().includes(normalizedQuery)));
+    return adsets.length ? [{ ...campaign, adsets }] : [];
+  });
 }
 
 function fallbackConfiguration(row: NormalizedRow, campaignName: string): AdSetConfiguration {
@@ -275,14 +325,14 @@ export function buildCampaignSetup(report: DashboardReport): CampaignSetup[] {
     });
   }
 
-  return [...campaigns.values()].map((campaign) => ({
+  return stableStatusSort([...campaigns.values()].map((campaign) => ({
     id: campaign.id,
     name: campaign.name,
     objective: campaign.objective,
     status: campaign.effective_status || campaign.status || "UNKNOWN",
     dailyBudget: Number(campaign.daily_budget || 0),
     lifetimeBudget: Number(campaign.lifetime_budget || 0),
-    adsets: [...configurations.values()]
+    adsets: stableStatusSort([...configurations.values()]
       .filter((adset) => adset.campaignId === campaign.id)
       .map((adset) => ({
         id: adset.id,
@@ -296,6 +346,6 @@ export function buildCampaignSetup(report: DashboardReport): CampaignSetup[] {
         startTime: adset.startTime,
         endTime: adset.endTime,
         targeting: summarizeTargeting(adset.targeting, targetingByAdSet.get(adset.id)),
-      })),
-  }));
+      })), (adset) => adset.status),
+  })), (campaign) => campaign.status);
 }

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { buildCampaignSetup, summarizeTargeting } from "../campaign-setup";
+import {
+  buildCampaignSetup,
+  filterCampaignSetup,
+  statusChipStyle,
+  summarizeTargeting,
+} from "../campaign-setup";
 import { flattenAudienceTargeting } from "../cross-channel";
 import { buildSampleReport } from "../sample-report";
 
@@ -98,6 +103,46 @@ describe("campaign setup", () => {
     }).locations).toEqual(["IA20 Building · 2 km radius"]);
   });
 
+  it("reads the exact live Meta place name and radius", () => {
+    expect(summarizeTargeting({
+      age_max: 65,
+      age_min: 18,
+      age_range: [18, 35],
+      geo_locations: {
+        places: [{
+          key: "1028094113989910",
+          name: "Chung Cư IA20 Ciputra KĐT Nam Thăng Long",
+          distance_unit: "kilometer",
+          latitude: 21.084900504979,
+          longitude: 105.78851222992,
+          radius: 5,
+          country: "VN",
+        }],
+        location_types: ["home", "recent"],
+      },
+    })).toMatchObject({
+      locations: [
+        "Chung Cư IA20 Ciputra KĐT Nam Thăng Long · 5 km radius",
+        "People: home",
+        "People: recent",
+      ],
+      ageRange: "18–35",
+    });
+  });
+
+  it("includes live Meta subcity targeting", () => {
+    expect(summarizeTargeting({
+      geo_locations: {
+        subcities: [{
+          key: "2927363",
+          country: "VN",
+          name: "Quận Đống Đa",
+          region: "Hanoi",
+        }],
+      },
+    }).locations).toEqual(["Quận Đống Đa, Hanoi"]);
+  });
+
   it("combines flattened custom-location details with Meta people-location types", () => {
     const criteria = flattenAudienceTargeting({
       geo_locations: {
@@ -181,5 +226,44 @@ describe("campaign setup", () => {
     ];
 
     expect(buildCampaignSetup(report).map((campaign) => campaign.id)).toEqual(["smp-c1"]);
+  });
+
+  it("sorts active campaigns and ad sets before paused ones", () => {
+    const report = buildSampleReport({ selectedCampaignIds: ["smp-c1", "smp-c2"] });
+    report.selectedCampaigns = [
+      { ...report.selectedCampaigns[1], status: "PAUSED", effective_status: "PAUSED" },
+      { ...report.selectedCampaigns[0], status: "ACTIVE", effective_status: "ACTIVE" },
+    ];
+    report.adsetConfigurations = (report.adsetConfigurations || []).map((adset) => {
+      if (adset.id === "smp-as-11") return { ...adset, status: "PAUSED" };
+      if (adset.id === "smp-as-12") return { ...adset, status: "ACTIVE" };
+      return adset;
+    });
+
+    const setup = buildCampaignSetup(report);
+
+    expect(setup.map((campaign) => campaign.id)).toEqual(["smp-c1", "smp-c2"]);
+    expect(setup[0].adsets.map((adset) => adset.id)).toEqual(["smp-as-12", "smp-as-11"]);
+  });
+
+  it("searches campaign and ad-set names without losing matching context", () => {
+    const setup = buildCampaignSetup(buildSampleReport());
+
+    const campaignMatch = filterCampaignSetup(setup, "facial combo");
+    expect(campaignMatch).toHaveLength(1);
+    expect(campaignMatch[0].adsets).toHaveLength(2);
+
+    const adSetMatch = filterCampaignSetup(setup, "retarget 30");
+    expect(adSetMatch).toHaveLength(1);
+    expect(adSetMatch[0].name).toContain("Acne Treatment");
+    expect(adSetMatch[0].adsets.map((adset) => adset.id)).toEqual(["smp-as-22"]);
+
+    expect(filterCampaignSetup(setup, "not a real campaign")).toEqual([]);
+  });
+
+  it("uses distinct HeroUI status treatments for active and paused delivery", () => {
+    expect(statusChipStyle("ACTIVE")).toEqual({ color: "success", variant: "primary" });
+    expect(statusChipStyle("PAUSED")).toEqual({ color: "danger", variant: "primary" });
+    expect(statusChipStyle("CAMPAIGN_PAUSED")).toEqual({ color: "danger", variant: "primary" });
   });
 });
