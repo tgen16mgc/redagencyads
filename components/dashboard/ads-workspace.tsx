@@ -78,7 +78,7 @@ import {
   type PerformanceStageKey,
 } from "@/lib/performance-stages";
 import { getCompareRange } from "@/lib/report-ranges";
-import { currentReportScope } from "@/lib/report-refresh";
+import { buildMetaReportUrl, currentReportScope } from "@/lib/report-refresh";
 import { rowDecision } from "@/lib/row-decision";
 import { readStorageSlot } from "@/lib/storage-slot";
 import type {
@@ -145,6 +145,8 @@ type ReportScopePatch = Partial<Pick<
   AdsWorkspaceState,
   "selectedCampaignIds" | "since" | "until" | "pack" | "compareMode" | "targetCpa" | "targetRoas"
 >>;
+
+type ReportRequestOverrides = ReportScopePatch & { accountId?: string };
 
 const compareItems: { label: string; value: CompareMode }[] = [
   { label: "Previous period", value: "previous" },
@@ -508,7 +510,7 @@ export function AdsWorkspace({
   const copy = adsCopy[language];
   const reportStartRef = React.useRef<HTMLDivElement>(null);
   const autoVerdictKeyRef = React.useRef("");
-  const lastReportRequestRef = React.useRef<ReportScopePatch>({});
+  const lastReportRequestRef = React.useRef<ReportRequestOverrides>({});
   const [reportFlow, setReportFlow] = React.useState<"idle" | "pulling" | "ready" | "error">("idle");
   const [reportFlowError, setReportFlowError] = React.useState("");
   const verdictProgress = useTimedProgress(aiLoading.verdict);
@@ -555,19 +557,21 @@ export function AdsWorkspace({
     window.localStorage.setItem(FUNNEL_STAGE_STORAGE_KEY, serializePerformanceStageKeys(funnelStageKeys));
   }, [funnelStageKeys]);
 
-  async function fetchReportForRange(range: { since: string; until: string }, overrides: ReportScopePatch = {}) {
-    const url = new URL("/api/meta/report", window.location.origin);
-    url.searchParams.set("accountId", accountId);
-    url.searchParams.set("since", range.since);
-    url.searchParams.set("until", range.until);
-    (overrides.selectedCampaignIds ?? selectedCampaignIds).forEach((id) => url.searchParams.append("campaignId", id));
+  async function fetchReportForRange(range: { since: string; until: string }, overrides: ReportRequestOverrides = {}) {
     const resolvedPack = overrides.pack ?? pack;
-    if (resolvedPack !== "auto") url.searchParams.set("pack", resolvedPack);
-    return jsonFetch<{ report: DashboardReport }>(url.toString(), { timeoutMs: 30000 });
+    const url = buildMetaReportUrl(window.location.origin, {
+      accountId: overrides.accountId ?? accountId,
+      selectedCampaignIds: overrides.selectedCampaignIds ?? selectedCampaignIds,
+      since: range.since,
+      until: range.until,
+      pack: resolvedPack,
+    });
+    return jsonFetch<{ report: DashboardReport }>(url, { timeoutMs: 30000 });
   }
 
-  async function pullReport(overrides: ReportScopePatch = {}) {
+  async function pullReport(overrides: ReportRequestOverrides = {}) {
     lastReportRequestRef.current = overrides;
+    const { accountId: requestedAccountId, ...stateOverrides } = overrides;
     const nextSince = overrides.since ?? since;
     const nextUntil = overrides.until ?? until;
     const nextCompareMode = overrides.compareMode ?? compareMode;
@@ -577,7 +581,7 @@ export function AdsWorkspace({
       const samplePack = overrides.pack ?? pack;
       setReportFlowError("");
       setReportFlow("pulling");
-      updateState({ ...overrides, verdict: null, insights: null, aiLoading: { verdict: false, insights: false }, previousReport: null });
+      updateState({ ...stateOverrides, verdict: null, insights: null, aiLoading: { verdict: false, insights: false }, previousReport: null });
       onLoadingChange("report");
       try {
         await new Promise((resolve) => window.setTimeout(resolve, 220));
@@ -610,11 +614,20 @@ export function AdsWorkspace({
     onError("");
     setReportFlowError("");
     setReportFlow("pulling");
-    updateState({ ...overrides, verdict: null, insights: null, aiLoading: { verdict: false, insights: false }, previousReport: null });
+    updateState({ ...stateOverrides, verdict: null, insights: null, aiLoading: { verdict: false, insights: false }, previousReport: null });
     onLoadingChange("report");
     try {
       const current = await fetchReportForRange({ since: nextSince, until: nextUntil }, overrides);
-      updateState({ report: current.report, scopeExpanded: false });
+      const refreshedScope = currentReportScope(current.report);
+      updateState({
+        report: current.report,
+        selectedCampaignIds: refreshedScope.selectedCampaignIds,
+        since: refreshedScope.since,
+        until: refreshedScope.until,
+        pack: refreshedScope.pack,
+        scopeExpanded: false,
+      });
+      if (requestedAccountId && requestedAccountId !== accountId) onAccountIdChange(refreshedScope.accountId);
       onReportReady?.();
       window.setTimeout(() => reportStartRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
       if (nextCompareMode !== "off") {

@@ -4,6 +4,7 @@ export type TargetingSummary = {
   locations: string[];
   ageRange: string;
   genders: string[];
+  advantagePlus: boolean;
   placements: string[];
   audiences: string[];
 };
@@ -113,6 +114,17 @@ function unique(values: string[]) {
   return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
 }
 
+function uniqueInsensitive(values: string[]) {
+  const seen = new Set<string>();
+  return values.map((value) => value.trim()).filter((value) => {
+    if (!value) return false;
+    const key = value.toLocaleLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function criteriaMap(criteria: string[]) {
   const map = new Map<string, string[]>();
   for (const criterion of criteria) {
@@ -127,6 +139,35 @@ function criteriaMap(criteria: string[]) {
 
 function criteriaValues(map: Map<string, string[]>, fragments: string[]) {
   return unique([...map.entries()].flatMap(([key, values]) => fragments.some((fragment) => key.includes(fragment)) ? values : []));
+}
+
+function criteriaValuesUnder(map: Map<string, string[]>, prefixes: string[]) {
+  return unique([...map.entries()].flatMap(([key, values]) => prefixes.some((prefix) => key === prefix || key.startsWith(`${prefix}.`)) ? values : []));
+}
+
+function criteriaCustomLocations(map: Map<string, string[]>, prefix: string) {
+  const values = (field: string) => map.get(`${prefix}.${field}`) || [];
+  const fields = {
+    name: values("name"),
+    address: values("address_string"),
+    latitude: values("latitude"),
+    longitude: values("longitude"),
+    radius: values("radius"),
+    unit: values("distance_unit"),
+  };
+  const count = Math.max(...Object.values(fields).map((items) => items.length), 0);
+  return Array.from({ length: count }, (_, index) => locationValues({
+    name: fields.name[index],
+    address_string: fields.address[index],
+    latitude: fields.latitude[index],
+    longitude: fields.longitude[index],
+    radius: fields.radius[index],
+    distance_unit: fields.unit[index],
+  })).flat();
+}
+
+function enabledValue(value: unknown) {
+  return value === true || value === 1 || ["1", "true", "on", "enabled"].includes(String(value || "").toLocaleLowerCase());
 }
 
 export function summarizeTargeting(targeting: unknown, criteria: string[] = []): TargetingSummary {
@@ -154,12 +195,17 @@ export function summarizeTargeting(targeting: unknown, criteria: string[] = []):
     ...excludedLocations.map((value) => `Excluded: ${value}`),
   ];
   const fallbackLocations = [
-    ...criteriaValues(fallback, ["geo_locations.countries", "geo_locations.regions", "geo_locations.cities", "geo_locations.zips", "geo_locations.custom_locations.name", "geo_locations.geo_markets"]),
-    ...criteriaValues(fallback, ["excluded_geo_locations.countries", "excluded_geo_locations.regions", "excluded_geo_locations.cities", "excluded_geo_locations.zips", "excluded_geo_locations.custom_locations.name", "excluded_geo_locations.geo_markets"]).map((value) => `Excluded: ${value}`),
+    ...criteriaValuesUnder(fallback, ["geo_locations.countries", "geo_locations.regions", "geo_locations.cities", "geo_locations.zips", "geo_locations.geo_markets"]),
+    ...criteriaCustomLocations(fallback, "geo_locations.custom_locations"),
+    ...criteriaValuesUnder(fallback, ["geo_locations.location_types"]).map((value) => `People: ${value}`),
+    ...criteriaValuesUnder(fallback, ["excluded_geo_locations.countries", "excluded_geo_locations.regions", "excluded_geo_locations.cities", "excluded_geo_locations.zips", "excluded_geo_locations.geo_markets"]).map((value) => `Excluded: ${value}`),
+    ...criteriaCustomLocations(fallback, "excluded_geo_locations.custom_locations").map((value) => `Excluded: ${value}`),
   ];
-  const locations = unique([
-    ...(rawLocations.length ? rawLocations : fallbackLocations),
-  ]);
+  const locations = uniqueInsensitive([...rawLocations, ...fallbackLocations]);
+  const advantagePlus = enabledValue(
+    nested(normalizedTargeting, ["targeting_automation", "advantage_audience"])
+      ?? fallback.get("targeting_automation.advantage_audience")?.[0],
+  );
   const rawPlacements = valuesAt(normalizedTargeting, [["publisher_platforms"], ["facebook_positions"], ["instagram_positions"], ["messenger_positions"], ["device_platforms"]]);
   const placements = unique(rawPlacements.length ? rawPlacements : criteriaValues(fallback, ["publisher_platforms", "facebook_positions", "instagram_positions", "messenger_positions", "device_platforms"]));
   const rawAudiences = collectNamed(normalizedTargeting);
@@ -171,6 +217,7 @@ export function summarizeTargeting(targeting: unknown, criteria: string[] = []):
       ? `${Number.isFinite(displayAgeMin) ? displayAgeMin : "Minimum not set"}–${Number.isFinite(displayAgeMax) ? displayAgeMax : "Maximum not set"}`
       : "Not provided by Meta",
     genders: genders.length ? genders : ["All genders / not restricted"],
+    advantagePlus,
     placements,
     audiences,
   };

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildCampaignSetup, summarizeTargeting } from "../campaign-setup";
+import { flattenAudienceTargeting } from "../cross-channel";
 import { buildSampleReport } from "../sample-report";
 
 describe("campaign setup", () => {
@@ -17,6 +18,7 @@ describe("campaign setup", () => {
       locations: ["VN", "Ho Chi Minh City", "Excluded: Da Nang"],
       ageRange: "25–45",
       genders: ["Women"],
+      advantagePlus: false,
       placements: ["facebook", "instagram"],
       audiences: ["Skin care", "Excluded: Existing customers"],
     });
@@ -96,6 +98,37 @@ describe("campaign setup", () => {
     }).locations).toEqual(["IA20 Building · 2 km radius"]);
   });
 
+  it("combines flattened custom-location details with Meta people-location types", () => {
+    const criteria = flattenAudienceTargeting({
+      geo_locations: {
+        custom_locations: [{
+          address_string: "IA20 Building",
+          radius: 2,
+          distance_unit: "kilometer",
+        }],
+        location_types: ["home", "recent"],
+      },
+    });
+
+    expect(summarizeTargeting(undefined, criteria).locations).toEqual([
+      "IA20 Building · 2 km radius",
+      "People: home",
+      "People: recent",
+    ]);
+  });
+
+  it("does not reinterpret excluded flattened locations as included locations", () => {
+    const targeting = {
+      geo_locations: { cities: [{ name: "Ho Chi Minh City" }] },
+      excluded_geo_locations: { cities: [{ name: "Da Nang" }] },
+    };
+
+    expect(summarizeTargeting(targeting, flattenAudienceTargeting(targeting)).locations).toEqual([
+      "Ho Chi Minh City",
+      "Excluded: Da Nang",
+    ]);
+  });
+
   it("uses the configured Meta age range instead of broad Advantage delivery bounds", () => {
     expect(summarizeTargeting({
       age_min: 18,
@@ -106,6 +139,16 @@ describe("campaign setup", () => {
         individual_setting: { age: 1 },
       },
     }).ageRange).toBe("18–35");
+  });
+
+  it("reports whether Advantage+ audience is enabled", () => {
+    expect(summarizeTargeting({
+      targeting_automation: { advantage_audience: 1 },
+    })).toMatchObject({ advantagePlus: true });
+
+    expect(summarizeTargeting({
+      targeting_automation: { advantage_audience: 0 },
+    })).toMatchObject({ advantagePlus: false });
   });
 
   it("groups sample ad sets under the campaigns in the active report scope", () => {

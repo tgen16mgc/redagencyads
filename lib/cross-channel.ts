@@ -845,7 +845,7 @@ export function flattenAudienceTargeting(
   if (value === undefined || value === null || value === "") return [];
   const key =
     path.filter((part) => !/^\d+$/u.test(part)).join(".") || "targeting";
-  return [`${key}:${String(value).trim().toLocaleLowerCase()}`];
+  return [`${key}:${String(value).trim()}`];
 }
 
 export function buildAudienceFingerprint(
