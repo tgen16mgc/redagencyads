@@ -19,7 +19,7 @@ import {
   SparklesIcon,
   TriangleAlertIcon,
 } from "lucide-react";
-import { Label as HeroLabel, Switch as HeroSwitch } from "@heroui/react";
+import { Label as HeroLabel, ScrollShadow, Switch as HeroSwitch } from "@heroui/react";
 import {
   CartesianGrid,
   Line,
@@ -192,7 +192,7 @@ export function PerformanceV2({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="outline" size="sm" onClick={onEditScope}>
+          <Button type="button" variant="outline" size="sm" onClick={onEditScope} disabled={reportLoading}>
             <SlidersHorizontalIcon data-icon="inline-start" />
             {isVietnamese ? "Sửa phạm vi" : "Edit scope"}
           </Button>
@@ -205,24 +205,26 @@ export function PerformanceV2({
 
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as (typeof tabValues)[number])}>
         <div className="flex flex-col gap-3 border-b border-border pb-3 xl:flex-row xl:items-center xl:justify-between">
-          <TabsList className="h-auto w-full justify-start overflow-x-auto rounded-none bg-transparent p-0 xl:w-auto">
-            {tabValues.map((value) => (
-              <TabsTrigger
-                key={value}
-                value={value}
-                className="min-w-max rounded-none border border-transparent px-3 py-2 text-xs capitalize text-muted-foreground data-[selected]:border-border data-[selected]:bg-secondary/35 data-[selected]:text-foreground"
-              >
-                {tabLabel(value, language)}
-              </TabsTrigger>
-            ))}
-          </TabsList>
+          <ScrollShadow hideScrollBar orientation="horizontal" size={28} className="w-full min-w-0 xl:max-w-[430px]">
+            <TabsList className="h-auto min-w-max justify-start rounded-none bg-transparent p-0">
+              {tabValues.map((value) => (
+                <TabsTrigger
+                  key={value}
+                  value={value}
+                  className="min-w-max rounded-none border border-transparent px-3 py-2 text-xs capitalize text-muted-foreground data-[selected]:border-border data-[selected]:bg-secondary/35 data-[selected]:text-foreground"
+                >
+                  {tabLabel(value, language)}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </ScrollShadow>
 
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             {customizeAction}
-            <button type="button" className="v2-subtle-panel max-w-[280px] truncate px-3 py-2 text-left text-xs text-muted-foreground hover:border-primary/50 hover:text-foreground" title={accountLabel} onClick={() => setCampaignsOpen(true)}><b className="font-medium text-foreground">Account:</b> {accountLabel}</button>
-            <button type="button" className="v2-subtle-panel px-3 py-2 text-xs text-muted-foreground hover:border-primary/50 hover:text-foreground" aria-label={`${isVietnamese ? "Đổi khoảng ngày" : "Change date range"}: ${periodLabel}`} onClick={() => setPeriodOpen(true)}><b className="font-medium text-foreground">{isVietnamese ? "Ngày:" : "Dates:"}</b> {periodLabel}</button>
-            <button type="button" className="v2-subtle-panel flex items-center gap-1.5 px-3 py-2 text-xs text-muted-foreground hover:border-primary/50 hover:text-foreground" onClick={() => setComparisonOpen(true)}><GitCompareArrowsIcon className="size-3.5" /><b className="font-medium text-foreground">{isVietnamese ? "So sánh:" : "Compare:"}</b> {comparisonLabel(compareMode)}</button>
-            <button type="button" className="h-7" onClick={() => setKpiOpen(true)}><Badge variant="secondary" className="h-7">{isVietnamese ? "KPI:" : "KPI:"} {scopeLabel}</Badge></button>
+            <button type="button" disabled={reportLoading} className="v2-subtle-panel max-w-[280px] truncate px-3 py-2 text-left text-xs text-muted-foreground hover:border-primary/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50" title={accountLabel} onClick={() => setCampaignsOpen(true)}><b className="font-medium text-foreground">Account:</b> {accountLabel}</button>
+            <button type="button" disabled={reportLoading} className="v2-subtle-panel px-3 py-2 text-xs text-muted-foreground hover:border-primary/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50" aria-label={`${isVietnamese ? "Đổi khoảng ngày" : "Change date range"}: ${periodLabel}`} onClick={() => setPeriodOpen(true)}><b className="font-medium text-foreground">{isVietnamese ? "Ngày:" : "Dates:"}</b> {periodLabel}</button>
+            <button type="button" disabled={reportLoading} className="v2-subtle-panel flex items-center gap-1.5 px-3 py-2 text-xs text-muted-foreground hover:border-primary/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50" onClick={() => setComparisonOpen(true)}><GitCompareArrowsIcon className="size-3.5" /><b className="font-medium text-foreground">{isVietnamese ? "So sánh:" : "Compare:"}</b> {comparisonLabel(compareMode)}</button>
+            <button type="button" disabled={reportLoading} className="h-7 disabled:cursor-not-allowed disabled:opacity-50" onClick={() => setKpiOpen(true)}><Badge variant="secondary" className="h-7">{isVietnamese ? "KPI:" : "KPI:"} {scopeLabel}</Badge></button>
           </div>
         </div>
 
@@ -277,9 +279,9 @@ export function PerformanceV2({
       </Tabs>
 
       <div className="flex items-center justify-end gap-2 border-t border-border pt-3" data-print-hidden>
-        <Button type="button" variant="ghost" size="sm" onClick={onRefresh}>
+        <Button type="button" variant="ghost" size="sm" onClick={onRefresh} disabled={reportLoading}>
           <RefreshCwIcon data-icon="inline-start" />
-          {isVietnamese ? "Làm mới" : "Refresh"}
+          {reportLoading ? (isVietnamese ? "Đang làm mới" : "Refreshing") : (isVietnamese ? "Làm mới" : "Refresh")}
         </Button>
         <Button type="button" variant="outline" size="sm" onClick={() => setExportOpen(true)} disabled={exporting}>
           <DownloadIcon data-icon="inline-start" />
@@ -287,7 +289,7 @@ export function PerformanceV2({
         </Button>
       </div>
 
-      <CampaignScopeDialog open={campaignsOpen} onOpenChange={setCampaignsOpen} campaigns={scopeCampaigns} selectedIds={selectedCampaignIds} currency={currency} busy={reportLoading} onApply={(ids) => onApplyScope({ selectedCampaignIds: ids })} />
+      <CampaignScopeDialog open={campaignsOpen} onOpenChange={setCampaignsOpen} campaigns={scopeCampaigns} selectedIds={selectedCampaignIds} currency={currency} language={language} busy={reportLoading} onApply={(ids) => onApplyScope({ selectedCampaignIds: ids })} />
       <PeriodScopeDialog open={periodOpen} onOpenChange={setPeriodOpen} currentDays={periodDays} since={since} until={until} busy={reportLoading} onApply={applyPeriod} />
       <KpiPackDialog open={kpiOpen} onOpenChange={setKpiOpen} current={pack} busy={reportLoading} onApply={(nextPack) => onApplyScope({ pack: nextPack })} />
       <ComparisonDialog open={comparisonOpen} onOpenChange={setComparisonOpen} current={compareMode} campaignComparisonAvailable={campaignComparisonAvailable} busy={reportLoading} onApply={(nextMode) => onApplyScope({ compareMode: nextMode })} />
@@ -632,10 +634,10 @@ function CreativesTab({ language, report, currency, selectedIds, onSelectionChan
         <SignalCard eyebrow={isVietnamese ? "Phân bổ chi tiêu" : "Spend distribution"} title={concentrationLabel} detail={`${concentration.toFixed(0)}% ${isVietnamese ? `chi tiêu nằm ở ${signals.topSpendShareCount} creative chi nhiều nhất` : `of spend sits in the top ${signals.topSpendShareCount} creatives`}`} tone={concentration >= 65 ? "warning" : "primary"} />
       </div>
 
-      <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(300px,0.72fr)_minmax(0,1.48fr)]">
+      <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(420px,0.9fr)_minmax(0,1.1fr)]">
         <div className="v2-panel p-4 sm:p-5">
           <div className="flex flex-col gap-3"><div><h2 className="v2-section-title">{isVietnamese ? "Hiệu quả creative" : "Creative performance"}</h2><p className="v2-section-copy">{comparisonMode ? (isVietnamese ? "Chọn đúng hai creative để so sánh." : "Select exactly two creatives to compare.") : (isVietnamese ? "Chọn một creative để xem chi tiết. Bật so sánh khi cần." : "Choose one creative to inspect. Turn on compare mode only when needed.")}</p></div><div className="flex flex-wrap items-center gap-2">
-            <HeroSwitch isSelected={comparisonMode} onChange={(next) => { setComparisonMode(next); if (!next) onSelectionChange([]); }} size="sm"><HeroSwitch.Content><HeroSwitch.Control><HeroSwitch.Thumb /></HeroSwitch.Control><HeroLabel>{isVietnamese ? "Chế độ so sánh" : "Compare mode"}</HeroLabel></HeroSwitch.Content></HeroSwitch>
+            <HeroSwitch className="performance-heroui-control" isSelected={comparisonMode} onChange={(next) => { setComparisonMode(next); if (!next) onSelectionChange([]); }} size="sm"><HeroSwitch.Content><HeroSwitch.Control><HeroSwitch.Thumb /></HeroSwitch.Control><HeroLabel>{isVietnamese ? "Chế độ so sánh" : "Compare mode"}</HeroLabel></HeroSwitch.Content></HeroSwitch>
             <div className="ml-auto flex items-center gap-1 rounded-xl border border-border p-1"><button type="button" className={cn("rounded-lg p-1.5", viewMode === "grid" && "bg-secondary text-foreground")} aria-label="Grid view" onClick={() => setViewMode("grid")}><LayoutGridIcon className="size-4" /></button><button type="button" className={cn("rounded-lg p-1.5", viewMode === "list" && "bg-secondary text-foreground")} aria-label="List view" onClick={() => setViewMode("list")}><ListIcon className="size-4" /></button></div>
             {comparisonMode ? <><Badge variant={selectedIds.length === 2 ? "success" : "outline"}>{selectedIds.length}/2 {isVietnamese ? "đã chọn" : "selected"}</Badge><Button type="button" size="sm" variant="outline" disabled={selectedIds.length !== 2} onClick={onCompare}><GitCompareArrowsIcon data-icon="inline-start" />{isVietnamese ? "So sánh" : "Compare"}</Button></> : null}
           </div></div>

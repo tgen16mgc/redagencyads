@@ -68,7 +68,7 @@ import { buildWorkflowSteps, type DashboardWorkflowStep } from "@/lib/dashboard-
 import { canOpenDashboardView, initialDashboardViewFromSearch, shouldLoadAdsWorkspaceData, type DashboardView } from "@/lib/dashboard-access";
 import { buildSampleReport, SAMPLE_CAMPAIGNS } from "@/lib/sample-report";
 import { buildUnknownCapabilitySnapshot, type CapabilityStatus } from "@/lib/capabilities";
-import { jsonFetch } from "@/lib/api-client";
+import { isAbortError, jsonFetch } from "@/lib/api-client";
 import { hasReportSignal } from "@/lib/data-sufficiency";
 import { readStorageSlot } from "@/lib/storage-slot";
 import { summarizeHealth } from "@/lib/health-score";
@@ -753,17 +753,24 @@ export function DashboardShell() {
 
   React.useEffect(() => {
     if (!accountId) return;
+    const controller = new AbortController();
     setLoading("campaigns");
-    jsonFetch<{ campaigns: MetaCampaign[] }>(`/api/meta/campaigns?accountId=${encodeURIComponent(accountId)}`)
+    jsonFetch<{ campaigns: MetaCampaign[] }>(`/api/meta/campaigns?accountId=${encodeURIComponent(accountId)}`, { signal: controller.signal })
       .then((data) => {
+        if (controller.signal.aborted) return;
         setAdsWorkspace((current) => ({
           ...current,
           campaigns: data.campaigns,
           selectedCampaignIds: reportCampaignSelectionForAccount(accountId, current.report),
         }));
       })
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(""));
+      .catch((err) => {
+        if (!isAbortError(err)) setError(err instanceof Error ? err.message : "Could not load campaigns.");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading("");
+      });
+    return () => controller.abort();
   }, [accountId]);
 
   async function validateMetaToken() {
@@ -1246,7 +1253,7 @@ export function DashboardShell() {
               />
               {activeView === "ads" && reportHasData ? (
                 <>
-                  <button type="button" className="v2-icon-button v2-topbar-secondary-action" aria-label={language === "vi" ? "Làm mới báo cáo" : "Refresh report"} onClick={() => window.dispatchEvent(new Event("v2:refresh-report"))}>
+                  <button type="button" className="v2-icon-button v2-topbar-secondary-action" aria-label={language === "vi" ? "Làm mới báo cáo" : "Refresh report"} aria-busy={loading === "report"} disabled={loading === "report"} onClick={() => window.dispatchEvent(new Event("v2:refresh-report"))}>
                     <RefreshCcwIcon />
                   </button>
                   <Button type="button" variant="outline" size="sm" className="v2-topbar-secondary-action" onClick={() => window.dispatchEvent(new Event("v2:open-export"))} disabled={exportingPdf}>

@@ -20,6 +20,7 @@ import { buildCreativeComparisonVerdict } from "@/lib/creative-comparison";
 import type { PerformanceStage } from "@/lib/performance-stages";
 import type { CompareMode, DashboardReport, InterfaceLanguage, KpiPack, MetaCampaign, NormalizedRow, Verdict } from "@/lib/types";
 import { isPeriodPreset, rangeFromDays } from "@/lib/period-scope";
+import { toggleReportCampaignSelection } from "@/lib/report-refresh";
 import { cn } from "@/lib/utils";
 import { MetaCreativeCover } from "@/components/dashboard/meta-creative-media";
 import { Badge } from "@/components/ui/badge";
@@ -46,54 +47,66 @@ const KPI_OPTIONS: { value: KpiPack | "auto"; label: string; detail: string }[] 
   { value: "awareness", label: "Awareness", detail: "Reach, CPM and frequency" },
 ];
 
-export function CampaignScopeDialog({ open, onOpenChange, campaigns, selectedIds, currency, busy, onApply }: {
+export function CampaignScopeDialog({ open, onOpenChange, campaigns, selectedIds, currency, language, busy, onApply }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   campaigns: MetaCampaign[];
   selectedIds: string[];
   currency: string;
+  language: InterfaceLanguage;
   busy: boolean;
   onApply: (ids: string[]) => Promise<void>;
 }) {
+  const isVietnamese = language === "vi";
   const [query, setQuery] = React.useState("");
   const [draft, setDraft] = React.useState<string[]>(selectedIds);
+  const wasOpenRef = React.useRef(false);
   const visible = campaigns.filter((campaign) => `${campaign.name} ${campaign.objective || ""}`.toLowerCase().includes(query.toLowerCase()));
-  const activeIds = campaigns.filter((campaign) => campaignStatus(campaign) === "ACTIVE").map((campaign) => campaign.id);
-  React.useEffect(() => { if (open) { setDraft(selectedIds.length ? selectedIds : activeIds); setQuery(""); } }, [open, selectedIds, activeIds.join("|")]);
+  const activeIds = React.useMemo(
+    () => campaigns.filter((campaign) => campaignStatus(campaign) === "ACTIVE").map((campaign) => campaign.id),
+    [campaigns],
+  );
+  React.useEffect(() => {
+    if (open && !wasOpenRef.current) {
+      setDraft(selectedIds);
+      setQuery("");
+    }
+    wasOpenRef.current = open;
+  }, [open, selectedIds]);
 
   function toggle(id: string) {
-    setDraft((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+    setDraft((current) => toggleReportCampaignSelection({ selectedIds: current, activeCampaignIds: activeIds, campaignId: id }));
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[min(620px,calc(100svh-2rem))] max-w-[440px] flex-col rounded-3xl border border-border bg-popover p-0" showCloseButton={false}>
         <DialogHeader className="p-5 pb-2">
-          <DialogTitle className="text-xl font-semibold">Choose campaigns</DialogTitle>
-          <DialogDescription className="mt-2 leading-5">Build a focused evidence set. Active campaigns remain selected by default.</DialogDescription>
+          <DialogTitle className="text-xl font-semibold">{isVietnamese ? "Chọn campaign" : "Choose campaigns"}</DialogTitle>
+          <DialogDescription className="mt-2 leading-5">{isVietnamese ? "Tạo một phạm vi evidence rõ ràng. Campaign active được chọn mặc định." : "Build a focused evidence set. Active campaigns are selected by default."}</DialogDescription>
         </DialogHeader>
         <div className="relative px-5">
           <SearchIcon className="pointer-events-none absolute left-8 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search campaigns..." className="pl-9" />
+          <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={isVietnamese ? "Tìm campaign..." : "Search campaigns..."} className="pl-9" />
         </div>
         <div className="mt-4 min-h-0 flex-1 overflow-y-auto px-5">
-          <div className="mb-2 flex items-center justify-between text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground"><span>Available campaigns</span><button type="button" className="normal-case text-primary" onClick={() => setDraft(activeIds)}>All active</button></div>
+          <div className="mb-2 flex items-center justify-between text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground"><span>{isVietnamese ? "Campaign có sẵn" : "Available campaigns"}</span><button type="button" className="normal-case text-primary" onClick={() => setDraft([])}>{isVietnamese ? "Tất cả active" : "All active"}</button></div>
           <div className="grid gap-1.5">
             {visible.map((campaign) => {
-              const selected = draft.includes(campaign.id);
+              const selected = draft.length ? draft.includes(campaign.id) : campaignStatus(campaign) === "ACTIVE";
               return (
                 <button key={campaign.id} type="button" aria-pressed={selected} onClick={() => toggle(campaign.id)} className={cn("rounded-2xl px-3 py-2.5 text-left transition-colors", selected ? "bg-primary/14 text-foreground" : "text-muted-foreground hover:bg-secondary/60")}>
                   <span className="block text-sm font-medium text-foreground">{campaign.name}</span>
-                  <span className="mt-0.5 block text-[11px] uppercase">{campaignStatus(campaign)} · {campaign.objective || "No objective"}{formatBudget(campaign, currency)}</span>
+                  <span className="mt-0.5 block text-[11px] uppercase">{campaignStatus(campaign)} · {formatObjective(campaign.objective, language)}{formatBudget(campaign, currency)}</span>
                 </button>
               );
             })}
-            {!visible.length ? <div className="py-10 text-center text-sm text-muted-foreground">No campaigns match this search.</div> : null}
+            {!visible.length ? <div className="py-10 text-center text-sm text-muted-foreground">{isVietnamese ? "Không có campaign khớp với tìm kiếm này." : "No campaigns match this search."}</div> : null}
           </div>
         </div>
         <DialogFooter className="grid grid-cols-2 border-t border-border p-5">
-          <Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button disabled={busy || draft.length === 0} onClick={async () => { await onApply(draft); onOpenChange(false); }}>{busy ? <Spinner data-icon="inline-start" /> : null}Apply {draft.length} campaign{draft.length === 1 ? "" : "s"}</Button>
+          <Button variant="secondary" onClick={() => onOpenChange(false)}>{isVietnamese ? "Hủy" : "Cancel"}</Button>
+          <Button disabled={busy || (!draft.length && !activeIds.length)} onClick={async () => { await onApply(draft); onOpenChange(false); }}>{busy ? <Spinner data-icon="inline-start" /> : null}{draft.length ? (isVietnamese ? `Áp dụng ${draft.length} campaign` : `Apply ${draft.length} campaign${draft.length === 1 ? "" : "s"}`) : (isVietnamese ? "Áp dụng tất cả active" : "Apply all active")}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -767,6 +780,12 @@ function formatBytes(value: number) {
 
 function campaignStatus(campaign: MetaCampaign) {
   return String(campaign.effective_status || campaign.status || "UNKNOWN").toUpperCase();
+}
+
+function formatObjective(objective: string | undefined, language: InterfaceLanguage) {
+  if (!objective) return language === "vi" ? "Chưa có mục tiêu" : "No objective";
+  const value = objective.replace(/^OUTCOME_/, "").replaceAll("_", " ").toLocaleLowerCase();
+  return value.charAt(0).toLocaleUpperCase() + value.slice(1);
 }
 
 function formatBudget(campaign: MetaCampaign, currencyCode: string) {

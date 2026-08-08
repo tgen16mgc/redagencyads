@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { buildMetaReportUrl, currentReportScope, reportCampaignSelectionForAccount } from "../report-refresh";
+import {
+  buildDashboardReportKey,
+  buildMetaReportUrl,
+  buildReportRequestKey,
+  currentReportScope,
+  reportCampaignSelectionForAccount,
+  toggleReportCampaignSelection,
+} from "../report-refresh";
 import { buildSampleReport } from "../sample-report";
 
 describe("current report refresh scope", () => {
@@ -40,5 +47,51 @@ describe("current report refresh scope", () => {
     expect(url.searchParams.get("accountId")).toBe(report.account.id);
     expect(url.searchParams.getAll("campaignId")).toEqual(["smp-c2"]);
     expect(url.searchParams.get("pack")).toBe(report.selectedPack);
+  });
+
+  it("treats campaign order as the same active request", () => {
+    const base = {
+      accountId: "act_1",
+      since: "2026-07-01",
+      until: "2026-07-31",
+      pack: "sales_roas" as const,
+      compareMode: "previous" as const,
+    };
+
+    expect(buildReportRequestKey({ ...base, selectedCampaignIds: ["campaign-b", "campaign-a"] }))
+      .toBe(buildReportRequestKey({ ...base, selectedCampaignIds: ["campaign-a", "campaign-b"] }));
+  });
+
+  it("changes report identity when refreshed data or campaign scope changes", () => {
+    const report = buildSampleReport({ selectedCampaignIds: ["smp-c1"] });
+    const refreshed = { ...report, pulledAt: "2026-08-08T12:00:00.000Z" };
+    const otherCampaign = buildSampleReport({ selectedCampaignIds: ["smp-c2"] });
+
+    expect(buildDashboardReportKey(refreshed)).not.toBe(buildDashboardReportKey(report));
+    expect(buildDashboardReportKey(otherCampaign)).not.toBe(buildDashboardReportKey(report));
+  });
+
+  it("deselects one campaign from the implicit all-active scope", () => {
+    expect(toggleReportCampaignSelection({
+      selectedIds: [],
+      activeCampaignIds: ["campaign-a", "campaign-b", "campaign-c"],
+      campaignId: "campaign-b",
+    })).toEqual(["campaign-a", "campaign-c"]);
+  });
+
+  it("adds an inactive campaign without dropping the implicit active scope", () => {
+    expect(toggleReportCampaignSelection({
+      selectedIds: [],
+      activeCampaignIds: ["campaign-a", "campaign-b"],
+      campaignId: "campaign-paused",
+    })).toEqual(["campaign-a", "campaign-b", "campaign-paused"]);
+  });
+
+  it("keeps one explicit campaign selected because an empty scope means all active", () => {
+    expect(toggleReportCampaignSelection({
+      selectedIds: ["campaign-a"],
+      activeCampaignIds: ["campaign-a", "campaign-b"],
+      campaignId: "campaign-a",
+    })).toEqual(["campaign-a"]);
   });
 });

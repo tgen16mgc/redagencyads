@@ -2778,10 +2778,15 @@
   cursor: pointer;
 }
 
-.v2-icon-button:hover,
+.v2-icon-button:not(:disabled):hover,
 .v2-icon-button:focus-visible {
   color: var(--foreground);
   border-color: color-mix(in srgb, var(--primary) 42%, var(--border));
+}
+
+.v2-icon-button:disabled {
+  cursor: var(--cursor-disabled);
+  opacity: 0.5;
 }
 
 .v2-icon-button svg {
@@ -3267,6 +3272,15 @@
   --surface-secondary-foreground: var(--foreground);
   --surface-tertiary: var(--secondary);
   --surface-tertiary-foreground: var(--foreground);
+  --default: var(--secondary);
+  --default-foreground: var(--foreground);
+}
+
+.performance-heroui-control {
+  --muted: var(--muted-foreground);
+  --accent: var(--primary);
+  --accent-foreground: var(--primary-foreground);
+  --accent-soft: color-mix(in srgb, var(--primary) 14%, transparent);
   --default: var(--secondary);
   --default-foreground: var(--foreground);
 }

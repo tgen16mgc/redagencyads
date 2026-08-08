@@ -1,4 +1,4 @@
-import type { DashboardReport, KpiPack } from "@/lib/types";
+import type { CompareMode, DashboardReport, KpiPack } from "@/lib/types";
 
 export type CurrentReportScope = {
   accountId: string;
@@ -10,6 +10,10 @@ export type CurrentReportScope = {
 
 export type MetaReportRequestScope = Omit<CurrentReportScope, "pack"> & {
   pack: KpiPack | "auto";
+};
+
+export type ReportRequestKeyScope = MetaReportRequestScope & {
+  compareMode: CompareMode;
 };
 
 export function currentReportScope(report: DashboardReport): CurrentReportScope {
@@ -30,6 +34,35 @@ export function buildMetaReportUrl(origin: string, scope: MetaReportRequestScope
   scope.selectedCampaignIds.forEach((id) => url.searchParams.append("campaignId", id));
   if (scope.pack !== "auto") url.searchParams.set("pack", scope.pack);
   return url.toString();
+}
+
+export function buildReportRequestKey(scope: ReportRequestKeyScope) {
+  return JSON.stringify({
+    ...scope,
+    selectedCampaignIds: [...scope.selectedCampaignIds].sort(),
+  });
+}
+
+export function buildDashboardReportKey(report: DashboardReport) {
+  return JSON.stringify({
+    source: report.source,
+    accountId: report.account.id,
+    selectedCampaignIds: report.selectedCampaigns.map((campaign) => campaign.id).sort(),
+    since: report.dateRange.since,
+    until: report.dateRange.until,
+    pack: report.selectedPack,
+    pulledAt: report.pulledAt,
+  });
+}
+
+export function toggleReportCampaignSelection(input: {
+  selectedIds: string[];
+  activeCampaignIds: string[];
+  campaignId: string;
+}) {
+  const current = input.selectedIds.length ? input.selectedIds : input.activeCampaignIds;
+  if (!current.includes(input.campaignId)) return [...current, input.campaignId];
+  return current.length === 1 ? current : current.filter((id) => id !== input.campaignId);
 }
 
 export function reportCampaignSelectionForAccount(

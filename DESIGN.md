@@ -1,8 +1,8 @@
 ---
-version: 1.0
+version: 2.0
 status: locked
 name: Decision Operations Workbench
-stack: shadcn-base-nova
+stack: heroui-react-v3
 ---
 
 # Decision Operations Workbench
@@ -11,7 +11,9 @@ This is an operational application, not a marketing site. The interface helps us
 
 ## Foundation
 
-- Use shadcn/ui `base-nova` components with Base UI primitives, Tailwind v4, Lucide icons, and semantic CSS tokens.
+- Use HeroUI React v3 with Tailwind v4, React Aria behavior, Lucide icons, and semantic CSS tokens. Always verify component APIs in the local HeroUI docs or HeroUI MCP before implementation.
+- HeroUI is the source of truth for new interactive primitives. Existing shadcn/Base UI wrappers are compatibility surfaces during migration; reuse them only where replacing them would add risk, and do not introduce new parallel primitives.
+- Use HeroUI compound composition, semantic variants, `onPress` for HeroUI buttons, `isPending` for in-flight actions, and `isDisabled` for unavailable actions. No provider wrapper is required.
 - Geist is the only product typeface. Use tabular figures for metrics and IDs.
 - The current product is dark-only. Graphite surfaces create hierarchy without pure-black voids or large atmospheric backgrounds.
 - Use a 4px spacing unit. Preferred increments are 4, 8, 12, 16, 24, 32, and 40px.
@@ -61,8 +63,8 @@ Client workspace
 ```
 
 - Prefer one bordered work surface with internal separators over nested cards.
-- Use `Table` for comparable records, `Tabs` for alternate views of the same object, and `Collapsible` or `Accordion` for supporting evidence.
-- Use `Sheet` for record detail and evidence review without losing list context.
+- Use HeroUI `Table` for comparable records, `Tabs` for alternate views of the same object, and `Disclosure` or `Accordion` for supporting evidence.
+- Use HeroUI `Drawer` for record detail and evidence review without losing list context, and `Modal` for focused changes that must complete before returning to the report.
 - Keep healthy or secondary diagnostics collapsed. Rank blockers and actions first.
 - Empty states must explain what is missing, why it matters, and the next available action.
 
@@ -82,14 +84,15 @@ Reserve `--action-dock-clearance: 6rem` at the end of dock-enabled workspaces so
 
 ## Component Rules
 
-- Start with installed shadcn components. Compose before creating custom primitives.
-- Primary action: default `Button`; secondary action: `outline` or `ghost`; destructive action: `destructive` plus confirmation.
-- Use `Badge` only for compact status or provenance. Do not turn metadata into a row of decorative pills.
-- Use `Alert` for actionable system conditions and `Empty` for no-result states.
-- Use `Skeleton` or `Spinner` for loading and Sonner for transient confirmation.
-- Forms use `FieldGroup` and `Field`; validation appears beside the affected control.
-- Dialogs, sheets, and drawers require accessible titles. Icon-only controls require labels and tooltips.
-- Avoid card-in-card composition, repeated introductions, glow borders on passive content, and custom markup that duplicates a shadcn component.
+- Start with installed HeroUI v3 components and compound composition before creating custom primitives.
+- Primary action: HeroUI `Button` with `primary`; secondary action: `secondary` or `outline`; dismissive action: `tertiary`; destructive action: `danger` plus confirmation.
+- Use `Chip` or `Badge` only for compact status or provenance. Do not turn metadata into decorative pills.
+- Use `Alert` for actionable system conditions and a deliberate empty-state composition for no-result states.
+- Use `Skeleton`, `Spinner`, or `ProgressBar` for loading and Sonner only for transient confirmation after state is committed.
+- Forms use HeroUI field compounds with visible `Label`, `Description`, and `FieldError`; validation appears beside the affected control.
+- Modals, drawers, and popovers require accessible headings. Icon-only controls require accessible labels and tooltips.
+- Pending actions must reject duplicate activation, prevent stale responses from winning, preserve the last valid state on failure, and state what is happening in the button label.
+- Avoid card-in-card composition, repeated introductions, glow borders on passive content, and custom markup that duplicates a HeroUI component.
 
 ## Motion And Glow
 
@@ -122,3 +125,4 @@ Before shipping a screen, confirm:
 3. Evidence, provider, and capability states are truthful.
 4. Status color and glow communicate meaning rather than decoration.
 5. Keyboard, reduced-motion, 375px mobile, and print behavior still work.
+6. Refresh, scope, and selection actions cannot overlap, silently reset drafts, or replace newer state with stale responses.

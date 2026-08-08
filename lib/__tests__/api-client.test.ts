@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { jsonFetch } from "@/lib/api-client";
+import { isAbortError, jsonFetch } from "@/lib/api-client";
 
 function pendingFetch() {
   return vi.fn((_url: string, init?: RequestInit) => {
@@ -17,6 +17,11 @@ afterEach(() => {
 });
 
 describe("jsonFetch", () => {
+  it("identifies caller cancellation without treating ordinary errors as aborts", () => {
+    expect(isAbortError(new DOMException("Cancelled", "AbortError"))).toBe(true);
+    expect(isAbortError(new Error("Request failed"))).toBe(false);
+  });
+
   it("returns parsed json on success", async () => {
     vi.stubGlobal(
       "fetch",
@@ -57,6 +62,16 @@ describe("jsonFetch", () => {
     const outcome = expect(promise).rejects.toMatchObject({ name: "AbortError" });
     controller.abort();
     await outcome;
-    expect(fetchMock.mock.calls[0]?.[1]?.signal).toBe(controller.signal);
+    expect(fetchMock.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("keeps the timeout active when a caller also supplies a cancellation signal", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", pendingFetch());
+    const controller = new AbortController();
+    const promise = jsonFetch("/api/session", { signal: controller.signal, timeoutMs: 4000 });
+    const outcome = expect(promise).rejects.toThrow("Request timed out after 4s. Try again.");
+    await vi.advanceTimersByTimeAsync(4000);
+    await outcome;
   });
 });

@@ -34,7 +34,7 @@ import { CustomChartsSection } from "@/components/dashboard/custom-charts-sectio
 import { DiagnosticCard } from "@/components/dashboard/diagnostic-card";
 import { PerformanceV2 } from "@/components/dashboard/performance-v2";
 import { sanitizeAdPreviewHtml } from "@/lib/ad-preview-html";
-import { jsonFetch } from "@/lib/api-client";
+import { isAbortError, jsonFetch } from "@/lib/api-client";
 import { detectBaselineAnomalies, anomalyBadgeText } from "@/lib/baseline-anomaly";
 import type { CapabilityStatus } from "@/lib/capabilities";
 import { chartSeriesDot, performanceChartConfig } from "@/lib/chart-palette";
@@ -81,7 +81,13 @@ import {
   type PerformanceStageKey,
 } from "@/lib/performance-stages";
 import { getCompareRange } from "@/lib/report-ranges";
-import { buildMetaReportUrl, currentReportScope } from "@/lib/report-refresh";
+import {
+  buildDashboardReportKey,
+  buildMetaReportUrl,
+  buildReportRequestKey,
+  currentReportScope,
+  toggleReportCampaignSelection,
+} from "@/lib/report-refresh";
 import { rowDecision } from "@/lib/row-decision";
 import { readStorageSlot } from "@/lib/storage-slot";
 import type {
@@ -514,6 +520,11 @@ export function AdsWorkspace({
   const reportStartRef = React.useRef<HTMLDivElement>(null);
   const autoVerdictKeyRef = React.useRef("");
   const lastReportRequestRef = React.useRef<ReportRequestOverrides>({});
+  const reportRequestSequenceRef = React.useRef(0);
+  const reportReadySequenceRef = React.useRef(0);
+  const activeReportRequestRef = React.useRef<{ id: number; key: string; controller: AbortController } | null>(null);
+  const aiRequestSequenceRef = React.useRef({ verdict: 0, insights: 0 });
+  const activeAiRequestRef = React.useRef<Partial<Record<keyof AdsWorkspaceState["aiLoading"], { id: number; reportKey: string; controller: AbortController }>>>({});
   const [reportFlow, setReportFlow] = React.useState<"idle" | "pulling" | "ready" | "error">("idle");
   const [reportFlowError, setReportFlowError] = React.useState("");
   const verdictProgress = useTimedProgress(aiLoading.verdict);
@@ -536,6 +547,25 @@ export function AdsWorkspace({
   }, [comparisonReport, previousReport, compareMode, language]);
   const diagnostics = React.useMemo(() => (report ? runDiagnostics(report, decisionTargets) : []), [report, decisionTargets]);
   const reportCurrency = report?.account.currency || "VND";
+  const reportKey = report ? buildDashboardReportKey(report) : "";
+
+  function abortAiRequests() {
+    for (const kind of ["verdict", "insights"] as const) {
+      activeAiRequestRef.current[kind]?.controller.abort();
+      delete activeAiRequestRef.current[kind];
+    }
+  }
+
+  function startAiRequest(kind: keyof AdsWorkspaceState["aiLoading"], sourceReportKey: string) {
+    activeAiRequestRef.current[kind]?.controller.abort();
+    const request = {
+      id: ++aiRequestSequenceRef.current[kind],
+      reportKey: sourceReportKey,
+      controller: new AbortController(),
+    };
+    activeAiRequestRef.current[kind] = request;
+    return request;
+  }
 
   React.useEffect(() => {
     if (!report && !scopeExpanded) updateState({ scopeExpanded: true });
@@ -560,7 +590,31 @@ export function AdsWorkspace({
     window.localStorage.setItem(FUNNEL_STAGE_STORAGE_KEY, serializePerformanceStageKeys(funnelStageKeys));
   }, [funnelStageKeys]);
 
-  async function fetchReportForRange(range: { since: string; until: string }, overrides: ReportRequestOverrides = {}) {
+  React.useEffect(() => () => {
+    activeReportRequestRef.current?.controller.abort();
+    abortAiRequests();
+  }, []);
+
+  React.useEffect(() => {
+    const cancelled = { verdict: false, insights: false };
+    for (const kind of ["verdict", "insights"] as const) {
+      const active = activeAiRequestRef.current[kind];
+      if (!active || active.reportKey === reportKey) continue;
+      active.controller.abort();
+      delete activeAiRequestRef.current[kind];
+      cancelled[kind] = true;
+    }
+    if (!cancelled.verdict && !cancelled.insights) return;
+    onStateChange((current) => ({
+      ...current,
+      aiLoading: {
+        verdict: cancelled.verdict ? false : current.aiLoading.verdict,
+        insights: cancelled.insights ? false : current.aiLoading.insights,
+      },
+    }));
+  }, [onStateChange, reportKey]);
+
+  async function fetchReportForRange(range: { since: string; until: string }, overrides: ReportRequestOverrides = {}, signal?: AbortSignal) {
     const resolvedPack = overrides.pack ?? pack;
     const url = buildMetaReportUrl(window.location.origin, {
       accountId: overrides.accountId ?? accountId,
@@ -569,25 +623,48 @@ export function AdsWorkspace({
       until: range.until,
       pack: resolvedPack,
     });
-    return jsonFetch<{ report: DashboardReport }>(url, { timeoutMs: 30000 });
+    return jsonFetch<{ report: DashboardReport }>(url, { timeoutMs: 30000, signal });
   }
 
   async function pullReport(overrides: ReportRequestOverrides = {}) {
-    lastReportRequestRef.current = overrides;
     const { accountId: requestedAccountId, ...stateOverrides } = overrides;
+    const resolvedAccountId = requestedAccountId ?? accountId;
+    const resolvedSelectedCampaignIds = overrides.selectedCampaignIds ?? selectedCampaignIds;
     const nextSince = overrides.since ?? since;
     const nextUntil = overrides.until ?? until;
+    const nextPack = overrides.pack ?? pack;
     const nextCompareMode = overrides.compareMode ?? compareMode;
-    if (report?.source === "sample" && !accountId) {
-      if (!nextSince || !nextUntil || nextSince > nextUntil) return;
-      const sampleSelectedIds = overrides.selectedCampaignIds ?? selectedCampaignIds;
-      const samplePack = overrides.pack ?? pack;
+    const sampleMode = report?.source === "sample" && !accountId;
+    if ((!sampleMode && !resolvedAccountId) || !nextSince || !nextUntil || nextSince > nextUntil) return;
+
+    const requestKey = buildReportRequestKey({
+      accountId: resolvedAccountId || report?.account.id || "sample",
+      selectedCampaignIds: resolvedSelectedCampaignIds,
+      since: nextSince,
+      until: nextUntil,
+      pack: nextPack,
+      compareMode: nextCompareMode,
+    });
+    if (activeReportRequestRef.current?.key === requestKey) return;
+
+    abortAiRequests();
+    activeReportRequestRef.current?.controller.abort();
+    const requestId = ++reportRequestSequenceRef.current;
+    reportReadySequenceRef.current = 0;
+    const controller = new AbortController();
+    activeReportRequestRef.current = { id: requestId, key: requestKey, controller };
+    lastReportRequestRef.current = overrides;
+    const requestIsCurrent = () => activeReportRequestRef.current?.id === requestId && !controller.signal.aborted;
+
+    if (sampleMode) {
+      const sampleSelectedIds = resolvedSelectedCampaignIds;
+      const samplePack = nextPack;
       setReportFlowError("");
       setReportFlow("pulling");
-      updateState({ ...stateOverrides, verdict: null, insights: null, aiLoading: { verdict: false, insights: false }, previousReport: null });
       onLoadingChange("report");
       try {
         await new Promise((resolve) => window.setTimeout(resolve, 220));
+        if (!requestIsCurrent()) return;
         const current = buildSampleReport({ selectedCampaignIds: sampleSelectedIds, pack: samplePack, dateRange: { since: nextSince, until: nextUntil } });
         let sampleComparison: DashboardReport | null = null;
         if (nextCompareMode === "campaign") {
@@ -598,114 +675,178 @@ export function AdsWorkspace({
         } else if (nextCompareMode !== "off") {
           sampleComparison = buildSampleReport({ selectedCampaignIds: sampleSelectedIds, pack: samplePack, dateRange: getCompareRange({ since: nextSince, until: nextUntil }, nextCompareMode) });
         }
-        updateState({ report: current, previousReport: sampleComparison, scopeExpanded: false });
+        if (!requestIsCurrent()) return;
+        updateState({
+          ...stateOverrides,
+          report: current,
+          previousReport: sampleComparison,
+          selectedCampaignIds: current.selectedCampaigns.map((campaign) => campaign.id),
+          since: current.dateRange.since,
+          until: current.dateRange.until,
+          pack: current.selectedPack,
+          compareMode: nextCompareMode,
+          verdict: null,
+          insights: null,
+          aiLoading: { verdict: false, insights: false },
+          scopeExpanded: false,
+        });
         onReportReady?.();
         toast.success(language === "vi" ? "Đã áp dụng thay đổi" : "Changes applied", { description: language === "vi" ? "Báo cáo mẫu đã được dựng lại với phạm vi mới." : "The sample report was rebuilt with the new scope and comparison." });
         setReportFlow("ready");
-        window.setTimeout(() => setReportFlow("idle"), 900);
+        reportReadySequenceRef.current = requestId;
+        window.setTimeout(() => {
+          if (reportReadySequenceRef.current === requestId) setReportFlow("idle");
+        }, 900);
       } catch (err) {
+        if (!requestIsCurrent() || isAbortError(err)) return;
         const message = err instanceof Error ? err.message : "Could not rebuild the sample report.";
         setReportFlowError(message);
         setReportFlow("error");
         onError(message);
+        onStateChange((current) => ({ ...current, aiLoading: { verdict: false, insights: false } }));
       } finally {
-        onLoadingChange("");
+        if (activeReportRequestRef.current?.id === requestId) {
+          activeReportRequestRef.current = null;
+          onLoadingChange("");
+        }
       }
       return;
     }
-    if (!accountId || !nextSince || !nextUntil || nextSince > nextUntil) return;
     onError("");
     setReportFlowError("");
     setReportFlow("pulling");
-    updateState({ ...stateOverrides, verdict: null, insights: null, aiLoading: { verdict: false, insights: false }, previousReport: null });
     onLoadingChange("report");
     try {
-      const current = await fetchReportForRange({ since: nextSince, until: nextUntil }, overrides);
+      const current = await fetchReportForRange({ since: nextSince, until: nextUntil }, overrides, controller.signal);
+      if (!requestIsCurrent()) return;
       const refreshedScope = currentReportScope(current.report);
+      let nextPreviousReport: DashboardReport | null = null;
+      if (nextCompareMode !== "off") {
+        const selectedIds = refreshedScope.selectedCampaignIds;
+        if (nextCompareMode === "campaign" && !selectedIds.length) {
+          throw new Error("Choose at least one campaign before comparing it with the peer group.");
+        }
+        const comparisonOverrides = nextCompareMode === "campaign"
+          ? { ...overrides, accountId: refreshedScope.accountId, pack: refreshedScope.pack, selectedCampaignIds: campaigns.filter((campaign) => campaignStatus(campaign) === "ACTIVE" && !selectedIds.includes(campaign.id)).map((campaign) => campaign.id) }
+          : { ...overrides, accountId: refreshedScope.accountId, pack: refreshedScope.pack, selectedCampaignIds: selectedIds };
+        if (nextCompareMode === "campaign" && !comparisonOverrides.selectedCampaignIds?.length) {
+          throw new Error("No active peer campaigns are available outside the selected group.");
+        }
+        const previousRange = getCompareRange({ since: nextSince, until: nextUntil }, nextCompareMode);
+        const previous = await fetchReportForRange(previousRange, comparisonOverrides, controller.signal);
+        if (!requestIsCurrent()) return;
+        nextPreviousReport = previous.report;
+      }
       updateState({
+        ...stateOverrides,
         report: current.report,
+        previousReport: nextPreviousReport,
         selectedCampaignIds: refreshedScope.selectedCampaignIds,
         since: refreshedScope.since,
         until: refreshedScope.until,
         pack: refreshedScope.pack,
+        compareMode: nextCompareMode,
+        verdict: null,
+        insights: null,
+        aiLoading: { verdict: false, insights: false },
         scopeExpanded: false,
       });
       if (requestedAccountId && requestedAccountId !== accountId) onAccountIdChange(refreshedScope.accountId);
       onReportReady?.();
       window.setTimeout(() => reportStartRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
-      if (nextCompareMode !== "off") {
-        const selectedIds = overrides.selectedCampaignIds ?? selectedCampaignIds;
-        if (nextCompareMode === "campaign" && !selectedIds.length) {
-          throw new Error("Choose at least one campaign before comparing it with the peer group.");
-        }
-        const comparisonOverrides = nextCompareMode === "campaign"
-          ? { ...overrides, selectedCampaignIds: campaigns.filter((campaign) => campaignStatus(campaign) === "ACTIVE" && !selectedIds.includes(campaign.id)).map((campaign) => campaign.id) }
-          : overrides;
-        if (nextCompareMode === "campaign" && !comparisonOverrides.selectedCampaignIds?.length) {
-          throw new Error("No active peer campaigns are available outside the selected group.");
-        }
-        const previousRange = getCompareRange({ since: nextSince, until: nextUntil }, nextCompareMode);
-        const previous = await fetchReportForRange(previousRange, comparisonOverrides);
-        updateState({ previousReport: previous.report });
-      }
       if (Object.keys(overrides).length) {
         toast.success(language === "vi" ? "Đã áp dụng thay đổi" : "Changes applied", { description: language === "vi" ? "Báo cáo đã được kéo lại với phạm vi và quy tắc mới." : "The report was refreshed with the new scope and decision rules." });
       }
       setReportFlow("ready");
-      window.setTimeout(() => setReportFlow("idle"), 900);
+      reportReadySequenceRef.current = requestId;
+      window.setTimeout(() => {
+        if (reportReadySequenceRef.current === requestId) setReportFlow("idle");
+      }, 900);
     } catch (err) {
+      if (!requestIsCurrent() || isAbortError(err)) return;
       const message = err instanceof Error ? err.message : "Could not pull Meta report.";
       setReportFlowError(message);
       setReportFlow("error");
       onError(message);
+      onStateChange((current) => ({ ...current, aiLoading: { verdict: false, insights: false } }));
     } finally {
-      onLoadingChange("");
+      if (activeReportRequestRef.current?.id === requestId) {
+        activeReportRequestRef.current = null;
+        onLoadingChange("");
+      }
     }
   }
 
   async function runAi() {
-    if (!report || !reportHasData || aiLoading.verdict) return;
+    if (!report || !reportHasData || aiLoading.verdict || reportFlow === "pulling") return;
+    const sourceReport = report;
+    const sourceReportKey = buildDashboardReportKey(sourceReport);
+    const request = startAiRequest("verdict", sourceReportKey);
     onError("");
     onStateChange((current) => ({ ...current, aiLoading: { ...current.aiLoading, verdict: true } }));
     try {
       const data = await jsonFetch<{ verdict: Verdict }>("/api/ai/verdict", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ report, language, provider }),
+        body: JSON.stringify({ report: sourceReport, language, provider }),
         timeoutMs: 150000,
+        signal: request.controller.signal,
       });
-      onStateChange((current) => ({ ...current, verdict: data.verdict }));
+      if (activeAiRequestRef.current.verdict?.id !== request.id) return;
+      onStateChange((current) => current.report && buildDashboardReportKey(current.report) === sourceReportKey
+        ? { ...current, verdict: data.verdict }
+        : current);
     } catch (err) {
-      onError(err instanceof Error ? err.message : "Could not generate Verdict.");
+      if (activeAiRequestRef.current.verdict?.id === request.id && !isAbortError(err)) {
+        onError(err instanceof Error ? err.message : "Could not generate Verdict.");
+      }
     } finally {
-      onStateChange((current) => ({ ...current, aiLoading: { ...current.aiLoading, verdict: false } }));
+      if (activeAiRequestRef.current.verdict?.id === request.id) {
+        delete activeAiRequestRef.current.verdict;
+        onStateChange((current) => current.report && buildDashboardReportKey(current.report) === sourceReportKey
+          ? { ...current, aiLoading: { ...current.aiLoading, verdict: false } }
+          : current);
+      }
     }
   }
 
   React.useEffect(() => {
-    if (!report || !reportHasData || verdict || aiLoading.verdict) return;
-    const key = `${report.account.id}:${report.dateRange.since}:${report.dateRange.until}:${report.selectedPack}`;
-    if (autoVerdictKeyRef.current === key) return;
-    autoVerdictKeyRef.current = key;
+    if (!report || !reportHasData || verdict || aiLoading.verdict || reportFlow === "pulling") return;
+    if (autoVerdictKeyRef.current === reportKey) return;
+    autoVerdictKeyRef.current = reportKey;
     void runAi();
-  }, [aiLoading.verdict, report, reportHasData, verdict]);
+  }, [aiLoading.verdict, report, reportFlow, reportHasData, reportKey, verdict]);
 
   async function runInsights() {
-    if (!report || !reportHasData || aiLoading.insights) return;
+    if (!report || !reportHasData || aiLoading.insights || reportFlow === "pulling") return;
+    const sourceReport = report;
+    const sourceReportKey = buildDashboardReportKey(sourceReport);
+    const request = startAiRequest("insights", sourceReportKey);
     onError("");
     onStateChange((current) => ({ ...current, aiLoading: { ...current.aiLoading, insights: true } }));
     try {
       const data = await jsonFetch<{ insights: AiInsightTable }>("/api/ai/insights", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ report, previousReport, compareMode, language, provider }),
+        body: JSON.stringify({ report: sourceReport, previousReport, compareMode, language, provider }),
         timeoutMs: 150000,
+        signal: request.controller.signal,
       });
-      onStateChange((current) => ({ ...current, insights: data.insights }));
+      if (activeAiRequestRef.current.insights?.id !== request.id) return;
+      onStateChange((current) => current.report && buildDashboardReportKey(current.report) === sourceReportKey
+        ? { ...current, insights: data.insights }
+        : current);
     } catch (err) {
-      onError(err instanceof Error ? err.message : "Could not generate insights.");
+      if (activeAiRequestRef.current.insights?.id === request.id && !isAbortError(err)) {
+        onError(err instanceof Error ? err.message : "Could not generate insights.");
+      }
     } finally {
-      onStateChange((current) => ({ ...current, aiLoading: { ...current.aiLoading, insights: false } }));
+      if (activeAiRequestRef.current.insights?.id === request.id) {
+        delete activeAiRequestRef.current.insights;
+        onStateChange((current) => current.report && buildDashboardReportKey(current.report) === sourceReportKey
+          ? { ...current, aiLoading: { ...current.aiLoading, insights: false } }
+          : current);
+      }
     }
   }
 
@@ -1040,12 +1181,15 @@ function ReportScopeDialog({
   const isVietnamese = language === "vi";
   const [draft, setDraft] = React.useState({ selectedCampaignIds, since, until, pack, compareMode, targetCpa, targetRoas });
   const [thresholdsEnabled, setThresholdsEnabled] = React.useState(Boolean(targetCpa || targetRoas));
+  const wasOpenRef = React.useRef(false);
   const invalidDates = Boolean(draft.since && draft.until && draft.since > draft.until);
 
   React.useEffect(() => {
-    if (!open) return;
-    setDraft({ selectedCampaignIds, since, until, pack, compareMode, targetCpa, targetRoas });
-    setThresholdsEnabled(Boolean(targetCpa || targetRoas));
+    if (open && !wasOpenRef.current) {
+      setDraft({ selectedCampaignIds, since, until, pack, compareMode, targetCpa, targetRoas });
+      setThresholdsEnabled(Boolean(targetCpa || targetRoas));
+    }
+    wasOpenRef.current = open;
   }, [open, selectedCampaignIds, since, until, pack, compareMode, targetCpa, targetRoas]);
 
   function save() {
@@ -1087,7 +1231,11 @@ function ReportScopeDialog({
                 <Select
                   items={accounts.map((account) => ({ label: account.name, value: account.id }))}
                   value={accountId}
-                  onValueChange={(value) => value && onAccountIdChange(value)}
+                  onValueChange={(value) => {
+                    if (!value || value === accountId) return;
+                    setDraft((current) => ({ ...current, selectedCampaignIds: [] }));
+                    onAccountIdChange(value);
+                  }}
                 >
                   <SelectTrigger className="h-10 w-full"><SelectValue /></SelectTrigger>
                   <SelectContent><SelectGroup>{accounts.map((account) => <SelectItem key={account.id} value={account.id}>{account.name}</SelectItem>)}</SelectGroup></SelectContent>
@@ -1142,6 +1290,7 @@ function ReportScopeDialog({
             <section className="grid min-w-0 gap-3">
               <div className="text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">{isVietnamese ? "Phạm vi campaign" : "Campaign scope"}</div>
               <ReportScopeCampaignPicker
+                open={open}
                 campaigns={campaigns}
                 currency={currency}
                 language={language}
@@ -1154,16 +1303,17 @@ function ReportScopeDialog({
         </div>
 
         <DialogFooter className="shrink-0 flex-row items-center justify-end gap-2 border-t border-border bg-popover px-4 py-4 sm:px-6">
-          <span className="mr-auto hidden text-[11px] text-muted-foreground sm:block">{isVietnamese ? "Áp dụng cho lần phân tích tiếp theo" : "Applies to the next analysis"}</span>
+          <span className="mr-auto hidden text-[11px] text-muted-foreground sm:block">{isVietnamese ? "Cập nhật báo cáo này ngay" : "Updates this report immediately"}</span>
           <Button type="button" variant="outline" className="rounded-full" onClick={() => onOpenChange(false)}>{isVietnamese ? "Hủy" : "Cancel"}</Button>
-          <Button type="button" className="rounded-full" onClick={save} disabled={!accountId || invalidDates || loading === "report" || loading === "campaigns"}>{loading === "report" ? <Spinner data-icon="inline-start" /> : null}{isVietnamese ? "Lưu phạm vi" : "Save scope"}</Button>
+          <Button type="button" className="rounded-full" onClick={save} disabled={!accountId || invalidDates || loading === "report" || loading === "campaigns"}>{loading === "report" ? <Spinner data-icon="inline-start" /> : null}{isVietnamese ? "Áp dụng & làm mới" : "Apply & refresh"}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
 
-function ReportScopeCampaignPicker({ campaigns, currency, language, loading, selectedIds, onChange }: {
+function ReportScopeCampaignPicker({ open, campaigns, currency, language, loading, selectedIds, onChange }: {
+  open: boolean;
   campaigns: MetaCampaign[];
   currency: string;
   language: InterfaceLanguage;
@@ -1174,15 +1324,22 @@ function ReportScopeCampaignPicker({ campaigns, currency, language, loading, sel
   const isVietnamese = language === "vi";
   const [expanded, setExpanded] = React.useState(false);
   const [query, setQuery] = React.useState("");
-  const activeCampaigns = campaigns.filter(isActiveCampaign);
+  const activeCampaigns = React.useMemo(() => campaigns.filter(isActiveCampaign), [campaigns]);
+  const activeCampaignIds = React.useMemo(() => activeCampaigns.map((campaign) => campaign.id), [activeCampaigns]);
   const selectedSet = React.useMemo(() => new Set(selectedIds), [selectedIds]);
   const scopedCampaigns = selectedIds.length ? campaigns.filter((campaign) => selectedSet.has(campaign.id)) : activeCampaigns;
   const primary = scopedCampaigns[0] || campaigns[0];
   const visibleCampaigns = campaigns.filter((campaign) => `${campaign.name} ${campaign.objective || ""}`.toLowerCase().includes(query.toLowerCase())).slice(0, 30);
+  const allActive = selectedIds.length === 0;
+
+  React.useEffect(() => {
+    if (open) return;
+    setExpanded(false);
+    setQuery("");
+  }, [open]);
 
   function toggle(id: string) {
-    const current = selectedIds.length ? selectedIds : [];
-    onChange(current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+    onChange(toggleReportCampaignSelection({ selectedIds, activeCampaignIds, campaignId: id }));
   }
 
   return (
@@ -1190,10 +1347,14 @@ function ReportScopeCampaignPicker({ campaigns, currency, language, loading, sel
       <div className="min-w-0 overflow-hidden rounded-2xl border border-border bg-card p-3.5">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <Badge variant={scopedCampaigns.length ? "success" : "secondary"}>{scopedCampaigns.length} {isVietnamese ? "active" : "active"}</Badge>
-            <div className="mt-2 truncate text-sm font-medium" title={primary?.name}>{primary?.name || (isVietnamese ? "Tất cả campaign đang hoạt động" : "All active campaigns")}</div>
+            <Badge variant={scopedCampaigns.length ? "success" : "secondary"}>{scopedCampaigns.length} {isVietnamese ? "đã chọn" : "selected"}</Badge>
+            <div className="mt-2 truncate text-sm font-medium" title={allActive ? undefined : primary?.name}>{allActive ? (isVietnamese ? "Tất cả campaign đang hoạt động" : "All active campaigns") : primary?.name || (isVietnamese ? "Chưa có campaign" : "No campaigns available")}</div>
             <div className="mt-1 truncate text-[11px] uppercase text-muted-foreground">
-              {primary ? `${(primary.objective || "Objective unavailable").replace(/^OUTCOME_/, "").replaceAll("_", " ")} ${formatCampaignBudget(primary, currency, language)}` : (isVietnamese ? "Chưa có campaign" : "No campaigns available")}
+              {allActive
+                ? (isVietnamese ? "Campaign active mới sẽ tự động được đưa vào phạm vi" : "New active campaigns will be included automatically")
+                : primary
+                  ? `${campaignObjectiveLabel(primary, language)}${scopedCampaigns.length > 1 ? ` · +${scopedCampaigns.length - 1}` : ""} ${formatCampaignBudget(primary, currency, language)}`
+                  : (isVietnamese ? "Chưa có campaign" : "No campaigns available")}
             </div>
           </div>
           <Button type="button" variant="outline" size="sm" className="shrink-0 rounded-full" onClick={() => setExpanded((current) => !current)} disabled={loading || !campaigns.length} aria-expanded={expanded}>
@@ -1214,11 +1375,12 @@ function ReportScopeCampaignPicker({ campaigns, currency, language, loading, sel
               return (
                 <button key={campaign.id} type="button" aria-pressed={selected} onClick={() => toggle(campaign.id)} className="grid w-full min-w-0 shrink-0 grid-cols-[20px_minmax(0,1fr)_auto] items-center gap-2 overflow-hidden rounded-xl px-2.5 py-2 text-left hover:bg-secondary aria-pressed:bg-primary/10">
                   <span className="flex size-4 items-center justify-center rounded border border-border text-primary">{selected ? <CheckIcon className="size-3" /> : null}</span>
-                  <span className="min-w-0"><span className="block truncate text-sm font-medium">{campaign.name}</span><span className="block truncate text-xs text-muted-foreground">{campaign.objective || (isVietnamese ? "Không có objective" : "No objective")} {formatCampaignBudget(campaign, currency, language)}</span></span>
+                  <span className="min-w-0"><span className="block truncate text-sm font-medium">{campaign.name}</span><span className="block truncate text-xs text-muted-foreground">{campaignObjectiveLabel(campaign, language)} {formatCampaignBudget(campaign, currency, language)}</span></span>
                   <Badge className="max-w-20 truncate" variant={isActiveCampaign(campaign) ? "secondary" : "outline"}>{campaignStatus(campaign)}</Badge>
                 </button>
               );
             })}
+            {!visibleCampaigns.length ? <p className="px-2 py-6 text-center text-sm text-muted-foreground">{isVietnamese ? "Không có campaign khớp với tìm kiếm này." : "No campaigns match this search."}</p> : null}
           </div>
         </div>
       ) : null}
@@ -1246,7 +1408,7 @@ function ReportProgressDialog({ language, state, error, onClose, onRetry }: { la
         <DialogHeader>
           <Badge variant={state === "ready" ? "success" : state === "error" ? "destructive" : "secondary"} className="mb-3 w-fit">Meta Marketing API</Badge>
           <DialogTitle className="text-xl font-semibold">
-            {state === "ready" ? (isVietnamese ? "Báo cáo đã sẵn sàng" : "Report ready") : state === "error" ? (isVietnamese ? "Kéo báo cáo quá thời gian" : "Report pull needs attention") : (isVietnamese ? "Đang kéo báo cáo" : "Pulling your report")}
+            {state === "ready" ? (isVietnamese ? "Báo cáo đã sẵn sàng" : "Report ready") : state === "error" ? (isVietnamese ? "Không thể làm mới báo cáo" : "Report refresh needs attention") : (isVietnamese ? "Đang kéo báo cáo" : "Pulling your report")}
           </DialogTitle>
           <DialogDescription className="mt-1 leading-5">
             {state === "ready" ? (isVietnamese ? "Dữ liệu, breakdown và evidence đã được chuẩn hóa." : "Data, breakdowns and evidence are normalized and ready.") : state === "error" ? error : (isVietnamese ? "Đang lấy campaign, ad set, insight và breakdown từ phạm vi đã chọn." : "Fetching campaigns, ad sets, insights and breakdowns from the selected scope.")}
@@ -1490,6 +1652,29 @@ function campaignStatus(campaign: MetaCampaign) {
 
 function isActiveCampaign(campaign: MetaCampaign) {
   return campaignStatus(campaign) === "ACTIVE";
+}
+
+function campaignObjectiveLabel(campaign: MetaCampaign, language: InterfaceLanguage) {
+  const objective = String(campaign.objective || "").toUpperCase();
+  const labels: Record<string, { en: string; vi: string }> = {
+    OUTCOME_AWARENESS: { en: "Awareness", vi: "Nhận diện" },
+    OUTCOME_TRAFFIC: { en: "Traffic", vi: "Lưu lượng truy cập" },
+    OUTCOME_ENGAGEMENT: { en: "Engagement", vi: "Tương tác" },
+    OUTCOME_LEADS: { en: "Leads", vi: "Khách hàng tiềm năng" },
+    OUTCOME_APP_PROMOTION: { en: "App promotion", vi: "Quảng bá ứng dụng" },
+    OUTCOME_SALES: { en: "Sales", vi: "Doanh số" },
+    LINK_CLICKS: { en: "Traffic", vi: "Lưu lượng truy cập" },
+    MESSAGES: { en: "Messages", vi: "Tin nhắn" },
+    CONVERSIONS: { en: "Conversions", vi: "Chuyển đổi" },
+  };
+  const known = labels[objective];
+  if (known) return known[language];
+  if (!objective) return language === "vi" ? "Chưa có mục tiêu" : "Objective unavailable";
+  return objective
+    .replace(/^OUTCOME_/, "")
+    .split("_")
+    .map((part) => part.charAt(0) + part.slice(1).toLowerCase())
+    .join(" ");
 }
 
 function formatCampaignBudget(campaign: MetaCampaign, currency: string, language: InterfaceLanguage) {
