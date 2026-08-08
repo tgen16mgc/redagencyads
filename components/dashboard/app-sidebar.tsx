@@ -143,6 +143,7 @@ export function AppSidebar<T extends string>({
           <button
             type="button"
             className={cn("v2-rail-button", assistantOpen && "is-active")}
+            data-context-chat-trigger="true"
             aria-label={`${aiStatusTitle}: ${aiProviderLabel}`}
             aria-expanded={assistantOpen}
             title={`${aiSetupLabel}: ${aiProviderLabel}`}
@@ -181,6 +182,7 @@ export function AppSidebar<T extends string>({
         <button
           type="button"
           className="v2-mobile-brand"
+          data-context-chat-trigger="true"
           aria-label={`${aiStatusTitle}: ${aiProviderLabel}`}
           aria-expanded={assistantOpen}
           onClick={onOpenAssistant}
