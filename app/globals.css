@@ -3256,6 +3256,21 @@
   line-height: 18px;
 }
 
+.campaign-setup-surface {
+  --muted: var(--muted-foreground);
+  --accent: var(--primary);
+  --accent-foreground: var(--primary-foreground);
+  --accent-soft: color-mix(in srgb, var(--primary) 14%, transparent);
+  --surface: var(--card);
+  --surface-foreground: var(--card-foreground);
+  --surface-secondary: color-mix(in srgb, var(--card) 86%, var(--background));
+  --surface-secondary-foreground: var(--foreground);
+  --surface-tertiary: var(--secondary);
+  --surface-tertiary-foreground: var(--foreground);
+  --default: var(--secondary);
+  --default-foreground: var(--foreground);
+}
+
 .v2-primary-constraint {
   position: relative;
   display: grid;

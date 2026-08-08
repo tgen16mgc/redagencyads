@@ -78,6 +78,7 @@ import {
   type PerformanceStageKey,
 } from "@/lib/performance-stages";
 import { getCompareRange } from "@/lib/report-ranges";
+import { currentReportScope } from "@/lib/report-refresh";
 import { rowDecision } from "@/lib/row-decision";
 import { readStorageSlot } from "@/lib/storage-slot";
 import type {
@@ -507,6 +508,7 @@ export function AdsWorkspace({
   const copy = adsCopy[language];
   const reportStartRef = React.useRef<HTMLDivElement>(null);
   const autoVerdictKeyRef = React.useRef("");
+  const lastReportRequestRef = React.useRef<ReportScopePatch>({});
   const [reportFlow, setReportFlow] = React.useState<"idle" | "pulling" | "ready" | "error">("idle");
   const [reportFlowError, setReportFlowError] = React.useState("");
   const verdictProgress = useTimedProgress(aiLoading.verdict);
@@ -565,6 +567,7 @@ export function AdsWorkspace({
   }
 
   async function pullReport(overrides: ReportScopePatch = {}) {
+    lastReportRequestRef.current = overrides;
     const nextSince = overrides.since ?? since;
     const nextUntil = overrides.until ?? until;
     const nextCompareMode = overrides.compareMode ?? compareMode;
@@ -704,7 +707,7 @@ export function AdsWorkspace({
         state={reportFlow}
         error={reportFlowError}
         onClose={() => setReportFlow("idle")}
-        onRetry={() => void pullReport()}
+        onRetry={() => void pullReport(lastReportRequestRef.current)}
       />
       <ReportScopeDialog
           open={scopeExpanded}
@@ -781,7 +784,7 @@ export function AdsWorkspace({
             reviewing={aiLoading.verdict}
             reportLoading={loading === "report"}
             onEditScope={() => updateState({ scopeExpanded: true })}
-            onRefresh={() => void pullReport()}
+            onRefresh={() => void pullReport(currentReportScope(report))}
             onExport={onExportPdf}
             onReviewActions={runAi}
             onApplyScope={(patch) => pullReport(patch)}

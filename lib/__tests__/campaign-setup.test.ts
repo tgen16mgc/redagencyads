@@ -60,6 +60,28 @@ describe("campaign setup", () => {
     });
   });
 
+  it("reads JSON targeting and preserves a custom location radius", () => {
+    expect(summarizeTargeting(JSON.stringify({
+      age_min: 18,
+      age_max: 35,
+      genders: [],
+      geo_locations: {
+        custom_locations: [{
+          name: "IA20 Building",
+          latitude: 21.0285,
+          longitude: 105.8542,
+          radius: 2,
+          distance_unit: "kilometer",
+        }],
+        location_types: ["home", "recent"],
+      },
+    }))).toMatchObject({
+      locations: ["IA20 Building · 2 km radius", "People: home", "People: recent"],
+      ageRange: "18–35",
+      genders: ["All genders / not restricted"],
+    });
+  });
+
   it("groups sample ad sets under the campaigns in the active report scope", () => {
     const report = buildSampleReport({ selectedCampaignIds: ["smp-c1"] });
     const setup = buildCampaignSetup(report);
@@ -71,5 +93,24 @@ describe("campaign setup", () => {
     });
     expect(setup[0].adsets.map((adset) => adset.id)).toEqual(["smp-as-11", "smp-as-12"]);
     expect(setup[0].adsets[0].targeting.locations).toContain("Ho Chi Minh City");
+  });
+
+  it("does not leak ad-set configuration from outside the report scope", () => {
+    const report = buildSampleReport({ selectedCampaignIds: ["smp-c1"] });
+    report.adsetConfigurations = [
+      ...(report.adsetConfigurations || []),
+      {
+        id: "outside-adset",
+        name: "Outside scope",
+        campaignId: "outside-campaign",
+        campaignName: "Outside campaign",
+        status: "ACTIVE",
+        dailyBudget: 0,
+        lifetimeBudget: 0,
+        targeting: { age_min: 18, age_max: 65 },
+      },
+    ];
+
+    expect(buildCampaignSetup(report).map((campaign) => campaign.id)).toEqual(["smp-c1"]);
   });
 });
