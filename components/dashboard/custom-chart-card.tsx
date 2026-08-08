@@ -15,6 +15,7 @@ import {
 } from "recharts";
 import type { InterfaceLanguage, NormalizedRow } from "@/lib/types";
 import { chartMetricUnavailableLabel, type ChartKey, formatChartValue } from "@/lib/chart-spec";
+import { chartSeriesDot } from "@/lib/chart-palette";
 import {
   type CustomAxis,
   type CustomChartSpec,
@@ -116,7 +117,7 @@ function CustomChartPlot({
       return (
         <AreaChart data={data} margin={margin}>
           {grid}{xAxis}{axes}{tooltip}
-          {spec.series.map((series) => <Area key={series.key} yAxisId={series.axis} type="monotone" dataKey={series.key} connectNulls={false} stroke={`var(--color-${series.key})`} fill={`var(--color-${series.key})`} fillOpacity={0.15} strokeWidth={2} dot={compact ? false : { r: 2, strokeWidth: 0 }} />)}
+          {spec.series.map((series) => <Area key={series.key} yAxisId={series.axis} type="monotone" dataKey={series.key} connectNulls={false} stroke={`var(--color-${series.key})`} fill={`var(--color-${series.key})`} fillOpacity={0.15} strokeWidth={2} dot={compact ? false : chartSeriesDot(series.key, 2)} />)}
         </AreaChart>
       );
     }
@@ -126,14 +127,14 @@ function CustomChartPlot({
           {grid}{xAxis}{axes}{tooltip}
           {spec.series.map((series) => series.axis === "left"
             ? <Bar key={series.key} yAxisId={series.axis} dataKey={series.key} fill={`var(--color-${series.key})`} radius={[3, 3, 0, 0]} />
-            : <Line key={series.key} yAxisId={series.axis} type="monotone" dataKey={series.key} connectNulls={false} stroke={`var(--color-${series.key})`} strokeWidth={2} dot={compact ? false : { r: 2, strokeWidth: 0 }} />)}
+            : <Line key={series.key} yAxisId={series.axis} type="monotone" dataKey={series.key} connectNulls={false} stroke={`var(--color-${series.key})`} strokeWidth={2} dot={compact ? false : chartSeriesDot(series.key, 2)} />)}
         </ComposedChart>
       );
     }
     return (
       <LineChart data={data} margin={margin}>
         {grid}{xAxis}{axes}{tooltip}
-        {spec.series.map((series) => <Line key={series.key} yAxisId={series.axis} type="monotone" dataKey={series.key} connectNulls={false} stroke={`var(--color-${series.key})`} strokeWidth={2} dot={compact ? false : { r: 2, strokeWidth: 0 }} />)}
+        {spec.series.map((series) => <Line key={series.key} yAxisId={series.axis} type="monotone" dataKey={series.key} connectNulls={false} stroke={`var(--color-${series.key})`} strokeWidth={2} dot={compact ? false : chartSeriesDot(series.key, 2)} />)}
       </LineChart>
     );
   })();

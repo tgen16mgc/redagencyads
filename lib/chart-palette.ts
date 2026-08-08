@@ -1,5 +1,13 @@
 import type { ChartConfig } from "@/components/ui/chart";
 
+export function chartSeriesDot(key: string, radius: number) {
+  return {
+    fill: `var(--color-${key})`,
+    r: radius,
+    strokeWidth: 0,
+  };
+}
+
 export const performanceChartConfig = {
   spend: { label: "Spend", color: "var(--chart-1)" },
   messages: { label: "Messages", color: "var(--chart-2)" },

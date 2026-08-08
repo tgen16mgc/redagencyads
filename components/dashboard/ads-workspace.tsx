@@ -37,7 +37,7 @@ import { sanitizeAdPreviewHtml } from "@/lib/ad-preview-html";
 import { jsonFetch } from "@/lib/api-client";
 import { detectBaselineAnomalies, anomalyBadgeText } from "@/lib/baseline-anomaly";
 import type { CapabilityStatus } from "@/lib/capabilities";
-import { performanceChartConfig } from "@/lib/chart-palette";
+import { chartSeriesDot, performanceChartConfig } from "@/lib/chart-palette";
 import {
   chartMetricUnavailableLabel,
   chartMetricValue,
@@ -2046,7 +2046,7 @@ function PerformanceCharts({ report, language }: { report: DashboardReport; lang
                   }
                 />
                 {spec.efficiencyKeys.map((key) => (
-                  <Line key={key} type="monotone" dataKey={key} connectNulls={false} stroke={`var(--color-${key})`} strokeWidth={2} dot={{ r: 2.5, strokeWidth: 0 }} />
+                  <Line key={key} type="monotone" dataKey={key} connectNulls={false} stroke={`var(--color-${key})`} strokeWidth={2} dot={chartSeriesDot(key, 2.5)} />
                 ))}
               </LineChart>
             </ChartContainer>
