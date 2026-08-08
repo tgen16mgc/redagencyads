@@ -82,6 +82,32 @@ describe("campaign setup", () => {
     });
   });
 
+  it("shows the exact Meta custom-location address and radius", () => {
+    expect(summarizeTargeting({
+      geo_locations: {
+        custom_locations: [{
+          address_string: "IA20 Building",
+          latitude: 21.0285,
+          longitude: 105.8542,
+          radius: 2,
+          distance_unit: "kilometer",
+        }],
+      },
+    }).locations).toEqual(["IA20 Building · 2 km radius"]);
+  });
+
+  it("uses the configured Meta age range instead of broad Advantage delivery bounds", () => {
+    expect(summarizeTargeting({
+      age_min: 18,
+      age_max: 65,
+      age_range: [18, 35],
+      targeting_automation: {
+        advantage_audience: 1,
+        individual_setting: { age: 1 },
+      },
+    }).ageRange).toBe("18–35");
+  });
+
   it("groups sample ad sets under the campaigns in the active report scope", () => {
     const report = buildSampleReport({ selectedCampaignIds: ["smp-c1"] });
     const setup = buildCampaignSetup(report);

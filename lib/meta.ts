@@ -308,11 +308,10 @@ export async function buildReport(params: {
   if (!account)
     throw new Error("Selected account not found for current token.");
 
-  const selectedCampaigns = campaigns.filter((campaign) =>
-    params.campaignIds.length
-      ? params.campaignIds.includes(campaign.id)
-      : campaign.effective_status === "ACTIVE",
-  );
+  const campaignsById = new Map(campaigns.map((campaign) => [campaign.id, campaign]));
+  const selectedCampaigns = params.campaignIds.length
+    ? params.campaignIds.map((id) => campaignsById.get(id) || { id, name: id, status: "UNKNOWN" })
+    : campaigns.filter((campaign) => campaign.effective_status === "ACTIVE");
   if (!selectedCampaigns.length)
     throw new Error("No campaign selected or active campaigns found.");
 
@@ -399,6 +398,13 @@ export async function buildReport(params: {
     getActiveAdsForCampaigns(params.token, accountId, campaignIds),
   ]);
 
+  const campaignRows = normalizeRows(campaignInsights, "campaign");
+  const resolvedSelectedCampaigns = selectedCampaigns.map((campaign) => {
+    if (campaign.name !== campaign.id) return campaign;
+    const row = campaignRows.find((item) => item.campaignId === campaign.id);
+    return row ? { ...campaign, name: row.campaignName || row.name } : campaign;
+  });
+
   const activeAdSets = activeAdSetsData.filter(
     (adset) => (adset.effective_status || adset.status) === "ACTIVE",
   );
@@ -423,14 +429,13 @@ export async function buildReport(params: {
     activeAdSets,
     hashedActiveAds.ads,
     previewHtmls,
-    selectedCampaigns,
+    resolvedSelectedCampaigns,
   );
   const adsetConfigurations = buildAdSetConfigurations(
     activeAdSetsData,
-    selectedCampaigns,
+    resolvedSelectedCampaigns,
   );
 
-  const campaignRows = normalizeRows(campaignInsights, "campaign");
   const adsetRows = normalizeRows(adsetInsights, "adset");
   const adRows = normalizeRows(adInsights, "ad");
   const dailyRows = normalizeRows(dailyInsights, "daily");
@@ -438,12 +443,12 @@ export async function buildReport(params: {
   const ageGenderRows = normalizeRows(ageGenderInsights, "breakdown");
   const regionRows = normalizeRows(regionInsights, "breakdown");
   const totals = sumRows(campaignRows, "Account total");
-  const detected = detectKpiPack(selectedCampaigns, campaignRows, adsetRows);
+  const detected = detectKpiPack(resolvedSelectedCampaigns, campaignRows, adsetRows);
   const selectedPack = params.pack || detected.pack;
   const health = scoreHealth({ totals, campaignRows, adsetRows, adRows });
   const prompt = buildPrompt({
     account,
-    campaigns: selectedCampaigns,
+    campaigns: resolvedSelectedCampaigns,
     selectedPack,
     totals,
     campaignRows,
@@ -460,7 +465,7 @@ export async function buildReport(params: {
   return {
     source: "meta_api",
     account,
-    selectedCampaigns,
+    selectedCampaigns: resolvedSelectedCampaigns,
     dateRange: { since: params.since, until: params.until },
     detectedPack: detected.pack,
     selectedPack,

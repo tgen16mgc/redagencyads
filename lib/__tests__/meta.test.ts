@@ -180,6 +180,19 @@ describe("buildReport", () => {
     ]);
   });
 
+  it("refreshes an explicitly selected report when campaign metadata is stale", async () => {
+    stubGraph({
+      campaigns: [],
+      campaignInsights: [campaignInsightRow()],
+    });
+
+    const report = await buildReport({ ...reportArgs, campaignIds: ["c1"] });
+
+    expect(report.selectedCampaigns).toEqual([
+      expect.objectContaining({ id: "c1", name: "Leads always-on" }),
+    ]);
+  });
+
   it("rejects when no campaign is selected or active", async () => {
     stubGraph({
       campaigns: [

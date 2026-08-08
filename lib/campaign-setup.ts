@@ -73,7 +73,7 @@ function locationValues(value: unknown): string[] {
   if (typeof value === "string" || typeof value === "number") return [String(value)];
   const record = recordValue(value);
   if (!record) return [];
-  const name = [record.name, record.region, record.country_code]
+  const name = [record.name, record.address_string, record.region, record.country_code]
     .filter((item): item is string => typeof item === "string" && Boolean(item.trim()))
     .filter((item, index, items) => items.findIndex((candidate) => candidate.toLowerCase() === item.toLowerCase()) === index)
     .join(", ");
@@ -134,6 +134,11 @@ export function summarizeTargeting(targeting: unknown, criteria: string[] = []):
   const fallback = criteriaMap(criteria);
   const ageMin = Number(nested(normalizedTargeting, ["age_min"]) ?? fallback.get("age_min")?.[0]);
   const ageMax = Number(nested(normalizedTargeting, ["age_max"]) ?? fallback.get("age_max")?.[0]);
+  const configuredAgeRange = nested(normalizedTargeting, ["age_range"]);
+  const configuredAgeMin = Array.isArray(configuredAgeRange) ? Number(configuredAgeRange[0]) : Number.NaN;
+  const configuredAgeMax = Array.isArray(configuredAgeRange) ? Number(configuredAgeRange[1]) : Number.NaN;
+  const displayAgeMin = Number.isFinite(configuredAgeMin) ? configuredAgeMin : ageMin;
+  const displayAgeMax = Number.isFinite(configuredAgeMax) ? configuredAgeMax : ageMax;
   const genderCodes = valuesAt(normalizedTargeting, [["genders"]]);
   const genders = unique((genderCodes.length ? genderCodes : criteriaValues(fallback, ["genders"])).map((value) => {
     if (value === "1") return "Men";
@@ -162,8 +167,8 @@ export function summarizeTargeting(targeting: unknown, criteria: string[] = []):
 
   return {
     locations,
-    ageRange: Number.isFinite(ageMin) || Number.isFinite(ageMax)
-      ? `${Number.isFinite(ageMin) ? ageMin : "Minimum not set"}–${Number.isFinite(ageMax) ? ageMax : "Maximum not set"}`
+    ageRange: Number.isFinite(displayAgeMin) || Number.isFinite(displayAgeMax)
+      ? `${Number.isFinite(displayAgeMin) ? displayAgeMin : "Minimum not set"}–${Number.isFinite(displayAgeMax) ? displayAgeMax : "Maximum not set"}`
       : "Not provided by Meta",
     genders: genders.length ? genders : ["All genders / not restricted"],
     placements,
