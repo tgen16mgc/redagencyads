@@ -79,9 +79,7 @@ export function CampaignScopeDialog({ open, onOpenChange, campaigns, selectedIds
     () => campaigns.filter((campaign) => campaignStatus(campaign) === "ACTIVE").map((campaign) => campaign.id),
     [campaigns],
   );
-  const effectiveDraft = draft.length ? draft : activeIds;
-  const effectiveCurrent = selectedIds.length ? selectedIds : activeIds;
-  const selectionUnchanged = reportCampaignSelectionsEqual(effectiveDraft, effectiveCurrent);
+  const selectionUnchanged = reportCampaignSelectionsEqual(draft, selectedIds);
   React.useEffect(() => {
     if (open && !wasOpenRef.current) {
       setDraft(selectedIds);

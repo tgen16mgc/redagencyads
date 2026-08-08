@@ -3,9 +3,12 @@ import {
   buildDashboardReportKey,
   buildMetaReportUrl,
   buildReportRequestKey,
+  campaignComparisonAvailable,
   currentReportScope,
+  preserveRequestedCampaignSelection,
   reportCampaignSelectionsEqual,
   reportCampaignSelectionForAccount,
+  reportScopeDraftsEqual,
   toggleReportCampaignSelection,
 } from "../report-refresh";
 import { buildSampleReport } from "../sample-report";
@@ -50,6 +53,21 @@ describe("current report refresh scope", () => {
     expect(url.searchParams.get("pack")).toBe(report.selectedPack);
   });
 
+  it("keeps an implicit all-active refresh implicit", () => {
+    const report = buildSampleReport({ selectedCampaignIds: ["smp-c1", "smp-c2"] });
+
+    expect(currentReportScope(report, []).selectedCampaignIds).toEqual([]);
+    expect(preserveRequestedCampaignSelection([], report)).toEqual([]);
+    expect(preserveRequestedCampaignSelection(["smp-c1"], report)).toEqual(["smp-c1", "smp-c2"]);
+  });
+
+  it("never widens an explicit empty response into implicit all-active", () => {
+    const report = buildSampleReport({ selectedCampaignIds: ["smp-c1"] });
+    report.selectedCampaigns = [];
+
+    expect(preserveRequestedCampaignSelection(["missing-campaign"], report)).toEqual(["missing-campaign"]);
+  });
+
   it("treats campaign order as the same active request", () => {
     const base = {
       accountId: "act_1",
@@ -88,6 +106,14 @@ describe("current report refresh scope", () => {
     })).toEqual(["campaign-a", "campaign-b", "campaign-paused"]);
   });
 
+  it("collapses an explicit copy of all active campaigns back to implicit all-active", () => {
+    expect(toggleReportCampaignSelection({
+      selectedIds: ["campaign-a"],
+      activeCampaignIds: ["campaign-a", "campaign-b"],
+      campaignId: "campaign-b",
+    })).toEqual([]);
+  });
+
   it("keeps one explicit campaign selected because an empty scope means all active", () => {
     expect(toggleReportCampaignSelection({
       selectedIds: ["campaign-a"],
@@ -100,5 +126,41 @@ describe("current report refresh scope", () => {
     expect(reportCampaignSelectionsEqual(["b", "a"], ["a", "b"])).toBe(true);
     expect(reportCampaignSelectionsEqual([], [])).toBe(true);
     expect(reportCampaignSelectionsEqual(["a"], [])).toBe(false);
+  });
+
+  it("compares the complete report draft while normalizing account and numeric formats", () => {
+    const base = {
+      accountId: "act_123",
+      selectedCampaignIds: ["b", "a"],
+      since: "2026-07-01",
+      until: "2026-07-31",
+      pack: "sales_roas" as const,
+      compareMode: "previous" as const,
+      targetCpa: "40.0",
+      targetRoas: "2.50",
+    };
+
+    expect(reportScopeDraftsEqual(base, {
+      ...base,
+      accountId: "123",
+      selectedCampaignIds: ["a", "b"],
+      targetCpa: "40",
+      targetRoas: "2.5",
+    })).toBe(true);
+    expect(reportScopeDraftsEqual(base, { ...base, compareMode: "off" })).toBe(false);
+    expect(reportScopeDraftsEqual(base, { ...base, selectedCampaignIds: [] })).toBe(false);
+  });
+
+  it("offers campaign comparison only when an active peer exists outside the explicit scope", () => {
+    const campaigns = [
+      { id: "a", status: "ACTIVE" },
+      { id: "b", effective_status: "ACTIVE" },
+      { id: "paused", status: "PAUSED" },
+    ];
+
+    expect(campaignComparisonAvailable(campaigns, [])).toBe(false);
+    expect(campaignComparisonAvailable(campaigns, ["a"])).toBe(true);
+    expect(campaignComparisonAvailable(campaigns, ["a", "b"])).toBe(false);
+    expect(campaignComparisonAvailable(campaigns, ["a", "paused"])).toBe(true);
   });
 });

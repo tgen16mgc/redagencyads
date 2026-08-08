@@ -32,12 +32,13 @@ import {
 import { inclusiveDays, isPeriodPreset } from "@/lib/period-scope";
 import { FATIGUE_FREQUENCY_THRESHOLD, buildCreativeSignals } from "@/lib/creative-signals";
 import { conciseVerdict } from "@/lib/verdict-summary";
-import type { HealthScoreSummary } from "@/lib/health-score";
+import { localizeHealthCheck, type HealthScoreSummary } from "@/lib/health-score";
 import type { ClientReportPdfFile } from "@/lib/client-report";
 import { formatComparisonChangePct, metricMovementIsBad, type MetricComparisonDelta } from "@/lib/metric-comparison";
 import { formatMetric } from "@/lib/metrics";
-import { buildDriverConcentration, evidenceCostLabel, trackedOutcomeValue } from "@/lib/performance-display";
+import { buildDriverConcentration, evidenceCostLabel, selectStageContributors, trackedOutcomeValue } from "@/lib/performance-display";
 import { buildPerformanceStages, type PerformanceStage, type PerformanceStageKey } from "@/lib/performance-stages";
+import { campaignComparisonAvailable } from "@/lib/report-refresh";
 import { buildPlatformEfficiencyPoints } from "@/lib/segment-efficiency";
 import { SAMPLE_CAMPAIGNS } from "@/lib/sample-report";
 import type { AiInsightTable, CompareMode, DashboardReport, InterfaceLanguage, KpiCard, KpiPack, MetaCampaign, NormalizedRow, Verdict } from "@/lib/types";
@@ -156,8 +157,7 @@ export function PerformanceV2({
   const risks = healthSummary?.items.filter((item) => item.severity !== "healthy") || [];
   const inclusivePeriodDays = inclusiveDays({ since, until });
   const periodDays = isPeriodPreset(inclusivePeriodDays) ? inclusivePeriodDays : 0;
-  const activeCampaignCount = scopeCampaigns.filter((campaign) => String(campaign.effective_status || campaign.status || "").toUpperCase() === "ACTIVE").length;
-  const campaignComparisonAvailable = selectedCampaignIds.length > 0 && selectedCampaignIds.length < activeCampaignCount;
+  const canCompareCampaigns = campaignComparisonAvailable(scopeCampaigns, selectedCampaignIds);
 
   const openActionPlan = React.useCallback(() => setActionPlanOpen(true), []);
 
@@ -252,6 +252,7 @@ export function PerformanceV2({
           {activeTab === "funnel" ? <FunnelTab
             language={language}
             report={report}
+            healthSummary={healthSummary}
             stages={stages}
             currency={currency}
             onOpenEvidence={() => setSelectedStage(stages.find((stage) => stage.tone === "warning") || stages.at(-1) || null)}
@@ -293,7 +294,7 @@ export function PerformanceV2({
       <CampaignScopeDialog open={campaignsOpen} onOpenChange={setCampaignsOpen} campaigns={scopeCampaigns} selectedIds={selectedCampaignIds} currency={currency} language={language} busy={reportLoading} onApply={(ids) => onApplyScope({ selectedCampaignIds: ids })} />
       <PeriodScopeDialog open={periodOpen} onOpenChange={setPeriodOpen} currentDays={periodDays} since={since} until={until} language={language} busy={reportLoading} onApply={applyPeriod} />
       <KpiPackDialog open={kpiOpen} onOpenChange={setKpiOpen} current={pack} language={language} busy={reportLoading} onApply={(nextPack) => onApplyScope({ pack: nextPack })} />
-      <ComparisonDialog open={comparisonOpen} onOpenChange={setComparisonOpen} current={compareMode} campaignComparisonAvailable={campaignComparisonAvailable} language={language} busy={reportLoading} onApply={(nextMode) => onApplyScope({ compareMode: nextMode })} />
+      <ComparisonDialog open={comparisonOpen} onOpenChange={setComparisonOpen} current={compareMode} campaignComparisonAvailable={canCompareCampaigns} language={language} busy={reportLoading} onApply={(nextMode) => onApplyScope({ compareMode: nextMode })} />
       <ExportDiagnosisDialog open={exportOpen} onOpenChange={setExportOpen} report={report} accountLabel={accountLabel} periodLabel={periodLabel} language={language} exporting={exporting} onPreparePdf={onExport} />
       <ActionPlanModal open={actionPlanOpen} onOpenChange={setActionPlanOpen} report={report} verdict={verdict} healthSummary={healthSummary} language={language} loading={reviewing} onGenerate={onReviewActions} onExport={() => setExportOpen(true)} />
       <StageEvidenceSheet stage={selectedStage} onOpenChange={(open) => !open && setSelectedStage(null)} report={report} onReviewAction={() => { setSelectedStage(null); setActionPlanOpen(true); }} />
@@ -354,7 +355,7 @@ function OverviewTab({
             <Badge variant={blockingCount > 0 ? "destructive" : watchCount > 0 ? "outline" : "success"}>
               {blockingCount > 0 ? (isVietnamese ? "Rào cản chính" : "Primary constraint") : watchCount > 0 ? (isVietnamese ? "Ưu tiên rà soát" : "Review priority") : (isVietnamese ? "Không có blocker" : "No blocker")}
             </Badge>
-            <span className="v2-primary-constraint-score">{healthSummary?.score ?? report.health.score}/100 health</span>
+            <span className="v2-primary-constraint-score">{isVietnamese ? "Điểm sức khỏe" : "Health score"}: {healthSummary?.score ?? report.health.score}/100</span>
           </div>
           <h2>{constraintTitle}</h2>
           <p>{constraintDetail}</p>
@@ -387,7 +388,7 @@ function OverviewTab({
               <MetricTile
                 key={kpi.key}
                 label={kpi.label}
-                value={formatKpi(report, kpi, currency)}
+                value={kpi.key === "healthScore" ? `${healthSummary?.score ?? report.health.score}/100` : formatKpi(report, kpi, currency)}
                 tone={kpi.intent === "danger" ? "warning" : kpi.intent === "good" ? "success" : "primary"}
                 comparison={kpi.key === "healthScore" ? undefined : kpiComparisons?.get(kpi.key)}
               />
@@ -432,12 +433,14 @@ function OverviewTab({
   );
 }
 
-function FunnelTab({ language, report, stages, currency, onOpenEvidence, onSelectStage }: { language: InterfaceLanguage; report: DashboardReport; stages: Stage[]; currency: string; onOpenEvidence: () => void; onSelectStage: (stage: Stage) => void }) {
+function FunnelTab({ language, report, healthSummary, stages, currency, onOpenEvidence, onSelectStage }: { language: InterfaceLanguage; report: DashboardReport; healthSummary: HealthScoreSummary | null; stages: Stage[]; currency: string; onOpenEvidence: () => void; onSelectStage: (stage: Stage) => void }) {
   const isVietnamese = language === "vi";
   const leakStage = [...stages].reverse().find((stage) => stage.tone === "warning");
   const focusStage = leakStage || [...stages].reverse().find((stage) => stage.tone === "primary") || stages.at(-1)!;
   const hasLeak = Boolean(leakStage);
-  const rows = [...report.adsetRows].sort((left, right) => right.spend - left.spend).slice(0, 3);
+  const contributorSelection = selectStageContributors(report.adsetRows, focusStage.key);
+  const rows = contributorSelection.rows;
+  const contributorBasisLabel = stageContributorLabel(contributorSelection.basis, language);
 
   return (
     <div className="grid gap-4">
@@ -476,8 +479,8 @@ function FunnelTab({ language, report, stages, currency, onOpenEvidence, onSelec
               label={hasLeak ? (isVietnamese ? "Tỷ lệ bước" : "Stage rate") : (isVietnamese ? "Bước khỏe" : "Healthy stages")}
               value={hasLeak ? focusStage.efficiency : `${stages.length}/${stages.length}`}
             />
-            <ReportStat label={isVietnamese ? "Volume" : "Volume"} value={stageValue(focusStage)} />
-            <ReportStat label={isVietnamese ? "Độ tin cậy" : "Confidence"} value={report.health.score >= 75 ? (isVietnamese ? "Cao" : "High") : (isVietnamese ? "Vừa" : "Medium")} />
+            <ReportStat label={isVietnamese ? "Volume" : "Volume"} value={stageValue(focusStage, language)} />
+            <ReportStat label={isVietnamese ? "Độ tin cậy" : "Confidence"} value={(healthSummary?.score ?? report.health.score) >= 75 ? (isVietnamese ? "Cao" : "High") : (isVietnamese ? "Vừa" : "Medium")} />
           </div>
           <div className="mt-5">
             <TrendPanel language={language} report={report} primary={primaryResult(report, language)} embedded />
@@ -489,13 +492,14 @@ function FunnelTab({ language, report, stages, currency, onOpenEvidence, onSelec
             <h2 className="v2-section-title">{isVietnamese ? "Evidence theo phân khúc" : "Stage evidence"}</h2>
             <Badge variant="outline">{rows.length} {isVietnamese ? "đóng góp" : "contributors"}</Badge>
           </div>
+          <p className="mt-1 text-[11px] text-muted-foreground">{isVietnamese ? `Xếp hạng theo ${contributorBasisLabel}` : `Ranked by ${contributorBasisLabel}`}</p>
           <div className="mt-4 flex flex-col gap-4">
-            {rows.map((row) => (
+            {rows.length ? rows.map((row) => (
               <div key={row.id}>
                 <div className="text-sm font-medium">{row.name}</div>
-                <div className="mt-1 text-xs text-muted-foreground">{currencyValue(row.spend, currency)} · CTR {row.ctr.toFixed(2)}% · {primaryRowCost(row, report.selectedPack, currency)}</div>
+                <div className="mt-1 text-xs text-muted-foreground">{stageContributorDetail(row, contributorSelection.basis, currency, language)}</div>
               </div>
-            ))}
+            )) : <p className="text-xs leading-5 text-muted-foreground">{isVietnamese ? "Chưa có dữ liệu ad set cho bước này." : "No ad-set evidence is available for this stage."}</p>}
           </div>
           <div className="mt-5 border-t border-border pt-4">
             <div className="text-sm font-medium">{isVietnamese ? "Guardrail quyết định" : "Decision guardrail"}</div>
@@ -742,16 +746,37 @@ function EvidenceTab({ language, report, healthSummary, currency }: { language: 
         ["Metric definitions", "Each result and efficiency metric follows the active KPI pack and normalized Meta action mapping."],
         ["Data sufficiency", "Unavailable values remain unavailable; the interface never converts missing tracking into zero."],
       ]);
+  const diagnostics = healthSummary?.items || report.health.checks.map((check) => {
+    const vietnamese = localizeHealthCheck(check, "vi");
+    return {
+      id: `health-${check.id}`,
+      severity: check.status === "fail" ? "danger" as const : check.status === "warning" ? "warning" as const : "healthy" as const,
+      title: { en: check.label, vi: vietnamese.label },
+      detail: { en: check.detail, vi: vietnamese.detail },
+    };
+  });
+  const healthyCount = healthSummary?.counts.healthy ?? report.health.checks.filter((item) => item.status === "pass").length;
+  const issueCount = healthSummary
+    ? healthSummary.counts.danger + healthSummary.counts.warning
+    : report.health.checks.filter((item) => item.status !== "pass").length;
+  const healthSeverity = healthSummary?.severity
+    ?? (report.health.checks.some((item) => item.status === "fail") ? "danger" : report.health.checks.some((item) => item.status === "warning") ? "warning" : "healthy");
+  const packDetail = report.selectedPack === report.detectedPack
+    ? (isVietnamese ? "Tự nhận diện · có thể chỉnh" : "Auto-detected · editable")
+    : (isVietnamese ? `Đã chọn thủ công · tự nhận diện ${packLabel(report.detectedPack, language)}` : `Manual override · detected ${packLabel(report.detectedPack, language)}`);
+  const sourceDetail = report.source === "sample"
+    ? (isVietnamese ? "Dữ liệu minh họa · không phải evidence Meta trực tiếp" : "Illustrative data · not live Meta evidence")
+    : (isVietnamese ? "Dữ liệu account có thể truy vết" : "Traceable account data");
 
   React.useEffect(() => setAllRowsVisible(false), [level, report]);
 
   return (
     <div className="grid gap-4">
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <SignalCard eyebrow={isVietnamese ? "Nguồn" : "Source"} title={report.source === "sample" ? (isVietnamese ? "Dữ liệu mẫu" : "Sample data") : "Meta API"} detail={isVietnamese ? "Dữ liệu account có thể truy vết" : "Traceable account data"} tone="success" />
-        <SignalCard eyebrow={isVietnamese ? "Độ mới" : "Freshness"} title={relativeTime(report.pulledAt, language)} detail={new Date(report.pulledAt).toLocaleString()} tone="success" />
-        <SignalCard eyebrow="KPI pack" title={packLabel(report.selectedPack, language)} detail={isVietnamese ? "Tự nhận diện · có thể chỉnh" : "Auto-detected · editable"} tone="primary" />
-        <SignalCard eyebrow={isVietnamese ? "Sức khỏe" : "Health"} title={`${healthSummary?.score ?? report.health.score} / 100`} detail={isVietnamese ? `${report.health.checks.filter((item) => item.status === "pass").length} đạt · ${report.health.checks.filter((item) => item.status !== "pass").length} cảnh báo` : `${report.health.checks.filter((item) => item.status === "pass").length} pass · ${report.health.checks.filter((item) => item.status !== "pass").length} warning`} tone="warning" />
+        <SignalCard eyebrow={isVietnamese ? "Nguồn" : "Source"} title={report.source === "sample" ? (isVietnamese ? "Dữ liệu mẫu" : "Sample data") : "Meta API"} detail={sourceDetail} tone={report.source === "sample" ? "warning" : "success"} />
+        <SignalCard eyebrow={isVietnamese ? "Độ mới" : "Freshness"} title={relativeTime(report.pulledAt, language)} detail={new Date(report.pulledAt).toLocaleString(isVietnamese ? "vi-VN" : "en-US")} tone="success" />
+        <SignalCard eyebrow="KPI pack" title={packLabel(report.selectedPack, language)} detail={packDetail} tone="primary" />
+        <SignalCard eyebrow={isVietnamese ? "Sức khỏe" : "Health"} title={`${healthSummary?.score ?? report.health.score} / 100`} detail={isVietnamese ? `${healthyCount} đạt · ${issueCount} cần xem` : `${healthyCount} pass · ${issueCount} to review`} tone={healthSeverity === "healthy" ? "success" : healthSeverity === "danger" ? "danger" : "warning"} />
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(300px,0.72fr)]">
@@ -762,20 +787,20 @@ function EvidenceTab({ language, report, healthSummary, currency }: { language: 
           </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[700px] text-left text-xs">
-              <thead className="border-b border-border text-[10px] uppercase tracking-[0.05em] text-muted-foreground"><tr><th className="py-3 font-medium">{isVietnamese ? "Entity" : "Entity"}</th><th className="py-3 font-medium">{isVietnamese ? "Chi tiêu" : "Spend"}</th><th className="py-3 font-medium">{isVietnamese ? "Lượt hiển thị" : "Impressions"}</th><th className="py-3 font-medium">{isVietnamese ? "Click link" : "Link clicks"}</th><th className="py-3 font-medium">{primaryLabel(report.selectedPack, language)}</th><th className="py-3 font-medium">{costLabel}</th><th className="py-3 font-medium">ROAS</th></tr></thead>
-              <tbody>{visibleRows.map((row) => <tr key={`${row.id}-${row.date || ""}`} className="border-b border-border/55 last:border-0"><td className="py-3 pr-4"><div className="font-medium">{level === "daily" ? row.date : row.name}</div><div className="mt-0.5 text-muted-foreground">{row.level} · {row.date || (isVietnamese ? "Đang hoạt động" : "Active")}</div></td><td className="py-3 pr-4 tabular-nums">{currencyValue(row.spend, currency)}</td><td className="py-3 pr-4 tabular-nums">{compact(row.impressions)}</td><td className="py-3 pr-4 tabular-nums">{compact(row.linkClicks)}</td><td className="py-3 pr-4 tabular-nums">{compact(Number(row[primaryKey] || 0))}</td><td className="py-3 pr-4 tabular-nums">{primaryRowCost(row, report.selectedPack, currency)}</td><td className="py-3 tabular-nums">{trackedOutcomeValue(row, "purchases", row.roas.toFixed(1), language)}</td></tr>)}</tbody>
+              <thead className="border-b border-border text-[10px] uppercase tracking-[0.05em] text-muted-foreground"><tr><th className="py-3 font-medium">{isVietnamese ? "Đối tượng" : "Entity"}</th><th className="py-3 font-medium">{isVietnamese ? "Chi tiêu" : "Spend"}</th><th className="py-3 font-medium">{isVietnamese ? "Lượt hiển thị" : "Impressions"}</th><th className="py-3 font-medium">{isVietnamese ? "Click link" : "Link clicks"}</th><th className="py-3 font-medium">{primaryLabel(report.selectedPack, language)}</th><th className="py-3 font-medium">{costLabel}</th><th className="py-3 font-medium">ROAS</th></tr></thead>
+              <tbody>{visibleRows.map((row) => <tr key={`${row.id}-${row.date || ""}`} className="border-b border-border/55 last:border-0"><td className="py-3 pr-4"><div className="font-medium">{level === "daily" ? row.date : row.name}</div><div className="mt-0.5 text-muted-foreground">{entityLevelLabel(row.level, language)} · {row.date || (isVietnamese ? "Đang hoạt động" : "Active")}</div></td><td className="py-3 pr-4 tabular-nums">{currencyValue(row.spend, currency)}</td><td className="py-3 pr-4 tabular-nums">{compact(row.impressions)}</td><td className="py-3 pr-4 tabular-nums">{compact(row.linkClicks)}</td><td className="py-3 pr-4 tabular-nums">{compact(Number(row[primaryKey] || 0))}</td><td className="py-3 pr-4 tabular-nums">{primaryRowCost(row, report.selectedPack, currency)}</td><td className="py-3 tabular-nums">{trackedOutcomeValue(row, "purchases", row.roas.toFixed(1), language)}</td></tr>)}</tbody>
             </table>
           </div>
           <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-            <div className="text-[11px] text-muted-foreground">{visibleRows.length}/{rows.length} {isVietnamese ? "hàng đang hiển thị" : "rows shown"} · {report.account.currency || "VND"} · {report.account.timezone_name || "account timezone"}</div>
+            <div className="text-[11px] text-muted-foreground">{visibleRows.length}/{rows.length} {isVietnamese ? "hàng đang hiển thị" : "rows shown"} · {report.account.currency || "VND"} · {report.account.timezone_name || (isVietnamese ? "múi giờ tài khoản" : "account timezone")}</div>
             {rows.length > 8 ? <Button type="button" variant="ghost" size="sm" onClick={() => setAllRowsVisible((current) => !current)}>{allRowsVisible ? (isVietnamese ? "Thu gọn" : "Show less") : (isVietnamese ? `Hiện tất cả ${rows.length}` : `Show all ${rows.length}`)}</Button> : null}
           </div>
         </div>
 
         <div className="v2-panel p-4 sm:p-5">
-          <div className="flex items-center justify-between"><h2 className="v2-section-title">{isVietnamese ? "Chẩn đoán" : "Diagnostics"}</h2><Badge variant="outline">{report.health.checks.filter((item) => item.status !== "pass").length} {isVietnamese ? "cảnh báo" : "warnings"}</Badge></div>
+          <div className="flex items-center justify-between"><h2 className="v2-section-title">{isVietnamese ? "Chẩn đoán" : "Diagnostics"}</h2><Badge variant="outline">{issueCount} {isVietnamese ? "cần xem" : "to review"}</Badge></div>
           <div className="mt-4 flex flex-col gap-4">
-            {report.health.checks.slice(0, 5).map((check) => <div key={check.id} className="grid grid-cols-[18px_minmax(0,1fr)] gap-2.5">{check.status === "pass" ? <CheckCircle2Icon className="mt-0.5 size-4 text-success" /> : check.status === "fail" ? <ShieldAlertIcon className="mt-0.5 size-4 text-destructive" /> : <TriangleAlertIcon className="mt-0.5 size-4 text-warning" />}<div><div className="text-sm font-medium">{check.label}</div><p className="mt-0.5 text-xs leading-5 text-muted-foreground">{check.detail}</p></div></div>)}
+            {diagnostics.slice(0, 5).map((check) => <div key={check.id} className="grid grid-cols-[18px_minmax(0,1fr)] gap-2.5">{check.severity === "healthy" ? <CheckCircle2Icon className="mt-0.5 size-4 text-success" /> : check.severity === "danger" ? <ShieldAlertIcon className="mt-0.5 size-4 text-destructive" /> : <TriangleAlertIcon className="mt-0.5 size-4 text-warning" />}<div><div className="text-sm font-medium">{check.title[language]}</div><p className="mt-0.5 text-xs leading-5 text-muted-foreground">{check.detail[language]}</p></div></div>)}
           </div>
           <div className="mt-5 border-t border-border pt-4"><div className="text-sm font-medium">{isVietnamese ? "Nguồn gốc dữ liệu" : "Data provenance"}</div><p className="mt-1 text-xs leading-5 text-muted-foreground">{isVietnamese ? "Meta Marketing API · hàng account, campaign, ad set, ad, ngày và breakdown. Kết quả từ provider không thay thế evidence nguồn." : "Meta Marketing API · account, campaign, ad set, ad, daily and breakdown rows. Provider output never replaces source evidence."}</p></div>
           <div className="mt-4 divide-y divide-border border-y border-border">
@@ -845,10 +870,10 @@ function TrendPanel({ language, report, primary, embedded = false }: { language:
   );
 }
 
-function SignalCard({ eyebrow, title, detail, tone }: { eyebrow: string; title: string; detail: string; tone: "success" | "warning" | "primary" }) {
+function SignalCard({ eyebrow, title, detail, tone }: { eyebrow: string; title: string; detail: string; tone: "success" | "warning" | "danger" | "primary" }) {
   return (
     <div className="v2-panel min-w-0 p-4">
-      <div className="flex items-center justify-between gap-2"><span className="text-[10px] font-medium uppercase tracking-[0.05em] text-muted-foreground">{eyebrow}</span><span className={cn("size-1.5 rounded-full", tone === "success" ? "bg-success" : tone === "warning" ? "bg-warning" : "bg-primary")} /></div>
+      <div className="flex items-center justify-between gap-2"><span className="text-[10px] font-medium uppercase tracking-[0.05em] text-muted-foreground">{eyebrow}</span><span className={cn("size-1.5 rounded-full", tone === "success" ? "bg-success" : tone === "warning" ? "bg-warning" : tone === "danger" ? "bg-destructive" : "bg-primary")} /></div>
       <div className="mt-3 truncate text-sm font-semibold" title={title}>{title}</div>
       <div className="mt-1 text-xs leading-5 text-muted-foreground">{detail}</div>
     </div>
@@ -873,8 +898,37 @@ function primaryResult(report: DashboardReport, language: InterfaceLanguage) {
   return { key: "reach" as keyof NormalizedRow, costKey: "cpm" as keyof NormalizedRow, label: isVietnamese ? "Tiếp cận" : "Reach", costLabel: "CPM", decision: isVietnamese ? "Mở rộng reach trong khi giữ frequency dưới ngưỡng fatigue." : "Expand reach while keeping frequency below fatigue risk." };
 }
 
-function stageValue(stage: Stage) {
-  return stage.value === null ? "Not tracked" : `${compact(stage.value)} ${stage.unit}`;
+function stageValue(stage: Stage, language: InterfaceLanguage) {
+  return stage.value === null ? (language === "vi" ? "Chưa theo dõi" : "Not tracked") : `${compact(stage.value)} ${stage.unit}`;
+}
+
+function stageContributorLabel(basis: keyof NormalizedRow, language: InterfaceLanguage) {
+  const labels: Partial<Record<keyof NormalizedRow, Record<InterfaceLanguage, string>>> = {
+    spend: { en: "spend", vi: "chi tiêu" },
+    reach: { en: "reach", vi: "tiếp cận" },
+    impressions: { en: "impressions", vi: "lượt hiển thị" },
+    linkClicks: { en: "link clicks", vi: "click link" },
+    addToCart: { en: "add to carts", vi: "lượt thêm giỏ" },
+    initiateCheckout: { en: "checkouts", vi: "lượt checkout" },
+    purchases: { en: "purchases", vi: "mua hàng" },
+    leads: { en: "leads", vi: "lead" },
+    messages: { en: "conversations", vi: "hội thoại" },
+    replies: { en: "replies", vi: "phản hồi" },
+    frequency: { en: "frequency", vi: "tần suất" },
+  };
+  return labels[basis]?.[language] || String(basis);
+}
+
+function stageContributorDetail(row: NormalizedRow, basis: keyof NormalizedRow, currency: string, language: InterfaceLanguage) {
+  const label = stageContributorLabel(basis, language);
+  if (basis === "spend") return `${label} ${currencyValue(row.spend, currency)} · CTR ${row.ctr.toFixed(2)}%`;
+  const value = basis === "frequency" ? Number(row.frequency || 0).toFixed(1) : compact(Number(row[basis] || 0));
+  return `${label} ${value} · ${language === "vi" ? "chi tiêu" : "spend"} ${currencyValue(row.spend, currency)}`;
+}
+
+function entityLevelLabel(level: NormalizedRow["level"], language: InterfaceLanguage) {
+  if (language === "en") return level === "daily" ? "Day" : level === "adset" ? "Ad set" : level === "ad" ? "Ad" : level === "campaign" ? "Campaign" : "Account";
+  return level === "daily" ? "Ngày" : level === "adset" ? "Ad set" : level === "ad" ? "Quảng cáo" : level === "campaign" ? "Campaign" : "Tài khoản";
 }
 
 function formatKpi(report: DashboardReport, kpi: KpiCard, currency: string) {

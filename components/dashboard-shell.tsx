@@ -761,7 +761,7 @@ export function DashboardShell() {
         setAdsWorkspace((current) => ({
           ...current,
           campaigns: data.campaigns,
-          selectedCampaignIds: reportCampaignSelectionForAccount(accountId, current.report),
+          selectedCampaignIds: reportCampaignSelectionForAccount(accountId, current.report, current.selectedCampaignIds),
         }));
       })
       .catch((err) => {

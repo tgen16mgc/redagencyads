@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { summarizeHealth } from "../health-score";
+import { localizeHealthCheck, summarizeHealth } from "../health-score";
 import type { DashboardReport, NormalizedRow } from "../types";
 
 function row(): NormalizedRow {
@@ -112,6 +112,28 @@ describe("summarizeHealth", () => {
 
     expect(summary.severity).toBe("danger");
     expect(summary.counts.danger).toBe(1);
+    expect(summary.score).toBe(78);
     expect(summary.items[0]).toMatchObject({ id: "daily-creative_fatigue", severity: "danger" });
+  });
+
+  it("localizes known deterministic health checks for Vietnamese dashboards", () => {
+    expect(localizeHealthCheck({
+      id: "M-CR4",
+      label: "CTR benchmark",
+      status: "pass",
+      detail: "CTR 1.86%. Pack benchmark pass >= 1.0%.",
+    }, "vi")).toEqual({
+      label: "Chuẩn CTR",
+      detail: "CTR 1.86%. Ngưỡng đạt của KPI pack >= 1.0%.",
+    });
+    expect(localizeHealthCheck({
+      id: "M11",
+      label: "Campaign consolidation",
+      status: "warning",
+      detail: "4 selected campaigns. Meta prefers fewer campaigns per goal.",
+    }, "vi")).toEqual({
+      label: "Hợp nhất campaign",
+      detail: "4 campaign được chọn. Meta ưu tiên ít campaign hơn cho mỗi mục tiêu.",
+    });
   });
 });

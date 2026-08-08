@@ -21,6 +21,7 @@ export type HealthScoreSummary = {
 };
 
 type HealthReportInput = Pick<DashboardReport, "health" | "dailyRows" | "selectedPack">;
+type HealthCheck = DashboardReport["health"]["checks"][number];
 
 function gradeFor(score: number): string {
   if (score >= 90) return "A";
@@ -51,12 +52,15 @@ export function summarizeHealth(report: HealthReportInput): HealthScoreSummary {
 }
 
 function summarizeHealthInputs(report: HealthReportInput, diagnosis: DailyDiagnosis): HealthScoreSummary {
-  const items: TriageItem[] = report.health.checks.map((check) => ({
-    id: `health-${check.id}`,
-    severity: checkSeverity(check.status),
-    title: { en: check.label, vi: check.label },
-    detail: { en: check.detail, vi: check.detail },
-  }));
+  const items: TriageItem[] = report.health.checks.map((check) => {
+    const vietnamese = localizeHealthCheck(check, "vi");
+    return {
+      id: `health-${check.id}`,
+      severity: checkSeverity(check.status),
+      title: { en: check.label, vi: vietnamese.label },
+      detail: { en: check.detail, vi: vietnamese.detail },
+    };
+  });
 
   for (const cause of diagnosis.causes) {
     items.push({
@@ -111,4 +115,46 @@ export function localizedTriageItem(item: TriageItem, language: InterfaceLanguag
     titleText: item.title[language],
     detailText: item.detail[language],
   };
+}
+
+export function localizeHealthCheck(check: HealthCheck, language: InterfaceLanguage) {
+  if (language === "en") return { label: check.label, detail: check.detail };
+
+  if (check.id === "M-CR4") {
+    const values = check.detail.match(/CTR\s+([\d.]+)%.*>=\s*([\d.]+)%/u);
+    return {
+      label: "Chuẩn CTR",
+      detail: values
+        ? `CTR ${values[1]}%. Ngưỡng đạt của KPI pack >= ${values[2]}%.`
+        : "Đối chiếu CTR với ngưỡng của KPI pack hiện tại.",
+    };
+  }
+  if (check.id === "M-CR2") {
+    const value = check.detail.match(/Average frequency\s+([\d.]+)/u)?.[1];
+    return {
+      label: "Tần suất prospecting",
+      detail: value ? `Tần suất trung bình ${value}.` : "Theo dõi tần suất trung bình để phát hiện bão hòa.",
+    };
+  }
+  if (check.id === "M25") {
+    const count = check.detail.match(/\b(\d+)\s+ads?\b/u)?.[1];
+    return {
+      label: "Độ phủ creative",
+      detail: count
+        ? check.status === "pass"
+          ? `${count} quảng cáo đang hoạt động trong phạm vi này. Độ phủ creative đạt hướng dẫn 10 quảng cáo cho lượt rà soát này.`
+          : `Chỉ có ${count} quảng cáo đang hoạt động trong phạm vi này. Thêm concept creative khác biệt trước khi scale; hướng tới tối thiểu 10 khi ngân sách cho phép.`
+        : "Đánh giá độ phủ creative trong phạm vi đã chọn.",
+    };
+  }
+  if (check.id === "M11") {
+    const count = check.detail.match(/\b(\d+)\s+selected campaigns?\b/u)?.[1];
+    return {
+      label: "Hợp nhất campaign",
+      detail: count
+        ? `${count} campaign được chọn. Meta ưu tiên ít campaign hơn cho mỗi mục tiêu.`
+        : "Đánh giá mức độ phân mảnh campaign trong phạm vi đã chọn.",
+    };
+  }
+  return { label: check.label, detail: check.detail };
 }

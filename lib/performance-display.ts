@@ -1,9 +1,15 @@
 import type { DashboardReport, InterfaceLanguage, NormalizedRow, OutcomeMetricKey } from "@/lib/types";
+import type { PerformanceStageKey } from "@/lib/performance-stages";
 
 export type DriverConcentration = {
   basis: "results" | "spend";
   count: number;
   share: number;
+};
+
+export type StageContributorSelection = {
+  basis: keyof NormalizedRow;
+  rows: NormalizedRow[];
 };
 
 export function buildDriverConcentration(
@@ -42,4 +48,33 @@ export function trackedOutcomeValue(
   return row.metricAvailability?.[key] === "not_tracked"
     ? (language === "vi" ? "Chưa theo dõi" : "Not tracked")
     : value;
+}
+
+export function selectStageContributors(
+  rows: NormalizedRow[],
+  stage: PerformanceStageKey,
+  count = 3,
+): StageContributorSelection {
+  const stageBasis = stageContributorBasis(stage);
+  const hasStageSignal = rows.some((row) => Number(row[stageBasis] || 0) > 0);
+  const basis: keyof NormalizedRow = hasStageSignal ? stageBasis : "spend";
+  return {
+    basis,
+    rows: [...rows]
+      .sort((left, right) => Number(right[basis] || 0) - Number(left[basis] || 0))
+      .slice(0, count),
+  };
+}
+
+export function stageContributorBasis(stage: PerformanceStageKey): keyof NormalizedRow {
+  if (stage === "reach") return "reach";
+  if (stage === "exposure" || stage === "impressions") return "impressions";
+  if (stage === "traffic") return "linkClicks";
+  if (stage === "cart") return "addToCart";
+  if (stage === "checkout") return "initiateCheckout";
+  if (stage === "purchase") return "purchases";
+  if (stage === "lead") return "leads";
+  if (stage === "conversations") return "messages";
+  if (stage === "replies") return "replies";
+  return "frequency";
 }

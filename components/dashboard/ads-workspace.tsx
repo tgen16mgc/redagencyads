@@ -86,7 +86,10 @@ import {
   buildMetaReportUrl,
   buildReportRequestKey,
   currentReportScope,
+  preserveRequestedCampaignSelection,
+  reportScopeDraftsEqual,
   toggleReportCampaignSelection,
+  type ReportScopeDraft,
 } from "@/lib/report-refresh";
 import { rowDecision } from "@/lib/row-decision";
 import { readStorageSlot } from "@/lib/storage-slot";
@@ -680,7 +683,7 @@ export function AdsWorkspace({
           ...stateOverrides,
           report: current,
           previousReport: sampleComparison,
-          selectedCampaignIds: current.selectedCampaigns.map((campaign) => campaign.id),
+          selectedCampaignIds: preserveRequestedCampaignSelection(resolvedSelectedCampaignIds, current),
           since: current.dateRange.since,
           until: current.dateRange.until,
           pack: current.selectedPack,
@@ -741,7 +744,7 @@ export function AdsWorkspace({
         ...stateOverrides,
         report: current.report,
         previousReport: nextPreviousReport,
-        selectedCampaignIds: refreshedScope.selectedCampaignIds,
+        selectedCampaignIds: preserveRequestedCampaignSelection(resolvedSelectedCampaignIds, current.report),
         since: refreshedScope.since,
         until: refreshedScope.until,
         pack: refreshedScope.pack,
@@ -861,7 +864,7 @@ export function AdsWorkspace({
     <>
       <ReportProgressDialog
         language={language}
-        state={reportFlow}
+        state={scopeExpanded ? "idle" : reportFlow}
         error={reportFlowError}
         onClose={() => setReportFlow("idle")}
         onRetry={() => void pullReport(lastReportRequestRef.current)}
@@ -881,11 +884,19 @@ export function AdsWorkspace({
           compareMode={compareMode}
           targetCpa={targetCpa || (report?.source === "sample" ? "40" : "")}
           targetRoas={targetRoas || (report?.source === "sample" ? "2.5" : "")}
+          error={reportFlow === "error" ? reportFlowError : ""}
           onAccountIdChange={report?.source === "sample" && !accountId ? () => undefined : onAccountIdChange}
+          onRestoreCampaignSelection={(ids) => updateState({ selectedCampaignIds: ids })}
           onOpenChange={(open) => {
             if (!open && !report) {
+              setReportFlow("idle");
+              setReportFlowError("");
               onCancelInitialScope();
               return;
+            }
+            if (!open && reportFlow === "error") {
+              setReportFlow("idle");
+              setReportFlowError("");
             }
             updateState({ scopeExpanded: open });
           }}
@@ -941,7 +952,7 @@ export function AdsWorkspace({
             reviewing={aiLoading.verdict}
             reportLoading={loading === "report"}
             onEditScope={() => updateState({ scopeExpanded: true })}
-            onRefresh={() => void pullReport(currentReportScope(report))}
+            onRefresh={() => void pullReport(currentReportScope(report, selectedCampaignIds))}
             onExport={onExportPdf}
             onReviewActions={runAi}
             onApplyScope={(patch) => pullReport(patch)}
@@ -1156,7 +1167,9 @@ function ReportScopeDialog({
   compareMode,
   targetCpa,
   targetRoas,
+  error,
   onAccountIdChange,
+  onRestoreCampaignSelection,
   onOpenChange,
   onSave,
 }: {
@@ -1174,35 +1187,59 @@ function ReportScopeDialog({
   compareMode: CompareMode;
   targetCpa: string;
   targetRoas: string;
+  error: string;
   onAccountIdChange: (id: string) => void;
+  onRestoreCampaignSelection: (ids: string[]) => void;
   onOpenChange: (open: boolean) => void;
-  onSave: (patch: ReportScopePatch) => void;
+  onSave: (patch: ReportRequestOverrides) => void;
 }) {
   const isVietnamese = language === "vi";
-  const [draft, setDraft] = React.useState({ selectedCampaignIds, since, until, pack, compareMode, targetCpa, targetRoas });
+  const initialDraft: ReportScopeDraft = { accountId, selectedCampaignIds, since, until, pack, compareMode, targetCpa, targetRoas };
+  const [draft, setDraft] = React.useState<ReportScopeDraft>(initialDraft);
+  const [baseline, setBaseline] = React.useState<ReportScopeDraft>(initialDraft);
   const [thresholdsEnabled, setThresholdsEnabled] = React.useState(Boolean(targetCpa || targetRoas));
   const wasOpenRef = React.useRef(false);
   const invalidDates = Boolean(draft.since && draft.until && draft.since > draft.until);
+  const invalidThresholds = thresholdsEnabled && (
+    !Number.isFinite(Number(draft.targetCpa))
+    || Number(draft.targetCpa) <= 0
+    || !Number.isFinite(Number(draft.targetRoas))
+    || Number(draft.targetRoas) <= 0
+  );
+  const reportPending = loading === "report";
+  const effectiveDraft = {
+    ...draft,
+    targetCpa: thresholdsEnabled ? draft.targetCpa : "",
+    targetRoas: thresholdsEnabled ? draft.targetRoas : "",
+  };
+  const unchanged = reportScopeDraftsEqual(effectiveDraft, baseline);
 
   React.useEffect(() => {
     if (open && !wasOpenRef.current) {
-      setDraft({ selectedCampaignIds, since, until, pack, compareMode, targetCpa, targetRoas });
+      const next = { accountId, selectedCampaignIds, since, until, pack, compareMode, targetCpa, targetRoas };
+      setDraft(next);
+      setBaseline(next);
       setThresholdsEnabled(Boolean(targetCpa || targetRoas));
     }
     wasOpenRef.current = open;
-  }, [open, selectedCampaignIds, since, until, pack, compareMode, targetCpa, targetRoas]);
+  }, [open, accountId, selectedCampaignIds, since, until, pack, compareMode, targetCpa, targetRoas]);
+
+  function handleOpenChange(nextOpen: boolean) {
+    if (!nextOpen && reportPending) return;
+    if (!nextOpen) {
+      onRestoreCampaignSelection(baseline.selectedCampaignIds);
+      if (draft.accountId !== baseline.accountId) onAccountIdChange(baseline.accountId);
+    }
+    onOpenChange(nextOpen);
+  }
 
   function save() {
-    if (!accountId || invalidDates || loading === "report" || loading === "campaigns") return;
-    onSave({
-      ...draft,
-      targetCpa: thresholdsEnabled ? draft.targetCpa : "",
-      targetRoas: thresholdsEnabled ? draft.targetRoas : "",
-    });
+    if (!draft.accountId || unchanged || invalidDates || invalidThresholds || reportPending || loading === "campaigns") return;
+    onSave(effectiveDraft);
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="flex h-[min(720px,calc(100dvh-2rem))] w-[calc(100vw-2rem)] min-w-0 max-w-[520px] flex-col gap-0 overflow-hidden rounded-[24px] border border-border bg-popover p-0 shadow-2xl" showCloseButton={false}>
         <DialogHeader className="shrink-0 flex-row items-center justify-between gap-4 border-b border-border px-4 py-4 text-left sm:px-6">
           <div className="flex min-w-0 items-center gap-3">
@@ -1215,8 +1252,8 @@ function ReportScopeDialog({
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <Badge variant="secondary">4 {isVietnamese ? "trường" : "fields"}</Badge>
-            <button type="button" className="flex size-8 items-center justify-center rounded-[10px] border border-border bg-secondary text-muted-foreground transition-colors hover:text-foreground" aria-label={isVietnamese ? "Đóng" : "Close"} onClick={() => onOpenChange(false)}>
+            <Badge variant="secondary">{isVietnamese ? "Cài đặt báo cáo" : "Report settings"}</Badge>
+            <button type="button" disabled={reportPending} className="flex size-8 items-center justify-center rounded-[10px] border border-border bg-secondary text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50" aria-label={isVietnamese ? "Đóng" : "Close"} onClick={() => handleOpenChange(false)}>
               <XIcon className="size-[15px]" />
             </button>
           </div>
@@ -1229,11 +1266,12 @@ function ReportScopeDialog({
               <Field className="min-w-0">
                 <FieldLabel>{isVietnamese ? "Tài khoản quảng cáo" : "Ad account"}</FieldLabel>
                 <Select
+                  disabled={reportPending}
                   items={accounts.map((account) => ({ label: account.name, value: account.id }))}
-                  value={accountId}
+                  value={draft.accountId}
                   onValueChange={(value) => {
-                    if (!value || value === accountId) return;
-                    setDraft((current) => ({ ...current, selectedCampaignIds: [] }));
+                    if (!value || value === draft.accountId) return;
+                    setDraft((current) => ({ ...current, accountId: value, selectedCampaignIds: [] }));
                     onAccountIdChange(value);
                   }}
                 >
@@ -1245,13 +1283,14 @@ function ReportScopeDialog({
                 <FieldLabel>{isVietnamese ? "Khoảng evidence" : "Evidence window"}</FieldLabel>
                 <div className="grid min-h-10 min-w-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center overflow-hidden rounded-xl bg-secondary/75 ring-1 ring-foreground/5 focus-within:ring-2 focus-within:ring-ring">
                   <label className="sr-only" htmlFor="report-scope-since">{isVietnamese ? "Từ ngày" : "Since"}</label>
-                  <Input id="report-scope-since" type="date" value={draft.since} onChange={(event) => setDraft((current) => ({ ...current, since: event.target.value }))} className="min-w-0 border-0 bg-transparent shadow-none focus-visible:ring-0" />
+                  <Input id="report-scope-since" type="date" disabled={reportPending} value={draft.since} onChange={(event) => setDraft((current) => ({ ...current, since: event.target.value }))} className="min-w-0 border-0 bg-transparent shadow-none focus-visible:ring-0" />
                   <span className="px-1 text-sm text-muted-foreground">–</span>
                   <label className="sr-only" htmlFor="report-scope-until">{isVietnamese ? "Đến ngày" : "Until"}</label>
-                  <Input id="report-scope-until" type="date" value={draft.until} onChange={(event) => setDraft((current) => ({ ...current, until: event.target.value }))} className="min-w-0 border-0 bg-transparent shadow-none focus-visible:ring-0" />
+                  <Input id="report-scope-until" type="date" disabled={reportPending} value={draft.until} onChange={(event) => setDraft((current) => ({ ...current, until: event.target.value }))} className="min-w-0 border-0 bg-transparent shadow-none focus-visible:ring-0" />
                 </div>
               </Field>
               {invalidDates ? <p className="text-xs text-destructive">{isVietnamese ? "Ngày kết thúc phải bằng hoặc sau ngày bắt đầu." : "Until must be the same as or later than Since."}</p> : null}
+              {error ? <p role="alert" className="rounded-xl border border-destructive/35 bg-destructive/10 px-3 py-2 text-xs leading-5 text-destructive">{error}</p> : null}
             </section>
 
             <section className="grid min-w-0 gap-3">
@@ -1259,14 +1298,14 @@ function ReportScopeDialog({
               <div className="grid min-w-0 gap-3 sm:grid-cols-2">
                 <Field className="min-w-0">
                   <FieldLabel>KPI pack</FieldLabel>
-                  <Select items={[{ label: "Auto-detect", value: "auto" }, ...packItems]} value={draft.pack} onValueChange={(value) => value && setDraft((current) => ({ ...current, pack: value as KpiPack | "auto" }))}>
+                  <Select disabled={reportPending} items={[{ label: "Auto-detect", value: "auto" }, ...packItems]} value={draft.pack} onValueChange={(value) => value && setDraft((current) => ({ ...current, pack: value as KpiPack | "auto" }))}>
                     <SelectTrigger className="h-10 w-full"><SelectValue /></SelectTrigger>
                     <SelectContent><SelectGroup><SelectItem value="auto">{isVietnamese ? "Tự nhận diện" : "Auto-detect"}</SelectItem>{packItems.map((item) => <SelectItem key={item.value} value={item.value}>{packLabel(item.value, language)}</SelectItem>)}</SelectGroup></SelectContent>
                   </Select>
                 </Field>
                 <Field className="min-w-0">
                   <FieldLabel>{isVietnamese ? "So sánh" : "Compare"}</FieldLabel>
-                  <Select items={compareItems} value={draft.compareMode} onValueChange={(value) => value && setDraft((current) => ({ ...current, compareMode: value as CompareMode }))}>
+                  <Select disabled={reportPending} items={compareItems} value={draft.compareMode} onValueChange={(value) => value && setDraft((current) => ({ ...current, compareMode: value as CompareMode }))}>
                     <SelectTrigger className="h-10 w-full"><SelectValue /></SelectTrigger>
                     <SelectContent><SelectGroup>{compareItems.map((item) => <SelectItem key={item.value} value={item.value}>{compareLabel(item.value, language)}</SelectItem>)}</SelectGroup></SelectContent>
                   </Select>
@@ -1275,6 +1314,7 @@ function ReportScopeDialog({
               <label className="flex cursor-pointer items-start gap-3">
                 <input
                   type="checkbox"
+                  disabled={reportPending}
                   className="mt-1 accent-[var(--primary)]"
                   checked={thresholdsEnabled}
                   onChange={(event) => {
@@ -1283,8 +1323,21 @@ function ReportScopeDialog({
                     if (enabled) setDraft((current) => ({ ...current, targetCpa: current.targetCpa || "40", targetRoas: current.targetRoas || "2.5" }));
                   }}
                 />
-                <span><span className="block text-sm font-medium">{isVietnamese ? "Áp dụng ngưỡng quyết định" : "Apply decision thresholds"}</span><span className="mt-0.5 block text-sm text-muted-foreground">{isVietnamese ? `Dùng CPA ${draft.targetCpa || "40"} và ROAS ${draft.targetRoas || "2.5"} làm guardrail khi scale.` : `Use CPA ${draft.targetCpa || "40"} and ROAS ${draft.targetRoas || "2.5"} as scale guardrails.`}</span></span>
+                <span><span className="block text-sm font-medium">{isVietnamese ? "Áp dụng ngưỡng quyết định" : "Apply decision thresholds"}</span><span className="mt-0.5 block text-sm text-muted-foreground">{isVietnamese ? "Dùng mục tiêu CPA và ROAS làm guardrail trước khi scale." : "Use target CPA and ROAS as guardrails before scaling."}</span></span>
               </label>
+              {thresholdsEnabled ? (
+                <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+                  <Field className="min-w-0" data-invalid={invalidThresholds || undefined}>
+                    <FieldLabel>{isVietnamese ? "CPA mục tiêu" : "Target CPA"}</FieldLabel>
+                    <Input type="number" min="0.01" step="0.01" disabled={reportPending} value={draft.targetCpa} onChange={(event) => setDraft((current) => ({ ...current, targetCpa: event.target.value }))} />
+                  </Field>
+                  <Field className="min-w-0" data-invalid={invalidThresholds || undefined}>
+                    <FieldLabel>{isVietnamese ? "ROAS mục tiêu" : "Target ROAS"}</FieldLabel>
+                    <Input type="number" min="0.01" step="0.01" disabled={reportPending} value={draft.targetRoas} onChange={(event) => setDraft((current) => ({ ...current, targetRoas: event.target.value }))} />
+                  </Field>
+                  {invalidThresholds ? <p className="text-xs text-destructive sm:col-span-2">{isVietnamese ? "CPA và ROAS mục tiêu phải lớn hơn 0." : "Target CPA and ROAS must both be greater than 0."}</p> : null}
+                </div>
+              ) : null}
             </section>
 
             <section className="grid min-w-0 gap-3">
@@ -1294,7 +1347,7 @@ function ReportScopeDialog({
                 campaigns={campaigns}
                 currency={currency}
                 language={language}
-                loading={loading === "campaigns"}
+                loading={loading === "campaigns" || reportPending}
                 selectedIds={draft.selectedCampaignIds}
                 onChange={(ids) => setDraft((current) => ({ ...current, selectedCampaignIds: ids }))}
               />
@@ -1303,9 +1356,9 @@ function ReportScopeDialog({
         </div>
 
         <DialogFooter className="shrink-0 flex-row items-center justify-end gap-2 border-t border-border bg-popover px-4 py-4 sm:px-6">
-          <span className="mr-auto hidden text-[11px] text-muted-foreground sm:block">{isVietnamese ? "Cập nhật báo cáo này ngay" : "Updates this report immediately"}</span>
-          <Button type="button" variant="outline" className="rounded-full" onClick={() => onOpenChange(false)}>{isVietnamese ? "Hủy" : "Cancel"}</Button>
-          <Button type="button" className="rounded-full" onClick={save} disabled={!accountId || invalidDates || loading === "report" || loading === "campaigns"}>{loading === "report" ? <Spinner data-icon="inline-start" /> : null}{isVietnamese ? "Áp dụng & làm mới" : "Apply & refresh"}</Button>
+          <span className="mr-auto hidden text-[11px] text-muted-foreground sm:block">{unchanged ? (isVietnamese ? "Chưa có thay đổi để áp dụng" : "No changes to apply") : (isVietnamese ? "Cập nhật báo cáo này ngay" : "Updates this report immediately")}</span>
+          <Button type="button" variant="outline" className="rounded-full" onClick={() => handleOpenChange(false)} disabled={reportPending}>{isVietnamese ? "Hủy" : "Cancel"}</Button>
+          <Button type="button" className="rounded-full" onClick={save} disabled={!draft.accountId || unchanged || invalidDates || invalidThresholds || reportPending || loading === "campaigns"}>{reportPending ? <Spinner data-icon="inline-start" /> : null}{reportPending ? (isVietnamese ? "Đang làm mới" : "Refreshing") : unchanged ? (isVietnamese ? "Không có thay đổi" : "No changes") : error ? (isVietnamese ? "Thử làm mới lại" : "Retry refresh") : (isVietnamese ? "Áp dụng & làm mới" : "Apply & refresh")}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -1339,6 +1392,7 @@ function ReportScopeCampaignPicker({ open, campaigns, currency, language, loadin
   }, [open]);
 
   function toggle(id: string) {
+    if (loading) return;
     onChange(toggleReportCampaignSelection({ selectedIds, activeCampaignIds, campaignId: id }));
   }
 
@@ -1373,7 +1427,7 @@ function ReportScopeCampaignPicker({ open, campaigns, currency, language, loadin
             {visibleCampaigns.map((campaign) => {
               const selected = selectedIds.length ? selectedSet.has(campaign.id) : isActiveCampaign(campaign);
               return (
-                <button key={campaign.id} type="button" aria-pressed={selected} onClick={() => toggle(campaign.id)} className="grid w-full min-w-0 shrink-0 grid-cols-[20px_minmax(0,1fr)_auto] items-center gap-2 overflow-hidden rounded-xl px-2.5 py-2 text-left hover:bg-secondary aria-pressed:bg-primary/10">
+                <button key={campaign.id} type="button" disabled={loading} aria-pressed={selected} onClick={() => toggle(campaign.id)} className="grid w-full min-w-0 shrink-0 grid-cols-[20px_minmax(0,1fr)_auto] items-center gap-2 overflow-hidden rounded-xl px-2.5 py-2 text-left hover:bg-secondary aria-pressed:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50">
                   <span className="flex size-4 items-center justify-center rounded border border-border text-primary">{selected ? <CheckIcon className="size-3" /> : null}</span>
                   <span className="min-w-0"><span className="block truncate text-sm font-medium">{campaign.name}</span><span className="block truncate text-xs text-muted-foreground">{campaignObjectiveLabel(campaign, language)} {formatCampaignBudget(campaign, currency, language)}</span></span>
                   <Badge className="max-w-20 truncate" variant={isActiveCampaign(campaign) ? "secondary" : "outline"}>{campaignStatus(campaign)}</Badge>

@@ -33,6 +33,20 @@ describe("buildPerformanceStages", () => {
     ]));
   });
 
+  it("localizes stage availability and tracking guidance in Vietnamese", () => {
+    const report = buildSampleReport({ pack: "sales_roas" });
+    const stages = buildPerformanceStages({ report, compareMode: "off", language: "vi" });
+    const purchase = stages.find((stage) => stage.key === "purchase");
+
+    expect(purchase).toMatchObject({
+      statusLabel: "Chưa theo dõi",
+      efficiency: "Chưa theo dõi",
+      movement: "Cần thiết lập tracking",
+    });
+    expect(stages[0].statusLabel).toBe("Khỏe");
+    expect(stages[0].efficiency).toContain("Tần suất");
+  });
+
   it("keeps tracked messaging stages available", () => {
     const report = buildSampleReport({ selectedCampaignIds: ["smp-c3"], pack: "messages" });
     const stages = buildPerformanceStages({ report, compareMode: "off", language: "en" });
@@ -47,6 +61,15 @@ describe("buildPerformanceStages", () => {
     const stages = buildPerformanceStages({ report, previousReport, compareMode: "previous", language: "en" });
 
     expect(stages.every((stage) => stage.movement.includes("vs previous period"))).toBe(true);
+  });
+
+  it("localizes comparison movement in Vietnamese", () => {
+    const report = buildSampleReport({ pack: "traffic", dateRange: { since: "2026-07-01", until: "2026-07-30" } });
+    const previousReport = buildSampleReport({ pack: "traffic", dateRange: { since: "2026-06-01", until: "2026-06-30" } });
+    const stages = buildPerformanceStages({ report, previousReport, compareMode: "previous", language: "vi" });
+
+    expect(stages.every((stage) => stage.movement.includes("so với kỳ trước"))).toBe(true);
+    expect(stages.every((stage) => !stage.movement.includes("improved"))).toBe(true);
   });
 
   it("allows each funnel slot to use another supported report metric", () => {

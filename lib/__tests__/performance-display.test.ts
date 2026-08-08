@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildDriverConcentration, evidenceCostLabel, trackedOutcomeValue } from "../performance-display";
+import { buildDriverConcentration, evidenceCostLabel, selectStageContributors, trackedOutcomeValue } from "../performance-display";
 import type { NormalizedRow } from "../types";
 
 function row(input: Partial<NormalizedRow>): NormalizedRow {
@@ -58,5 +58,26 @@ describe("performance display contracts", () => {
     expect(evidenceCostLabel("messages", "vi")).toBe("Chi phí/tin nhắn");
     expect(trackedOutcomeValue(untracked, "purchases", "0.0", "en")).toBe("Not tracked");
     expect(trackedOutcomeValue(untracked, "purchases", "0.0", "vi")).toBe("Chưa theo dõi");
+  });
+
+  it("ranks funnel contributors by the focused stage instead of spend", () => {
+    const selection = selectStageContributors([
+      row({ id: "high-spend", spend: 1000, leads: 1 }),
+      row({ id: "high-leads", spend: 100, leads: 20 }),
+      row({ id: "middle", spend: 500, leads: 8 }),
+    ], "lead", 2);
+
+    expect(selection.basis).toBe("leads");
+    expect(selection.rows.map((item) => item.id)).toEqual(["high-leads", "middle"]);
+  });
+
+  it("falls back to spend when the focused stage has no measurable signal", () => {
+    const selection = selectStageContributors([
+      row({ id: "a", spend: 100 }),
+      row({ id: "b", spend: 300 }),
+    ], "purchase");
+
+    expect(selection.basis).toBe("spend");
+    expect(selection.rows.map((item) => item.id)).toEqual(["b", "a"]);
   });
 });
