@@ -7,6 +7,9 @@ export type ChatDisplayMessage = {
   content: string;
   status: "complete" | "error" | "notice";
   basedOnFingerprint?: string;
+  complexity?: "quick" | "standard" | "deep";
+  maxTokens?: number;
+  reasoning?: string;
   retryContent?: string;
 };
 

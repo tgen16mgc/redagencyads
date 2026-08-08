@@ -99,13 +99,27 @@ describe("chat lifecycle", () => {
     const settled = harness.send("overview", "What should I fix?");
     harness.calls[0].respondStream([
       { type: "status", stage: "analyzing" },
+      { type: "meta", complexity: "standard", maxTokens: 1200 },
+      { type: "reasoning_delta", delta: "Tracking is the first dependency." },
       { type: "delta", delta: "Fix " },
       { type: "delta", delta: "tracking first." },
-      { type: "done", contextFingerprint: fingerprint, reply: "Fix tracking first." },
+      {
+        type: "done",
+        contextFingerprint: fingerprint,
+        complexity: "standard",
+        maxTokens: 1200,
+        reasoning: "Tracking is the first dependency.",
+        reply: "Fix tracking first.",
+      },
     ]);
     await settled;
 
-    expect(harness.messages("overview").at(-1)?.content).toBe("Fix tracking first.");
+    expect(harness.messages("overview").at(-1)).toMatchObject({
+      content: "Fix tracking first.",
+      reasoning: "Tracking is the first dependency.",
+      complexity: "standard",
+      maxTokens: 1200,
+    });
     expect(harness.pendingLog.at(-1)).toEqual({ view: "overview", requestId: null });
   });
 

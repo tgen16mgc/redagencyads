@@ -3,10 +3,15 @@ import { z } from "zod";
 export const CHAT_LIMITS = {
   userMessageCharacters: 2_000,
   assistantMessageCharacters: 4_000,
+  reasoningCharacters: 12_000,
   historyMessages: 8,
   historyCharacters: 12_000,
   contextCharacters: 32_000,
-  outputTokens: 650,
+  outputTokens: {
+    quick: 700,
+    standard: 1_200,
+    deep: 2_400,
+  },
   competitorEvidence: 8,
   performanceCampaigns: 8,
   performanceHealthChecks: 8,

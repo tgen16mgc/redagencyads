@@ -14,7 +14,7 @@ import {
 import type { DashboardView } from "@/lib/dashboard-access";
 import { CHAT_LIMITS, type ChatContext } from "@/lib/ai/chat-contract";
 import { chatContextFingerprint } from "@/lib/ai/chat-context";
-import { createChatLifecycle, type ChatProgressStage } from "@/lib/ai/chat-lifecycle";
+import { createChatLifecycle, type ChatProgress } from "@/lib/ai/chat-lifecycle";
 import {
   clearChatThread,
   emptyChatThreads,
@@ -40,8 +40,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
 type PendingRequestIds = Record<DashboardView, string | null>;
-type ChatProgress = { requestId: string; stage: ChatProgressStage; content: string };
-type PendingProgress = Record<DashboardView, ChatProgress | null>;
+type PendingChatProgress = ChatProgress & { requestId: string };
+type PendingProgress = Record<DashboardView, PendingChatProgress | null>;
 
 const EMPTY_PENDING_REQUEST_IDS: PendingRequestIds = {
   overview: null,
@@ -131,7 +131,7 @@ export const ContextChat = React.forwardRef<ContextChatHandle, {
       setPendingRequestIds((current) => ({ ...current, [view]: requestId }));
       setPendingProgress((current) => ({
         ...current,
-        [view]: requestId ? { requestId, stage: "preparing", content: "" } : null,
+        [view]: requestId ? { requestId, stage: "preparing", content: "", reasoning: "" } : null,
       }));
     },
     onProgress: (view, requestId, progress) => {
@@ -238,7 +238,7 @@ export const ContextChat = React.forwardRef<ContextChatHandle, {
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const target = !isPending && latestAssistantRef.current ? latestAssistantRef.current : messagesEndRef.current;
     target?.scrollIntoView({ behavior: reducedMotion || isPending ? "auto" : "smooth", block: isPending ? "end" : "start" });
-  }, [activeProgress?.content.length, isPending, latestAssistant?.id, messages.length, open]);
+  }, [activeProgress?.content.length, activeProgress?.reasoning.length, isPending, latestAssistant?.id, messages.length, open]);
 
   React.useEffect(() => () => {
     if (motionFrameRef.current !== null) cancelAnimationFrame(motionFrameRef.current);
@@ -393,7 +393,24 @@ export const ContextChat = React.forwardRef<ContextChatHandle, {
                   message.status === "notice" && "bg-muted/50 text-foreground",
                 )}>
                   {message.role === "assistant" && message.status === "complete" ? (
-                    <ContextChatMarkdown content={message.content} />
+                    <>
+                      {message.reasoning ? (
+                        <details className="mb-3 rounded-xl border bg-muted/25 px-3 py-2 text-xs text-muted-foreground">
+                          <summary className="cursor-pointer select-none font-medium text-foreground">
+                            {copy.reasoning}
+                            {message.complexity && message.maxTokens ? (
+                              <span className="ml-2 font-normal text-muted-foreground">
+                                {copy.complexity[message.complexity]} · {message.maxTokens.toLocaleString()} {copy.tokenBudget}
+                              </span>
+                            ) : null}
+                          </summary>
+                          <p className="mt-2 max-h-64 overflow-y-auto whitespace-pre-wrap break-words leading-5">
+                            {message.reasoning}
+                          </p>
+                        </details>
+                      ) : null}
+                      <ContextChatMarkdown content={message.content} />
+                    </>
                   ) : (
                     <p className="whitespace-pre-wrap break-words">{message.content}</p>
                   )}
@@ -422,20 +439,26 @@ export const ContextChat = React.forwardRef<ContextChatHandle, {
                 <span className="mt-1 flex size-7 shrink-0 items-center justify-center rounded-full border text-primary">
                   <BotMessageSquareIcon className="size-4" />
                 </span>
-                {activeProgress?.content ? (
-                  <div className="context-chat-assistant-message min-w-0 max-w-[calc(100%_-_2.25rem)] flex-1 rounded-2xl rounded-bl-md border bg-card px-3 py-2.5 text-sm leading-6">
-                    <ContextChatMarkdown content={activeProgress.content} />
-                    <div className="mt-2 flex items-center gap-2 border-t pt-2 text-xs text-muted-foreground">
-                      <span className="context-chat-typing" aria-hidden="true"><span /><span /><span /></span>
-                      <span role="status" aria-live="polite">{progressLabel}</span>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex min-h-11 min-w-0 items-center gap-2 rounded-2xl rounded-bl-md border bg-card px-3 py-2">
+                <div className="context-chat-assistant-message min-w-0 max-w-[calc(100%_-_2.25rem)] flex-1 rounded-2xl rounded-bl-md border bg-card px-3 py-2.5 text-sm leading-6">
+                  {activeProgress?.complexity && activeProgress.maxTokens ? (
+                    <p className="mb-2 text-xs text-muted-foreground">
+                      {copy.complexity[activeProgress.complexity]} · {activeProgress.maxTokens.toLocaleString()} {copy.tokenBudget}
+                    </p>
+                  ) : null}
+                  {activeProgress?.reasoning ? (
+                    <details open className="mb-3 rounded-xl border bg-muted/25 px-3 py-2 text-xs text-muted-foreground">
+                      <summary className="cursor-pointer select-none font-medium text-foreground">{copy.reasoning}</summary>
+                      <p className="mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap break-words leading-5">
+                        {activeProgress.reasoning}
+                      </p>
+                    </details>
+                  ) : null}
+                  {activeProgress?.content ? <ContextChatMarkdown content={activeProgress.content} /> : null}
+                  <div className={cn("flex items-center gap-2 text-xs text-muted-foreground", activeProgress?.content && "mt-2 border-t pt-2")}>
                     <span className="context-chat-typing" aria-hidden="true"><span /><span /><span /></span>
-                    <span className="text-xs text-muted-foreground" role="status" aria-live="polite">{progressLabel}</span>
+                    <span role="status" aria-live="polite">{progressLabel}</span>
                   </div>
-                )}
+                </div>
               </div>
             ) : null}
             <div ref={messagesEndRef} />

@@ -62,14 +62,21 @@ export function contextChatCopy(language: InterfaceLanguage, view: DashboardView
     analyzing: isVietnamese ? "Đang kiểm tra evidence và giả định" : "Checking evidence and assumptions",
     working: isVietnamese ? "Vẫn đang kiểm tra dữ liệu" : "Still checking the data",
     responding: isVietnamese ? "Đang viết câu trả lời ngắn gọn" : "Writing a concise answer",
+    reasoning: isVietnamese ? "Lập luận của mô hình" : "Model reasoning",
+    tokenBudget: isVietnamese ? "ngân sách token" : "token budget",
+    complexity: {
+      quick: isVietnamese ? "Nhanh" : "Quick",
+      standard: isVietnamese ? "Tiêu chuẩn" : "Standard",
+      deep: isVietnamese ? "Chuyên sâu" : "Deep",
+    },
     live: isVietnamese ? "Đã cấu hình AI" : "AI configured",
     unavailable: isVietnamese ? "Trợ lý AI chưa được cấu hình" : "Smart assistant is not configured",
     unavailableDescription: isVietnamese
       ? "Cấu hình khoá AI trên server rồi khởi động lại ứng dụng."
       : "Configure the AI provider key on the server and restart the app.",
     privacy: isVietnamese
-      ? "Dữ liệu tóm tắt của tab hiện tại được gửi tới nhà cung cấp AI. Token, file và raw payload không được gửi."
-      : "A compact summary of this tab is sent to the configured AI provider. Tokens, files, and raw payloads are excluded.",
+      ? "Bản tóm tắt của tab được gửi tới nhà cung cấp AI; gói miễn phí có thể ghi log yêu cầu. Token, file và raw payload không được gửi."
+      : "A tab summary is sent to the AI provider; free endpoints may log requests. Tokens, files, and raw payloads are excluded.",
     stale: isVietnamese ? "Dựa trên ngữ cảnh trước đó" : "Based on earlier context",
     cancelled: isVietnamese ? "Đã dừng yêu cầu." : "Request stopped.",
     responseReady: isVietnamese ? "Trợ lý AI đã trả lời." : "Assistant response ready.",

@@ -195,7 +195,7 @@ describe("nineRouterCompletion", () => {
     expect(deltas).toEqual(["Incomplete answer"]);
   });
 
-  it("streams answer tokens without exposing provider reasoning fields", async () => {
+  it("streams provider reasoning separately from the final answer", async () => {
     vi.stubEnv("NINEROUTER_KEY", "test-key");
     const body = [
       `data: ${JSON.stringify({ choices: [{ delta: { reasoning_content: "hidden reasoning" } }] })}`,
@@ -209,15 +209,58 @@ describe("nineRouterCompletion", () => {
       headers: { "content-type": "text/event-stream" },
     })));
     const deltas: string[] = [];
+    const reasoning: string[] = [];
 
     const answer = await nineRouterChatCompletionStream(
       [{ role: "user", content: "Question" }],
-      { onDelta: (delta) => deltas.push(delta) },
+      {
+        onDelta: (delta) => deltas.push(delta),
+        onReasoningDelta: (delta) => reasoning.push(delta),
+      },
     );
 
     expect(answer).toBe("Streamed answer");
     expect(deltas).toEqual(["Streamed ", "answer"]);
-    expect(deltas.join("")).not.toContain("hidden reasoning");
+    expect(reasoning).toEqual(["hidden reasoning"]);
+  });
+
+  it("routes adaptive reasoning requests through OpenRouter Nemotron", async () => {
+    vi.stubEnv("OPENROUTER_API_KEY", "openrouter-key");
+    vi.stubEnv("OPENROUTER_MODEL", "nvidia/nemotron-3-ultra-550b-a55b:free");
+    const body = [
+      `data: ${JSON.stringify({ choices: [{ delta: { reasoning_details: [{ type: "reasoning.text", text: "Check constraints. " }] } }] })}`,
+      `data: ${JSON.stringify({ choices: [{ delta: { content: "Recommendation" }, finish_reason: "stop" }] })}`,
+      "data: [DONE]",
+      "",
+    ].join("\n");
+    const fetchSpy = vi.fn().mockResolvedValue(new Response(body, {
+      status: 200,
+      headers: { "content-type": "text/event-stream" },
+    }));
+    vi.stubGlobal("fetch", fetchSpy);
+    const reasoning: string[] = [];
+
+    const answer = await nineRouterChatCompletionStream(
+      [{ role: "user", content: "Create a detailed strategy" }],
+      {
+        maxTokens: 2400,
+        reasoningEffort: "medium",
+        onDelta: () => {},
+        onReasoningDelta: (delta) => reasoning.push(delta),
+      },
+    );
+
+    const requestBody = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body));
+    expect(fetchSpy.mock.calls[0]?.[0]).toBe("https://openrouter.ai/api/v1/chat/completions");
+    expect(requestBody).toMatchObject({
+      model: "nvidia/nemotron-3-ultra-550b-a55b:free",
+      max_tokens: 2400,
+      reasoning: { effort: "medium", exclude: false },
+      include_reasoning: true,
+      stream: true,
+    });
+    expect(reasoning).toEqual(["Check constraints. "]);
+    expect(answer).toBe("Recommendation");
   });
 
   it("sends system and conversation messages to the existing 9router endpoint", async () => {

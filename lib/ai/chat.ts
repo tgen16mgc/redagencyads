@@ -1,6 +1,41 @@
 import { CHAT_LIMITS, type ChatRequest, type ChatRequestMessage } from "@/lib/ai/chat-contract";
 import { sanitizeChatText } from "@/lib/ai/chat-context";
-import { nineRouterChatCompletion, nineRouterChatCompletionStream } from "@/lib/ai/transport";
+import {
+  nineRouterChatCompletion,
+  nineRouterChatCompletionStream,
+  type AiReasoningEffort,
+} from "@/lib/ai/transport";
+
+export type ChatComplexity = "quick" | "standard" | "deep";
+
+export type ChatResponseBudget = {
+  complexity: ChatComplexity;
+  maxTokens: number;
+  reasoningEffort: AiReasoningEffort;
+  wordLimit: number;
+};
+
+const COMPLEXITY_TERMS = /\b(analy[sz]e|compare|diagnose|explain why|recommend.+and|trade-?offs?|prioriti[sz]e|summary)\b|phân tích|so sánh|giải thích|tóm tắt|đề xuất/i;
+const DEEP_TERMS = /\b(detailed|deep dive|comprehensive|full report|step[- ]by[- ]step|strategy|strategic plan|audit)\b|chi tiết|chuyên sâu|toàn diện|chiến lược|kiểm toán|đánh giá/i;
+
+export function chatResponseBudget(input: ChatRequest): ChatResponseBudget {
+  const question = [...input.messages].reverse().find((message) => message.role === "user")?.content || "";
+  let score = 0;
+  if (question.length > 160) score += 1;
+  if (question.length > 500) score += 1;
+  if ((question.match(/\?/g) || []).length > 1) score += 1;
+  if (COMPLEXITY_TERMS.test(question)) score += 1;
+  if (DEEP_TERMS.test(question)) score += 3;
+
+  const complexity: ChatComplexity = score >= 3 ? "deep" : score >= 1 ? "standard" : "quick";
+  if (complexity === "deep") {
+    return { complexity, maxTokens: CHAT_LIMITS.outputTokens.deep, reasoningEffort: "medium", wordLimit: 350 };
+  }
+  if (complexity === "standard") {
+    return { complexity, maxTokens: CHAT_LIMITS.outputTokens.standard, reasoningEffort: "low", wordLimit: 220 };
+  }
+  return { complexity, maxTokens: CHAT_LIMITS.outputTokens.quick, reasoningEffort: "minimal", wordLimit: 140 };
+}
 
 const VIEW_RULES: Record<ChatRequest["context"]["view"], string> = {
   overview: "Explain what is currently available, what needs setup, and the shortest next step. Do not claim unavailable capabilities work.",
@@ -12,15 +47,16 @@ const VIEW_RULES: Record<ChatRequest["context"]["view"], string> = {
 
 export function buildContextualChatSystemPrompt(input: ChatRequest) {
   const responseLanguage = input.language === "vi" ? "Vietnamese" : "English";
+  const budget = chatResponseBudget(input);
   return `You are the contextual analyst inside Decision Workspace.
 Respond in ${responseLanguage}. Be concise, specific, and useful to an ads operator.
 
 Response contract:
-- Default to 180 words or fewer. Use up to 350 words only when the user explicitly asks for a detailed report.
+- This is a ${budget.complexity} request. Keep the final answer to ${budget.wordLimit} words or fewer.
 - Put the direct answer or recommendation in the first two sentences. Do not restate the question or add an introduction.
 - Use at most two short sections and three bullets per section. Use one compact table only when comparison materially improves the answer.
 - End with **Why:** followed by one to three short bullets citing the exact workspace facts, assumptions, and uncertainty behind the answer.
-- The **Why:** section is a concise decision trace for the user, not private chain-of-thought. Never reveal hidden chain-of-thought or internal reasoning tokens.
+- The **Why:** section summarizes the decision trace. Do not repeat the full reasoning trace in the final answer because the interface presents provider reasoning separately.
 - If space is tight, keep the direct answer, next action, and **Why:** section. Remove background before truncating the answer.
 
 Safety and truth rules:
@@ -54,19 +90,28 @@ function toNineRouterMessages(input: ChatRequest) {
 }
 
 export async function generateContextualChat(input: ChatRequest, signal?: AbortSignal) {
+  const budget = chatResponseBudget(input);
   return nineRouterChatCompletion(toNineRouterMessages(input), {
-    maxTokens: CHAT_LIMITS.outputTokens,
+    maxTokens: budget.maxTokens,
     signal,
   });
 }
 
 export async function generateContextualChatStream(
   input: ChatRequest,
-  options: { signal?: AbortSignal; onDelta: (delta: string) => void },
+  options: {
+    budget?: ChatResponseBudget;
+    signal?: AbortSignal;
+    onDelta: (delta: string) => void;
+    onReasoningDelta?: (delta: string) => void;
+  },
 ) {
+  const budget = options.budget || chatResponseBudget(input);
   return nineRouterChatCompletionStream(toNineRouterMessages(input), {
-    maxTokens: CHAT_LIMITS.outputTokens,
+    maxTokens: budget.maxTokens,
+    reasoningEffort: budget.reasoningEffort,
     signal: options.signal,
     onDelta: options.onDelta,
+    onReasoningDelta: options.onReasoningDelta,
   });
 }

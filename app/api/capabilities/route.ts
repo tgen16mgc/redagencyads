@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { hasNineRouterCredentials } from "@/lib/ai/transport";
+import { hasAiProviderCredentials } from "@/lib/ai/transport";
 import {
   buildCapabilitySnapshot,
   isFacebookOAuthConfigured,
@@ -17,7 +17,7 @@ export async function GET() {
     tiktokAdLibraryConfigured: Boolean(
       process.env.TIKTOK_CCL_API_URL && process.env.TIKTOK_CCL_ACCESS_TOKEN,
     ),
-    nineRouterConfigured: hasNineRouterCredentials(),
+    nineRouterConfigured: hasAiProviderCredentials(),
     ...connectorReadiness,
   });
 

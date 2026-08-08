@@ -13,6 +13,15 @@ import type { InterfaceLanguage } from "@/lib/types";
 export type ChatAbortIntent = "cancel" | "clear" | "context-change" | "reset" | "unmount";
 
 export type ChatProgressStage = "preparing" | "analyzing" | "working" | "responding";
+export type ChatComplexity = "quick" | "standard" | "deep";
+
+export type ChatProgress = {
+  stage: ChatProgressStage;
+  content: string;
+  reasoning: string;
+  complexity?: ChatComplexity;
+  maxTokens?: number;
+};
 
 export type ChatLifecycleCopy = {
   cancelled: string;
@@ -52,7 +61,7 @@ export type ChatLifecycleOptions = {
   readThreads: () => ChatThreads;
   applyThreads: (updater: (current: ChatThreads) => ChatThreads) => void;
   setPending: (view: DashboardView, requestId: string | null) => void;
-  onProgress?: (view: DashboardView, requestId: string, progress: { stage: ChatProgressStage; content: string }) => void;
+  onProgress?: (view: DashboardView, requestId: string, progress: ChatProgress) => void;
   onReply: (view: DashboardView, announcement: string) => void;
 };
 
@@ -80,10 +89,14 @@ function isProgressStage(value: unknown): value is ChatProgressStage {
   return value === "preparing" || value === "analyzing" || value === "working" || value === "responding";
 }
 
+function isChatComplexity(value: unknown): value is ChatComplexity {
+  return value === "quick" || value === "standard" || value === "deep";
+}
+
 async function readChatResponse(
   response: ChatFetchResponse,
   copy: ChatLifecycleCopy,
-  onProgress: (stage: ChatProgressStage, content: string) => void,
+  onProgress: (progress: ChatProgress) => void,
 ) {
   const contentType = response.headers?.get("content-type") || "";
   if (response.ok && contentType.includes("application/x-ndjson") && response.body) {
@@ -91,7 +104,16 @@ async function readChatResponse(
     const decoder = new TextDecoder();
     let buffer = "";
     let content = "";
+    let reasoning = "";
+    let stage: ChatProgressStage = "preparing";
+    let complexity: ChatComplexity | undefined;
+    let maxTokens: number | undefined;
     let responseFingerprint: string | undefined;
+
+    const emitProgress = (nextStage = stage) => {
+      stage = nextStage;
+      onProgress({ stage, content, reasoning, complexity, maxTokens });
+    };
 
     const consumeLine = (line: string) => {
       if (!line.trim()) return;
@@ -103,18 +125,32 @@ async function readChatResponse(
       }
 
       if (event.type === "status" && isProgressStage(event.stage)) {
-        onProgress(event.stage, content);
+        emitProgress(event.stage);
+        return;
+      }
+      if (event.type === "meta") {
+        if (isChatComplexity(event.complexity)) complexity = event.complexity;
+        if (typeof event.maxTokens === "number" && Number.isFinite(event.maxTokens)) maxTokens = event.maxTokens;
+        emitProgress();
+        return;
+      }
+      if (event.type === "reasoning_delta" && typeof event.delta === "string") {
+        reasoning = `${reasoning}${event.delta}`.slice(0, CHAT_LIMITS.reasoningCharacters);
+        emitProgress("analyzing");
         return;
       }
       if (event.type === "delta" && typeof event.delta === "string") {
         content = `${content}${event.delta}`.slice(0, CHAT_LIMITS.assistantMessageCharacters);
-        onProgress("responding", content);
+        emitProgress("responding");
         return;
       }
       if (event.type === "done") {
         if (typeof event.reply === "string" && event.reply.trim()) {
           content = event.reply.slice(0, CHAT_LIMITS.assistantMessageCharacters);
         }
+        if (typeof event.reasoning === "string") reasoning = event.reasoning.slice(0, CHAT_LIMITS.reasoningCharacters);
+        if (isChatComplexity(event.complexity)) complexity = event.complexity;
+        if (typeof event.maxTokens === "number" && Number.isFinite(event.maxTokens)) maxTokens = event.maxTokens;
         if (typeof event.contextFingerprint === "string") responseFingerprint = event.contextFingerprint;
         return;
       }
@@ -142,7 +178,7 @@ async function readChatResponse(
       throw new ChatStreamError(copy.connectionError, content);
     }
     if (!content.trim()) throw new Error(copy.invalidResponse);
-    return { reply: content, contextFingerprint: responseFingerprint };
+    return { reply: content, reasoning, complexity, maxTokens, contextFingerprint: responseFingerprint };
   }
 
   const json = (await response.json().catch(() => ({}))) as Record<string, unknown>;
@@ -150,6 +186,9 @@ async function readChatResponse(
   if (typeof json.reply !== "string" || !json.reply.trim()) throw new Error(copy.invalidResponse);
   return {
     reply: json.reply.slice(0, CHAT_LIMITS.assistantMessageCharacters),
+    reasoning: typeof json.reasoning === "string" ? json.reasoning.slice(0, CHAT_LIMITS.reasoningCharacters) : "",
+    complexity: isChatComplexity(json.complexity) ? json.complexity : undefined,
+    maxTokens: typeof json.maxTokens === "number" && Number.isFinite(json.maxTokens) ? json.maxTokens : undefined,
     contextFingerprint: typeof json.contextFingerprint === "string" ? json.contextFingerprint : undefined,
   };
 }
@@ -216,9 +255,9 @@ export function createChatLifecycle(options: ChatLifecycleOptions) {
           messages: input.history,
         }),
       });
-      const result = await readChatResponse(response, copy, (stage, content) => {
+      const result = await readChatResponse(response, copy, (progress) => {
         if (requests.get(view)?.id !== requestId || request.abortIntent) return;
-        onProgress?.(view, requestId, { stage, content });
+        onProgress?.(view, requestId, progress);
       });
 
       if (requests.get(view)?.id !== requestId || request.abortIntent) return;
@@ -232,6 +271,9 @@ export function createChatLifecycle(options: ChatLifecycleOptions) {
         content: result.reply,
         status: "complete",
         basedOnFingerprint: fingerprint,
+        complexity: result.complexity,
+        maxTokens: result.maxTokens,
+        reasoning: result.reasoning,
       }));
       onReply(view, copy.responseReady);
     } catch (error) {

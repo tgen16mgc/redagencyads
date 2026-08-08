@@ -1,6 +1,20 @@
 const NINEROUTER_TIMEOUT_MS = Number(process.env.NINEROUTER_TIMEOUT_MS || 45000);
 const NINEROUTER_MAX_TOKENS = Number(process.env.NINEROUTER_MAX_TOKENS || 1800);
 const NINEROUTER_DEFAULT_MODEL = "mhyc";
+const OPENROUTER_DEFAULT_MODEL = "nvidia/nemotron-3-ultra-550b-a55b:free";
+const OPENROUTER_DEFAULT_URL = "https://openrouter.ai/api";
+
+export type AiGatewayName = "openrouter" | "9router";
+export type AiReasoningEffort = "minimal" | "low" | "medium" | "high";
+
+type AiGatewayConfig = {
+  name: AiGatewayName;
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  timeoutMs: number;
+  defaultMaxTokens: number;
+};
 
 export type NineRouterMessage = {
   role: "system" | "user" | "assistant";
@@ -164,16 +178,56 @@ async function readJson(response: Response) {
   }
 }
 
-function nineRouterBaseUrl() {
-  return (process.env.NINEROUTER_URL || "http://localhost:20128").replace(/\/$/, "").replace(/\/v1$/, "");
+function normalizedBaseUrl(value: string) {
+  return value.replace(/\/$/, "").replace(/\/v1$/, "");
 }
 
-function nineRouterApiKey() {
-  return process.env.NINEROUTER_KEY || "";
+function aiGatewayConfig(): AiGatewayConfig {
+  const openRouterApiKey = process.env.OPENROUTER_API_KEY || "";
+  if (openRouterApiKey) {
+    return {
+      name: "openrouter",
+      baseUrl: normalizedBaseUrl(process.env.OPENROUTER_URL || OPENROUTER_DEFAULT_URL),
+      apiKey: openRouterApiKey,
+      model: process.env.OPENROUTER_MODEL || OPENROUTER_DEFAULT_MODEL,
+      timeoutMs: Number(process.env.OPENROUTER_TIMEOUT_MS || 90_000),
+      defaultMaxTokens: Number(process.env.OPENROUTER_MAX_TOKENS || NINEROUTER_MAX_TOKENS),
+    };
+  }
+
+  return {
+    name: "9router",
+    baseUrl: normalizedBaseUrl(process.env.NINEROUTER_URL || "http://localhost:20128"),
+    apiKey: process.env.NINEROUTER_KEY || "",
+    model: process.env.NINEROUTER_MODEL || NINEROUTER_DEFAULT_MODEL,
+    timeoutMs: NINEROUTER_TIMEOUT_MS,
+    defaultMaxTokens: NINEROUTER_MAX_TOKENS,
+  };
 }
 
 export function hasNineRouterCredentials() {
-  return Boolean(nineRouterApiKey());
+  return Boolean(process.env.NINEROUTER_KEY);
+}
+
+export function hasAiProviderCredentials() {
+  return Boolean(aiGatewayConfig().apiKey);
+}
+
+export function activeAiProviderName(): AiGatewayName {
+  return aiGatewayConfig().name;
+}
+
+function aiGatewayHeaders(config: AiGatewayConfig) {
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+    authorization: `Bearer ${config.apiKey}`,
+  };
+  if (config.name === "openrouter") {
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
+    if (siteUrl) headers["HTTP-Referer"] = siteUrl;
+    headers["X-OpenRouter-Title"] = process.env.OPENROUTER_APP_NAME || "Decision Workspace";
+  }
+  return headers;
 }
 
 function retryableProviderStatus(status: number) {
@@ -195,24 +249,51 @@ function streamedChoiceText(choice: unknown): string {
   return answerPartText(record.delta) || answerPartText(record.message) || stringValue(record.text);
 }
 
+function reasoningDetailsText(value: unknown): string {
+  if (!Array.isArray(value)) return "";
+  return value.map((detail) => {
+    if (typeof detail !== "object" || detail === null) return "";
+    const record = detail as Record<string, unknown>;
+    if (record.type === "reasoning.encrypted") return "";
+    return stringValue(record.text) || stringValue(record.summary);
+  }).join("");
+}
+
+function streamedChoiceReasoning(choice: unknown): string {
+  if (typeof choice !== "object" || choice === null) return "";
+  const record = choice as Record<string, unknown>;
+  const message = (record.delta || record.message) as Record<string, unknown> | undefined;
+  if (!message || typeof message !== "object") return "";
+  return stringValue(message.reasoning)
+    || stringValue(message.reasoning_content)
+    || reasoningDetailsText(message.reasoning_details);
+}
+
 function truncatedFinishReason(value: string) {
   return value === "length" || value === "max_tokens";
 }
 
-async function readStreamedCompletion(response: Response, onDelta: (delta: string) => void) {
+async function readStreamedCompletion(
+  response: Response,
+  onDelta: (delta: string) => void,
+  onReasoningDelta?: (delta: string) => void,
+) {
   const contentType = response.headers.get("content-type") || "";
   if (!contentType.includes("text/event-stream") || !response.body) {
     const json = await readJson(response);
     const choice = json?.choices?.[0];
+    const reasoning = streamedChoiceReasoning(choice);
     const text = choiceText(choice);
+    if (reasoning) onReasoningDelta?.(reasoning);
     if (text) onDelta(text);
-    return { text, finishReason: stringValue(choice?.finish_reason) };
+    return { text, reasoning, finishReason: stringValue(choice?.finish_reason) };
   }
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
   let answer = "";
+  let reasoning = "";
   let finishReason = "";
 
   const consumeLine = (line: string) => {
@@ -224,6 +305,11 @@ async function readStreamedCompletion(response: Response, onDelta: (delta: strin
       const json = JSON.parse(payload);
       const choice = json?.choices?.[0];
       finishReason = stringValue(choice?.finish_reason) || finishReason;
+      const reasoningDelta = streamedChoiceReasoning(choice);
+      if (reasoningDelta) {
+        reasoning += reasoningDelta;
+        onReasoningDelta?.(reasoningDelta);
+      }
       const delta = streamedChoiceText(choice);
       if (!delta) return;
       answer += delta;
@@ -243,15 +329,22 @@ async function readStreamedCompletion(response: Response, onDelta: (delta: strin
   }
   buffer += decoder.decode();
   if (buffer) consumeLine(buffer);
-  return { text: answer, finishReason };
+  return { text: answer, reasoning, finishReason };
 }
 
 export async function nineRouterChatCompletionStream(
   messages: NineRouterMessage[],
-  options: { maxTokens?: number; signal?: AbortSignal; onDelta: (delta: string) => void },
+  options: {
+    maxTokens?: number;
+    reasoningEffort?: AiReasoningEffort;
+    signal?: AbortSignal;
+    onDelta: (delta: string) => void;
+    onReasoningDelta?: (delta: string) => void;
+  },
 ) {
+  const config = aiGatewayConfig();
   const controller = new AbortController();
-  const timeoutMs = positiveMs(NINEROUTER_TIMEOUT_MS, 45000);
+  const timeoutMs = positiveMs(config.timeoutMs, 45000);
   let timedOut = false;
   const timeout = setTimeout(() => {
     timedOut = true;
@@ -259,27 +352,31 @@ export async function nineRouterChatCompletionStream(
   }, timeoutMs);
   const abortFromCaller = () => controller.abort();
   options.signal?.addEventListener("abort", abortFromCaller, { once: true });
-  const headers: Record<string, string> = { "content-type": "application/json" };
-  const apiKey = nineRouterApiKey();
-  if (apiKey) headers.authorization = `Bearer ${apiKey}`;
+  const headers = aiGatewayHeaders(config);
+  const maxTokenCeiling = config.name === "openrouter" ? 4_000 : 2_400;
   const requestedMaxTokens = Math.max(
     300,
-    Math.min(positiveMs(options.maxTokens ?? NINEROUTER_MAX_TOKENS, NINEROUTER_MAX_TOKENS), 2400),
+    Math.min(positiveMs(options.maxTokens ?? config.defaultMaxTokens, config.defaultMaxTokens), maxTokenCeiling),
   );
 
   try {
     for (let attempt = 1; attempt <= 2; attempt += 1) {
-      const response = await fetch(`${nineRouterBaseUrl()}/v1/chat/completions`, {
+      const body: Record<string, unknown> = {
+        model: config.model,
+        messages,
+        temperature: 0.2,
+        max_tokens: requestedMaxTokens,
+        stream: true,
+      };
+      if (config.name === "openrouter") {
+        body.reasoning = { effort: options.reasoningEffort || "low", exclude: false };
+        body.include_reasoning = true;
+      }
+      const response = await fetch(`${config.baseUrl}/v1/chat/completions`, {
         method: "POST",
         signal: controller.signal,
         headers,
-        body: JSON.stringify({
-          model: process.env.NINEROUTER_MODEL || NINEROUTER_DEFAULT_MODEL,
-          messages,
-          temperature: 0.2,
-          max_tokens: requestedMaxTokens,
-          stream: true,
-        }),
+        body: JSON.stringify(body),
       });
 
       if (!response.ok) {
@@ -289,7 +386,7 @@ export async function nineRouterChatCompletionStream(
         throw new NineRouterProviderError(message, response.status);
       }
 
-      const result = await readStreamedCompletion(response, options.onDelta);
+      const result = await readStreamedCompletion(response, options.onDelta, options.onReasoningDelta);
       if (result.text && truncatedFinishReason(result.finishReason)) {
         throw new NineRouterProviderError("AI provider stopped at its output limit.", 502);
       }
@@ -318,8 +415,9 @@ export async function nineRouterChatCompletion(
   messages: NineRouterMessage[],
   options: { jsonMode?: boolean; maxTokens?: number; signal?: AbortSignal } = {},
 ) {
+  const config = aiGatewayConfig();
   const controller = new AbortController();
-  const timeoutMs = positiveMs(NINEROUTER_TIMEOUT_MS, 45000);
+  const timeoutMs = positiveMs(config.timeoutMs, 45000);
   let timedOut = false;
   const timeout = setTimeout(() => {
     timedOut = true;
@@ -327,25 +425,23 @@ export async function nineRouterChatCompletion(
   }, timeoutMs);
   const abortFromCaller = () => controller.abort();
   options.signal?.addEventListener("abort", abortFromCaller, { once: true });
-  const headers: Record<string, string> = { "content-type": "application/json" };
-  const apiKey = nineRouterApiKey();
-  if (apiKey) headers.authorization = `Bearer ${apiKey}`;
+  const headers = aiGatewayHeaders(config);
   const requestedMaxTokens = Math.max(
     300,
-    Math.min(positiveMs(options.maxTokens ?? NINEROUTER_MAX_TOKENS, NINEROUTER_MAX_TOKENS), 2400),
+    Math.min(positiveMs(options.maxTokens ?? config.defaultMaxTokens, config.defaultMaxTokens), 2400),
   );
 
   try {
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       const body: Record<string, unknown> = {
-        model: process.env.NINEROUTER_MODEL || NINEROUTER_DEFAULT_MODEL,
+        model: config.model,
         messages,
         temperature: 0.2,
         max_tokens: Math.min(requestedMaxTokens + (attempt - 1) * 600, 2400),
       };
       if (options.jsonMode) body.response_format = { type: "json_object" };
 
-      const response = await fetch(`${nineRouterBaseUrl()}/v1/chat/completions`, {
+      const response = await fetch(`${config.baseUrl}/v1/chat/completions`, {
         method: "POST",
         signal: controller.signal,
         headers,

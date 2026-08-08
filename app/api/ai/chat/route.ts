@@ -1,18 +1,23 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
-import { generateContextualChat, generateContextualChatStream } from "@/lib/ai/chat";
-import { chatRequestSchema, type ChatRequest } from "@/lib/ai/chat-contract";
+import {
+  chatResponseBudget,
+  generateContextualChat,
+  generateContextualChatStream,
+} from "@/lib/ai/chat";
+import { CHAT_LIMITS, chatRequestSchema, type ChatRequest } from "@/lib/ai/chat-contract";
 import { chatContextFingerprint } from "@/lib/ai/chat-context";
 import { chatClientKey, consumeChatRateLimit, isSameOriginRequest } from "@/lib/ai/chat-security";
 import {
-  hasNineRouterCredentials,
+  activeAiProviderName,
+  hasAiProviderCredentials,
   NineRouterAbortError,
   NineRouterProviderError,
   NineRouterTimeoutError,
 } from "@/lib/ai/transport";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 function publicChatError(error: unknown) {
   if (error instanceof NineRouterTimeoutError) {
@@ -33,9 +38,13 @@ function streamedChatResponse(body: ChatRequest, requestSignal: AbortSignal) {
   let cancelled = false;
   let closed = false;
   let heartbeat: ReturnType<typeof setInterval> | undefined;
+  const budget = chatResponseBudget(body);
   let deltaTimer: ReturnType<typeof setTimeout> | undefined;
+  let reasoningTimer: ReturnType<typeof setTimeout> | undefined;
   let pendingDelta = "";
+  let pendingReasoning = "";
   let answer = "";
+  let reasoning = "";
   let responseStarted = false;
 
   const abortUpstream = () => upstreamController.abort();
@@ -58,16 +67,29 @@ function streamedChatResponse(body: ChatRequest, requestSignal: AbortSignal) {
         write({ type: "delta", delta: pendingDelta });
         pendingDelta = "";
       };
+      const flushReasoning = () => {
+        reasoningTimer = undefined;
+        if (!pendingReasoning) return;
+        write({ type: "reasoning_delta", delta: pendingReasoning });
+        pendingReasoning = "";
+      };
       const close = () => {
         if (closed) return;
         closed = true;
         if (heartbeat) clearInterval(heartbeat);
         if (deltaTimer) clearTimeout(deltaTimer);
+        if (reasoningTimer) clearTimeout(reasoningTimer);
         requestSignal.removeEventListener("abort", abortUpstream);
         if (!cancelled) controller.close();
       };
 
       write({ type: "status", stage: "preparing" });
+      write({
+        type: "meta",
+        complexity: budget.complexity,
+        maxTokens: budget.maxTokens,
+        reasoningEffort: budget.reasoningEffort,
+      });
       heartbeat = setInterval(() => {
         if (!responseStarted) write({ type: "status", stage: "working" });
       }, 8_000);
@@ -76,7 +98,16 @@ function streamedChatResponse(body: ChatRequest, requestSignal: AbortSignal) {
         try {
           write({ type: "status", stage: "analyzing" });
           const reply = await generateContextualChatStream(body, {
+            budget,
             signal: upstreamController.signal,
+            onReasoningDelta: (delta) => {
+              const remaining = CHAT_LIMITS.reasoningCharacters - reasoning.length;
+              if (remaining <= 0) return;
+              const accepted = delta.slice(0, remaining);
+              reasoning += accepted;
+              pendingReasoning += accepted;
+              if (!reasoningTimer) reasoningTimer = setTimeout(flushReasoning, 48);
+            },
             onDelta: (delta) => {
               if (!responseStarted) {
                 responseStarted = true;
@@ -88,17 +119,24 @@ function streamedChatResponse(body: ChatRequest, requestSignal: AbortSignal) {
             },
           });
           if (deltaTimer) clearTimeout(deltaTimer);
+          if (reasoningTimer) clearTimeout(reasoningTimer);
+          flushReasoning();
           flushDelta();
           write({
             type: "done",
             requestId: body.requestId,
             contextFingerprint: body.contextFingerprint,
-            provider: "9router",
+            provider: activeAiProviderName(),
+            complexity: budget.complexity,
+            maxTokens: budget.maxTokens,
+            reasoning,
             reply: reply || answer,
           });
         } catch (error) {
           if (!cancelled) {
             if (deltaTimer) clearTimeout(deltaTimer);
+            if (reasoningTimer) clearTimeout(reasoningTimer);
+            flushReasoning();
             flushDelta();
             const failure = publicChatError(error);
             write({ type: "error", error: failure.message, retryable: failure.status !== 499 });
@@ -113,6 +151,7 @@ function streamedChatResponse(body: ChatRequest, requestSignal: AbortSignal) {
       upstreamController.abort();
       if (heartbeat) clearInterval(heartbeat);
       if (deltaTimer) clearTimeout(deltaTimer);
+      if (reasoningTimer) clearTimeout(reasoningTimer);
       requestSignal.removeEventListener("abort", abortUpstream);
     },
   });
@@ -144,7 +183,7 @@ export async function POST(request: Request) {
     if (chatContextFingerprint(body.context) !== body.contextFingerprint) {
       return NextResponse.json({ error: "Workspace context changed before the request was sent." }, { status: 400 });
     }
-    if (!hasNineRouterCredentials()) {
+    if (!hasAiProviderCredentials()) {
       return NextResponse.json({ error: "The smart assistant is not configured for this workspace." }, { status: 503 });
     }
 
@@ -152,11 +191,14 @@ export async function POST(request: Request) {
       return streamedChatResponse(body, request.signal);
     }
 
+    const budget = chatResponseBudget(body);
     const reply = await generateContextualChat(body, request.signal);
     return NextResponse.json({
       requestId: body.requestId,
       contextFingerprint: body.contextFingerprint,
-      provider: "9router",
+      provider: activeAiProviderName(),
+      complexity: budget.complexity,
+      maxTokens: budget.maxTokens,
       reply,
     });
   } catch (error) {

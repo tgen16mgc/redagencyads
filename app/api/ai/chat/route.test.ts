@@ -1,15 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { generateContextualChat, generateContextualChatStream, hasNineRouterCredentials } = vi.hoisted(() => ({
+const {
+  activeAiProviderName,
+  chatResponseBudget,
+  generateContextualChat,
+  generateContextualChatStream,
+  hasAiProviderCredentials,
+} = vi.hoisted(() => ({
+  activeAiProviderName: vi.fn(),
+  chatResponseBudget: vi.fn(),
   generateContextualChat: vi.fn(),
   generateContextualChatStream: vi.fn(),
-  hasNineRouterCredentials: vi.fn(),
+  hasAiProviderCredentials: vi.fn(),
 }));
 
-vi.mock("@/lib/ai/chat", () => ({ generateContextualChat, generateContextualChatStream }));
+vi.mock("@/lib/ai/chat", () => ({ chatResponseBudget, generateContextualChat, generateContextualChatStream }));
 vi.mock("@/lib/ai/transport", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/lib/ai/transport")>();
-  return { ...original, hasNineRouterCredentials };
+  return { ...original, activeAiProviderName, hasAiProviderCredentials };
 });
 
 import { buildOverviewChatContext, chatContextFingerprint } from "@/lib/ai/chat-context";
@@ -49,21 +57,29 @@ describe("POST /api/ai/chat", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetChatRateLimits();
-    hasNineRouterCredentials.mockReturnValue(true);
+    activeAiProviderName.mockReturnValue("openrouter");
+    chatResponseBudget.mockReturnValue({ complexity: "quick", maxTokens: 700, reasoningEffort: "minimal", wordLimit: 140 });
+    hasAiProviderCredentials.mockReturnValue(true);
     generateContextualChat.mockResolvedValue("Use the available workspace.");
-    generateContextualChatStream.mockImplementation(async (_body: unknown, options: { onDelta: (delta: string) => void }) => {
+    generateContextualChatStream.mockImplementation(async (_body: unknown, options: {
+      onDelta: (delta: string) => void;
+      onReasoningDelta?: (delta: string) => void;
+    }) => {
+      options.onReasoningDelta?.("Checked the available capabilities.");
       options.onDelta("Use the available ");
       options.onDelta("workspace.");
       return "Use the available workspace.";
     });
   });
 
-  it("returns a contextual 9router reply", async () => {
+  it("returns a contextual OpenRouter reply with an adaptive budget", async () => {
     const response = await POST(request(validBody()));
     const json = await response.json();
 
     expect(response.status).toBe(200);
-    expect(json.provider).toBe("9router");
+    expect(json.provider).toBe("openrouter");
+    expect(json.complexity).toBe("quick");
+    expect(json.maxTokens).toBe(700);
     expect(json.requestId).toBe("request_1");
     expect(json.reply).toBe("Use the available workspace.");
     expect(generateContextualChat).toHaveBeenCalledWith(expect.objectContaining({ context: expect.objectContaining({ view: "overview" }) }), expect.any(AbortSignal));
@@ -75,11 +91,18 @@ describe("POST /api/ai/chat", () => {
 
     expect(response.headers.get("content-type")).toContain("application/x-ndjson");
     expect(events.some((event) => event.type === "status" && event.stage === "analyzing")).toBe(true);
-    expect(events.filter((event) => event.type === "delta").map((event) => event.delta).join("")).toBe("Use the available workspace.");
+    expect(events).toContainEqual(expect.objectContaining({ type: "meta", complexity: "quick", maxTokens: 700 }));
+    expect(events.filter((event) => event.type === "reasoning_delta").map((event) => event.delta).join(""))
+      .toBe("Checked the available capabilities.");
+    expect(events.filter((event) => event.type === "delta").map((event) => event.delta).join(""))
+      .toBe("Use the available workspace.");
     expect(events.at(-1)).toEqual(expect.objectContaining({
       type: "done",
       contextFingerprint: validBody().contextFingerprint,
-      provider: "9router",
+      provider: "openrouter",
+      complexity: "quick",
+      maxTokens: 700,
+      reasoning: "Checked the available capabilities.",
       reply: "Use the available workspace.",
     }));
   });
@@ -91,8 +114,8 @@ describe("POST /api/ai/chat", () => {
     expect(generateContextualChat).not.toHaveBeenCalled();
   });
 
-  it("returns service unavailable when 9router is not configured", async () => {
-    hasNineRouterCredentials.mockReturnValue(false);
+  it("returns service unavailable when no AI gateway is configured", async () => {
+    hasAiProviderCredentials.mockReturnValue(false);
 
     const response = await POST(request(validBody()));
 

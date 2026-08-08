@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { hasTokenSession, hasNineRouterCredentials } = vi.hoisted(() => ({
+const { hasTokenSession, hasAiProviderCredentials } = vi.hoisted(() => ({
   hasTokenSession: vi.fn(),
-  hasNineRouterCredentials: vi.fn(),
+  hasAiProviderCredentials: vi.fn(),
 }));
 
 vi.mock("@/lib/session", () => ({ hasTokenSession }));
-vi.mock("@/lib/ai/transport", () => ({ hasNineRouterCredentials }));
+vi.mock("@/lib/ai/transport", () => ({ hasAiProviderCredentials }));
 
 import { GET } from "./route";
 
@@ -24,7 +24,7 @@ describe("GET /api/capabilities", () => {
 
   it("returns capability states without exposing credentials", async () => {
     hasTokenSession.mockResolvedValue(false);
-    hasNineRouterCredentials.mockReturnValue(false);
+    hasAiProviderCredentials.mockReturnValue(false);
 
     const response = await GET();
     const json = await response.json();
@@ -49,7 +49,7 @@ describe("GET /api/capabilities", () => {
     process.env.META_APP_SECRET = "meta-app-secret";
     process.env.META_LOGIN_CONFIG_ID = "meta-login-config-id";
     hasTokenSession.mockResolvedValue(true);
-    hasNineRouterCredentials.mockReturnValue(true);
+    hasAiProviderCredentials.mockReturnValue(true);
 
     const response = await GET();
     const json = await response.json();
@@ -74,7 +74,7 @@ describe("GET /api/capabilities", () => {
     process.env.TIKTOK_CCL_API_URL = "https://partner.example.test/ccl";
     process.env.TIKTOK_CCL_ACCESS_TOKEN = "partner-token";
     hasTokenSession.mockResolvedValue(false);
-    hasNineRouterCredentials.mockReturnValue(false);
+    hasAiProviderCredentials.mockReturnValue(false);
     const json = await (await GET()).json();
     expect(json.capabilities).toContainEqual({
       key: "tiktok_ad_library",
@@ -86,7 +86,7 @@ describe("GET /api/capabilities", () => {
   it("does not report Facebook OAuth configured with only one credential", async () => {
     process.env.META_APP_ID = "meta-app-id";
     hasTokenSession.mockResolvedValue(false);
-    hasNineRouterCredentials.mockReturnValue(false);
+    hasAiProviderCredentials.mockReturnValue(false);
 
     const response = await GET();
     const json = await response.json();
