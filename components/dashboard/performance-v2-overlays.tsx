@@ -161,7 +161,10 @@ export function PeriodScopeDialog({ open, onOpenChange, currentDays, since, unti
                 aria-label="Custom reporting range"
               >
                 <Label className="text-xs text-muted-foreground">Start and end date</Label>
-                <DateField.Group fullWidth>
+                <DateField.Group
+                  fullWidth
+                  className="[--field-foreground:var(--primary-foreground)] [--field-placeholder:var(--muted-foreground)] [--muted:var(--muted-foreground)]"
+                >
                   <DateField.Input slot="start">
                     {(segment) => <DateField.Segment segment={segment} />}
                   </DateField.Input>
