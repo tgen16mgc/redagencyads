@@ -195,19 +195,25 @@ function streamedChoiceText(choice: unknown): string {
   return answerPartText(record.delta) || answerPartText(record.message) || stringValue(record.text);
 }
 
+function truncatedFinishReason(value: string) {
+  return value === "length" || value === "max_tokens";
+}
+
 async function readStreamedCompletion(response: Response, onDelta: (delta: string) => void) {
   const contentType = response.headers.get("content-type") || "";
   if (!contentType.includes("text/event-stream") || !response.body) {
     const json = await readJson(response);
-    const text = choiceText(json?.choices?.[0]);
+    const choice = json?.choices?.[0];
+    const text = choiceText(choice);
     if (text) onDelta(text);
-    return text;
+    return { text, finishReason: stringValue(choice?.finish_reason) };
   }
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
   let answer = "";
+  let finishReason = "";
 
   const consumeLine = (line: string) => {
     const trimmed = line.trim();
@@ -216,7 +222,9 @@ async function readStreamedCompletion(response: Response, onDelta: (delta: strin
     if (!payload || payload === "[DONE]") return;
     try {
       const json = JSON.parse(payload);
-      const delta = streamedChoiceText(json?.choices?.[0]);
+      const choice = json?.choices?.[0];
+      finishReason = stringValue(choice?.finish_reason) || finishReason;
+      const delta = streamedChoiceText(choice);
       if (!delta) return;
       answer += delta;
       onDelta(delta);
@@ -235,7 +243,7 @@ async function readStreamedCompletion(response: Response, onDelta: (delta: strin
   }
   buffer += decoder.decode();
   if (buffer) consumeLine(buffer);
-  return answer;
+  return { text: answer, finishReason };
 }
 
 export async function nineRouterChatCompletionStream(
@@ -281,8 +289,11 @@ export async function nineRouterChatCompletionStream(
         throw new NineRouterProviderError(message, response.status);
       }
 
-      const text = await readStreamedCompletion(response, options.onDelta);
-      if (text) return text;
+      const result = await readStreamedCompletion(response, options.onDelta);
+      if (result.text && truncatedFinishReason(result.finishReason)) {
+        throw new NineRouterProviderError("AI provider stopped at its output limit.", 502);
+      }
+      if (result.text) return result.text;
       if (attempt === 1) continue;
       throw new NineRouterProviderError("AI provider returned an empty response after 2 attempts.", 502);
     }

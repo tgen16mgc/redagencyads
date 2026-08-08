@@ -20,6 +20,7 @@ const SECRET_PATTERNS = [
   /\bsk-[a-zA-Z0-9_-]{12,}\b/g,
   /\bEA[A-Za-z0-9]{20,}\b/g,
 ];
+const CHAT_DETAIL_CHARACTERS = 360;
 
 function cleanText(value: unknown, maxCharacters: number) {
   if (typeof value !== "string") return undefined;
@@ -122,27 +123,27 @@ export function buildPerformanceChatContext(input: {
       checks: report.health.checks.slice(0, CHAT_LIMITS.performanceHealthChecks).map((check) => ({
         label: cleanText(check.label, 240) || "Check",
         status: check.status,
-        detail: cleanText(check.detail, 800) || "",
+        detail: cleanText(check.detail, CHAT_DETAIL_CHARACTERS) || "",
       })),
     } : undefined,
     targets: input.targets,
     verdict: verdict ? {
-      summary: cleanText(verdict.verdict, 800) || "",
-      risks: cleanList(verdict.risks, 6, 800),
-      winners: cleanList(verdict.winners, 6, 800),
-      losers: cleanList(verdict.losers, 6, 800),
-      budgetMoves: cleanList(verdict.budget_moves, 6, 800),
-      tests: cleanList(verdict.tests, 6, 800),
+      summary: cleanText(verdict.verdict, CHAT_DETAIL_CHARACTERS) || "",
+      risks: cleanList(verdict.risks, 4, CHAT_DETAIL_CHARACTERS),
+      winners: cleanList(verdict.winners, 4, CHAT_DETAIL_CHARACTERS),
+      losers: cleanList(verdict.losers, 4, CHAT_DETAIL_CHARACTERS),
+      budgetMoves: cleanList(verdict.budget_moves, 4, CHAT_DETAIL_CHARACTERS),
+      tests: cleanList(verdict.tests, 4, CHAT_DETAIL_CHARACTERS),
       confidence: verdict.confidence,
     } : undefined,
     insights: insights ? {
-      summary: cleanText(insights.summary, 800) || "",
+      summary: cleanText(insights.summary, CHAT_DETAIL_CHARACTERS) || "",
       confidence: insights.confidence,
       rows: insights.rows.slice(0, CHAT_LIMITS.performanceInsights).map((row) => ({
         area: cleanText(row.area, 240) || "Performance",
-        insight: cleanText(row.insight, 800) || "",
-        evidence: cleanText(row.evidence, 800) || "",
-        action: cleanText(row.action, 800) || "",
+        insight: cleanText(row.insight, CHAT_DETAIL_CHARACTERS) || "",
+        evidence: cleanText(row.evidence, CHAT_DETAIL_CHARACTERS) || "",
+        action: cleanText(row.action, CHAT_DETAIL_CHARACTERS) || "",
         priority: row.priority,
       })),
     } : undefined,
@@ -168,7 +169,7 @@ export function buildCompetitorChatContext(input: {
     collection: input.evidence ? {
       outcome: input.evidence.outcome,
       fetchedAt: input.evidence.fetchedAt.slice(0, 40),
-      warnings: cleanList(input.evidence.warnings, 6, 800),
+      warnings: cleanList(input.evidence.warnings, 4, CHAT_DETAIL_CHARACTERS),
       coverage: input.evidence.coverage.slice(0, 8).map((coverage) => ({
         competitor: cleanText(coverage.competitor, 240) || "Competitor",
         collected: coverage.collected,
@@ -184,21 +185,21 @@ export function buildCompetitorChatContext(input: {
       advertiser: cleanText(ad.evidence?.advertiser || ad.pageName, 240),
       platform: cleanText(ad.platform, 240),
       headline: cleanText(ad.headline, 240),
-      body: cleanText(ad.body, 800),
-      description: cleanText(ad.description, 800),
+      body: cleanText(ad.body, CHAT_DETAIL_CHARACTERS),
+      description: cleanText(ad.description, CHAT_DETAIL_CHARACTERS),
       cta: cleanText(ad.cta, 240),
       format: cleanText(ad.format, 240),
     })),
     brief: input.result ? {
-      summary: cleanText(input.result.summary, 800) || "",
-      creativeGaps: cleanList(input.result.creative_gaps, 8, 800),
-      nextActions: cleanList(input.result.next_actions, 8, 800),
-      tests: input.result.test_briefs.slice(0, 6).map((test) => ({
+      summary: cleanText(input.result.summary, CHAT_DETAIL_CHARACTERS) || "",
+      creativeGaps: cleanList(input.result.creative_gaps, 5, CHAT_DETAIL_CHARACTERS),
+      nextActions: cleanList(input.result.next_actions, 5, CHAT_DETAIL_CHARACTERS),
+      tests: input.result.test_briefs.slice(0, 4).map((test) => ({
         angle: cleanText(test.angle, 240) || "",
-        hook: cleanText(test.hook, 800) || "",
+        hook: cleanText(test.hook, CHAT_DETAIL_CHARACTERS) || "",
         format: cleanText(test.format, 240) || "",
-        why: cleanText(test.why, 800) || "",
-        guardrail: cleanText(test.guardrail, 800) || "",
+        why: cleanText(test.why, CHAT_DETAIL_CHARACTERS) || "",
+        guardrail: cleanText(test.guardrail, CHAT_DETAIL_CHARACTERS) || "",
       })),
     } : undefined,
   };
@@ -221,11 +222,11 @@ export function buildTikTokChatContext(input: {
     view: "tiktok",
     requestedProfiles: cleanList(requestedProfiles, 10, 240),
     pulledAt: input.result?.pulledAt.slice(0, 40),
-    warnings: cleanList(input.result?.warnings, 6, 800),
+    warnings: cleanList(input.result?.warnings, 4, CHAT_DETAIL_CHARACTERS),
     profiles: (input.result?.profiles || []).slice(0, CHAT_LIMITS.tiktokProfiles).map((profile) => ({
       username: cleanText(profile.username, 240) || "unknown",
       displayName: cleanText(profile.displayName, 240),
-      bio: cleanText(profile.bio, 800),
+      bio: cleanText(profile.bio, CHAT_DETAIL_CHARACTERS),
       verified: profile.verified,
       followerCount: profile.followerCount,
       followingCount: profile.followingCount,
@@ -235,7 +236,7 @@ export function buildTikTokChatContext(input: {
     videos: videos.map((video, index) => ({
       reference: `V${index + 1}`,
       username: cleanText(video.username, 240),
-      caption: cleanText(video.text, 800),
+      caption: cleanText(video.text, CHAT_DETAIL_CHARACTERS),
       createdAt: video.createdAt?.slice(0, 40),
       playCount: video.playCount,
       likeCount: video.likeCount,

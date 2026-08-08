@@ -3,16 +3,16 @@ import { z } from "zod";
 export const CHAT_LIMITS = {
   userMessageCharacters: 2_000,
   assistantMessageCharacters: 4_000,
-  historyMessages: 12,
-  historyCharacters: 24_000,
+  historyMessages: 8,
+  historyCharacters: 12_000,
   contextCharacters: 32_000,
-  outputTokens: 1_400,
-  competitorEvidence: 12,
-  performanceCampaigns: 10,
-  performanceHealthChecks: 12,
-  performanceInsights: 8,
-  tiktokProfiles: 8,
-  tiktokVideos: 12,
+  outputTokens: 650,
+  competitorEvidence: 8,
+  performanceCampaigns: 8,
+  performanceHealthChecks: 8,
+  performanceInsights: 5,
+  tiktokProfiles: 6,
+  tiktokVideos: 8,
 } as const;
 
 const shortText = z.string().max(240);

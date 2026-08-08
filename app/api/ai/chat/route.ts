@@ -36,6 +36,7 @@ function streamedChatResponse(body: ChatRequest, requestSignal: AbortSignal) {
   let deltaTimer: ReturnType<typeof setTimeout> | undefined;
   let pendingDelta = "";
   let answer = "";
+  let responseStarted = false;
 
   const abortUpstream = () => upstreamController.abort();
   requestSignal.addEventListener("abort", abortUpstream, { once: true });
@@ -67,17 +68,18 @@ function streamedChatResponse(body: ChatRequest, requestSignal: AbortSignal) {
       };
 
       write({ type: "status", stage: "preparing" });
-      heartbeat = setInterval(() => write({ type: "status", stage: "working" }), 8_000);
+      heartbeat = setInterval(() => {
+        if (!responseStarted) write({ type: "status", stage: "working" });
+      }, 8_000);
 
       void (async () => {
         try {
           write({ type: "status", stage: "analyzing" });
-          let responding = false;
           const reply = await generateContextualChatStream(body, {
             signal: upstreamController.signal,
             onDelta: (delta) => {
-              if (!responding) {
-                responding = true;
+              if (!responseStarted) {
+                responseStarted = true;
                 write({ type: "status", stage: "responding" });
               }
               answer += delta;

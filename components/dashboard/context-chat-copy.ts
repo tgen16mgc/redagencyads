@@ -46,8 +46,8 @@ export function contextChatCopy(language: InterfaceLanguage, view: DashboardView
     assistantLabel: isVietnamese ? "Trợ lý AI" : "Smart assistant",
     title: isVietnamese ? "Trợ lý AI thông minh" : "Smart assistant",
     description: isVietnamese
-      ? "Câu trả lời dùng dữ liệu đang hiển thị trong workspace này."
-      : "Answers use the data currently visible in this workspace.",
+      ? "Câu trả lời ngắn gọn, kèm lý do dựa trên dữ liệu đang hiển thị."
+      : "Concise answers include a brief rationale based on the visible workspace data.",
     emptyTitle: isVietnamese ? "Bắt đầu từ công việc hiện tại" : "Start with the work in front of you",
     emptyDescription: isVietnamese
       ? "Chọn một gợi ý hoặc hỏi trực tiếp về dữ liệu trong tab này."
@@ -59,9 +59,9 @@ export function contextChatCopy(language: InterfaceLanguage, view: DashboardView
     clear: isVietnamese ? "Xoá cuộc trò chuyện" : "Clear conversation",
     retry: isVietnamese ? "Thử lại" : "Retry",
     preparing: isVietnamese ? "Đang đọc dữ liệu workspace" : "Reading workspace data",
-    analyzing: isVietnamese ? "Đang phân tích tín hiệu liên quan" : "Analyzing relevant signals",
-    working: isVietnamese ? "Vẫn đang xử lý yêu cầu" : "Still working on your request",
-    responding: isVietnamese ? "Đang soạn câu trả lời" : "Drafting the answer",
+    analyzing: isVietnamese ? "Đang kiểm tra evidence và giả định" : "Checking evidence and assumptions",
+    working: isVietnamese ? "Vẫn đang kiểm tra dữ liệu" : "Still checking the data",
+    responding: isVietnamese ? "Đang viết câu trả lời ngắn gọn" : "Writing a concise answer",
     live: isVietnamese ? "Đã cấu hình AI" : "AI configured",
     unavailable: isVietnamese ? "Trợ lý AI chưa được cấu hình" : "Smart assistant is not configured",
     unavailableDescription: isVietnamese
@@ -80,8 +80,8 @@ export function contextChatCopy(language: InterfaceLanguage, view: DashboardView
       ? "Dịch vụ AI trả về phản hồi không hoàn chỉnh. Hãy thử lại—tin nhắn của bạn đã được lưu."
       : "The AI service returned an incomplete response. Retry—your message is saved.",
     interrupted: isVietnamese
-      ? "Phản hồi bị gián đoạn. Hãy thử lại để nhận câu trả lời đầy đủ."
-      : "Response interrupted. Retry for a complete answer.",
+      ? "Câu trả lời dừng trước khi hoàn tất. Hãy thử lại; trợ lý sẽ giữ câu trả lời tiếp theo ngắn gọn."
+      : "This answer stopped before it was complete. Retry; the assistant will keep the next answer brief.",
     genericError: isVietnamese
       ? "Trợ lý không thể hoàn tất yêu cầu này. Hãy thử lại—tin nhắn của bạn đã được lưu."
       : "The assistant could not complete this request. Retry—your message is saved.",

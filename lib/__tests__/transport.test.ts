@@ -174,6 +174,27 @@ describe("nineRouterCompletion", () => {
     expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 
+  it("rejects a length-truncated stream instead of presenting it as complete", async () => {
+    vi.stubEnv("NINEROUTER_KEY", "test-key");
+    const body = [
+      `data: ${JSON.stringify({ choices: [{ delta: { content: "Incomplete answer" } }] })}`,
+      `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: "length" }] })}`,
+      "data: [DONE]",
+      "",
+    ].join("\n");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body, {
+      status: 200,
+      headers: { "content-type": "text/event-stream" },
+    })));
+    const deltas: string[] = [];
+
+    await expect(nineRouterChatCompletionStream(
+      [{ role: "user", content: "Question" }],
+      { onDelta: (delta) => deltas.push(delta) },
+    )).rejects.toThrow("output limit");
+    expect(deltas).toEqual(["Incomplete answer"]);
+  });
+
   it("streams answer tokens without exposing provider reasoning fields", async () => {
     vi.stubEnv("NINEROUTER_KEY", "test-key");
     const body = [
