@@ -70,8 +70,18 @@ export function clearChatThread(threads: ChatThreads, view: DashboardView, finge
 }
 
 export function requestHistory(messages: ChatDisplayMessage[]): ChatRequestMessage[] {
-  return messages
+  const complete = messages
     .filter((message) => message.status === "complete")
-    .slice(-CHAT_LIMITS.historyMessages)
-    .map(({ role, content }) => ({ role, content }));
+    .slice(-CHAT_LIMITS.historyMessages);
+  const selected: ChatRequestMessage[] = [];
+  let remainingCharacters = CHAT_LIMITS.historyCharacters;
+
+  for (let index = complete.length - 1; index >= 0; index -= 1) {
+    const { role, content } = complete[index];
+    if (content.length > remainingCharacters) break;
+    selected.push({ role, content });
+    remainingCharacters -= content.length;
+  }
+
+  return selected.reverse();
 }

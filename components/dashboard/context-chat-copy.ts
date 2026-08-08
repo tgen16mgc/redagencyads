@@ -58,8 +58,11 @@ export function contextChatCopy(language: InterfaceLanguage, view: DashboardView
     close: isVietnamese ? "Đóng" : "Close",
     clear: isVietnamese ? "Xoá cuộc trò chuyện" : "Clear conversation",
     retry: isVietnamese ? "Thử lại" : "Retry",
-    working: isVietnamese ? "Trợ lý AI đang phân tích" : "Smart assistant is analyzing",
-    live: isVietnamese ? "AI sẵn sàng" : "AI ready",
+    preparing: isVietnamese ? "Đang đọc dữ liệu workspace" : "Reading workspace data",
+    analyzing: isVietnamese ? "Đang phân tích tín hiệu liên quan" : "Analyzing relevant signals",
+    working: isVietnamese ? "Vẫn đang xử lý yêu cầu" : "Still working on your request",
+    responding: isVietnamese ? "Đang soạn câu trả lời" : "Drafting the answer",
+    live: isVietnamese ? "Đã cấu hình AI" : "AI configured",
     unavailable: isVietnamese ? "Trợ lý AI chưa được cấu hình" : "Smart assistant is not configured",
     unavailableDescription: isVietnamese
       ? "Cấu hình khoá AI trên server rồi khởi động lại ứng dụng."
@@ -70,7 +73,18 @@ export function contextChatCopy(language: InterfaceLanguage, view: DashboardView
     stale: isVietnamese ? "Dựa trên ngữ cảnh trước đó" : "Based on earlier context",
     cancelled: isVietnamese ? "Đã dừng yêu cầu." : "Request stopped.",
     responseReady: isVietnamese ? "Trợ lý AI đã trả lời." : "Assistant response ready.",
-    genericError: isVietnamese ? "Không thể nhận câu trả lời từ trợ lý AI." : "Could not get an answer from the smart assistant.",
+    connectionError: isVietnamese
+      ? "Mất kết nối với trợ lý AI. Hãy thử lại—tin nhắn của bạn đã được lưu."
+      : "Lost the connection to the assistant. Retry—your message is saved.",
+    invalidResponse: isVietnamese
+      ? "Dịch vụ AI trả về phản hồi không hoàn chỉnh. Hãy thử lại—tin nhắn của bạn đã được lưu."
+      : "The AI service returned an incomplete response. Retry—your message is saved.",
+    interrupted: isVietnamese
+      ? "Phản hồi bị gián đoạn. Hãy thử lại để nhận câu trả lời đầy đủ."
+      : "Response interrupted. Retry for a complete answer.",
+    genericError: isVietnamese
+      ? "Trợ lý không thể hoàn tất yêu cầu này. Hãy thử lại—tin nhắn của bạn đã được lưu."
+      : "The assistant could not complete this request. Retry—your message is saved.",
     suggestions: SUGGESTIONS[view][language],
   };
 }

@@ -7,7 +7,10 @@ import { emptyChatThreads, messagesForContext } from "../ai/chat-thread";
 
 const copy: ChatLifecycleCopy = {
   cancelled: "Request stopped.",
+  connectionError: "Connection lost.",
   genericError: "Could not get an answer.",
+  interrupted: "Response interrupted.",
+  invalidResponse: "Incomplete response.",
   responseReady: "Assistant response ready.",
 };
 
@@ -23,6 +26,7 @@ function createHarness() {
   const calls: Array<{
     body: Record<string, unknown>;
     respond: (payload: unknown, ok?: boolean) => void;
+    respondStream: (events: Array<Record<string, unknown>>) => void;
     fail: (error: Error) => void;
   }> = [];
 
@@ -31,6 +35,10 @@ function createHarness() {
       calls.push({
         body: JSON.parse(init.body) as Record<string, unknown>,
         respond: (payload, ok = true) => resolve({ ok, json: async () => payload }),
+        respondStream: (events) => resolve(new Response(
+          events.map((event) => JSON.stringify(event)).join("\n"),
+          { headers: { "content-type": "application/x-ndjson" } },
+        )),
         fail: reject,
       });
     }),
@@ -80,6 +88,43 @@ describe("chat lifecycle", () => {
     expect(harness.messages("competitor")).toEqual([]);
     expect(harness.replies).toEqual([{ view: "overview", announcement: copy.responseReady }]);
     expect(harness.pendingLog.at(-1)).toEqual({ view: "overview", requestId: null });
+  });
+
+  it("streams safe progress and answer deltas before completing the reply", async () => {
+    const harness = createHarness();
+    const context = overviewContext("Workspace A");
+    const fingerprint = chatContextFingerprint(context);
+    harness.contexts.set("overview", context);
+
+    const settled = harness.send("overview", "What should I fix?");
+    harness.calls[0].respondStream([
+      { type: "status", stage: "analyzing" },
+      { type: "delta", delta: "Fix " },
+      { type: "delta", delta: "tracking first." },
+      { type: "done", contextFingerprint: fingerprint, reply: "Fix tracking first." },
+    ]);
+    await settled;
+
+    expect(harness.messages("overview").at(-1)?.content).toBe("Fix tracking first.");
+    expect(harness.pendingLog.at(-1)).toEqual({ view: "overview", requestId: null });
+  });
+
+  it("preserves a partial streamed answer when the provider disconnects", async () => {
+    const harness = createHarness();
+    harness.contexts.set("overview", overviewContext("Workspace A"));
+
+    const settled = harness.send("overview", "What should I fix?");
+    harness.calls[0].respondStream([
+      { type: "delta", delta: "Fix tracking first." },
+      { type: "error", error: "Provider disconnected." },
+    ]);
+    await settled;
+
+    const partial = harness.messages("overview").at(-1);
+    expect(partial?.status).toBe("notice");
+    expect(partial?.content).toContain("Fix tracking first.");
+    expect(partial?.content).toContain(copy.interrupted);
+    expect(partial?.retryContent).toBe("What should I fix?");
   });
 
   it("rejects empty questions and re-sends while a request is in flight", () => {

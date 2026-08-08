@@ -1,6 +1,6 @@
 import { CHAT_LIMITS, type ChatRequest, type ChatRequestMessage } from "@/lib/ai/chat-contract";
 import { sanitizeChatText } from "@/lib/ai/chat-context";
-import { nineRouterChatCompletion } from "@/lib/ai/transport";
+import { nineRouterChatCompletion, nineRouterChatCompletionStream } from "@/lib/ai/transport";
 
 const VIEW_RULES: Record<ChatRequest["context"]["view"], string> = {
   overview: "Explain what is currently available, what needs setup, and the shortest next step. Do not claim unavailable capabilities work.",
@@ -49,5 +49,16 @@ export async function generateContextualChat(input: ChatRequest, signal?: AbortS
   return nineRouterChatCompletion(toNineRouterMessages(input), {
     maxTokens: CHAT_LIMITS.outputTokens,
     signal,
+  });
+}
+
+export async function generateContextualChatStream(
+  input: ChatRequest,
+  options: { signal?: AbortSignal; onDelta: (delta: string) => void },
+) {
+  return nineRouterChatCompletionStream(toNineRouterMessages(input), {
+    maxTokens: CHAT_LIMITS.outputTokens,
+    signal: options.signal,
+    onDelta: options.onDelta,
   });
 }

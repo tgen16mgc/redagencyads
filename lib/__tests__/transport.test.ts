@@ -3,6 +3,7 @@ import {
   confidenceValue,
   errorMessage,
   nineRouterChatCompletion,
+  nineRouterChatCompletionStream,
   nineRouterCompletion,
   parseJsonObject,
   stringArray,
@@ -153,6 +154,49 @@ describe("nineRouterCompletion", () => {
     await expect(nineRouterCompletion("Return JSON", { jsonMode: true, maxTokens: 1800 }))
       .rejects.toThrow("valid JSON");
     expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries transient gateway failures for streamed chat", async () => {
+    vi.stubEnv("NINEROUTER_KEY", "test-key");
+    const fetchSpy = vi.fn()
+      .mockResolvedValueOnce(new Response("gateway unavailable", { status: 530, headers: { "content-type": "text/html" } }))
+      .mockResolvedValueOnce(nineRouterResponse("Recovered", "stop"));
+    vi.stubGlobal("fetch", fetchSpy);
+    const deltas: string[] = [];
+
+    const answer = await nineRouterChatCompletionStream(
+      [{ role: "user", content: "Question" }],
+      { onDelta: (delta) => deltas.push(delta) },
+    );
+
+    expect(answer).toBe("Recovered");
+    expect(deltas).toEqual(["Recovered"]);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("streams answer tokens without exposing provider reasoning fields", async () => {
+    vi.stubEnv("NINEROUTER_KEY", "test-key");
+    const body = [
+      `data: ${JSON.stringify({ choices: [{ delta: { reasoning_content: "hidden reasoning" } }] })}`,
+      `data: ${JSON.stringify({ choices: [{ delta: { content: "Streamed " } }] })}`,
+      `data: ${JSON.stringify({ choices: [{ delta: { content: "answer" } }] })}`,
+      "data: [DONE]",
+      "",
+    ].join("\n");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body, {
+      status: 200,
+      headers: { "content-type": "text/event-stream" },
+    })));
+    const deltas: string[] = [];
+
+    const answer = await nineRouterChatCompletionStream(
+      [{ role: "user", content: "Question" }],
+      { onDelta: (delta) => deltas.push(delta) },
+    );
+
+    expect(answer).toBe("Streamed answer");
+    expect(deltas).toEqual(["Streamed ", "answer"]);
+    expect(deltas.join("")).not.toContain("hidden reasoning");
   });
 
   it("sends system and conversation messages to the existing 9router endpoint", async () => {

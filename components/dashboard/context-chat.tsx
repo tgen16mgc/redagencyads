@@ -14,7 +14,7 @@ import {
 import type { DashboardView } from "@/lib/dashboard-access";
 import { CHAT_LIMITS, type ChatContext } from "@/lib/ai/chat-contract";
 import { chatContextFingerprint } from "@/lib/ai/chat-context";
-import { createChatLifecycle } from "@/lib/ai/chat-lifecycle";
+import { createChatLifecycle, type ChatProgressStage } from "@/lib/ai/chat-lifecycle";
 import {
   clearChatThread,
   emptyChatThreads,
@@ -40,8 +40,19 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
 type PendingRequestIds = Record<DashboardView, string | null>;
+type ChatProgress = { requestId: string; stage: ChatProgressStage; content: string };
+type PendingProgress = Record<DashboardView, ChatProgress | null>;
 
 const EMPTY_PENDING_REQUEST_IDS: PendingRequestIds = {
+  overview: null,
+  ads: null,
+  competitor: null,
+  tiktok: null,
+  intelligence: null,
+  publisher: null,
+};
+
+const EMPTY_PENDING_PROGRESS: PendingProgress = {
   overview: null,
   ads: null,
   competitor: null,
@@ -76,6 +87,7 @@ export const ContextChat = React.forwardRef<ContextChatHandle, {
 }>(function ContextChat({ activeView, language, available, open, showStandaloneLauncher, getContext, onOpenChange }, ref) {
   const [threads, setThreads] = React.useState(emptyChatThreads);
   const [pendingRequestIds, setPendingRequestIds] = React.useState<PendingRequestIds>(EMPTY_PENDING_REQUEST_IDS);
+  const [pendingProgress, setPendingProgress] = React.useState<PendingProgress>(EMPTY_PENDING_PROGRESS);
   const [input, setInput] = React.useState("");
   const [announcement, setAnnouncement] = React.useState("");
   const threadsRef = React.useRef<ChatThreads>(threads);
@@ -99,6 +111,8 @@ export const ContextChat = React.forwardRef<ContextChatHandle, {
   const activeFingerprint = chatContextFingerprint(getContext(activeView));
   const messages = messagesForContext(threads, activeView, activeFingerprint);
   const isPending = pendingRequestIds[activeView] !== null;
+  const activeProgress = pendingProgress[activeView];
+  const progressLabel = activeProgress ? copy[activeProgress.stage] : copy.preparing;
   const latestAssistant = [...messages].reverse().find((message) => message.role === "assistant" && message.status === "complete");
 
   const updateThreads = React.useCallback((updater: (current: ChatThreads) => ChatThreads) => {
@@ -113,7 +127,19 @@ export const ContextChat = React.forwardRef<ContextChatHandle, {
     getContext: (view) => getContextRef.current(view),
     readThreads: () => threadsRef.current,
     applyThreads: updateThreads,
-    setPending: (view, requestId) => setPendingRequestIds((current) => ({ ...current, [view]: requestId })),
+    setPending: (view, requestId) => {
+      setPendingRequestIds((current) => ({ ...current, [view]: requestId }));
+      setPendingProgress((current) => ({
+        ...current,
+        [view]: requestId ? { requestId, stage: "preparing", content: "" } : null,
+      }));
+    },
+    onProgress: (view, requestId, progress) => {
+      setPendingProgress((current) => {
+        if (current[view]?.requestId !== requestId) return current;
+        return { ...current, [view]: { requestId, ...progress } };
+      });
+    },
     onReply: (view, responseReady) => {
       if (view === activeViewRef.current) setAnnouncement(responseReady);
     },
@@ -125,6 +151,7 @@ export const ContextChat = React.forwardRef<ContextChatHandle, {
     threadsRef.current = empty;
     setThreads(empty);
     setPendingRequestIds(EMPTY_PENDING_REQUEST_IDS);
+    setPendingProgress(EMPTY_PENDING_PROGRESS);
     setInput("");
     setAnnouncement("");
   }, [lifecycle]);
@@ -210,8 +237,8 @@ export const ContextChat = React.forwardRef<ContextChatHandle, {
     if (!open) return;
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const target = !isPending && latestAssistantRef.current ? latestAssistantRef.current : messagesEndRef.current;
-    target?.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: isPending ? "end" : "start" });
-  }, [isPending, latestAssistant?.id, messages.length, open]);
+    target?.scrollIntoView({ behavior: reducedMotion || isPending ? "auto" : "smooth", block: isPending ? "end" : "start" });
+  }, [activeProgress?.content.length, isPending, latestAssistant?.id, messages.length, open]);
 
   React.useEffect(() => () => {
     if (motionFrameRef.current !== null) cancelAnimationFrame(motionFrameRef.current);
@@ -391,14 +418,24 @@ export const ContextChat = React.forwardRef<ContextChatHandle, {
               </article>
             ))}
             {isPending ? (
-              <div className="context-chat-message flex items-center gap-2" role="status">
-                <span className="flex size-7 items-center justify-center rounded-full border text-primary">
+              <div className="context-chat-message flex items-start gap-2">
+                <span className="mt-1 flex size-7 shrink-0 items-center justify-center rounded-full border text-primary">
                   <BotMessageSquareIcon className="size-4" />
                 </span>
-                <div className="context-chat-typing rounded-2xl rounded-bl-md border bg-card px-3 py-3" aria-label={copy.working}>
-                  <span /><span /><span />
-                </div>
-                <span className="text-xs text-muted-foreground">{copy.working}</span>
+                {activeProgress?.content ? (
+                  <div className="context-chat-assistant-message min-w-0 max-w-[calc(100%_-_2.25rem)] flex-1 rounded-2xl rounded-bl-md border bg-card px-3 py-2.5 text-sm leading-6">
+                    <ContextChatMarkdown content={activeProgress.content} />
+                    <div className="mt-2 flex items-center gap-2 border-t pt-2 text-xs text-muted-foreground">
+                      <span className="context-chat-typing" aria-hidden="true"><span /><span /><span /></span>
+                      <span role="status" aria-live="polite">{progressLabel}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex min-h-11 min-w-0 items-center gap-2 rounded-2xl rounded-bl-md border bg-card px-3 py-2">
+                    <span className="context-chat-typing" aria-hidden="true"><span /><span /><span /></span>
+                    <span className="text-xs text-muted-foreground" role="status" aria-live="polite">{progressLabel}</span>
+                  </div>
+                )}
               </div>
             ) : null}
             <div ref={messagesEndRef} />

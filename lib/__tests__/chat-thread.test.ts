@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { CHAT_LIMITS } from "../ai/chat-contract";
 import {
   appendChatMessage,
   clearChatThread,
@@ -60,5 +61,21 @@ describe("chat thread helpers", () => {
     ]);
 
     expect(history).toEqual([{ role: "user", content: "Question" }]);
+  });
+
+  it("keeps recent history within the API character budget", () => {
+    const messages = Array.from({ length: 12 }, (_, index) => ({
+      id: String(index),
+      role: index % 2 === 0 ? "user" as const : "assistant" as const,
+      content: "x".repeat(index % 2 === 0 ? CHAT_LIMITS.userMessageCharacters : CHAT_LIMITS.assistantMessageCharacters),
+      status: "complete" as const,
+    }));
+
+    const history = requestHistory(messages);
+    const characters = history.reduce((total, message) => total + message.content.length, 0);
+
+    expect(characters).toBeLessThanOrEqual(CHAT_LIMITS.historyCharacters);
+    expect(history.at(-1)?.content).toBe(messages.at(-1)?.content);
+    expect(history.length).toBeLessThan(messages.length);
   });
 });

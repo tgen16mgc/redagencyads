@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { generateContextualChat, hasNineRouterCredentials } = vi.hoisted(() => ({
+const { generateContextualChat, generateContextualChatStream, hasNineRouterCredentials } = vi.hoisted(() => ({
   generateContextualChat: vi.fn(),
+  generateContextualChatStream: vi.fn(),
   hasNineRouterCredentials: vi.fn(),
 }));
 
-vi.mock("@/lib/ai/chat", () => ({ generateContextualChat }));
+vi.mock("@/lib/ai/chat", () => ({ generateContextualChat, generateContextualChatStream }));
 vi.mock("@/lib/ai/transport", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/lib/ai/transport")>();
   return { ...original, hasNineRouterCredentials };
@@ -50,6 +51,11 @@ describe("POST /api/ai/chat", () => {
     resetChatRateLimits();
     hasNineRouterCredentials.mockReturnValue(true);
     generateContextualChat.mockResolvedValue("Use the available workspace.");
+    generateContextualChatStream.mockImplementation(async (_body: unknown, options: { onDelta: (delta: string) => void }) => {
+      options.onDelta("Use the available ");
+      options.onDelta("workspace.");
+      return "Use the available workspace.";
+    });
   });
 
   it("returns a contextual 9router reply", async () => {
@@ -61,6 +67,21 @@ describe("POST /api/ai/chat", () => {
     expect(json.requestId).toBe("request_1");
     expect(json.reply).toBe("Use the available workspace.");
     expect(generateContextualChat).toHaveBeenCalledWith(expect.objectContaining({ context: expect.objectContaining({ view: "overview" }) }), expect.any(AbortSignal));
+  });
+
+  it("streams progress and answer events when the client requests NDJSON", async () => {
+    const response = await POST(request(validBody(), { accept: "application/x-ndjson" }));
+    const events = (await response.text()).trim().split("\n").map((line) => JSON.parse(line));
+
+    expect(response.headers.get("content-type")).toContain("application/x-ndjson");
+    expect(events.some((event) => event.type === "status" && event.stage === "analyzing")).toBe(true);
+    expect(events.filter((event) => event.type === "delta").map((event) => event.delta).join("")).toBe("Use the available workspace.");
+    expect(events.at(-1)).toEqual(expect.objectContaining({
+      type: "done",
+      contextFingerprint: validBody().contextFingerprint,
+      provider: "9router",
+      reply: "Use the available workspace.",
+    }));
   });
 
   it("rejects cross-origin requests before using provider quota", async () => {
@@ -106,9 +127,9 @@ describe("POST /api/ai/chat", () => {
     const timeoutJson = await timeoutResponse.json();
 
     expect(providerResponse.status).toBe(502);
-    expect(providerJson.error).toBe("The smart assistant is temporarily unavailable.");
+    expect(providerJson.error).toBe("The AI provider is temporarily unavailable. Retry in a moment.");
     expect(JSON.stringify(providerJson)).not.toContain("private upstream detail");
     expect(timeoutResponse.status).toBe(504);
-    expect(timeoutJson.error).toBe("The smart assistant took too long to answer. Try a shorter question.");
+    expect(timeoutJson.error).toBe("The smart assistant took too long to answer. Retry—the conversation is saved.");
   });
 });

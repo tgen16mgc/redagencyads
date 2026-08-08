@@ -12,9 +12,14 @@ import type { InterfaceLanguage } from "@/lib/types";
 
 export type ChatAbortIntent = "cancel" | "clear" | "context-change" | "reset" | "unmount";
 
+export type ChatProgressStage = "preparing" | "analyzing" | "working" | "responding";
+
 export type ChatLifecycleCopy = {
   cancelled: string;
+  connectionError: string;
   genericError: string;
+  interrupted: string;
+  invalidResponse: string;
   responseReady: string;
 };
 
@@ -26,12 +31,20 @@ type ActiveRequest = {
   abortIntent?: ChatAbortIntent;
 };
 
+type ChatFetchResponse = {
+  ok: boolean;
+  status?: number;
+  headers?: { get: (name: string) => string | null };
+  body?: ReadableStream<Uint8Array> | null;
+  json: () => Promise<unknown>;
+};
+
 type ChatFetch = (url: string, init: {
   method: string;
   headers: Record<string, string>;
   signal: AbortSignal;
   body: string;
-}) => Promise<{ ok: boolean; json: () => Promise<unknown> }>;
+}) => Promise<ChatFetchResponse>;
 
 export type ChatLifecycleOptions = {
   fetchFn: ChatFetch;
@@ -39,6 +52,7 @@ export type ChatLifecycleOptions = {
   readThreads: () => ChatThreads;
   applyThreads: (updater: (current: ChatThreads) => ChatThreads) => void;
   setPending: (view: DashboardView, requestId: string | null) => void;
+  onProgress?: (view: DashboardView, requestId: string, progress: { stage: ChatProgressStage; content: string }) => void;
   onReply: (view: DashboardView, announcement: string) => void;
 };
 
@@ -55,8 +69,93 @@ function messageId(prefix: string) {
   return `${prefix}-${id}`;
 }
 
+class ChatStreamError extends Error {
+  constructor(message: string, public readonly partialReply: string) {
+    super(message);
+    this.name = "ChatStreamError";
+  }
+}
+
+function isProgressStage(value: unknown): value is ChatProgressStage {
+  return value === "preparing" || value === "analyzing" || value === "working" || value === "responding";
+}
+
+async function readChatResponse(
+  response: ChatFetchResponse,
+  copy: ChatLifecycleCopy,
+  onProgress: (stage: ChatProgressStage, content: string) => void,
+) {
+  const contentType = response.headers?.get("content-type") || "";
+  if (response.ok && contentType.includes("application/x-ndjson") && response.body) {
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let content = "";
+    let responseFingerprint: string | undefined;
+
+    const consumeLine = (line: string) => {
+      if (!line.trim()) return;
+      let event: Record<string, unknown>;
+      try {
+        event = JSON.parse(line) as Record<string, unknown>;
+      } catch {
+        return;
+      }
+
+      if (event.type === "status" && isProgressStage(event.stage)) {
+        onProgress(event.stage, content);
+        return;
+      }
+      if (event.type === "delta" && typeof event.delta === "string") {
+        content = `${content}${event.delta}`.slice(0, CHAT_LIMITS.assistantMessageCharacters);
+        onProgress("responding", content);
+        return;
+      }
+      if (event.type === "done") {
+        if (typeof event.reply === "string" && event.reply.trim()) {
+          content = event.reply.slice(0, CHAT_LIMITS.assistantMessageCharacters);
+        }
+        if (typeof event.contextFingerprint === "string") responseFingerprint = event.contextFingerprint;
+        return;
+      }
+      if (event.type === "error") {
+        throw new ChatStreamError(
+          typeof event.error === "string" ? event.error : copy.genericError,
+          content,
+        );
+      }
+    };
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split(/\r?\n/);
+        buffer = lines.pop() || "";
+        lines.forEach(consumeLine);
+      }
+      buffer += decoder.decode();
+      if (buffer) consumeLine(buffer);
+    } catch (error) {
+      if (error instanceof ChatStreamError || !content) throw error;
+      throw new ChatStreamError(copy.connectionError, content);
+    }
+    if (!content.trim()) throw new Error(copy.invalidResponse);
+    return { reply: content, contextFingerprint: responseFingerprint };
+  }
+
+  const json = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!response.ok) throw new Error(typeof json.error === "string" ? json.error : copy.invalidResponse);
+  if (typeof json.reply !== "string" || !json.reply.trim()) throw new Error(copy.invalidResponse);
+  return {
+    reply: json.reply.slice(0, CHAT_LIMITS.assistantMessageCharacters),
+    contextFingerprint: typeof json.contextFingerprint === "string" ? json.contextFingerprint : undefined,
+  };
+}
+
 export function createChatLifecycle(options: ChatLifecycleOptions) {
-  const { fetchFn, getContext, readThreads, applyThreads, setPending, onReply } = options;
+  const { fetchFn, getContext, readThreads, applyThreads, setPending, onProgress, onReply } = options;
   const requests = new Map<DashboardView, ActiveRequest>();
 
   function releaseRequest(view: DashboardView, requestId: string) {
@@ -104,7 +203,10 @@ export function createChatLifecycle(options: ChatLifecycleOptions) {
     try {
       const response = await fetchFn("/api/ai/chat", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "accept": "application/x-ndjson, application/json",
+          "content-type": "application/json",
+        },
         signal: request.controller.signal,
         body: JSON.stringify({
           requestId,
@@ -114,18 +216,20 @@ export function createChatLifecycle(options: ChatLifecycleOptions) {
           messages: input.history,
         }),
       });
-      const json = (await response.json().catch(() => ({}))) as Record<string, unknown>;
-      if (!response.ok) throw new Error(typeof json.error === "string" ? json.error : copy.genericError);
+      const result = await readChatResponse(response, copy, (stage, content) => {
+        if (requests.get(view)?.id !== requestId || request.abortIntent) return;
+        onProgress?.(view, requestId, { stage, content });
+      });
 
       if (requests.get(view)?.id !== requestId || request.abortIntent) return;
       if (chatContextFingerprint(getContext(view)) !== fingerprint) return;
-      const responseFingerprint = typeof json.contextFingerprint === "string" ? json.contextFingerprint : fingerprint;
+      const responseFingerprint = result.contextFingerprint || fingerprint;
       if (responseFingerprint !== fingerprint) return;
 
       applyThreads((current) => appendChatMessage(current, view, fingerprint, {
         id: messageId("assistant"),
         role: "assistant",
-        content: String(json.reply || copy.genericError).slice(0, CHAT_LIMITS.assistantMessageCharacters),
+        content: result.reply,
         status: "complete",
         basedOnFingerprint: fingerprint,
       }));
@@ -146,11 +250,15 @@ export function createChatLifecycle(options: ChatLifecycleOptions) {
         return;
       }
       if (!contextStillMatches) return;
+      const partialReply = error instanceof ChatStreamError ? error.partialReply.trim() : "";
+      const message = error instanceof TypeError
+        ? copy.connectionError
+        : error instanceof Error ? error.message : copy.genericError;
       applyThreads((current) => appendChatMessage(current, view, fingerprint, {
-        id: messageId("error"),
+        id: messageId(partialReply ? "notice" : "error"),
         role: "assistant",
-        content: error instanceof Error ? error.message : copy.genericError,
-        status: "error",
+        content: partialReply ? `${partialReply}\n\n${copy.interrupted}` : message,
+        status: partialReply ? "notice" : "error",
         retryContent: request.question,
       }));
     } finally {

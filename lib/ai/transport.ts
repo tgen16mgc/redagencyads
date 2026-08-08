@@ -176,6 +176,133 @@ export function hasNineRouterCredentials() {
   return Boolean(nineRouterApiKey());
 }
 
+function retryableProviderStatus(status: number) {
+  return status === 408 || status === 429 || status >= 500;
+}
+
+function answerPartText(message: unknown): string {
+  if (typeof message !== "object" || message === null) return "";
+  const record = message as Record<string, unknown>;
+  const content = record.content;
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) return content.map(contentPartText).join("");
+  return stringValue(record.text);
+}
+
+function streamedChoiceText(choice: unknown): string {
+  if (typeof choice !== "object" || choice === null) return "";
+  const record = choice as Record<string, unknown>;
+  return answerPartText(record.delta) || answerPartText(record.message) || stringValue(record.text);
+}
+
+async function readStreamedCompletion(response: Response, onDelta: (delta: string) => void) {
+  const contentType = response.headers.get("content-type") || "";
+  if (!contentType.includes("text/event-stream") || !response.body) {
+    const json = await readJson(response);
+    const text = choiceText(json?.choices?.[0]);
+    if (text) onDelta(text);
+    return text;
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let answer = "";
+
+  const consumeLine = (line: string) => {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("data:")) return;
+    const payload = trimmed.slice(5).trim();
+    if (!payload || payload === "[DONE]") return;
+    try {
+      const json = JSON.parse(payload);
+      const delta = streamedChoiceText(json?.choices?.[0]);
+      if (!delta) return;
+      answer += delta;
+      onDelta(delta);
+    } catch {
+      // Ignore malformed provider keep-alives while preserving valid streamed tokens.
+    }
+  };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split(/\r?\n/);
+    buffer = lines.pop() || "";
+    lines.forEach(consumeLine);
+  }
+  buffer += decoder.decode();
+  if (buffer) consumeLine(buffer);
+  return answer;
+}
+
+export async function nineRouterChatCompletionStream(
+  messages: NineRouterMessage[],
+  options: { maxTokens?: number; signal?: AbortSignal; onDelta: (delta: string) => void },
+) {
+  const controller = new AbortController();
+  const timeoutMs = positiveMs(NINEROUTER_TIMEOUT_MS, 45000);
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+  const abortFromCaller = () => controller.abort();
+  options.signal?.addEventListener("abort", abortFromCaller, { once: true });
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  const apiKey = nineRouterApiKey();
+  if (apiKey) headers.authorization = `Bearer ${apiKey}`;
+  const requestedMaxTokens = Math.max(
+    300,
+    Math.min(positiveMs(options.maxTokens ?? NINEROUTER_MAX_TOKENS, NINEROUTER_MAX_TOKENS), 2400),
+  );
+
+  try {
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      const response = await fetch(`${nineRouterBaseUrl()}/v1/chat/completions`, {
+        method: "POST",
+        signal: controller.signal,
+        headers,
+        body: JSON.stringify({
+          model: process.env.NINEROUTER_MODEL || NINEROUTER_DEFAULT_MODEL,
+          messages,
+          temperature: 0.2,
+          max_tokens: requestedMaxTokens,
+          stream: true,
+        }),
+      });
+
+      if (!response.ok) {
+        const json = await readJson(response);
+        const message = json?.error?.message || "AI provider request failed.";
+        if (attempt === 1 && retryableProviderStatus(response.status)) continue;
+        throw new NineRouterProviderError(message, response.status);
+      }
+
+      const text = await readStreamedCompletion(response, options.onDelta);
+      if (text) return text;
+      if (attempt === 1) continue;
+      throw new NineRouterProviderError("AI provider returned an empty response after 2 attempts.", 502);
+    }
+
+    throw new NineRouterProviderError("AI provider request failed after 2 attempts.", 502);
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      if (!timedOut && options.signal?.aborted) throw new NineRouterAbortError();
+      throw new NineRouterTimeoutError(`AI provider timed out after ${Math.round(timeoutMs / 1000)}s.`);
+    }
+    if (error instanceof NineRouterProviderError || error instanceof NineRouterTimeoutError || error instanceof NineRouterAbortError) {
+      throw error;
+    }
+    throw new NineRouterProviderError(errorMessage(error), 502);
+  } finally {
+    clearTimeout(timeout);
+    options.signal?.removeEventListener("abort", abortFromCaller);
+  }
+}
+
 export async function nineRouterChatCompletion(
   messages: NineRouterMessage[],
   options: { jsonMode?: boolean; maxTokens?: number; signal?: AbortSignal } = {},
@@ -216,7 +343,7 @@ export async function nineRouterChatCompletion(
       const json = await readJson(response);
       if (!response.ok) {
         const message = json?.error?.message || "AI provider request failed.";
-        if (attempt === 1 && [408, 429, 502, 503, 529].includes(response.status)) continue;
+        if (attempt === 1 && retryableProviderStatus(response.status)) continue;
         throw new NineRouterProviderError(message, response.status);
       }
 
