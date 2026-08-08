@@ -23,7 +23,14 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="en" className={cn("dark font-sans", geist.variable)}>
       <body>
         <TooltipProvider>{children}</TooltipProvider>
-        <Toaster position="top-right" mobileOffset={{ top: 72, right: 16, left: 16 }} closeButton richColors visibleToasts={1} />
+        <Toaster
+          position="bottom-center"
+          offset={{ bottom: 72 }}
+          mobileOffset={{ bottom: 86, right: 16, left: 16 }}
+          closeButton
+          richColors
+          visibleToasts={1}
+        />
       </body>
     </html>
   );
