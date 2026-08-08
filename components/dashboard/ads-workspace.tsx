@@ -1420,7 +1420,7 @@ function ReportScopeCampaignPicker({ open, campaigns, currency, language, loadin
       {expanded ? (
         <div className="mt-3 min-w-0 overflow-hidden rounded-2xl border border-border bg-secondary/35 p-3">
           <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-2">
-            <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={isVietnamese ? "Tìm campaign..." : "Search campaigns..."} />
+            <Input disabled={loading} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={isVietnamese ? "Tìm campaign..." : "Search campaigns..."} />
             <Button type="button" variant="secondary" size="sm" onClick={() => onChange([])} disabled={loading}>{isVietnamese ? "Tất cả active" : "All active"}</Button>
           </div>
           <div className="mt-2 flex max-h-52 flex-col gap-1 overflow-y-auto">
