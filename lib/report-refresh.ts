@@ -65,6 +65,13 @@ export function toggleReportCampaignSelection(input: {
   return current.length === 1 ? current : current.filter((id) => id !== input.campaignId);
 }
 
+export function reportCampaignSelectionsEqual(left: string[], right: string[]) {
+  if (left.length !== right.length) return false;
+  const normalizedLeft = [...left].sort();
+  const normalizedRight = [...right].sort();
+  return normalizedLeft.every((id, index) => id === normalizedRight[index]);
+}
+
 export function reportCampaignSelectionForAccount(
   accountId: string,
   report: DashboardReport | null,

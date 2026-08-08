@@ -4,6 +4,7 @@ import {
   buildMetaReportUrl,
   buildReportRequestKey,
   currentReportScope,
+  reportCampaignSelectionsEqual,
   reportCampaignSelectionForAccount,
   toggleReportCampaignSelection,
 } from "../report-refresh";
@@ -93,5 +94,11 @@ describe("current report refresh scope", () => {
       activeCampaignIds: ["campaign-a", "campaign-b"],
       campaignId: "campaign-a",
     })).toEqual(["campaign-a"]);
+  });
+
+  it("compares campaign scopes without depending on selection order", () => {
+    expect(reportCampaignSelectionsEqual(["b", "a"], ["a", "b"])).toBe(true);
+    expect(reportCampaignSelectionsEqual([], [])).toBe(true);
+    expect(reportCampaignSelectionsEqual(["a"], [])).toBe(false);
   });
 });
