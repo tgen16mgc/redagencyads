@@ -1,13 +1,14 @@
 "use client";
 
 import * as React from "react";
-import { Button, Card, Chip, Disclosure } from "@heroui/react";
+import { Button, Card, Chip, Disclosure, Tooltip } from "@heroui/react";
 import {
   CalendarRangeIcon,
   CircleDollarSignIcon,
   MapPinIcon,
   PanelsTopLeftIcon,
   Settings2Icon,
+  SparklesIcon,
   TargetIcon,
   UsersRoundIcon,
   type LucideIcon,
@@ -149,6 +150,7 @@ function AdSetDisclosure({
               <span className="flex flex-wrap items-center gap-2">
                 <span className="truncate text-sm font-semibold text-foreground">{adset.name}</span>
                 <StatusChip status={adset.status} />
+                {adset.targeting.advantagePlus ? <AdvantagePlusStatus language={language} /> : null}
               </span>
               <span className="mt-1 block truncate text-[11px] text-muted">ID {adset.id}</span>
               <span className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted">
@@ -219,6 +221,29 @@ function StatusChip({ status }: { status: string }) {
     <Chip color={color} size="sm" variant="soft">
       <Chip.Label>{statusLabel(status)}</Chip.Label>
     </Chip>
+  );
+}
+
+function AdvantagePlusStatus({ language }: { language: InterfaceLanguage }) {
+  const isVietnamese = language === "vi";
+  const title = isVietnamese ? "Advantage+ audience đang bật" : "Advantage+ audience is on";
+  const description = isVietnamese
+    ? "Meta có thể mở rộng ngoài các gợi ý về tuổi, giới tính và sở thích khi dự đoán kết quả tốt hơn. Vị trí, tuổi tối thiểu, ngôn ngữ và tệp loại trừ vẫn là giới hạn kiểm soát."
+    : "Meta may expand beyond age, gender, and interest suggestions when it predicts better results. Location, minimum age, language, and audience exclusions remain controls.";
+  return (
+    <Tooltip delay={150}>
+      <Tooltip.Trigger aria-description={description} aria-label={title} role="status" tabIndex={-1}>
+        <Chip className="cursor-help" color="accent" size="sm" variant="soft">
+          <SparklesIcon className="size-3" aria-hidden="true" />
+          <Chip.Label>Advantage+ on</Chip.Label>
+        </Chip>
+      </Tooltip.Trigger>
+      <Tooltip.Content className="max-w-72 rounded-xl border border-white/10 bg-overlay px-3 py-2 text-xs leading-5 text-white shadow-lg" placement="top" showArrow>
+        <Tooltip.Arrow />
+        <p className="font-semibold">{title}</p>
+        <p className="mt-1 text-white/75">{description}</p>
+      </Tooltip.Content>
+    </Tooltip>
   );
 }
 

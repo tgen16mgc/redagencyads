@@ -367,9 +367,9 @@ describe("cross-channel canonical layer", () => {
     ).toEqual(
       expect.arrayContaining([
         "age_min:25",
-        "geo_locations.countries:vn",
+        "geo_locations.countries:VN",
         "flexible_spec.interests.id:123",
-        "flexible_spec.interests.name:skincare",
+        "flexible_spec.interests.name:Skincare",
       ]),
     );
   });
