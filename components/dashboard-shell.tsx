@@ -31,7 +31,7 @@ import {
   WaypointsIcon,
   XIcon,
 } from "lucide-react";
-import { AppSidebar, type AppSidebarItem, type WorkflowSidebarItem } from "@/components/dashboard/app-sidebar";
+import { AppMobileNav, AppSidebar, type AppSidebarItem, type WorkflowSidebarItem } from "@/components/dashboard/app-sidebar";
 import { WorkspaceOverview } from "@/components/dashboard/workspace-overview";
 import {
   WorkspaceNotifications,
@@ -66,6 +66,7 @@ import {
 import type { CompetitorEvidenceStatus, CompetitorFetchResult, CompetitorPlatform, CompetitorSpyResult, KpiCard, MetaAccount, MetaCampaign, TikTokLibraryReport, TikTokProfile, TikTokProfileResult, TikTokVideo } from "@/lib/types";
 import { buildWorkflowSteps, type DashboardWorkflowStep } from "@/lib/dashboard-workflow";
 import { canOpenDashboardView, initialDashboardViewFromSearch, shouldLoadAdsWorkspaceData, type DashboardView } from "@/lib/dashboard-access";
+import { advanceOverviewPerformanceIntent, type OverviewPerformanceIntent, type OverviewPerformanceTarget } from "@/lib/dashboard-overview";
 import { buildSampleReport, SAMPLE_CAMPAIGNS } from "@/lib/sample-report";
 import { buildUnknownCapabilitySnapshot, type CapabilityStatus } from "@/lib/capabilities";
 import { isAbortError, jsonFetch } from "@/lib/api-client";
@@ -311,6 +312,7 @@ export function DashboardShell() {
   const [activeView, setActiveView] = React.useState<ActiveView>(() =>
     typeof window === "undefined" ? "overview" : initialDashboardViewFromSearch(window.location.search),
   );
+  const [performanceIntent, setPerformanceIntent] = React.useState<OverviewPerformanceIntent>({ target: "overview", key: 0 });
   const [adsWorkspace, setAdsWorkspace] = React.useState<AdsWorkspaceState>(initialAdsWorkspaceState);
   const [savedReports, setSavedReports] = React.useState<SavedReportSnapshot[]>([]);
   const [reportHistoryLoaded, setReportHistoryLoaded] = React.useState(false);
@@ -687,7 +689,11 @@ export function DashboardShell() {
 
   React.useEffect(() => {
     const handlePopState = () => {
-      setActiveView(initialDashboardViewFromSearch(window.location.search));
+      const nextView = initialDashboardViewFromSearch(window.location.search);
+      if (nextView === "ads") {
+        setPerformanceIntent((current) => advanceOverviewPerformanceIntent(current));
+      }
+      setActiveView(nextView);
     };
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
@@ -787,7 +793,12 @@ export function DashboardShell() {
       await loadCapabilities();
       if (settingsOpen || shouldLoadAdsWorkspaceData({ authenticated: true, activeView: pendingMetaView })) await loadAccounts();
       setMetaConnectOpen(false);
-      if (!settingsOpen) setActiveView(pendingMetaView);
+      if (!settingsOpen) {
+        if (pendingMetaView === "ads") {
+          setPerformanceIntent((current) => advanceOverviewPerformanceIntent(current));
+        }
+        setActiveView(pendingMetaView);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not validate token.");
     } finally {
@@ -1029,14 +1040,18 @@ export function DashboardShell() {
     });
     setSampleReportActive(true);
     setMetaConnectOpen(false);
+    setPerformanceIntent((current) => advanceOverviewPerformanceIntent(current));
     setActiveView("ads");
   }
 
-  function requestView(view: ActiveView) {
+  function requestView(view: ActiveView, performanceTarget?: OverviewPerformanceTarget) {
     if (!canOpenDashboardView({ authenticated: Boolean(authenticated), activeView: view }) && !(view === "ads" && sampleReportActive)) {
       setPendingMetaView(view === "publisher" ? "publisher" : "ads");
       setMetaConnectOpen(true);
       return;
+    }
+    if (view === "ads") {
+      setPerformanceIntent((current) => advanceOverviewPerformanceIntent(current, performanceTarget));
     }
     setActiveView(view);
   }
@@ -1324,12 +1339,16 @@ export function DashboardShell() {
                 onRestoreReport={(snapshot) => restoreSavedReport(snapshot)}
                 onClearReportHistory={clearSavedReportHistory}
                 onOpen={requestView}
+                onOpenPerformance={(target) => {
+                  requestView("ads", target);
+                }}
                 onEditScope={() => {
                   if (!authenticated) {
                     setPendingMetaView("ads");
                     setMetaConnectOpen(true);
                     return;
                   }
+                  setPerformanceIntent((current) => advanceOverviewPerformanceIntent(current));
                   setAdsWorkspace((current) => ({ ...current, scopeExpanded: true }));
                 }}
               />
@@ -1357,7 +1376,10 @@ export function DashboardShell() {
                   onExportPdf={exportPdf}
                   onOpenAssistant={() => setChatOpen((current) => !current)}
                   onCancelInitialScope={() => setAdsWorkspace((current) => ({ ...current, scopeExpanded: false }))}
-                  onReportReady={() => setActiveView("ads")}
+                  onReportReady={() => {
+                    setPerformanceIntent((current) => advanceOverviewPerformanceIntent(current));
+                    setActiveView("ads");
+                  }}
                 />
               ) : null}
             </>
@@ -1402,6 +1424,8 @@ export function DashboardShell() {
               onExportPdf={exportPdf}
               onOpenAssistant={() => setChatOpen((current) => !current)}
               onCancelInitialScope={() => setActiveView("overview")}
+              initialPerformanceTarget={performanceIntent.target}
+              initialPerformanceTargetKey={performanceIntent.key}
             />
             </>
           ) : activeView === "tiktok" ? (
@@ -1454,6 +1478,17 @@ export function DashboardShell() {
           </main>
         </div>
       </div>
+      <AppMobileNav
+        activeView={activeView}
+        aiProviderLabel={providerLabel(provider, language, capabilities)}
+        appItems={appNavItems}
+        functionsLabel={copy.nav.functions}
+        aiStatusTitle={copy.nav.aiStatusTitle}
+        aiStatusState={aiStatusState}
+        assistantOpen={chatOpen}
+        onActiveViewChange={requestView}
+        onOpenAssistant={() => setChatOpen((current) => !current)}
+      />
       <ContextChat
         ref={contextChatRef}
         activeView={activeView}

@@ -33,6 +33,7 @@ import { CONTEXT_CHAT_PANEL_ID } from "@/components/dashboard/context-chat-copy"
 import { CustomChartsSection } from "@/components/dashboard/custom-charts-section";
 import { DiagnosticCard } from "@/components/dashboard/diagnostic-card";
 import { PerformanceV2 } from "@/components/dashboard/performance-v2";
+import type { OverviewPerformanceTarget } from "@/lib/dashboard-overview";
 import { sanitizeAdPreviewHtml } from "@/lib/ad-preview-html";
 import { isAbortError, jsonFetch } from "@/lib/api-client";
 import { detectBaselineAnomalies, anomalyBadgeText } from "@/lib/baseline-anomaly";
@@ -472,6 +473,8 @@ export function AdsWorkspace({
   onOpenAssistant,
   onCancelInitialScope,
   onReportReady,
+  initialPerformanceTarget = "overview",
+  initialPerformanceTargetKey = 0,
   scopeOnly = false,
 }: {
   language: InterfaceLanguage;
@@ -496,6 +499,8 @@ export function AdsWorkspace({
   onOpenAssistant: () => void;
   onCancelInitialScope: () => void;
   onReportReady?: () => void;
+  initialPerformanceTarget?: OverviewPerformanceTarget;
+  initialPerformanceTargetKey?: number;
   scopeOnly?: boolean;
 }) {
   const {
@@ -981,6 +986,8 @@ export function AdsWorkspace({
                 }}
               />
             }
+            initialTab={initialPerformanceTarget}
+            initialTabKey={initialPerformanceTargetKey}
           />
         </div>
       ) : null}

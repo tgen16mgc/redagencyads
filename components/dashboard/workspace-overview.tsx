@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import type { CapabilityState, CapabilityStatus } from "@/lib/capabilities";
 import type { DashboardView } from "@/lib/dashboard-access";
+import { overviewAttentionTarget, overviewReportMetrics, type OverviewPerformanceTarget } from "@/lib/dashboard-overview";
 import type { HealthScoreSummary } from "@/lib/health-score";
 import type { DashboardReport } from "@/lib/types";
 import type { SavedReportSnapshot } from "@/lib/report-history";
@@ -46,6 +47,7 @@ type WorkspaceOverviewProps = {
   savedReports: SavedReportSnapshot[];
   restoredReportId: string | null;
   onOpen: (view: DashboardView) => void;
+  onOpenPerformance: (target: OverviewPerformanceTarget) => void;
   onEditScope: () => void;
   onRestoreReport: (report: SavedReportSnapshot) => void;
   onClearReportHistory: () => Promise<boolean>;
@@ -84,6 +86,7 @@ export function WorkspaceOverview({
   savedReports,
   restoredReportId,
   onOpen,
+  onOpenPerformance,
   onEditScope,
   onRestoreReport,
   onClearReportHistory,
@@ -126,10 +129,18 @@ export function WorkspaceOverview({
         .map((item) => ({
           id: item.key,
           severity: item.state === "unknown" || item.state === "paused" ? "danger" : "warning",
+          target: "overview" as const,
           titleText: capabilityName(item.key),
           detailText: capabilityStateDetail(item.state, language),
         }));
-  const primaryAttention = attentionItems[0];
+  const mappedAttentionItems = healthSummary
+    ? attentionItems.map((item, index) => ({
+        ...item,
+        target: overviewAttentionTarget(healthSummary.items[index]),
+      }))
+    : attentionItems;
+  const primaryAttention = mappedAttentionItems.find((item) => item.severity !== "healthy");
+  const reportMetrics = report ? overviewReportMetrics(report, language) : [];
   const readinessDetail = blockingCount > 0
     ? (isVietnamese
         ? `Đang bị chặn bởi ${blockingCount} mục: ${primaryAttention?.titleText || "cần hoàn tất thiết lập dữ liệu"}.`
@@ -142,7 +153,7 @@ export function WorkspaceOverview({
 
   return (
     <div className="flex flex-col gap-5">
-      <section className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+      <section className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-[clamp(1.75rem,3vw,2.25rem)] font-semibold leading-tight tracking-[-0.045em]">
             {isVietnamese ? `Chào buổi sáng, ${userName}.` : `Good morning, ${userName}.`}
@@ -153,41 +164,57 @@ export function WorkspaceOverview({
               : (isVietnamese ? "Chọn phạm vi để tạo báo cáo thật đầu tiên." : "Choose a scope to create your first real report.")}
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button type="button" variant="outline" onClick={onEditScope}>
-            <SlidersHorizontalIcon data-icon="inline-start" />
-            {isVietnamese ? "Sửa phạm vi" : "Edit scope"}
-          </Button>
-          <Button type="button" onClick={() => onOpen("ads")}>
-            <BarChart3Icon data-icon="inline-start" />
-            {isVietnamese ? "Chạy phân tích" : "Run analysis"}
-          </Button>
+        <div className="flex flex-wrap gap-2">
+          {!report ? (
+            <Button type="button" variant="outline" onClick={onEditScope}>
+              <SlidersHorizontalIcon data-icon="inline-start" />
+              {isVietnamese ? "Sửa phạm vi" : "Edit scope"}
+            </Button>
+          ) : null}
+          {!report ? (
+            <Button type="button" className="min-h-11" onClick={() => onOpenPerformance("overview")}>
+              <BarChart3Icon data-icon="inline-start" />
+              {isVietnamese ? "Chạy phân tích" : "Run analysis"}
+            </Button>
+          ) : null}
         </div>
       </section>
 
       <section className="v2-panel grid overflow-hidden lg:grid-cols-[minmax(0,1fr)_392px]">
-        <div className="p-5 sm:p-6">
-          <Badge variant={report ? "success" : "secondary"}>
-            {report ? (isVietnamese ? "Báo cáo sẵn sàng" : "Report ready") : authenticated ? (isVietnamese ? "Đang chờ phạm vi" : "Scope required") : (isVietnamese ? "Chưa kết nối" : "Not connected")}
-          </Badge>
-          <h2 className="mt-4 max-w-3xl text-2xl font-semibold leading-[1.18] tracking-[-0.035em] sm:text-[30px]">
-            {report
-              ? (isVietnamese ? "Một phạm vi rõ ràng. Đủ tín hiệu để ra quyết định." : "One scope. Clear guardrails. Ready to diagnose.")
-              : (isVietnamese ? "Khóa phạm vi trước. Sau đó chẩn đoán điều cần thay đổi." : "Lock the scope first. Then diagnose what needs to change.")}
+        <div className="border-b border-border p-5 sm:p-6 lg:border-r lg:border-b-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant={report ? "success" : "secondary"}>
+              {report ? (isVietnamese ? "Báo cáo sẵn sàng" : "Report ready") : authenticated ? (isVietnamese ? "Đang chờ phạm vi" : "Scope required") : (isVietnamese ? "Chưa kết nối" : "Not connected")}
+            </Badge>
+            <span className="text-xs text-muted-foreground">{period}</span>
+          </div>
+          <h2 className="mt-4 max-w-3xl text-2xl font-semibold leading-[1.14] tracking-[-0.035em] sm:text-[30px]">
+            {primaryAttention
+              ? primaryAttention.titleText
+              : report
+                ? (isVietnamese ? "Không có vấn đề chẩn đoán nghiêm trọng." : "No critical diagnostic issues detected.")
+                : (isVietnamese ? "Khóa phạm vi để bắt đầu chẩn đoán." : "Lock the scope to start the diagnosis.")}
           </h2>
-          <p className="mt-3 text-sm text-muted-foreground">
-            {isVietnamese ? "Các yếu tố cốt lõi được giữ cùng một chỗ để mọi kết luận luôn có thể truy ngược về dữ liệu." : "The essentials stay locked in one place so every conclusion remains traceable to its evidence."}
+          <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">
+            {primaryAttention?.detailText || (isVietnamese ? "Tạo báo cáo đầu tiên để xác định hành động ưu tiên." : "Create the first report to identify the highest-priority action.")}
           </p>
-
-          <div className="mt-5 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-            <ScopeMetric icon={DatabaseIcon} label={isVietnamese ? "Tài khoản" : "Account"} value={accountName} />
-            <ScopeMetric icon={CalendarDaysIcon} label={isVietnamese ? "Thời gian" : "Period"} value={period} />
-            <ScopeMetric icon={TargetIcon} label="Campaign" value={campaignScope} />
-            <ScopeMetric icon={GaugeIcon} label={isVietnamese ? "Quy tắc" : "Rules"} value={ruleLabel} />
+          <div className="mt-5 flex flex-wrap gap-2">
+            <Button type="button" className="min-h-11" onClick={() => onOpenPerformance(primaryAttention?.target || "overview")}>
+              <ArrowRightIcon data-icon="inline-end" />
+              {primaryAttention?.target === "creatives"
+                ? (isVietnamese ? "Rà soát creative" : "Review creatives")
+                : primaryAttention?.target === "evidence"
+                  ? (isVietnamese ? "Mở evidence" : "Open evidence")
+                  : (isVietnamese ? "Mở chẩn đoán" : "Open diagnosis")}
+            </Button>
+            <Button type="button" variant="outline" className="min-h-11" onClick={onEditScope}>
+              <SlidersHorizontalIcon data-icon="inline-start" />
+              {isVietnamese ? "Đổi phạm vi" : "Change scope"}
+            </Button>
           </div>
         </div>
 
-        <div className="border-t border-border bg-secondary/35 p-5 sm:p-6 lg:border-t-0 lg:border-l">
+        <div className="bg-secondary/35 p-5 sm:p-6">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 text-sm font-medium">
               <SparklesIcon className="size-4 text-primary" />
@@ -201,18 +228,22 @@ export function WorkspaceOverview({
             <span>{isVietnamese ? "Kiểm tra đã đạt" : "Checks passed"}</span>
             <span className="font-medium tabular-nums">{passedChecks}/{Math.max(totalChecks, 1)}</span>
           </div>
-          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted" role="progressbar" aria-label={isVietnamese ? "Kiểm tra chẩn đoán đã đạt" : "Diagnostic checks passed"} aria-valuemin={0} aria-valuemax={Math.max(totalChecks, 1)} aria-valuenow={passedChecks}>
             <div className="h-full rounded-full bg-primary transition-[width] duration-500" style={{ width: `${(passedChecks / Math.max(totalChecks, 1)) * 100}%` }} />
           </div>
-          <button type="button" className="mt-4 inline-flex items-center gap-1.5 text-xs font-medium text-primary" onClick={() => onOpen("ads")}>
-            {blockingCount > 0
-              ? (isVietnamese ? `Xử lý ${blockingCount} mục đang chặn` : `Resolve ${blockingCount} blocking item${blockingCount === 1 ? "" : "s"}`)
-              : watchCount > 0
-                ? (isVietnamese ? `Rà soát ${watchCount} mục theo dõi` : `Review ${watchCount} watch item${watchCount === 1 ? "" : "s"}`)
-                : (isVietnamese ? "Mở evidence báo cáo" : "Open report evidence")}
-            <ArrowRightIcon className="size-3.5" />
-          </button>
+          <p className="mt-4 text-xs leading-5 text-muted-foreground">
+            {isVietnamese
+              ? `Điểm này gồm ${Math.max(totalChecks, 1)} kiểm tra chẩn đoán trong báo cáo hiện tại: ${blockingCount} chặn, ${watchCount} theo dõi, ${passedChecks} đạt.`
+              : `This score covers ${Math.max(totalChecks, 1)} diagnostic checks in the current report: ${blockingCount} blocking, ${watchCount} watch, ${passedChecks} passed.`}
+          </p>
         </div>
+      </section>
+
+      <section aria-label={isVietnamese ? "Phạm vi báo cáo hiện tại" : "Current report scope"} className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        <ScopeMetric icon={DatabaseIcon} label={isVietnamese ? "Tài khoản" : "Account"} value={accountName} />
+        <ScopeMetric icon={CalendarDaysIcon} label={isVietnamese ? "Thời gian" : "Period"} value={period} />
+        <ScopeMetric icon={TargetIcon} label="Campaign" value={campaignScope} />
+        <ScopeMetric icon={GaugeIcon} label={isVietnamese ? "Quy tắc" : "Rules"} value={ruleLabel} />
       </section>
 
       <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.55fr)]">
@@ -226,14 +257,19 @@ export function WorkspaceOverview({
           </div>
 
           <div className="mt-4 flex flex-col gap-2">
-            {attentionItems.map((item, index) => {
+            {mappedAttentionItems.map((item, index) => {
               const danger = item.severity === "danger";
               return (
                 <button
                   key={item.id}
                   type="button"
-                  className={`grid w-full grid-cols-[24px_minmax(0,1fr)_20px] items-center gap-3 rounded-xl border px-3 py-4 text-left transition-colors hover:border-primary/45 ${danger ? "border-destructive/20 bg-destructive/10" : "border-transparent bg-secondary/55"}`}
-                  onClick={() => onOpen("ads")}
+                  className={`grid min-h-14 w-full grid-cols-[24px_minmax(0,1fr)_20px] items-center gap-3 rounded-xl border px-3 py-3.5 text-left transition-colors hover:border-primary/45 ${danger ? "border-destructive/20 bg-destructive/10" : "border-transparent bg-secondary/55"}`}
+                  aria-label={`${item.titleText}: ${item.target === "creatives"
+                    ? (isVietnamese ? "mở mục creative" : "open creatives")
+                    : item.target === "evidence"
+                      ? (isVietnamese ? "mở evidence" : "open evidence")
+                      : (isVietnamese ? "mở chẩn đoán" : "open diagnosis")}`}
+                  onClick={() => onOpenPerformance(item.target)}
                 >
                   {danger ? <ShieldCheckIcon className="size-4 text-destructive" /> : index === 0 ? <AlertTriangleIcon className="size-4 text-warning" /> : <BarChart3Icon className="size-4 text-primary" />}
                   <span className="min-w-0">
@@ -255,12 +291,12 @@ export function WorkspaceOverview({
             </div>
             <div className="flex shrink-0 items-center gap-1.5">
               {savedReports.length ? (
-                <Button type="button" variant="ghost" size="xs" className="text-muted-foreground hover:text-destructive" onClick={() => setClearHistoryOpen(true)}>
+                <Button type="button" variant="ghost" size="sm" className="min-h-11 text-muted-foreground hover:text-destructive" onClick={() => setClearHistoryOpen(true)}>
                   <Trash2Icon data-icon="inline-start" />
                   {isVietnamese ? "Xóa lịch sử" : "Clear history"}
                 </Button>
               ) : null}
-              <Badge variant="outline">{savedReports.length || (report ? 1 : 0)} {isVietnamese ? "báo cáo" : "reports"}</Badge>
+              <Badge variant="outline">{savedReports.length || (report ? 1 : 0)} {isVietnamese ? "báo cáo" : (savedReports.length || (report ? 1 : 0)) === 1 ? "report" : "reports"}</Badge>
             </div>
           </div>
 
@@ -277,13 +313,13 @@ export function WorkspaceOverview({
                 <Badge variant="success">{isVietnamese ? "Hoàn tất" : "Complete"}</Badge>
               </div>
               <p className="mt-4 text-xs leading-5 text-muted-foreground">{healthSummary?.summary[language] || report.packReason}</p>
-              <div className="mt-4 grid grid-cols-3 gap-3">
-                <ReportMetric label={isVietnamese ? "Chi tiêu" : "Spend"} value={currency(report.totals.spend, report.account.currency || "VND")} />
-                <ReportMetric label={report.selectedPack === "sales_roas" ? (isVietnamese ? "Mua hàng" : "Purchases") : (isVietnamese ? "Kết quả" : "Results")} value={compactNumber(report.selectedPack === "sales_roas" ? report.totals.purchases : report.totals.leads || report.totals.messages || report.totals.linkClicks)} />
-                <ReportMetric label="ROAS" value={report.totals.roas.toFixed(1)} />
+              <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {reportMetrics.map((metric) => (
+                  <ReportMetric key={metric.key} label={metric.label} value={formatReportMetric(Number(report.totals[metric.key] || 0), metric.format, report.account.currency || "VND")} />
+                ))}
               </div>
-              <Button type="button" variant="outline" size="sm" className="mt-4 w-full" onClick={() => onOpen("ads")}>
-                {isVietnamese ? "Mở báo cáo" : "Open report"}
+              <Button type="button" variant="outline" size="sm" className="mt-4 min-h-11 w-full" onClick={() => onOpenPerformance("overview")}>
+                {isVietnamese ? "Mở chẩn đoán đầy đủ" : "Open full diagnosis"}
               </Button>
               {restoredReportId ? <p className="mt-3 text-center text-[11px] text-success">{isVietnamese ? "Đã khôi phục từ lịch sử workspace" : "Restored from workspace history"}</p> : null}
             </div>
@@ -294,7 +330,7 @@ export function WorkspaceOverview({
               </span>
               <h3 className="mt-4 text-sm font-medium">{isVietnamese ? "Chưa có chẩn đoán" : "No diagnosis yet"}</h3>
               <p className="mt-1 max-w-xs text-xs leading-5 text-muted-foreground">{isVietnamese ? "Mở Performance để chọn phạm vi và kéo báo cáo đầu tiên." : "Open Performance to choose a scope and pull the first report."}</p>
-              <Button type="button" size="sm" className="mt-4" onClick={() => onOpen("ads")}>
+              <Button type="button" size="sm" className="mt-4 min-h-11" onClick={() => onOpen("ads")}>
                 {isVietnamese ? "Bắt đầu" : "Start analysis"}
               </Button>
             </div>
@@ -382,6 +418,13 @@ function ReportMetric({ label, value }: { label: string; value: string }) {
       <div className="mt-0.5 text-xs font-semibold tabular-nums">{value}</div>
     </div>
   );
+}
+
+function formatReportMetric(value: number, format: "currency" | "number" | "percent" | "ratio", currencyCode: string) {
+  if (format === "currency") return currency(value, currencyCode);
+  if (format === "percent") return `${value.toFixed(1)}%`;
+  if (format === "ratio") return value.toFixed(1);
+  return compactNumber(value);
 }
 
 function capabilityName(key: CapabilityStatus["key"]) {

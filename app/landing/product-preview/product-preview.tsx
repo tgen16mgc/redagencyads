@@ -174,6 +174,7 @@ export function LandingProductPreview({ surface }: { surface: "overview" | "comp
           savedReports={[]}
           restoredReportId={null}
           onOpen={noop}
+          onOpenPerformance={noop}
           onEditScope={noop}
           onRestoreReport={noop}
           onClearReportHistory={async () => false}

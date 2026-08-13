@@ -86,6 +86,8 @@ type PerformanceV2Props = {
   driversExtra?: React.ReactNode;
   creativesExtra?: React.ReactNode;
   evidenceExtra?: React.ReactNode;
+  initialTab?: "overview" | "creatives" | "evidence";
+  initialTabKey?: number;
   onEditScope: () => void;
   onRefresh: () => void;
   onExport: () => Promise<ClientReportPdfFile>;
@@ -123,6 +125,8 @@ export function PerformanceV2({
   driversExtra,
   creativesExtra,
   evidenceExtra,
+  initialTab = "overview",
+  initialTabKey = 0,
   onEditScope,
   onRefresh,
   onExport,
@@ -130,7 +134,7 @@ export function PerformanceV2({
   onApplyScope,
 }: PerformanceV2Props) {
   const isVietnamese = language === "vi";
-  const [activeTab, setActiveTab] = React.useState<(typeof tabValues)[number]>("overview");
+  const [activeTab, setActiveTab] = React.useState<(typeof tabValues)[number]>(initialTab);
   const [campaignsOpen, setCampaignsOpen] = React.useState(false);
   const [periodOpen, setPeriodOpen] = React.useState(false);
   const [kpiOpen, setKpiOpen] = React.useState(false);
@@ -171,6 +175,10 @@ export function PerformanceV2({
       window.removeEventListener("v2:refresh-report", refresh);
     };
   }, [onRefresh]);
+
+  React.useEffect(() => {
+    setActiveTab(initialTab);
+  }, [initialTab, initialTabKey]);
 
   React.useEffect(() => {
     const availableIds = new Set(report.adRows.map((row) => row.id));
