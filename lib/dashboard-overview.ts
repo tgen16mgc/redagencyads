@@ -1,7 +1,7 @@
 import type { TriageItem } from "@/lib/health-score";
 import type { DashboardReport, InterfaceLanguage, NormalizedRow } from "@/lib/types";
 
-export type OverviewPerformanceTarget = "overview" | "creatives" | "evidence";
+export type OverviewPerformanceTarget = "overview" | "creatives" | "evidence" | "actions";
 
 export type OverviewPerformanceIntent = {
   target: OverviewPerformanceTarget;
@@ -24,6 +24,10 @@ export function advanceOverviewPerformanceIntent(
 export function overviewAttentionTarget(item: Pick<TriageItem, "id" | "title">): OverviewPerformanceTarget {
   const searchable = `${item.id} ${item.title.en}`.toLowerCase();
   return searchable.includes("creative") || searchable.includes("m25") ? "creatives" : "evidence";
+}
+
+export function sampleModeForReport(report: Pick<DashboardReport, "source">): boolean {
+  return report.source === "sample";
 }
 
 export function overviewReportMetrics(report: Pick<DashboardReport, "selectedPack">, language: InterfaceLanguage): OverviewReportMetric[] {

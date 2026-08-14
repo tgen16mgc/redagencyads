@@ -7,6 +7,7 @@ import {
   workspaceSessionStatus,
 } from "@/lib/workspace-session";
 import { getSupabaseConfig } from "@/lib/supabase/config";
+import { clearTokenCookie } from "@/lib/session";
 
 const bodySchema = z.object({
   email: z.string().email(),
@@ -62,6 +63,7 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE() {
+  await clearTokenCookie();
   if (!getSupabaseConfig().configured) return NextResponse.json(await workspaceSessionStatus(), { headers: noStoreHeaders });
   const supabase = await createSupabaseServerClient();
   await supabase.auth.signOut();

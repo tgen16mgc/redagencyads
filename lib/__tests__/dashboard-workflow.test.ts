@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildWorkflowSteps } from "../dashboard-workflow";
+import { buildWorkflowSteps, dashboardWorkflowDestination } from "../dashboard-workflow";
 
 describe("buildWorkflowSteps", () => {
   it("marks Select as current before a report is loaded", () => {
@@ -27,5 +27,14 @@ describe("buildWorkflowSteps", () => {
       { value: "analyze", state: "complete" },
       { value: "verdict", state: "complete" },
     ]);
+  });
+});
+
+describe("dashboardWorkflowDestination", () => {
+  it("gives every workflow control a distinct promised transition", () => {
+    expect(dashboardWorkflowDestination("connect")).toEqual({ kind: "connect" });
+    expect(dashboardWorkflowDestination("select")).toEqual({ kind: "scope" });
+    expect(dashboardWorkflowDestination("analyze")).toEqual({ kind: "performance", target: "overview" });
+    expect(dashboardWorkflowDestination("verdict")).toEqual({ kind: "performance", target: "actions" });
   });
 });

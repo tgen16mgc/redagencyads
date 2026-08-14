@@ -36,6 +36,7 @@ type AppSidebarProps<T extends string> = {
   assistantOpen: boolean;
   expanded: boolean;
   onActiveViewChange: (value: T) => void;
+  onWorkflowStepChange: (value: DashboardWorkflowStep) => void;
   onExpandedChange: (expanded: boolean) => void;
   onOpenAssistant: () => void;
   onOpenProfile: () => void;
@@ -87,6 +88,7 @@ export function AppSidebar<T extends string>({
   workflowLabel,
   workflowItems,
   onActiveViewChange,
+  onWorkflowStepChange,
   onExpandedChange,
   onOpenAssistant,
   onOpenProfile,
@@ -133,7 +135,7 @@ export function AppSidebar<T extends string>({
                 className="v2-rail-workflow-item"
                 data-state={state}
                 title={`${label}: ${stateLabel}`}
-                onClick={() => onActiveViewChange("ads" as T)}
+                onClick={() => onWorkflowStepChange(value)}
               >
                 <Icon aria-hidden="true" />
                 <span className="v2-rail-label">{label}</span>

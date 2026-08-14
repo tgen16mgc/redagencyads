@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { advanceOverviewPerformanceIntent, overviewAttentionTarget, overviewReportMetrics } from "../dashboard-overview";
+import { advanceOverviewPerformanceIntent, overviewAttentionTarget, overviewReportMetrics, sampleModeForReport } from "../dashboard-overview";
 
 describe("advanceOverviewPerformanceIntent", () => {
   it("refreshes repeated targeted navigation requests", () => {
@@ -12,6 +12,11 @@ describe("advanceOverviewPerformanceIntent", () => {
 
   it("resets generic Performance navigation to overview", () => {
     expect(advanceOverviewPerformanceIntent({ target: "evidence", key: 7 })).toEqual({ target: "overview", key: 8 });
+  });
+
+  it("reopens the action plan for repeated Verdict navigation", () => {
+    const first = advanceOverviewPerformanceIntent({ target: "overview", key: 2 }, "actions");
+    expect(advanceOverviewPerformanceIntent(first, "actions")).toEqual({ target: "actions", key: 4 });
   });
 });
 
@@ -38,5 +43,12 @@ describe("overviewAttentionTarget", () => {
 
   it("routes other diagnostic checks to the evidence tab", () => {
     expect(overviewAttentionTarget({ id: "health-M-CR4", title: { en: "CTR benchmark", vi: "Chuẩn CTR" } })).toBe("evidence");
+  });
+});
+
+describe("sampleModeForReport", () => {
+  it("clears sample mode when a real saved report is restored", () => {
+    expect(sampleModeForReport({ source: "meta" })).toBe(false);
+    expect(sampleModeForReport({ source: "sample" })).toBe(true);
   });
 });

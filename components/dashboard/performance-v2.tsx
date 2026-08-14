@@ -86,7 +86,7 @@ type PerformanceV2Props = {
   driversExtra?: React.ReactNode;
   creativesExtra?: React.ReactNode;
   evidenceExtra?: React.ReactNode;
-  initialTab?: "overview" | "creatives" | "evidence";
+  initialTab?: "overview" | "creatives" | "evidence" | "actions";
   initialTabKey?: number;
   onEditScope: () => void;
   onRefresh: () => void;
@@ -134,7 +134,7 @@ export function PerformanceV2({
   onApplyScope,
 }: PerformanceV2Props) {
   const isVietnamese = language === "vi";
-  const [activeTab, setActiveTab] = React.useState<(typeof tabValues)[number]>(initialTab);
+  const [activeTab, setActiveTab] = React.useState<(typeof tabValues)[number]>(initialTab === "actions" ? "overview" : initialTab);
   const [campaignsOpen, setCampaignsOpen] = React.useState(false);
   const [periodOpen, setPeriodOpen] = React.useState(false);
   const [kpiOpen, setKpiOpen] = React.useState(false);
@@ -177,6 +177,11 @@ export function PerformanceV2({
   }, [onRefresh]);
 
   React.useEffect(() => {
+    if (initialTab === "actions") {
+      setActiveTab("overview");
+      setActionPlanOpen(true);
+      return;
+    }
     setActiveTab(initialTab);
   }, [initialTab, initialTabKey]);
 

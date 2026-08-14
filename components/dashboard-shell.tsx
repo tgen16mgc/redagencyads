@@ -64,9 +64,9 @@ import {
   buildTikTokChatContext,
 } from "@/lib/ai/chat-context";
 import type { CompetitorEvidenceStatus, CompetitorFetchResult, CompetitorPlatform, CompetitorSpyResult, KpiCard, MetaAccount, MetaCampaign, TikTokLibraryReport, TikTokProfile, TikTokProfileResult, TikTokVideo } from "@/lib/types";
-import { buildWorkflowSteps, type DashboardWorkflowStep } from "@/lib/dashboard-workflow";
+import { buildWorkflowSteps, dashboardWorkflowDestination, type DashboardWorkflowStep } from "@/lib/dashboard-workflow";
 import { canOpenDashboardView, initialDashboardViewFromSearch, shouldLoadAdsWorkspaceData, type DashboardView } from "@/lib/dashboard-access";
-import { advanceOverviewPerformanceIntent, type OverviewPerformanceIntent, type OverviewPerformanceTarget } from "@/lib/dashboard-overview";
+import { advanceOverviewPerformanceIntent, sampleModeForReport, type OverviewPerformanceIntent, type OverviewPerformanceTarget } from "@/lib/dashboard-overview";
 import { buildSampleReport, SAMPLE_CAMPAIGNS } from "@/lib/sample-report";
 import { buildUnknownCapabilitySnapshot, type CapabilityStatus } from "@/lib/capabilities";
 import { isAbortError, jsonFetch } from "@/lib/api-client";
@@ -145,6 +145,30 @@ type TikTokWorkspaceState = {
   adError: string;
   adLoading: boolean;
 };
+
+function initialTikTokWorkspaceState(): TikTokWorkspaceState {
+  return {
+    profilesInput: "",
+    profileLimit: 8,
+    profileResult: null,
+    profileError: "",
+    profileLoading: false,
+    adQuery: "",
+    adRegion: "VN",
+    adQueryType: "2",
+    adStartDate: "",
+    adEndDate: "",
+    adMaxAds: 20,
+    adFetchDetails: false,
+    adFormat: "",
+    adObjective: "",
+    adIndustry: "",
+    adPerformanceTier: "all",
+    adReport: null,
+    adError: "",
+    adLoading: false,
+  };
+}
 
 const languageValues = ["en", "vi"] as const;
 
@@ -329,27 +353,7 @@ export function DashboardShell() {
   const [competitorCollecting, setCompetitorCollecting] = React.useState(false);
   const [competitorAnalyzing, setCompetitorAnalyzing] = React.useState(false);
   const [competitorError, setCompetitorError] = React.useState("");
-  const [tiktokWorkspace, setTikTokWorkspace] = React.useState<TikTokWorkspaceState>({
-    profilesInput: "",
-    profileLimit: 8,
-    profileResult: null,
-    profileError: "",
-    profileLoading: false,
-    adQuery: "",
-    adRegion: "VN",
-    adQueryType: "2",
-    adStartDate: "",
-    adEndDate: "",
-    adMaxAds: 20,
-    adFetchDetails: false,
-    adFormat: "",
-    adObjective: "",
-    adIndustry: "",
-    adPerformanceTier: "all",
-    adReport: null,
-    adError: "",
-    adLoading: false,
-  });
+  const [tiktokWorkspace, setTikTokWorkspace] = React.useState<TikTokWorkspaceState>(initialTikTokWorkspaceState);
   const [copiedCompetitorPrompt, setCopiedCompetitorPrompt] = React.useState(false);
   const [token, setToken] = React.useState("");
   const [error, setError] = React.useState("");
@@ -576,6 +580,7 @@ export function DashboardShell() {
       scopeExpanded: false,
     }));
     setRestoredReportId(snapshot.id);
+    setSampleReportActive(sampleModeForReport(restoredReport));
     if (announce) {
       toast.success(language === "vi" ? "Đã khôi phục báo cáo" : "Saved report restored", {
         description: `${snapshot.accountName} · ${snapshot.dateSince} – ${snapshot.dateUntil}`,
@@ -807,21 +812,66 @@ export function DashboardShell() {
   }
 
   function resetCompetitorWorkspaceOnLogout() {
+    setCompetitorNames("");
+    setCompetitorMarket("");
+    setCompetitorPlatform("meta");
+    setCompetitorNotes("");
+    setCompetitorLibraryUrls("");
+    setCompetitorEvidence(null);
     setCompetitorResult(null);
+    setCompetitorCollecting(false);
+    setCompetitorAnalyzing(false);
+    setCompetitorError("");
+    setCopiedCompetitorPrompt(false);
+  }
+
+  function resetWorkspaceUserState() {
+    contextChatRef.current?.clearAll();
+    setWorkspaceName("Decision Workspace");
+    setWorkspaceAuthError("");
+    setAuthenticated(false);
+    setAccounts([]);
+    setAccountId("");
+    setProvider("auto");
+    setCapabilities(buildUnknownCapabilitySnapshot());
+    setFacebookOAuthConfigured(null);
+    setAccountMenuOpen(false);
+    setSettingsOpen(false);
+    setSettingsTab("profile");
+    setMetaConnectOpen(false);
+    setPendingMetaView("ads");
+    setActiveView("overview");
+    setPerformanceIntent({ target: "overview", key: 0 });
+    setAdsWorkspace(initialAdsWorkspaceState());
+    setSavedReports([]);
+    setReportHistoryLoaded(false);
+    setRestoredReportId(null);
+    reportHistoryRestoreAttemptedRef.current = false;
+    setSampleReportActive(false);
+    resetCompetitorWorkspaceOnLogout();
+    setTikTokWorkspace(initialTikTokWorkspaceState());
+    setToken("");
+    setError("");
+    setLoading("");
+    setExportingPdf(false);
+    setChatOpen(false);
   }
 
   async function logout() {
-    contextChatRef.current?.clearAll();
-    setChatOpen(false);
-    const workspaceResponse = await fetch("/api/workspace/session", { method: "DELETE" });
-    const nextWorkspaceSession = await workspaceResponse.json().catch(() => null) as WorkspaceSessionStatus | null;
-    if (nextWorkspaceSession) setWorkspaceSession(nextWorkspaceSession);
-    setAuthenticated(false);
-    setActiveView("overview");
-    void loadCapabilities();
-    setAccounts([]);
-    setAdsWorkspace(resetAdsWorkspaceOnLogout);
-    resetCompetitorWorkspaceOnLogout();
+    try {
+      const nextWorkspaceSession = await jsonFetch<WorkspaceSessionStatus>("/api/workspace/session", {
+        method: "DELETE",
+        timeoutMs: 10000,
+      });
+      if (nextWorkspaceSession.authenticated) throw new Error("The workspace session is still active. Try signing out again.");
+      resetWorkspaceUserState();
+      setWorkspaceSession(nextWorkspaceSession);
+      window.location.replace("/");
+    } catch (requestError) {
+      const message = requestError instanceof Error ? requestError.message : "Could not sign out of the workspace.";
+      setError(message);
+      toast.error(language === "vi" ? "Không thể đăng xuất" : "Could not sign out", { description: message });
+    }
   }
 
   async function forgetMetaConnection() {
@@ -831,6 +881,8 @@ export function DashboardShell() {
       setAccounts([]);
       setAccountId("");
       setAdsWorkspace(resetAdsWorkspaceOnLogout);
+      setMetaConnectOpen(false);
+      setActiveView("overview");
       void loadCapabilities();
       toast.success(language === "vi" ? "Đã quên kết nối Meta" : "Meta connection forgotten");
     } catch (requestError) {
@@ -1026,11 +1078,6 @@ export function DashboardShell() {
     }
   }, [authenticated, sampleReportActive]);
 
-  function exitSampleReport() {
-    setSampleReportActive(false);
-    setAdsWorkspace(initialAdsWorkspaceState());
-  }
-
   function viewSampleReport() {
     setError("");
     const sampleState = initialAdsWorkspaceState();
@@ -1054,6 +1101,29 @@ export function DashboardShell() {
       setPerformanceIntent((current) => advanceOverviewPerformanceIntent(current, performanceTarget));
     }
     setActiveView(view);
+  }
+
+  function requestWorkflowStep(step: DashboardWorkflowStep) {
+    const destination = dashboardWorkflowDestination(step);
+    if (destination.kind === "connect") {
+      if (authenticated) {
+        setSettingsTab("workspace");
+        setSettingsOpen(true);
+      } else {
+        setPendingMetaView("ads");
+        setMetaConnectOpen(true);
+      }
+      return;
+    }
+    if (destination.kind === "scope") {
+      setAdsWorkspace((current) => ({ ...current, scopeExpanded: true }));
+      return;
+    }
+    if (!reportHasData) {
+      setAdsWorkspace((current) => ({ ...current, scopeExpanded: true }));
+      return;
+    }
+    requestView("ads", destination.target);
   }
 
   React.useEffect(() => {
@@ -1238,6 +1308,7 @@ export function DashboardShell() {
           assistantOpen={chatOpen}
           expanded={sidebarExpanded}
           onActiveViewChange={requestView}
+          onWorkflowStepChange={requestWorkflowStep}
           onExpandedChange={setSidebarExpanded}
           onOpenAssistant={() => setChatOpen((current) => !current)}
           onOpenProfile={() => { setSettingsTab("profile"); setSettingsOpen(true); }}
@@ -1395,7 +1466,7 @@ export function DashboardShell() {
                       ? "Dữ liệu demo của một tài khoản thẩm mỹ viện. Kết nối Meta để phân tích tài khoản của bạn."
                       : "Demo data from a sample beauty-clinic account. Connect Meta to analyze your own account."}
                   </span>
-                  <Button type="button" size="sm" variant="outline" onClick={() => { exitSampleReport(); setPendingMetaView("ads"); setMetaConnectOpen(true); }}>
+                  <Button type="button" size="sm" variant="outline" onClick={() => { setPendingMetaView("ads"); setMetaConnectOpen(true); }}>
                     <ShieldCheckIcon data-icon="inline-start" />
                     {language === "vi" ? "Kết nối Meta" : "Connect Meta"}
                   </Button>
