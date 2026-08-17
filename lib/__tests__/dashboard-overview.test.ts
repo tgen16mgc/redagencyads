@@ -48,7 +48,7 @@ describe("overviewAttentionTarget", () => {
 
 describe("sampleModeForReport", () => {
   it("clears sample mode when a real saved report is restored", () => {
-    expect(sampleModeForReport({ source: "meta" })).toBe(false);
+    expect(sampleModeForReport({ source: "meta_api" })).toBe(false);
     expect(sampleModeForReport({ source: "sample" })).toBe(true);
   });
 });
