@@ -120,6 +120,7 @@ export function WorkspaceOverview({
     ? healthSummary.items.slice(0, 3).map((item) => ({
         id: item.id,
         severity: item.severity,
+        target: overviewAttentionTarget(item),
         titleText: item.title[language],
         detailText: item.detail[language],
       }))
@@ -133,13 +134,7 @@ export function WorkspaceOverview({
           titleText: capabilityName(item.key),
           detailText: capabilityStateDetail(item.state, language),
         }));
-  const mappedAttentionItems = healthSummary
-    ? attentionItems.map((item, index) => ({
-        ...item,
-        target: overviewAttentionTarget(healthSummary.items[index]),
-      }))
-    : attentionItems;
-  const primaryAttention = mappedAttentionItems.find((item) => item.severity !== "healthy");
+  const primaryAttention = attentionItems.find((item) => item.severity !== "healthy");
   const reportMetrics = report ? overviewReportMetrics(report, language) : [];
   const readinessDetail = blockingCount > 0
     ? (isVietnamese
@@ -257,7 +252,7 @@ export function WorkspaceOverview({
           </div>
 
           <div className="mt-4 flex flex-col gap-2">
-            {mappedAttentionItems.map((item, index) => {
+            {attentionItems.map((item, index) => {
               const danger = item.severity === "danger";
               return (
                 <button
