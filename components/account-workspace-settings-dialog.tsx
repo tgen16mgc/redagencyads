@@ -26,6 +26,7 @@ import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { WorkspaceSessionStatus } from "@/components/workspace-auth";
+import { WorkspaceMembersDialog } from "@/components/workspace-members-dialog";
 import {
   defaultAccountWorkspaceSettings,
   initialsFromName,
@@ -104,7 +105,6 @@ export function AccountWorkspaceSettingsDialog({
   const [error, setError] = React.useState("");
   const [passwordOpen, setPasswordOpen] = React.useState(false);
   const [membersOpen, setMembersOpen] = React.useState(false);
-  const [memberSavingId, setMemberSavingId] = React.useState("");
   const photoInputRef = React.useRef<HTMLInputElement>(null);
 
   React.useEffect(() => {
@@ -212,36 +212,32 @@ export function AccountWorkspaceSettingsDialog({
     }
   }
 
-  async function updateMemberRole(userId: string, role: "admin" | "analyst" | "viewer") {
-    if (memberSavingId) return;
-    setMemberSavingId(userId);
-    setError("");
-    try {
-      await readJsonResponse<{ updated: true }>(await fetch("/api/workspace/members", {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ userId, role }),
-      }));
-      const update = (data: AccountWorkspaceSettingsData) => ({
-        ...data,
-        workspace: {
-          ...data.workspace,
-          members: data.workspace.members.map((member) => member.userId === userId ? { ...member, role } : member),
-        },
-      });
-      setSaved(update);
-      setDraft(update);
-      toast.success("Member role updated");
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Member role could not be updated.");
-    } finally {
-      setMemberSavingId("");
-    }
+  async function refreshMemberData() {
+    const remote = await readJsonResponse<AccountWorkspaceSettingsData>(await fetch("/api/workspace/settings", {
+      headers: { accept: "application/json" },
+    }));
+    setSaved(remote);
+    setDraft((current) => ({
+      profile: current.profile,
+      workspace: {
+        ...current.workspace,
+        id: remote.workspace.id,
+        slug: remote.workspace.slug,
+        memberCount: remote.workspace.memberCount,
+        roleSummary: remote.workspace.roleSummary,
+        canManage: remote.workspace.canManage,
+        currentUserId: remote.workspace.currentUserId,
+        currentUserRole: remote.workspace.currentUserRole,
+        members: remote.workspace.members,
+        pendingInvites: remote.workspace.pendingInvites,
+        availableWorkspaces: remote.workspace.availableWorkspaces,
+      },
+    }));
   }
 
   return (
     <>
-      <Dialog open={open} onOpenChange={onOpenChange}>
+      <Dialog open={open && !membersOpen} onOpenChange={onOpenChange}>
         <DialogContent className="flex max-h-[calc(100svh-1.5rem)] w-[calc(100vw-1.5rem)] max-w-[800px] flex-col gap-5 overflow-hidden rounded-3xl border border-border bg-popover p-6 shadow-2xl [&_[data-slot=dialog-close]]:right-4 [&_[data-slot=dialog-close]]:top-4 [&_[data-slot=dialog-close]]:size-7">
           <DialogHeader className="pr-10">
             <DialogTitle>Settings</DialogTitle>
@@ -387,40 +383,12 @@ export function AccountWorkspaceSettingsDialog({
       </Dialog>
 
       <ChangePasswordDialog open={passwordOpen} onOpenChange={setPasswordOpen} />
-      <Dialog open={membersOpen} onOpenChange={setMembersOpen}>
-        <DialogContent className="w-[calc(100vw-1.5rem)] max-w-[620px] rounded-3xl border border-border bg-popover p-6">
-          <DialogHeader>
-            <DialogTitle>Workspace members</DialogTitle>
-            <DialogDescription>Change active member roles. Ownership transfer stays locked behind a separate review.</DialogDescription>
-          </DialogHeader>
-          <div className="mt-2 grid max-h-[min(480px,60svh)] gap-2 overflow-y-auto">
-            {draft.workspace.members.map((member) => (
-              <div key={member.userId} className="grid gap-3 rounded-2xl border border-border bg-card/60 p-3 sm:grid-cols-[minmax(0,1fr)_150px] sm:items-center">
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-medium">{member.fullName || member.email}</div>
-                  <div className="truncate text-xs text-muted-foreground">{member.email} · {member.status}</div>
-                </div>
-                {member.role === "owner" ? (
-                  <div className="rounded-xl bg-primary/10 px-3 py-2 text-center text-xs font-medium text-primary">Workspace owner</div>
-                ) : (
-                  <select
-                    aria-label={`Role for ${member.fullName || member.email}`}
-                    className="h-10 rounded-xl border border-border bg-background px-3 text-sm"
-                    value={member.role}
-                    disabled={Boolean(memberSavingId)}
-                    onChange={(event) => void updateMemberRole(member.userId, event.target.value as "admin" | "analyst" | "viewer")}
-                  >
-                    <option value="admin">Admin</option>
-                    <option value="analyst">Analyst</option>
-                    <option value="viewer">Viewer</option>
-                  </select>
-                )}
-              </div>
-            ))}
-          </div>
-          <DialogFooter><Button type="button" variant="outline" onClick={() => setMembersOpen(false)}>Done</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <WorkspaceMembersDialog
+        open={open && membersOpen}
+        workspace={draft.workspace}
+        onOpenChange={setMembersOpen}
+        onRefresh={refreshMemberData}
+      />
     </>
   );
 }

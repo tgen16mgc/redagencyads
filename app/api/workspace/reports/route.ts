@@ -29,11 +29,13 @@ export async function GET() {
     const supabase = await createSupabaseServerClient();
     const { data: authData, error: authError } = await supabase.auth.getUser();
     if (authError || !authData.user) throw new Error("Sign in again to load report history.");
-    await ensureActiveWorkspaceMembership(supabase, authData.user.id);
+    const membership = await ensureActiveWorkspaceMembership(supabase, authData.user.id);
+    if (!membership) throw new Error("Workspace membership could not be verified.");
 
     const { data, error } = await supabase
       .from("workspace_report_snapshots")
       .select("id,account_id,account_name,date_since,date_until,selected_pack,report,previous_report,verdict,insights,updated_at")
+      .eq("workspace_id", membership.workspace_id)
       .eq("user_id", authData.user.id)
       .order("updated_at", { ascending: false })
       .limit(12);
@@ -83,7 +85,7 @@ export async function POST(request: Request) {
       previous_report: body.previousReport ? asJson(body.previousReport) : null,
       verdict: body.verdict ? asJson(body.verdict) : null,
       insights: body.insights ? asJson(body.insights) : null,
-    }, { onConflict: "user_id,account_id,date_since,date_until,selected_pack" });
+    }, { onConflict: "workspace_id,user_id,account_id,date_since,date_until,selected_pack" });
     if (error) throw new Error("Report history could not be saved.");
     return NextResponse.json({ saved: true }, { headers: noStoreHeaders });
   } catch (error) {
@@ -97,11 +99,13 @@ export async function DELETE() {
     const supabase = await createSupabaseServerClient();
     const { data: authData, error: authError } = await supabase.auth.getUser();
     if (authError || !authData.user) throw new Error("Sign in again to clear report history.");
-    await ensureActiveWorkspaceMembership(supabase, authData.user.id);
+    const membership = await ensureActiveWorkspaceMembership(supabase, authData.user.id);
+    if (!membership) throw new Error("Workspace membership could not be verified.");
 
     const { error } = await supabase
       .from("workspace_report_snapshots")
       .delete()
+      .eq("workspace_id", membership.workspace_id)
       .eq("user_id", authData.user.id);
     if (error) throw new Error("Report history could not be cleared.");
 

@@ -76,9 +76,20 @@
   --ease-out-workbench: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in-out-workbench: cubic-bezier(0.65, 0, 0.35, 1);
   --shadow-glow-surface: 0 1px 2px rgb(0 0 0 / 10%), 0 2px 4px rgb(0 0 0 / 10%), 0 4px 8px rgb(0 0 0 / 10%), 0 8px 16px rgb(0 0 0 / 10%), 0 16px 32px rgb(0 0 0 / 10%), 0 32px 64px rgb(0 0 0 / 10%);
+  --surface: var(--card);
+  --surface-foreground: var(--card-foreground);
+  --surface-secondary: color-mix(in srgb, var(--card) 86%, var(--background));
+  --surface-secondary-foreground: var(--foreground);
+  --surface-tertiary: var(--secondary);
+  --surface-tertiary-foreground: var(--foreground);
+  --overlay: var(--popover);
+  --overlay-foreground: var(--popover-foreground);
+  --danger: var(--destructive);
+  --danger-foreground: var(--destructive-foreground);
 }
 
 .light {
+  --radius: 0.75rem;
   --background: #f7f7f8;
   --foreground: #111113;
   --card: #ffffff;
@@ -96,6 +107,27 @@
   --border: #dedee3;
   --input: #d4d4d8;
   --ring: #006fee;
+  --success: #17c964;
+  --success-foreground: #061b11;
+  --warning: #f5a524;
+  --warning-foreground: #211600;
+  --info: #56a5ff;
+  --info-foreground: #061426;
+  --default: var(--secondary);
+  --default-foreground: var(--foreground);
+  --danger: var(--destructive);
+  --danger-foreground: var(--destructive-foreground);
+  --focus: var(--ring);
+  --disabled-opacity: 0.48;
+  --ring-offset-width: 0px;
+  --surface: var(--card);
+  --surface-foreground: var(--card-foreground);
+  --surface-secondary: color-mix(in srgb, var(--card) 86%, var(--background));
+  --surface-secondary-foreground: var(--foreground);
+  --surface-tertiary: var(--secondary);
+  --surface-tertiary-foreground: var(--foreground);
+  --overlay: var(--popover);
+  --overlay-foreground: var(--popover-foreground);
   --sidebar: #ffffff;
   --sidebar-foreground: #52525b;
   --sidebar-primary: #006fee;
@@ -114,6 +146,16 @@
   --info-foreground: #ffffff;
   --chart-reference: #5b6472;
   color-scheme: light;
+}
+
+.heroui-scope {
+  /* Bridge HeroUI's semantic tokens to the app's shadcn-compatible theme. */
+  --accent: var(--primary);
+  --accent-foreground: var(--primary-foreground);
+  --accent-soft: color-mix(in oklab, var(--accent) 15%, transparent);
+  --accent-soft-foreground: color-mix(in oklab, var(--accent) 70%, var(--accent-foreground) 30%);
+  --accent-soft-hover: color-mix(in oklab, var(--accent) 20%, transparent);
+  --muted: var(--muted-foreground);
 }
 
 @theme inline {

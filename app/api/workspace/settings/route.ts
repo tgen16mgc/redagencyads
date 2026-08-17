@@ -5,9 +5,11 @@ import {
   defaultAccountWorkspaceSettings,
   settingsPatchSchema,
   type AccountWorkspaceSettingsData,
+  type WorkspaceRole,
 } from "@/lib/account-workspace-settings";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { getWorkspaceAuthMode } from "@/lib/workspace-session";
+import { ensureActiveWorkspaceMembership, getWorkspaceAuthMode } from "@/lib/workspace-session";
+import { loadWorkspaceDirectory } from "@/lib/workspace-directory";
 
 const noStoreHeaders = { "Cache-Control": "private, no-store" };
 
@@ -53,26 +55,30 @@ async function loadSettings() {
   const { data: authData, error: authError } = await supabase.auth.getUser();
   if (authError || !authData.user) throw new Error("Sign in again to manage workspace settings.");
 
-  const { data: membership, error: membershipError } = await supabase
-    .from("workspace_members")
-    .select("workspace_id,email,full_name,role,status,preferences")
-    .eq("user_id", authData.user.id)
-    .eq("status", "active")
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
-  if (membershipError || !membership) throw new Error("Your active workspace membership could not be loaded.");
+  const membership = await ensureActiveWorkspaceMembership(supabase, authData.user.id);
+  if (!membership) throw new Error("Your active workspace membership could not be loaded.");
+  const canManage = membership.role === "owner" || membership.role === "admin";
 
-  const [{ data: workspace, error: workspaceError }, { data: members, error: membersError }] = await Promise.all([
+  const [
+    { data: workspace, error: workspaceError },
+    { data: members, error: membersError },
+    invitesResult,
+    availableWorkspaces,
+  ] = await Promise.all([
     supabase.from("workspaces").select("id,name,settings").eq("id", membership.workspace_id).single(),
-    supabase.from("workspace_members").select("user_id,email,full_name,role,status").eq("workspace_id", membership.workspace_id).eq("status", "active").order("created_at", { ascending: true }),
+    supabase.from("workspace_members").select("user_id,email,full_name,role,status,preferences").eq("workspace_id", membership.workspace_id).eq("status", "active").order("created_at", { ascending: true }),
+    canManage
+      ? supabase.from("workspace_invites").select("id,email,full_name,role,created_at,expires_at").eq("workspace_id", membership.workspace_id).is("accepted_at", null).is("revoked_at", null).gt("expires_at", new Date().toISOString()).order("created_at", { ascending: false })
+      : Promise.resolve({ data: [], error: null }),
+    loadWorkspaceDirectory(supabase, authData.user.id),
   ]);
   if (workspaceError || !workspace) throw new Error("Workspace settings could not be loaded.");
+  if (membersError) throw new Error("Workspace members could not be loaded.");
+  if (invitesResult.error) throw new Error("Workspace invitations could not be loaded.");
 
   const profilePreferences = jsonRecord(membership.preferences);
   const workspacePreferences = jsonRecord(workspace.settings);
-  const roles = membersError ? [membership.role] : (members || []).map((member) => member.role);
-  const canManage = membership.role === "owner" || membership.role === "admin";
+  const roles = (members || []).map((member) => member.role);
 
   return {
     profile: {
@@ -85,6 +91,8 @@ async function loadSettings() {
       campaignAnomalyAlerts: booleanSetting(profilePreferences, "campaignAnomalyAlerts", false),
     },
     workspace: {
+      id: workspace.id,
+      slug: availableWorkspaces.find((entry) => entry.id === workspace.id)?.slug || "workspace",
       name: workspace.name,
       timeZone: stringSetting(workspacePreferences, "timeZone", DEFAULT_WORKSPACE_TIME_ZONE),
       requireTwoFactorAuthentication: booleanSetting(workspacePreferences, "requireTwoFactorAuthentication", false),
@@ -92,13 +100,25 @@ async function loadSettings() {
       memberCount: roles.length,
       roleSummary: roleSummary(roles),
       canManage,
+      currentUserId: authData.user.id,
+      currentUserRole: membership.role as WorkspaceRole,
       members: (members || []).map((member) => ({
         userId: member.user_id,
         email: member.email,
         fullName: member.full_name,
-        role: member.role as "owner" | "admin" | "analyst" | "viewer",
+        avatarDataUrl: avatarSetting(jsonRecord(member.preferences)),
+        role: member.role as WorkspaceRole,
         status: member.status,
       })),
+      pendingInvites: (invitesResult.data || []).map((invite) => ({
+        id: invite.id,
+        email: invite.email,
+        fullName: invite.full_name || "",
+        role: invite.role as "admin" | "analyst" | "viewer",
+        createdAt: invite.created_at,
+        expiresAt: invite.expires_at,
+      })),
+      availableWorkspaces,
     },
   } satisfies AccountWorkspaceSettingsData;
 }
@@ -125,15 +145,8 @@ export async function PATCH(request: Request) {
     const { data: authData, error: authError } = await supabase.auth.getUser();
     if (authError || !authData.user) throw new Error("Sign in again to save these settings.");
 
-    const { data: membership, error: membershipError } = await supabase
-      .from("workspace_members")
-      .select("workspace_id,role,status")
-      .eq("user_id", authData.user.id)
-      .eq("status", "active")
-      .order("created_at", { ascending: true })
-      .limit(1)
-      .maybeSingle();
-    if (membershipError || !membership) throw new Error("Your active workspace membership could not be loaded.");
+    const membership = await ensureActiveWorkspaceMembership(supabase, authData.user.id);
+    if (!membership) throw new Error("Your active workspace membership could not be loaded.");
 
     if (body.tab === "profile") {
       const { fullName, ...preferences } = body.profile;

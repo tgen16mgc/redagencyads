@@ -71,11 +71,10 @@ function workspaceRoleLabel(role: string) {
 export async function getActiveWorkspaceMembership(supabase: WorkspaceSupabaseClient, userId: string) {
   const { data, error } = await supabase
     .from("workspace_members")
-    .select("workspace_id,user_id,email,full_name,role,status,preferences,created_at,updated_at")
+    .select("workspace_id,user_id,email,full_name,role,status,is_current,preferences,created_at,updated_at")
     .eq("user_id", userId)
     .eq("status", "active")
-    .order("created_at", { ascending: true })
-    .limit(1)
+    .eq("is_current", true)
     .maybeSingle();
 
   if (error) throw new Error("Workspace membership could not be verified.");
@@ -83,9 +82,6 @@ export async function getActiveWorkspaceMembership(supabase: WorkspaceSupabaseCl
 }
 
 export async function ensureActiveWorkspaceMembership(supabase: WorkspaceSupabaseClient, userId: string) {
-  const existing = await getActiveWorkspaceMembership(supabase, userId);
-  if (existing) return existing;
-
   const { error } = await supabase.rpc("ensure_workspace_membership", {});
   if (error) throw new Error("Workspace access could not be opened for this account.");
   return getActiveWorkspaceMembership(supabase, userId);

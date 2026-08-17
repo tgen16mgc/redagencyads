@@ -37,8 +37,11 @@ export type Database = {
           accepted_at: string | null;
           created_at: string;
           email: string;
+          expires_at: string;
           full_name: string | null;
           id: string;
+          invited_by: string | null;
+          revoked_at: string | null;
           role: string;
           updated_at: string;
           workspace_id: string;
@@ -47,8 +50,11 @@ export type Database = {
           accepted_at?: string | null;
           created_at?: string;
           email: string;
+          expires_at?: string;
           full_name?: string | null;
           id?: string;
+          invited_by?: string | null;
+          revoked_at?: string | null;
           role?: string;
           updated_at?: string;
           workspace_id: string;
@@ -145,6 +151,7 @@ export type Database = {
           created_at: string;
           email: string;
           full_name: string;
+          is_current: boolean;
           preferences: Json;
           role: string;
           status: string;
@@ -156,6 +163,7 @@ export type Database = {
           created_at?: string;
           email: string;
           full_name: string;
+          is_current?: boolean;
           preferences?: Json;
           role?: string;
           status?: string;
@@ -197,9 +205,33 @@ export type Database = {
         Args: Record<string, never>;
         Returns: string;
       };
+      create_workspace: {
+        Args: { p_name: string };
+        Returns: string;
+      };
+      create_workspace_invite: {
+        Args: { p_email: string; p_full_name?: string; p_role?: string };
+        Returns: string;
+      };
+      remove_workspace_member: {
+        Args: { p_user_id: string };
+        Returns: boolean;
+      };
       request_workspace_access: {
         Args: { p_email: string; p_full_name?: string; p_note?: string };
         Returns: string;
+      };
+      revoke_workspace_invite: {
+        Args: { p_invite_id: string };
+        Returns: boolean;
+      };
+      switch_workspace: {
+        Args: { p_workspace_id: string };
+        Returns: string;
+      };
+      update_workspace_member_role: {
+        Args: { p_role: string; p_user_id: string };
+        Returns: boolean;
       };
     };
     Enums: Record<never, never>;

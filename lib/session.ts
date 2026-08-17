@@ -16,12 +16,14 @@ type SessionPayload = {
   token: string;
   issuedAt: number;
   ownerId: string;
+  workspaceId?: string;
 };
 
 type StoredCredentialPayload = {
   token: string;
   ownerId: string;
-  version: 1;
+  workspaceId?: string;
+  version: 1 | 2;
 };
 
 function getKey() {
@@ -32,10 +34,10 @@ function getKey() {
   return crypto.createHash("sha256").update(secret).digest();
 }
 
-export function encryptSession(token: string, ownerId: string) {
+export function encryptSession(token: string, ownerId: string, workspaceId?: string | null) {
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv("aes-256-gcm", getKey(), iv);
-  const payload: SessionPayload = { token, issuedAt: Date.now(), ownerId };
+  const payload: SessionPayload = { token, issuedAt: Date.now(), ownerId, workspaceId: workspaceId || undefined };
   const encrypted = Buffer.concat([cipher.update(JSON.stringify(payload), "utf8"), cipher.final()]);
   const tag = cipher.getAuthTag();
   return Buffer.concat([iv, tag, encrypted]).toString("base64url");
@@ -58,10 +60,10 @@ export function decryptSession(value: string) {
   }
 }
 
-export function encryptStoredCredential(token: string, ownerId: string) {
+export function encryptStoredCredential(token: string, ownerId: string, workspaceId?: string | null) {
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv("aes-256-gcm", getKey(), iv);
-  const payload: StoredCredentialPayload = { token, ownerId, version: 1 };
+  const payload: StoredCredentialPayload = { token, ownerId, workspaceId: workspaceId || undefined, version: 2 };
   const encrypted = Buffer.concat([cipher.update(JSON.stringify(payload), "utf8"), cipher.final()]);
   const tag = cipher.getAuthTag();
   return Buffer.concat([iv, tag, encrypted]).toString("base64url");
@@ -77,7 +79,7 @@ export function decryptStoredCredential(value: string) {
     decipher.setAuthTag(tag);
     const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]).toString("utf8");
     const payload = JSON.parse(decrypted) as StoredCredentialPayload;
-    return payload.version === 1 && payload.token && payload.ownerId ? payload : null;
+    return (payload.version === 1 || payload.version === 2) && payload.token && payload.ownerId ? payload : null;
   } catch {
     return null;
   }
@@ -99,7 +101,7 @@ export async function setTokenCookie(token: string) {
   const context = await currentWorkspaceContext();
   if (!context) throw new SessionAuthError("Sign in to the workspace before connecting Meta.");
   const store = await cookies();
-  store.set(COOKIE_NAME, encryptSession(token, context.ownerId), {
+  store.set(COOKIE_NAME, encryptSession(token, context.ownerId, context.workspaceId), {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
@@ -112,9 +114,9 @@ export async function setTokenCookie(token: string) {
       workspace_id: context.workspaceId,
       user_id: context.ownerId,
       provider: "meta",
-      encrypted_token: encryptStoredCredential(token, context.ownerId),
+      encrypted_token: encryptStoredCredential(token, context.ownerId, context.workspaceId),
       last_validated_at: new Date().toISOString(),
-    }, { onConflict: "user_id,provider" });
+    }, { onConflict: "workspace_id,user_id,provider" });
     if (error) throw new Error("Meta connected, but the account credential could not be saved.");
   }
 }
@@ -127,6 +129,7 @@ export async function clearTokenCookie() {
     const { error } = await context.supabase
       .from("workspace_connector_credentials")
       .delete()
+      .eq("workspace_id", context.workspaceId)
       .eq("user_id", context.ownerId)
       .eq("provider", "meta");
     if (error) throw new Error("The saved Meta credential could not be removed.");
@@ -139,12 +142,13 @@ export async function requireToken() {
   const store = await cookies();
   const encrypted = store.get(COOKIE_NAME)?.value;
   const payload = encrypted ? decryptSession(encrypted) : null;
-  if (payload?.ownerId === context.ownerId) return payload.token;
+  if (payload?.ownerId === context.ownerId && payload.workspaceId === (context.workspaceId || undefined)) return payload.token;
 
   if (!context.supabase) throw new SessionAuthError(encrypted ? "Meta access token session expired." : "Meta access token session missing.");
   const { data, error } = await context.supabase
     .from("workspace_connector_credentials")
     .select("encrypted_token,token_expires_at")
+    .eq("workspace_id", context.workspaceId)
     .eq("user_id", context.ownerId)
     .eq("provider", "meta")
     .maybeSingle();
@@ -153,7 +157,9 @@ export async function requireToken() {
     throw new SessionAuthError("The saved Meta token has expired. Reconnect Meta to continue.");
   }
   const stored = decryptStoredCredential(data.encrypted_token);
-  if (!stored || stored.ownerId !== context.ownerId) throw new SessionAuthError("The saved Meta credential could not be restored.");
+  if (!stored || stored.ownerId !== context.ownerId || (stored.workspaceId && stored.workspaceId !== context.workspaceId)) {
+    throw new SessionAuthError("The saved Meta credential could not be restored.");
+  }
   return stored.token;
 }
 
