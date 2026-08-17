@@ -28,18 +28,44 @@ export type ProfileSettings = z.infer<typeof profileSettingsSchema> & {
 };
 
 export type WorkspaceSettings = z.infer<typeof workspaceSettingsSchema> & {
+  id: string;
+  slug: string;
   memberCount: number;
   roleSummary: string;
   canManage: boolean;
+  currentUserId: string;
+  currentUserRole: WorkspaceRole;
   members: WorkspaceMemberSummary[];
+  pendingInvites: WorkspaceInviteSummary[];
+  availableWorkspaces: WorkspaceDirectoryEntry[];
 };
+
+export type WorkspaceRole = "owner" | "admin" | "analyst" | "viewer";
 
 export type WorkspaceMemberSummary = {
   userId: string;
   email: string;
   fullName: string;
-  role: "owner" | "admin" | "analyst" | "viewer";
+  avatarDataUrl?: string;
+  role: WorkspaceRole;
   status: string;
+};
+
+export type WorkspaceInviteSummary = {
+  id: string;
+  email: string;
+  fullName: string;
+  role: Exclude<WorkspaceRole, "owner">;
+  createdAt: string;
+  expiresAt: string;
+};
+
+export type WorkspaceDirectoryEntry = {
+  id: string;
+  name: string;
+  slug: string;
+  role: WorkspaceRole;
+  isCurrent: boolean;
 };
 
 export type AccountWorkspaceSettingsData = {
@@ -105,6 +131,8 @@ export function defaultAccountWorkspaceSettings(input: {
       campaignAnomalyAlerts: false,
     },
     workspace: {
+      id: "local",
+      slug: "decision-workspace",
       name: "Decision Workspace",
       timeZone: DEFAULT_WORKSPACE_TIME_ZONE,
       requireTwoFactorAuthentication: false,
@@ -112,12 +140,22 @@ export function defaultAccountWorkspaceSettings(input: {
       memberCount: 1,
       roleSummary,
       canManage,
+      currentUserId: "local",
+      currentUserRole: canManage ? "owner" : "viewer",
       members: [{
         userId: "local",
         email: input.email?.trim() || "local@redagency.vn",
         fullName: input.name?.trim() || "Local workspace",
         role: canManage ? "owner" : "viewer",
         status: "active",
+      }],
+      pendingInvites: [],
+      availableWorkspaces: [{
+        id: "local",
+        name: "Decision Workspace",
+        slug: "decision-workspace",
+        role: canManage ? "owner" : "viewer",
+        isCurrent: true,
       }],
     },
   };

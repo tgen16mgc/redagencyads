@@ -77,23 +77,27 @@ describe("/api/workspace/reports", () => {
       report,
       verdict: { verdict: "Hold" },
       insights: { rows: [] },
-    }), { onConflict: "user_id,account_id,date_since,date_until,selected_pack" });
+    }), { onConflict: "workspace_id,user_id,account_id,date_since,date_until,selected_pack" });
   });
 
   it("clears only the signed-in user's saved report history", async () => {
-    const eq = vi.fn().mockResolvedValue({ error: null });
-    const remove = vi.fn().mockReturnValue({ eq });
+    const query = {
+      delete: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      then: (resolve: (value: { error: null }) => void) => resolve({ error: null }),
+    };
     createSupabaseServerClient.mockResolvedValue({
       auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: "user-1" } }, error: null }) },
-      from: vi.fn().mockReturnValue({ delete: remove }),
+      from: vi.fn().mockReturnValue(query),
     });
 
     const response = await DELETE();
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ cleared: true });
-    expect(remove).toHaveBeenCalledOnce();
-    expect(eq).toHaveBeenCalledWith("user_id", "user-1");
+    expect(query.delete).toHaveBeenCalledOnce();
+    expect(query.eq).toHaveBeenNthCalledWith(1, "workspace_id", "workspace-1");
+    expect(query.eq).toHaveBeenNthCalledWith(2, "user_id", "user-1");
     expect(ensureActiveWorkspaceMembership).toHaveBeenCalledWith(expect.anything(), "user-1");
   });
 });

@@ -71,7 +71,7 @@ describe("encrypted token sessions", () => {
     expect(decryptStoredCredential(encrypted)).toEqual({
       token: "meta-token-123",
       ownerId: "workspace-user-1",
-      version: 1,
+      version: 2,
     });
   });
 

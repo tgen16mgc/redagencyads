@@ -101,6 +101,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { WorkspaceAuth, type WorkspaceSessionStatus } from "@/components/workspace-auth";
 import { MetaConnectDialog } from "@/components/meta-connect-dialog";
 import { AccountWorkspaceSettingsDialog, type SettingsTab } from "@/components/account-workspace-settings-dialog";
+import { WorkspaceSwitcher } from "@/components/workspace-switcher";
 import type { AccountWorkspaceSettingsData } from "@/lib/account-workspace-settings";
 import { normalizeSavedReportCopy, type SavedReportSnapshot } from "@/lib/report-history";
 import { reportCampaignSelectionForAccount } from "@/lib/report-refresh";
@@ -1271,6 +1272,17 @@ export function DashboardShell() {
                     <div className="flex items-center gap-3 border-b border-border pb-4 pr-10">
                       <span className="v2-account-avatar">{workspaceSession.user?.avatarDataUrl ? <img src={workspaceSession.user.avatarDataUrl} alt="" className="size-full object-cover" /> : workspaceSession.user?.initials || "DW"}</span>
                       <div><div className="text-sm font-semibold">{workspaceSession.user?.name || "Workspace owner"}</div><div className="text-xs text-muted-foreground">{workspaceSession.user?.role || "Workspace owner"} · {workspaceSession.user?.email || "Workspace session"}</div></div>
+                    </div>
+                    <div className="mt-4">
+                      <WorkspaceSwitcher
+                        currentName={workspaceName}
+                        enabled={Boolean(workspaceSession.required)}
+                        onManage={() => {
+                          setAccountMenuOpen(false);
+                          setSettingsTab("workspace");
+                          setSettingsOpen(true);
+                        }}
+                      />
                     </div>
                     <div className="mt-4 text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">Account</div>
                     <button type="button" className="v2-account-menu-row" onClick={() => { setAccountMenuOpen(false); setSettingsTab("profile"); setSettingsOpen(true); }}><UserRoundIcon /><span><b>Profile</b><small>Identity, alerts and personal defaults</small></span></button>

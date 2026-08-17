@@ -68,7 +68,7 @@ describe("durable Meta credential persistence", () => {
       workspace_id: workspaceId,
       user_id: userId,
       provider: "meta",
-    }), { onConflict: "user_id,provider" });
+    }), { onConflict: "workspace_id,user_id,provider" });
     const stored = upsert.mock.calls[0][0].encrypted_token as string;
     expect(stored).not.toContain("meta-token-1234567890");
     expect(decryptStoredCredential(stored)).toMatchObject({ token: "meta-token-1234567890", ownerId: userId });
@@ -122,7 +122,8 @@ describe("durable Meta credential persistence", () => {
 
     expect(cookieStore.delete).toHaveBeenCalledWith("meta_ads_session");
     expect(query.delete).toHaveBeenCalledOnce();
-    expect(query.eq).toHaveBeenNthCalledWith(1, "user_id", userId);
-    expect(query.eq).toHaveBeenNthCalledWith(2, "provider", "meta");
+    expect(query.eq).toHaveBeenNthCalledWith(1, "workspace_id", workspaceId);
+    expect(query.eq).toHaveBeenNthCalledWith(2, "user_id", userId);
+    expect(query.eq).toHaveBeenNthCalledWith(3, "provider", "meta");
   });
 });
