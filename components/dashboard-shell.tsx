@@ -104,8 +104,8 @@ import { MetaConnectDialog } from "@/components/meta-connect-dialog";
 import { AccountWorkspaceSettingsDialog, type SettingsTab } from "@/components/account-workspace-settings-dialog";
 import { WorkspaceSwitcher } from "@/components/workspace-switcher";
 import type { AccountWorkspaceSettingsData } from "@/lib/account-workspace-settings";
-import { normalizeSavedReportCopy, type SavedReportSnapshot } from "@/lib/report-history";
-import { reportCampaignSelectionForAccount } from "@/lib/report-refresh";
+import { normalizeSavedReportCopy, restoreSavedReportExecutionScope, type SavedReportSnapshot } from "@/lib/report-history";
+import { buildReportRequestKey, currentReportScope, reportCampaignSelectionForAccount } from "@/lib/report-refresh";
 
 const workflowItems: { value: DashboardWorkflowStep; label: string; icon: React.ComponentType<React.SVGProps<SVGSVGElement>> }[] = [
   { value: "connect", label: "Connect", icon: KeyRoundIcon },
@@ -566,18 +566,22 @@ export function DashboardShell() {
   const restoreSavedReport = React.useCallback((snapshot: SavedReportSnapshot, announce = true) => {
     const restoredReport = normalizeSavedReportCopy(snapshot.report);
     const restoredPreviousReport = snapshot.previousReport ? normalizeSavedReportCopy(snapshot.previousReport) : null;
+    const restoredScope = restoreSavedReportExecutionScope({ report: restoredReport, previousReport: restoredPreviousReport, executionScope: snapshot.executionScope });
     setAccountId(restoredReport.account.id);
     setAdsWorkspace((current) => ({
       ...current,
       report: restoredReport,
       previousReport: restoredPreviousReport,
+      executionScope: restoredScope,
       verdict: snapshot.verdict,
       insights: snapshot.insights,
-      selectedCampaignIds: restoredReport.selectedCampaigns.map((campaign) => campaign.id),
-      since: restoredReport.dateRange.since,
-      until: restoredReport.dateRange.until,
-      pack: restoredReport.selectedPack,
-      compareMode: restoredPreviousReport ? "previous" : "off",
+      selectedCampaignIds: restoredScope.selectedCampaignIds,
+      since: restoredScope.since,
+      until: restoredScope.until,
+      pack: restoredScope.pack,
+      compareMode: restoredScope.compareMode,
+      targetCpa: restoredScope.targetCpa,
+      targetRoas: restoredScope.targetRoas,
       scopeExpanded: false,
     }));
     setRestoredReportId(snapshot.id);
@@ -633,6 +637,12 @@ export function DashboardShell() {
 
   React.useEffect(() => {
     if (!workspaceSession?.authenticated || !report || report.source === "sample") return;
+    const executionScope = adsWorkspace.executionScope || currentReportScope(report, {
+      previousReport: adsWorkspace.previousReport,
+      compareMode: adsWorkspace.compareMode,
+      targetCpa: adsWorkspace.targetCpa,
+      targetRoas: adsWorkspace.targetRoas,
+    });
     const timer = window.setTimeout(() => {
       void jsonFetch<{ saved: boolean }>("/api/workspace/reports", {
         method: "POST",
@@ -640,6 +650,7 @@ export function DashboardShell() {
         body: JSON.stringify({
           report,
           previousReport: adsWorkspace.previousReport,
+          executionScope,
           verdict: adsWorkspace.verdict,
           insights: adsWorkspace.insights,
         }),
@@ -647,7 +658,7 @@ export function DashboardShell() {
       }).then(() => loadSavedReports()).catch(() => undefined);
     }, 700);
     return () => window.clearTimeout(timer);
-  }, [adsWorkspace.insights, adsWorkspace.previousReport, adsWorkspace.verdict, loadSavedReports, report, workspaceSession?.authenticated]);
+  }, [adsWorkspace.executionScope, adsWorkspace.insights, adsWorkspace.previousReport, adsWorkspace.verdict, loadSavedReports, report, workspaceSession?.authenticated]);
 
   React.useEffect(() => {
     if (!accountMenuOpen) return;
@@ -1082,9 +1093,14 @@ export function DashboardShell() {
   function viewSampleReport() {
     setError("");
     const sampleState = initialAdsWorkspaceState();
+    const sampleReport = buildSampleReport({ dateRange: { since: sampleState.since, until: sampleState.until } });
     setAdsWorkspace({
       ...sampleState,
-      report: buildSampleReport({ dateRange: { since: sampleState.since, until: sampleState.until } }),
+      report: sampleReport,
+      executionScope: currentReportScope(sampleReport, { compareMode: "off" }),
+      selectedCampaignIds: sampleReport.selectedCampaigns.map((campaign) => campaign.id),
+      pack: sampleReport.selectedPack,
+      compareMode: "off",
     });
     setSampleReportActive(true);
     setMetaConnectOpen(false);
@@ -1340,7 +1356,11 @@ export function DashboardShell() {
               />
               {activeView === "ads" && reportHasData ? (
                 <>
-                  <button type="button" className="v2-icon-button v2-topbar-secondary-action" aria-label={language === "vi" ? "Làm mới báo cáo" : "Refresh report"} aria-busy={loading === "report"} disabled={loading === "report"} onClick={() => window.dispatchEvent(new Event("v2:refresh-report"))}>
+                  <button type="button" data-report-refresh="true" data-pending={loading === "report" || undefined} className="v2-icon-button v2-topbar-secondary-action" aria-label={language === "vi" ? "Làm mới báo cáo" : "Refresh report"} aria-busy={loading === "report"} disabled={loading === "report"} onClick={() => {
+                    if (!report) return;
+                    const scope = adsWorkspace.executionScope || currentReportScope(report, { previousReport: adsWorkspace.previousReport, compareMode: adsWorkspace.compareMode, targetCpa: adsWorkspace.targetCpa, targetRoas: adsWorkspace.targetRoas });
+                    window.dispatchEvent(new CustomEvent("v2:refresh-report-scope", { detail: { key: buildReportRequestKey(scope), scope } }));
+                  }}>
                     <RefreshCcwIcon />
                   </button>
                   <Button type="button" variant="outline" size="sm" className="v2-topbar-secondary-action" onClick={() => window.dispatchEvent(new Event("v2:open-export"))} disabled={exportingPdf}>

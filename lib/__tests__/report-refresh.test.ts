@@ -101,6 +101,92 @@ describe("current report refresh scope", () => {
     });
   });
 
+  it("freezes the campaigns returned by the comparison report", () => {
+    const requested: ReportExecutionScope = {
+      accountId: "act_sample_demo",
+      selectedCampaignIds: ["smp-c1"],
+      since: "2026-09-01",
+      until: "2026-09-05",
+      pack: "sales_roas",
+      compareMode: "campaign",
+      comparisonCampaignIds: ["requested-peer"],
+      comparisonSince: "2026-07-01",
+      comparisonUntil: "2026-07-31",
+      targetCpa: "invalid",
+      targetRoas: "2.50",
+    };
+    const report = buildSampleReport({ selectedCampaignIds: ["smp-c1"], pack: "sales_roas", dateRange: { since: requested.since, until: requested.until } });
+    const comparison = buildSampleReport({ selectedCampaignIds: ["smp-c2"], pack: "sales_roas", dateRange: { since: requested.comparisonSince, until: requested.comparisonUntil } });
+
+    expect(finalizeReportExecutionScope(requested, report, comparison)).toMatchObject({
+      comparisonCampaignIds: ["smp-c2"],
+      comparisonSince: "2026-07-01",
+      comparisonUntil: "2026-07-31",
+      targetCpa: "invalid",
+      targetRoas: "2.5",
+    });
+  });
+
+  it("keeps explicit ids on empty responses and clears disabled comparisons", () => {
+    const report = buildSampleReport({ selectedCampaignIds: [] });
+    report.selectedCampaigns = [];
+    const requested: ReportExecutionScope = {
+      accountId: report.account.id,
+      selectedCampaignIds: ["requested"],
+      since: report.dateRange.since,
+      until: report.dateRange.until,
+      pack: "auto",
+      compareMode: "off",
+      comparisonCampaignIds: ["stale"],
+      comparisonSince: "2026-01-01",
+      comparisonUntil: "2026-01-31",
+      targetCpa: "",
+      targetRoas: "",
+    };
+
+    expect(finalizeReportExecutionScope(requested, report, buildSampleReport())).toMatchObject({
+      selectedCampaignIds: ["requested"],
+      comparisonCampaignIds: [],
+      comparisonSince: "",
+      comparisonUntil: "",
+    });
+  });
+
+  it("resolves explicit comparison periods and automatic campaign peers", () => {
+    const base: ReportExecutionScope = {
+      accountId: "act_1",
+      selectedCampaignIds: ["new"],
+      since: "2026-09-01",
+      until: "2026-09-05",
+      pack: "auto",
+      compareMode: "campaign",
+      comparisonCampaignIds: [],
+      comparisonSince: "2026-07-01",
+      comparisonUntil: "2026-07-31",
+      targetCpa: "",
+      targetRoas: "",
+    };
+
+    expect(resolveReportExecutionScope(base, [
+      { id: "old", status: "ACTIVE" },
+      { id: "new", status: "ACTIVE" },
+    ])).toMatchObject({ comparisonCampaignIds: ["old"], comparisonSince: "2026-07-01", comparisonUntil: "2026-07-31" });
+    expect(resolveReportExecutionScope({ ...base, compareMode: "off" }, [])).toMatchObject({ comparisonCampaignIds: [], comparisonSince: "", comparisonUntil: "" });
+  });
+
+  it("uses safe defaults when comparison options are omitted", () => {
+    const report = buildSampleReport({ selectedCampaignIds: ["smp-c1"] });
+
+    expect(currentReportScope(report, {})).toMatchObject({
+      compareMode: "off",
+      comparisonCampaignIds: [],
+      comparisonSince: "",
+      comparisonUntil: "",
+      targetCpa: "",
+      targetRoas: "",
+    });
+  });
+
   it("deduplicates only executions with the same comparison and decision rules", () => {
     const base: ReportExecutionScope = {
       accountId: "act_1",
@@ -152,6 +238,7 @@ describe("current report refresh scope", () => {
     report.account = { ...report.account, id: "act_123", account_id: "123" };
 
     expect(reportCampaignSelectionForAccount("123", report)).toEqual(["smp-c2"]);
+    expect(reportCampaignSelectionForAccount("123", report, ["frozen"])).toEqual(["frozen"]);
   });
 
   it("builds a refresh request for only the campaign loaded in the current report", () => {
@@ -161,6 +248,19 @@ describe("current report refresh scope", () => {
     expect(url.searchParams.get("accountId")).toBe(report.account.id);
     expect(url.searchParams.getAll("campaignId")).toEqual(["smp-c2"]);
     expect(url.searchParams.get("pack")).toBe(report.selectedPack);
+  });
+
+  it("omits an auto-detected pack from the Meta request", () => {
+    const url = new URL(buildMetaReportUrl("https://workspace.test", {
+      accountId: "act_1",
+      selectedCampaignIds: [],
+      since: "2026-09-01",
+      until: "2026-09-05",
+      pack: "auto",
+    }));
+
+    expect(url.searchParams.has("pack")).toBe(false);
+    expect(url.searchParams.getAll("campaignId")).toEqual([]);
   });
 
   it("keeps an implicit all-active refresh implicit", () => {
@@ -259,6 +359,7 @@ describe("current report refresh scope", () => {
     })).toBe(true);
     expect(reportScopeDraftsEqual(base, { ...base, compareMode: "off" })).toBe(false);
     expect(reportScopeDraftsEqual(base, { ...base, selectedCampaignIds: [] })).toBe(false);
+    expect(reportScopeDraftsEqual({ ...base, targetCpa: "not-a-number" }, { ...base, targetCpa: "not-a-number" })).toBe(true);
   });
 
   it("offers campaign comparison only when an active peer exists outside the explicit scope", () => {

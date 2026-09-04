@@ -29,7 +29,6 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { inclusiveDays, isPeriodPreset } from "@/lib/period-scope";
 import { FATIGUE_FREQUENCY_THRESHOLD, buildCreativeSignals } from "@/lib/creative-signals";
 import { conciseVerdict } from "@/lib/verdict-summary";
 import { localizeHealthCheck, type HealthScoreSummary } from "@/lib/health-score";
@@ -38,20 +37,15 @@ import { formatComparisonChangePct, metricMovementIsBad, type MetricComparisonDe
 import { formatMetric } from "@/lib/metrics";
 import { buildDriverConcentration, evidenceCostLabel, selectStageContributors, trackedOutcomeValue } from "@/lib/performance-display";
 import { buildPerformanceStages, type PerformanceStage, type PerformanceStageKey } from "@/lib/performance-stages";
-import { campaignComparisonAvailable } from "@/lib/report-refresh";
 import { buildPlatformEfficiencyPoints } from "@/lib/segment-efficiency";
-import { SAMPLE_CAMPAIGNS } from "@/lib/sample-report";
+import { buildReportRequestKey, type ReportExecutionScope } from "@/lib/report-refresh";
 import type { AiInsightTable, CompareMode, DashboardReport, InterfaceLanguage, KpiCard, KpiPack, MetaCampaign, NormalizedRow, Verdict } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import {
   ActionPlanModal,
-  CampaignScopeDialog,
-  ComparisonDialog,
   CreativeComparisonDialog,
   EntityDetailSheet,
   ExportDiagnosisDialog,
-  KpiPackDialog,
-  PeriodScopeDialog,
   StageEvidenceSheet,
 } from "@/components/dashboard/performance-v2-overlays";
 import { MetaCreativeCover, MetaCreativeFocusPreview } from "@/components/dashboard/meta-creative-media";
@@ -89,10 +83,9 @@ type PerformanceV2Props = {
   initialTab?: "overview" | "creatives" | "evidence" | "actions";
   initialTabKey?: number;
   onEditScope: () => void;
-  onRefresh: () => void;
+  onRefresh: (scope?: ReportExecutionScope) => void;
   onExport: () => Promise<ClientReportPdfFile>;
   onReviewActions: () => void;
-  onApplyScope: (patch: Partial<{ selectedCampaignIds: string[]; since: string; until: string; pack: KpiPack | "auto"; compareMode: CompareMode }>) => Promise<void>;
 };
 
 type Stage = PerformanceStage;
@@ -131,14 +124,9 @@ export function PerformanceV2({
   onRefresh,
   onExport,
   onReviewActions,
-  onApplyScope,
 }: PerformanceV2Props) {
   const isVietnamese = language === "vi";
   const [activeTab, setActiveTab] = React.useState<(typeof tabValues)[number]>(initialTab === "actions" ? "overview" : initialTab);
-  const [campaignsOpen, setCampaignsOpen] = React.useState(false);
-  const [periodOpen, setPeriodOpen] = React.useState(false);
-  const [kpiOpen, setKpiOpen] = React.useState(false);
-  const [comparisonOpen, setComparisonOpen] = React.useState(false);
   const [exportOpen, setExportOpen] = React.useState(false);
   const [actionPlanOpen, setActionPlanOpen] = React.useState(false);
   const [selectedStage, setSelectedStage] = React.useState<Stage | null>(null);
@@ -146,33 +134,23 @@ export function PerformanceV2({
   const [creativeComparisonOpen, setCreativeComparisonOpen] = React.useState(false);
   const [selectedCreativeIds, setSelectedCreativeIds] = React.useState<string[]>([]);
   const currency = report.account.currency || "VND";
-  const scopeCampaigns = campaigns.length
-    ? campaigns
-    : report.account.id === "act_sample_demo"
-      ? SAMPLE_CAMPAIGNS
-      : report.campaignRows.map((row) => ({
-          id: row.id,
-          name: row.name,
-          status: "ACTIVE",
-          effective_status: "ACTIVE",
-        }));
   const stages = buildPerformanceStages({ report, previousReport, compareMode, language, stageKeys: funnelStageKeys });
   const primary = primaryResult(report, language);
   const risks = healthSummary?.items.filter((item) => item.severity !== "healthy") || [];
-  const inclusivePeriodDays = inclusiveDays({ since, until });
-  const periodDays = isPeriodPreset(inclusivePeriodDays) ? inclusivePeriodDays : 0;
-  const canCompareCampaigns = campaignComparisonAvailable(scopeCampaigns, selectedCampaignIds);
 
   const openActionPlan = React.useCallback(() => setActionPlanOpen(true), []);
 
   React.useEffect(() => {
     const openExport = () => setExportOpen(true);
-    const refresh = () => onRefresh();
+    const refresh = (event: Event) => {
+      const command = (event as CustomEvent<{ key: string; scope: ReportExecutionScope }>).detail;
+      if (command?.key === buildReportRequestKey(command.scope)) onRefresh(command.scope);
+    };
     window.addEventListener("v2:open-export", openExport);
-    window.addEventListener("v2:refresh-report", refresh);
+    window.addEventListener("v2:refresh-report-scope", refresh);
     return () => {
       window.removeEventListener("v2:open-export", openExport);
-      window.removeEventListener("v2:refresh-report", refresh);
+      window.removeEventListener("v2:refresh-report-scope", refresh);
     };
   }, [onRefresh]);
 
@@ -190,12 +168,8 @@ export function PerformanceV2({
     setSelectedCreativeIds((current) => current.filter((id) => availableIds.has(id)).slice(0, 2));
   }, [report.adRows]);
 
-  async function applyPeriod(range: { since: string; until: string }) {
-    await onApplyScope(range);
-  }
-
   return (
-    <section className="flex flex-col gap-4">
+    <section className="flex flex-col gap-4" data-current-report-scope data-account-id={report.account.id} data-campaign-ids={selectedCampaignIds.join(",")} data-since={since} data-until={until} data-compare-mode={compareMode} data-comparison-campaign-ids={previousReport?.selectedCampaigns.map((campaign) => campaign.id).join(",") || ""} data-comparison-since={previousReport?.dateRange.since || ""} data-comparison-until={previousReport?.dateRange.until || ""}>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-[-0.035em] sm:text-[28px]">
@@ -206,7 +180,7 @@ export function PerformanceV2({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="outline" size="sm" onClick={onEditScope} disabled={reportLoading}>
+          <Button type="button" data-edit-report-scope variant="outline" size="sm" onClick={onEditScope} disabled={reportLoading}>
             <SlidersHorizontalIcon data-icon="inline-start" />
             {isVietnamese ? "Sửa phạm vi" : "Edit scope"}
           </Button>
@@ -235,10 +209,10 @@ export function PerformanceV2({
 
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             {customizeAction}
-            <button type="button" disabled={reportLoading} className="v2-subtle-panel max-w-[280px] truncate px-3 py-2 text-left text-xs text-muted-foreground hover:border-primary/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50" title={accountLabel} onClick={() => setCampaignsOpen(true)}><b className="font-medium text-foreground">Account:</b> {accountLabel}</button>
-            <button type="button" disabled={reportLoading} className="v2-subtle-panel px-3 py-2 text-xs text-muted-foreground hover:border-primary/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50" aria-label={`${isVietnamese ? "Đổi khoảng ngày" : "Change date range"}: ${periodLabel}`} onClick={() => setPeriodOpen(true)}><b className="font-medium text-foreground">{isVietnamese ? "Ngày:" : "Dates:"}</b> {periodLabel}</button>
-            <button type="button" disabled={reportLoading} className="v2-subtle-panel flex items-center gap-1.5 px-3 py-2 text-xs text-muted-foreground hover:border-primary/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50" onClick={() => setComparisonOpen(true)}><GitCompareArrowsIcon className="size-3.5" /><b className="font-medium text-foreground">{isVietnamese ? "So sánh:" : "Compare:"}</b> {comparisonLabel(compareMode, language)}</button>
-            <button type="button" disabled={reportLoading} className="h-7 disabled:cursor-not-allowed disabled:opacity-50" onClick={() => setKpiOpen(true)}><Badge variant="secondary" className="h-7">{isVietnamese ? "KPI:" : "KPI:"} {scopeLabel}</Badge></button>
+            <button type="button" disabled={reportLoading} className="v2-subtle-panel max-w-[280px] truncate px-3 py-2 text-left text-xs text-muted-foreground hover:border-primary/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50" title={accountLabel} onClick={onEditScope}><b className="font-medium text-foreground">Account:</b> {accountLabel}</button>
+            <button type="button" disabled={reportLoading} className="v2-subtle-panel px-3 py-2 text-xs text-muted-foreground hover:border-primary/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50" aria-label={`${isVietnamese ? "Đổi khoảng ngày" : "Change date range"}: ${periodLabel}`} onClick={onEditScope}><b className="font-medium text-foreground">{isVietnamese ? "Ngày:" : "Dates:"}</b> {periodLabel}</button>
+            <button type="button" disabled={reportLoading} className="v2-subtle-panel flex items-center gap-1.5 px-3 py-2 text-xs text-muted-foreground hover:border-primary/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50" onClick={onEditScope}><GitCompareArrowsIcon className="size-3.5" /><b className="font-medium text-foreground">{isVietnamese ? "So sánh:" : "Compare:"}</b> {comparisonLabel(compareMode, language)}</button>
+            <button type="button" disabled={reportLoading} className="h-7 disabled:cursor-not-allowed disabled:opacity-50" onClick={onEditScope}><Badge variant="secondary" className="h-7">{isVietnamese ? "KPI:" : "KPI:"} {scopeLabel}</Badge></button>
           </div>
         </div>
 
@@ -294,7 +268,7 @@ export function PerformanceV2({
       </Tabs>
 
       <div className="flex items-center justify-end gap-2 border-t border-border pt-3" data-print-hidden>
-        <Button type="button" variant="ghost" size="sm" onClick={onRefresh} disabled={reportLoading}>
+        <Button type="button" data-report-refresh="true" data-pending={reportLoading || undefined} variant="ghost" size="sm" onClick={() => onRefresh()} disabled={reportLoading}>
           <RefreshCwIcon data-icon="inline-start" />
           {reportLoading ? (isVietnamese ? "Đang làm mới" : "Refreshing") : (isVietnamese ? "Làm mới" : "Refresh")}
         </Button>
@@ -304,10 +278,6 @@ export function PerformanceV2({
         </Button>
       </div>
 
-      <CampaignScopeDialog open={campaignsOpen} onOpenChange={setCampaignsOpen} campaigns={scopeCampaigns} selectedIds={selectedCampaignIds} currency={currency} language={language} busy={reportLoading} onApply={(ids) => onApplyScope({ selectedCampaignIds: ids })} />
-      <PeriodScopeDialog open={periodOpen} onOpenChange={setPeriodOpen} currentDays={periodDays} since={since} until={until} language={language} busy={reportLoading} onApply={applyPeriod} />
-      <KpiPackDialog open={kpiOpen} onOpenChange={setKpiOpen} current={pack} language={language} busy={reportLoading} onApply={(nextPack) => onApplyScope({ pack: nextPack })} />
-      <ComparisonDialog open={comparisonOpen} onOpenChange={setComparisonOpen} current={compareMode} campaignComparisonAvailable={canCompareCampaigns} language={language} busy={reportLoading} onApply={(nextMode) => onApplyScope({ compareMode: nextMode })} />
       <ExportDiagnosisDialog open={exportOpen} onOpenChange={setExportOpen} report={report} accountLabel={accountLabel} periodLabel={periodLabel} language={language} exporting={exporting} onPreparePdf={onExport} />
       <ActionPlanModal open={actionPlanOpen} onOpenChange={setActionPlanOpen} report={report} verdict={verdict} healthSummary={healthSummary} language={language} loading={reviewing} onGenerate={onReviewActions} onExport={() => setExportOpen(true)} />
       <StageEvidenceSheet stage={selectedStage} onOpenChange={(open) => !open && setSelectedStage(null)} report={report} onReviewAction={() => { setSelectedStage(null); setActionPlanOpen(true); }} />

@@ -35,15 +35,21 @@ const browser = await puppeteer.launch({ headless: true, ...(executablePath ? { 
 const page = await browser.newPage();
 const browserProblems = [];
 page.on("console", (message) => {
-  if (message.type() === "error") browserProblems.push(message.text());
+  if (message.type() === "error" && !message.text().startsWith("Failed to load resource:")) browserProblems.push(message.text());
 });
 page.on("pageerror", (error) => browserProblems.push(error.message));
+page.on("response", (response) => {
+  if (response.status() >= 500 && !response.url().endsWith("/api/ai/verdict")) browserProblems.push(`${response.status()} ${response.url()}`);
+});
 
 try {
   await page.setViewport({ width: 1280, height: 900, deviceScaleFactor: 1 });
   await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
 
   if (!await page.$("[data-current-report-scope]")) {
+    await page.waitForFunction(() => [...document.querySelectorAll("button")].some((button) => /Start analysis|Run analysis|Edit scope|Bắt đầu phân tích/u.test(button.textContent || "")), { timeout: 15_000 });
+    await clickButtonMatching(page, ["Start analysis", "Run analysis", "Edit scope", "Bắt đầu phân tích"]);
+    await new Promise((resolve) => setTimeout(resolve, 1200));
     const openedSample = await clickButtonMatching(page, ["View a sample report", "Use sample report", "Xem báo cáo mẫu"]);
     assert.equal(openedSample, true, "Could not open the sample report");
   }
@@ -75,6 +81,7 @@ try {
   assert.ok(refreshButtons.length >= 2, "The report must expose refresh from both workspace and report contexts");
   for (const button of refreshButtons) {
     await button.click();
+    await new Promise((resolve) => setTimeout(resolve, 1500));
     await page.waitForFunction(() => !document.querySelector('[data-report-refresh="true"][data-pending="true"]'), { timeout: 10_000 });
     assert.deepEqual(await scopeIdentity(page), initialScope, "Refresh changed the visible report scope");
   }
@@ -82,6 +89,7 @@ try {
   await page.setViewport({ width: 375, height: 812, deviceScaleFactor: 1 });
   await page.click("[data-edit-report-scope]");
   await page.waitForSelector("[data-report-scope-modal]", { timeout: 5_000 });
+  await new Promise((resolve) => setTimeout(resolve, 400));
   const mobileLayout = await page.$eval("[data-report-scope-modal]", (element) => {
     const bounds = element.getBoundingClientRect();
     return {

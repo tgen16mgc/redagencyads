@@ -122,6 +122,8 @@ export type Database = {
           selected_pack: string;
           report: Json;
           previous_report: Json | null;
+          execution_scope: Json | null;
+          scope_key: string | null;
           verdict: Json | null;
           insights: Json | null;
           created_at: string;
@@ -138,6 +140,8 @@ export type Database = {
           selected_pack: string;
           report: Json;
           previous_report?: Json | null;
+          execution_scope?: Json | null;
+          scope_key?: string | null;
           verdict?: Json | null;
           insights?: Json | null;
           created_at?: string;

@@ -55,6 +55,25 @@ describe("saved report execution scope", () => {
       .not.toBe(reportSnapshotKey(report, { ...executionScope, comparisonSince: "2026-06-01", comparisonUntil: "2026-06-30" }));
   });
 
+  it("keeps the legacy key when a snapshot has no stored execution scope", () => {
+    const report = buildSampleReport({ pack: "traffic", dateRange: { since: "2026-08-01", until: "2026-08-31" } });
+
+    expect(reportSnapshotKey(report)).toBe("act_sample_demo:2026-08-01:2026-08-31:traffic");
+  });
+
+  it("uses persisted scope and derives same-campaign legacy comparison", () => {
+    const report = buildSampleReport({ selectedCampaignIds: ["smp-c1"] });
+    const previousReport = buildSampleReport({ selectedCampaignIds: ["smp-c1"], dateRange: { since: "2026-08-01", until: "2026-08-31" } });
+
+    expect(restoreSavedReportExecutionScope({ report, previousReport, executionScope })).toBe(executionScope);
+    expect(restoreSavedReportExecutionScope({ report, previousReport, executionScope: null })).toMatchObject({
+      compareMode: "previous",
+      comparisonCampaignIds: ["smp-c1"],
+      comparisonSince: "2026-08-01",
+      comparisonUntil: "2026-08-31",
+    });
+  });
+
   it("derives the real campaign comparison from a legacy snapshot", () => {
     const report = buildSampleReport({ selectedCampaignIds: ["smp-c1"], pack: "sales_roas", dateRange: { since: executionScope.since, until: executionScope.until } });
     const previousReport = buildSampleReport({ selectedCampaignIds: ["smp-c2"], pack: "sales_roas", dateRange: { since: executionScope.comparisonSince, until: executionScope.comparisonUntil } });

@@ -1,6 +1,16 @@
 "use client";
 
 import * as React from "react";
+import {
+  Button as HeroButton,
+  Chip,
+  Input as HeroInput,
+  Label as HeroLabel,
+  ListBox,
+  Modal as HeroModal,
+  Select as HeroSelect,
+  TextField,
+} from "@heroui/react";
 import { toast } from "sonner";
 import {
   Bar,
@@ -23,7 +33,6 @@ import {
   FileTextIcon,
   SlidersHorizontalIcon,
   SparklesIcon,
-  XIcon,
 } from "lucide-react";
 import BorderGlow from "@/components/BorderGlow";
 import type { ClientReportPdfFile } from "@/lib/client-report";
@@ -73,6 +82,7 @@ import { runDiagnostics } from "@/lib/diagnosis";
 import type { HealthScoreSummary } from "@/lib/health-score";
 import { buildKpiComparisons } from "@/lib/metric-comparison";
 import { formatMetric } from "@/lib/metrics";
+import { getCompareRange } from "@/lib/report-ranges";
 import {
   FUNNEL_STAGE_STORAGE_KEY,
   defaultPerformanceStageKeys,
@@ -81,15 +91,15 @@ import {
   serializePerformanceStageKeys,
   type PerformanceStageKey,
 } from "@/lib/performance-stages";
-import { getCompareRange } from "@/lib/report-ranges";
 import {
   buildDashboardReportKey,
   buildMetaReportUrl,
   buildReportRequestKey,
   currentReportScope,
-  preserveRequestedCampaignSelection,
+  finalizeReportExecutionScope,
   reportScopeDraftsEqual,
-  toggleReportCampaignSelection,
+  resolveReportExecutionScope,
+  type ReportExecutionScope,
   type ReportScopeDraft,
 } from "@/lib/report-refresh";
 import { rowDecision } from "@/lib/row-decision";
@@ -154,12 +164,7 @@ const providerItems = [
 
 export type Provider = (typeof providerItems)[number]["value"];
 
-type ReportScopePatch = Partial<Pick<
-  AdsWorkspaceState,
-  "selectedCampaignIds" | "since" | "until" | "pack" | "compareMode" | "targetCpa" | "targetRoas"
->>;
-
-type ReportRequestOverrides = ReportScopePatch & { accountId?: string };
+type ReportScopePatch = Partial<ReportExecutionScope>;
 
 const compareItems: { label: string; value: CompareMode }[] = [
   { label: "Previous period", value: "previous" },
@@ -351,6 +356,7 @@ export type AdsWorkspaceState = {
   targetRoas: string;
   report: DashboardReport | null;
   previousReport: DashboardReport | null;
+  executionScope: ReportExecutionScope | null;
   verdict: Verdict | null;
   insights: AiInsightTable | null;
   aiLoading: { verdict: boolean; insights: boolean };
@@ -375,6 +381,7 @@ export function initialAdsWorkspaceState(): AdsWorkspaceState {
     targetRoas: "",
     report: null,
     previousReport: null,
+    executionScope: null,
     verdict: null,
     insights: null,
     aiLoading: { verdict: false, insights: false },
@@ -399,6 +406,7 @@ export function resetAdsWorkspaceOnLogout(current: AdsWorkspaceState): AdsWorksp
     campaigns: [],
     report: null,
     previousReport: null,
+    executionScope: null,
     verdict: null,
     insights: null,
     aiLoading: { verdict: false, insights: false },
@@ -514,6 +522,7 @@ export function AdsWorkspace({
     targetRoas,
     report,
     previousReport,
+    executionScope,
     verdict,
     insights,
     aiLoading,
@@ -527,7 +536,7 @@ export function AdsWorkspace({
   const copy = adsCopy[language];
   const reportStartRef = React.useRef<HTMLDivElement>(null);
   const autoVerdictKeyRef = React.useRef("");
-  const lastReportRequestRef = React.useRef<ReportRequestOverrides>({});
+  const lastReportRequestRef = React.useRef<ReportExecutionScope | null>(null);
   const reportRequestSequenceRef = React.useRef(0);
   const reportReadySequenceRef = React.useRef(0);
   const activeReportRequestRef = React.useRef<{ id: number; key: string; controller: AbortController } | null>(null);
@@ -622,37 +631,56 @@ export function AdsWorkspace({
     }));
   }, [onStateChange, reportKey]);
 
-  async function fetchReportForRange(range: { since: string; until: string }, overrides: ReportRequestOverrides = {}, signal?: AbortSignal) {
-    const resolvedPack = overrides.pack ?? pack;
+  function scopeFromState(patch: ReportScopePatch = {}) {
+    const base: ReportExecutionScope = executionScope || {
+      accountId: accountId || report?.account.id || "",
+      selectedCampaignIds,
+      since,
+      until,
+      pack,
+      compareMode,
+      comparisonCampaignIds: [],
+      comparisonSince: "",
+      comparisonUntil: "",
+      targetCpa,
+      targetRoas,
+    };
+    const compareModeChanged = patch.compareMode !== undefined && patch.compareMode !== base.compareMode;
+    const draft = {
+      ...base,
+      ...patch,
+      ...(compareModeChanged ? { comparisonCampaignIds: [], comparisonSince: "", comparisonUntil: "" } : {}),
+    };
+    const availableCampaigns = campaigns.length
+      ? campaigns
+      : report?.source === "sample"
+        ? SAMPLE_CAMPAIGNS
+        : report?.selectedCampaigns || [];
+    return resolveReportExecutionScope(draft, availableCampaigns);
+  }
+
+  async function fetchReportForScope(scope: ReportExecutionScope, comparison: boolean, signal?: AbortSignal) {
     const url = buildMetaReportUrl(window.location.origin, {
-      accountId: overrides.accountId ?? accountId,
-      selectedCampaignIds: overrides.selectedCampaignIds ?? selectedCampaignIds,
-      since: range.since,
-      until: range.until,
-      pack: resolvedPack,
+      accountId: scope.accountId,
+      selectedCampaignIds: comparison ? scope.comparisonCampaignIds : scope.selectedCampaignIds,
+      since: comparison ? scope.comparisonSince : scope.since,
+      until: comparison ? scope.comparisonUntil : scope.until,
+      pack: scope.pack,
     });
     return jsonFetch<{ report: DashboardReport }>(url, { timeoutMs: 30000, signal });
   }
 
-  async function pullReport(overrides: ReportRequestOverrides = {}) {
-    const { accountId: requestedAccountId, ...stateOverrides } = overrides;
-    const resolvedAccountId = requestedAccountId ?? accountId;
-    const resolvedSelectedCampaignIds = overrides.selectedCampaignIds ?? selectedCampaignIds;
-    const nextSince = overrides.since ?? since;
-    const nextUntil = overrides.until ?? until;
-    const nextPack = overrides.pack ?? pack;
-    const nextCompareMode = overrides.compareMode ?? compareMode;
+  async function pullReport(requestedScope: ReportExecutionScope) {
+    const scope = scopeFromState(requestedScope);
     const sampleMode = report?.source === "sample" && !accountId;
-    if ((!sampleMode && !resolvedAccountId) || !nextSince || !nextUntil || nextSince > nextUntil) return;
+    if ((!sampleMode && !scope.accountId) || !scope.since || !scope.until || scope.since > scope.until) return;
+    if (scope.compareMode !== "off" && (!scope.comparisonSince || !scope.comparisonUntil)) return;
+    if (scope.compareMode === "campaign" && !scope.comparisonCampaignIds.length) {
+      onError(language === "vi" ? "Chọn ít nhất một campaign đối chứng." : "Choose at least one comparison campaign.");
+      return;
+    }
 
-    const requestKey = buildReportRequestKey({
-      accountId: resolvedAccountId || report?.account.id || "sample",
-      selectedCampaignIds: resolvedSelectedCampaignIds,
-      since: nextSince,
-      until: nextUntil,
-      pack: nextPack,
-      compareMode: nextCompareMode,
-    });
+    const requestKey = buildReportRequestKey(scope);
     if (activeReportRequestRef.current?.key === requestKey) return;
 
     abortAiRequests();
@@ -661,38 +689,38 @@ export function AdsWorkspace({
     reportReadySequenceRef.current = 0;
     const controller = new AbortController();
     activeReportRequestRef.current = { id: requestId, key: requestKey, controller };
-    lastReportRequestRef.current = overrides;
+    lastReportRequestRef.current = scope;
     const requestIsCurrent = () => activeReportRequestRef.current?.id === requestId && !controller.signal.aborted;
 
     if (sampleMode) {
-      const sampleSelectedIds = resolvedSelectedCampaignIds;
-      const samplePack = nextPack;
       setReportFlowError("");
       setReportFlow("pulling");
       onLoadingChange("report");
       try {
         await new Promise((resolve) => window.setTimeout(resolve, 220));
         if (!requestIsCurrent()) return;
-        const current = buildSampleReport({ selectedCampaignIds: sampleSelectedIds, pack: samplePack, dateRange: { since: nextSince, until: nextUntil } });
+        const current = buildSampleReport({ selectedCampaignIds: scope.selectedCampaignIds, pack: scope.pack, dateRange: { since: scope.since, until: scope.until } });
         let sampleComparison: DashboardReport | null = null;
-        if (nextCompareMode === "campaign") {
-          if (!sampleSelectedIds.length) throw new Error("Choose at least one campaign before comparing it with the peer group.");
-          const peerIds = SAMPLE_CAMPAIGNS.filter((campaign) => !sampleSelectedIds.includes(campaign.id)).map((campaign) => campaign.id);
-          if (!peerIds.length) throw new Error("No active peer campaigns are available outside the selected group.");
-          sampleComparison = buildSampleReport({ selectedCampaignIds: peerIds, pack: samplePack, dateRange: { since: nextSince, until: nextUntil } });
-        } else if (nextCompareMode !== "off") {
-          sampleComparison = buildSampleReport({ selectedCampaignIds: sampleSelectedIds, pack: samplePack, dateRange: getCompareRange({ since: nextSince, until: nextUntil }, nextCompareMode) });
+        if (scope.compareMode !== "off") {
+          sampleComparison = buildSampleReport({
+            selectedCampaignIds: scope.comparisonCampaignIds,
+            pack: current.selectedPack,
+            dateRange: { since: scope.comparisonSince, until: scope.comparisonUntil },
+          });
         }
         if (!requestIsCurrent()) return;
+        const finalScope = finalizeReportExecutionScope(scope, current, sampleComparison);
         updateState({
-          ...stateOverrides,
           report: current,
           previousReport: sampleComparison,
-          selectedCampaignIds: preserveRequestedCampaignSelection(resolvedSelectedCampaignIds, current),
-          since: current.dateRange.since,
-          until: current.dateRange.until,
-          pack: current.selectedPack,
-          compareMode: nextCompareMode,
+          executionScope: finalScope,
+          selectedCampaignIds: finalScope.selectedCampaignIds,
+          since: finalScope.since,
+          until: finalScope.until,
+          pack: finalScope.pack,
+          compareMode: finalScope.compareMode,
+          targetCpa: finalScope.targetCpa,
+          targetRoas: finalScope.targetRoas,
           verdict: null,
           insights: null,
           aiLoading: { verdict: false, insights: false },
@@ -725,46 +753,45 @@ export function AdsWorkspace({
     setReportFlow("pulling");
     onLoadingChange("report");
     try {
-      const current = await fetchReportForRange({ since: nextSince, until: nextUntil }, overrides, controller.signal);
+      const current = await fetchReportForScope(scope, false, controller.signal);
       if (!requestIsCurrent()) return;
-      const refreshedScope = currentReportScope(current.report);
+      const primaryScope: ReportExecutionScope = {
+        ...scope,
+        accountId: current.report.account.id,
+        selectedCampaignIds: current.report.selectedCampaigns.length
+          ? current.report.selectedCampaigns.map((campaign) => campaign.id)
+          : scope.selectedCampaignIds,
+        since: current.report.dateRange.since,
+        until: current.report.dateRange.until,
+        pack: current.report.selectedPack,
+      };
       let nextPreviousReport: DashboardReport | null = null;
-      if (nextCompareMode !== "off") {
-        const selectedIds = refreshedScope.selectedCampaignIds;
-        if (nextCompareMode === "campaign" && !selectedIds.length) {
-          throw new Error("Choose at least one campaign before comparing it with the peer group.");
-        }
-        const comparisonOverrides = nextCompareMode === "campaign"
-          ? { ...overrides, accountId: refreshedScope.accountId, pack: refreshedScope.pack, selectedCampaignIds: campaigns.filter((campaign) => campaignStatus(campaign) === "ACTIVE" && !selectedIds.includes(campaign.id)).map((campaign) => campaign.id) }
-          : { ...overrides, accountId: refreshedScope.accountId, pack: refreshedScope.pack, selectedCampaignIds: selectedIds };
-        if (nextCompareMode === "campaign" && !comparisonOverrides.selectedCampaignIds?.length) {
-          throw new Error("No active peer campaigns are available outside the selected group.");
-        }
-        const previousRange = getCompareRange({ since: nextSince, until: nextUntil }, nextCompareMode);
-        const previous = await fetchReportForRange(previousRange, comparisonOverrides, controller.signal);
+      if (scope.compareMode !== "off") {
+        const previous = await fetchReportForScope(primaryScope, true, controller.signal);
         if (!requestIsCurrent()) return;
         nextPreviousReport = previous.report;
       }
+      const finalScope = finalizeReportExecutionScope(primaryScope, current.report, nextPreviousReport);
       updateState({
-        ...stateOverrides,
         report: current.report,
         previousReport: nextPreviousReport,
-        selectedCampaignIds: preserveRequestedCampaignSelection(resolvedSelectedCampaignIds, current.report),
-        since: refreshedScope.since,
-        until: refreshedScope.until,
-        pack: refreshedScope.pack,
-        compareMode: nextCompareMode,
+        executionScope: finalScope,
+        selectedCampaignIds: finalScope.selectedCampaignIds,
+        since: finalScope.since,
+        until: finalScope.until,
+        pack: finalScope.pack,
+        compareMode: finalScope.compareMode,
+        targetCpa: finalScope.targetCpa,
+        targetRoas: finalScope.targetRoas,
         verdict: null,
         insights: null,
         aiLoading: { verdict: false, insights: false },
         scopeExpanded: false,
       });
-      if (requestedAccountId && requestedAccountId !== accountId) onAccountIdChange(refreshedScope.accountId);
+      if (scope.accountId !== accountId) onAccountIdChange(finalScope.accountId);
       onReportReady?.();
       window.setTimeout(() => reportStartRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
-      if (Object.keys(overrides).length) {
-        toast.success(language === "vi" ? "Đã áp dụng thay đổi" : "Changes applied", { description: language === "vi" ? "Báo cáo đã được kéo lại với phạm vi và quy tắc mới." : "The report was refreshed with the new scope and decision rules." });
-      }
+      toast.success(language === "vi" ? "Đã làm mới đúng phạm vi" : "Exact scope refreshed", { description: language === "vi" ? "Campaign, kỳ và đối chứng đang xem được giữ nguyên." : "The visible campaigns, period, and comparison were preserved." });
       setReportFlow("ready");
       reportReadySequenceRef.current = requestId;
       window.setTimeout(() => {
@@ -872,7 +899,7 @@ export function AdsWorkspace({
         state={scopeExpanded ? "idle" : reportFlow}
         error={reportFlowError}
         onClose={() => setReportFlow("idle")}
-        onRetry={() => void pullReport(lastReportRequestRef.current)}
+        onRetry={() => lastReportRequestRef.current && void pullReport(lastReportRequestRef.current)}
       />
       <ReportScopeDialog
           open={scopeExpanded}
@@ -889,6 +916,7 @@ export function AdsWorkspace({
           compareMode={compareMode}
           targetCpa={targetCpa || (report?.source === "sample" ? "40" : "")}
           targetRoas={targetRoas || (report?.source === "sample" ? "2.5" : "")}
+          executionScope={executionScope}
           error={reportFlow === "error" ? reportFlowError : ""}
           onAccountIdChange={report?.source === "sample" && !accountId ? () => undefined : onAccountIdChange}
           onRestoreCampaignSelection={(ids) => updateState({ selectedCampaignIds: ids })}
@@ -957,10 +985,9 @@ export function AdsWorkspace({
             reviewing={aiLoading.verdict}
             reportLoading={loading === "report"}
             onEditScope={() => updateState({ scopeExpanded: true })}
-            onRefresh={() => void pullReport(currentReportScope(report, selectedCampaignIds))}
+            onRefresh={(scope) => void pullReport(scope || executionScope || currentReportScope(report, { previousReport, compareMode, targetCpa, targetRoas }))}
             onExport={onExportPdf}
             onReviewActions={runAi}
-            onApplyScope={(patch) => pullReport(patch)}
             customizeAction={
               <CustomKpiSetSheet
                 defaultKpis={report.kpis}
@@ -1174,6 +1201,7 @@ function ReportScopeDialog({
   compareMode,
   targetCpa,
   targetRoas,
+  executionScope,
   error,
   onAccountIdChange,
   onRestoreCampaignSelection,
@@ -1194,24 +1222,41 @@ function ReportScopeDialog({
   compareMode: CompareMode;
   targetCpa: string;
   targetRoas: string;
+  executionScope: ReportExecutionScope | null;
   error: string;
   onAccountIdChange: (id: string) => void;
   onRestoreCampaignSelection: (ids: string[]) => void;
   onOpenChange: (open: boolean) => void;
-  onSave: (patch: ReportRequestOverrides) => void;
+  onSave: (scope: ReportExecutionScope) => void;
 }) {
   const isVietnamese = language === "vi";
-  const initialDraft: ReportScopeDraft = { accountId, selectedCampaignIds, since, until, pack, compareMode, targetCpa, targetRoas };
+  const comparisonRange = compareMode === "off" ? { since: "", until: "" } : getCompareRange({ since, until }, compareMode);
+  const initialDraft: ReportScopeDraft = executionScope || {
+    accountId,
+    selectedCampaignIds,
+    since,
+    until,
+    pack,
+    compareMode,
+    comparisonCampaignIds: compareMode === "campaign" ? [] : selectedCampaignIds,
+    comparisonSince: comparisonRange.since,
+    comparisonUntil: comparisonRange.until,
+    targetCpa,
+    targetRoas,
+  };
   const [draft, setDraft] = React.useState<ReportScopeDraft>(initialDraft);
   const [baseline, setBaseline] = React.useState<ReportScopeDraft>(initialDraft);
   const [thresholdsEnabled, setThresholdsEnabled] = React.useState(Boolean(targetCpa || targetRoas));
   const wasOpenRef = React.useRef(false);
   const invalidDates = Boolean(draft.since && draft.until && draft.since > draft.until);
+  const invalidComparisonDates = draft.compareMode !== "off" && (
+    !draft.comparisonSince
+    || !draft.comparisonUntil
+    || draft.comparisonSince > draft.comparisonUntil
+  );
   const invalidThresholds = thresholdsEnabled && (
-    !Number.isFinite(Number(draft.targetCpa))
-    || Number(draft.targetCpa) <= 0
-    || !Number.isFinite(Number(draft.targetRoas))
-    || Number(draft.targetRoas) <= 0
+    (Boolean(draft.targetCpa) && (!Number.isFinite(Number(draft.targetCpa)) || Number(draft.targetCpa) <= 0))
+    || (Boolean(draft.targetRoas) && (!Number.isFinite(Number(draft.targetRoas)) || Number(draft.targetRoas) <= 0))
   );
   const reportPending = loading === "report";
   const effectiveDraft = {
@@ -1219,11 +1264,16 @@ function ReportScopeDialog({
     targetCpa: thresholdsEnabled ? draft.targetCpa : "",
     targetRoas: thresholdsEnabled ? draft.targetRoas : "",
   };
-  const unchanged = reportScopeDraftsEqual(effectiveDraft, baseline);
+  const unchanged = Boolean(executionScope) && reportScopeDraftsEqual(effectiveDraft, baseline);
+  const missingCampaignComparison = draft.compareMode === "campaign" && !(draft.comparisonCampaignIds || []).length;
+  const primaryCampaigns = selectedCampaignSummary(draft.selectedCampaignIds, campaigns, language);
+  const comparisonCampaigns = draft.compareMode === "campaign"
+    ? selectedCampaignSummary(draft.comparisonCampaignIds || [], campaigns, language)
+    : primaryCampaigns;
 
   React.useEffect(() => {
     if (open && !wasOpenRef.current) {
-      const next = { accountId, selectedCampaignIds, since, until, pack, compareMode, targetCpa, targetRoas };
+      const next = initialDraft;
       setDraft(next);
       setBaseline(next);
       setThresholdsEnabled(Boolean(targetCpa || targetRoas));
@@ -1241,144 +1291,128 @@ function ReportScopeDialog({
   }
 
   function save() {
-    if (!draft.accountId || unchanged || invalidDates || invalidThresholds || reportPending || loading === "campaigns") return;
-    onSave(effectiveDraft);
+    if (!draft.accountId || unchanged || invalidDates || invalidComparisonDates || missingCampaignComparison || invalidThresholds || reportPending || loading === "campaigns") return;
+    onSave({
+      ...effectiveDraft,
+      comparisonCampaignIds: effectiveDraft.comparisonCampaignIds || [],
+      comparisonSince: effectiveDraft.comparisonSince || "",
+      comparisonUntil: effectiveDraft.comparisonUntil || "",
+    });
+  }
+
+  function changePrimaryRange(patch: Partial<Pick<ReportExecutionScope, "since" | "until">>) {
+    setDraft((current) => {
+      const next = { ...current, ...patch };
+      if (next.compareMode !== "previous" || !next.since || !next.until || next.since > next.until) return next;
+      const range = getCompareRange({ since: next.since, until: next.until }, "previous");
+      return { ...next, comparisonSince: range.since, comparisonUntil: range.until };
+    });
   }
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="flex h-[min(720px,calc(100dvh-2rem))] w-[calc(100vw-2rem)] min-w-0 max-w-[520px] flex-col gap-0 overflow-hidden rounded-[24px] border border-border bg-popover p-0 shadow-2xl" showCloseButton={false}>
-        <DialogHeader className="shrink-0 flex-row items-center justify-between gap-4 border-b border-border px-4 py-4 text-left sm:px-6">
-          <div className="flex min-w-0 items-center gap-3">
-            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-primary">
-              <SlidersHorizontalIcon className="size-[19px]" />
-            </span>
-            <div className="min-w-0">
-              <DialogTitle className="text-lg font-semibold">{isVietnamese ? "Sửa phạm vi báo cáo" : "Edit report scope"}</DialogTitle>
-              <DialogDescription className="mt-0.5 text-xs">{isVietnamese ? "Chỉ thay đổi những gì ảnh hưởng đến quyết định." : "Change only what affects the decision."}</DialogDescription>
-            </div>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <Badge variant="secondary">{isVietnamese ? "Cài đặt báo cáo" : "Report settings"}</Badge>
-            <button type="button" disabled={reportPending} className="flex size-8 items-center justify-center rounded-[10px] border border-border bg-secondary text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50" aria-label={isVietnamese ? "Đóng" : "Close"} onClick={() => handleOpenChange(false)}>
-              <XIcon className="size-[15px]" />
-            </button>
-          </div>
-        </DialogHeader>
+    <HeroModal.Backdrop className="heroui-scope" isOpen={open} onOpenChange={handleOpenChange} variant="blur">
+      <HeroModal.Container placement="auto" scroll="inside" size="lg">
+        <HeroModal.Dialog className="max-h-[calc(100svh-1rem)] overflow-hidden sm:max-w-[880px]" data-report-scope-modal>
+          <HeroModal.CloseTrigger isDisabled={reportPending} />
+          <HeroModal.Header className="border-b border-border pb-5">
+            <HeroModal.Icon className="bg-accent-soft text-accent-soft-foreground"><SlidersHorizontalIcon className="size-5" /></HeroModal.Icon>
+            <HeroModal.Heading>{isVietnamese ? "Sửa phạm vi báo cáo" : "Edit report scope"}</HeroModal.Heading>
+            <p className="mt-1 max-w-[68ch] text-sm leading-5 text-muted">{isVietnamese ? "Chọn chính xác báo cáo cần làm mới và đối chứng dùng để ra quyết định. Thay đổi chỉ áp dụng khi bạn xác nhận." : "Choose the exact report to refresh and the comparison used for the decision. Nothing changes until you apply."}</p>
+          </HeroModal.Header>
 
-        <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-4 py-5 sm:px-6">
-          <div className="grid min-w-0 gap-5">
-            <section className="grid min-w-0 gap-3.5">
-              <div className="text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">{isVietnamese ? "Nguồn & kỳ" : "Source & period"}</div>
-              <Field className="min-w-0">
-                <FieldLabel>{isVietnamese ? "Tài khoản quảng cáo" : "Ad account"}</FieldLabel>
-                <Select
-                  disabled={reportPending}
-                  items={accounts.map((account) => ({ label: account.name, value: account.id }))}
-                  value={draft.accountId}
-                  onValueChange={(value) => {
+          <HeroModal.Body className="gap-6 p-4 text-foreground sm:p-6">
+            {error ? <div role="alert" className="rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger">{error}</div> : null}
+            <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_280px]">
+              <div className="grid min-w-0 gap-6">
+                <section className="grid gap-4" aria-labelledby="report-source-heading">
+                  <div><h3 id="report-source-heading" className="text-sm font-semibold">{isVietnamese ? "Báo cáo đang xem" : "Report in view"}</h3><p className="mt-1 text-xs text-muted">{isVietnamese ? "Account, campaign và kỳ chính của báo cáo." : "The report account, campaigns, and primary period."}</p></div>
+                  <HeroSelect className="w-full" isDisabled={reportPending} value={draft.accountId} variant="secondary" onChange={(value) => {
                     if (!value || value === draft.accountId) return;
-                    setDraft((current) => ({ ...current, accountId: value, selectedCampaignIds: [] }));
-                    onAccountIdChange(value);
-                  }}
-                >
-                  <SelectTrigger className="h-10 w-full"><SelectValue /></SelectTrigger>
-                  <SelectContent><SelectGroup>{accounts.map((account) => <SelectItem key={account.id} value={account.id}>{account.name}</SelectItem>)}</SelectGroup></SelectContent>
-                </Select>
-              </Field>
-              <Field className="min-w-0" data-invalid={invalidDates || undefined}>
-                <FieldLabel>{isVietnamese ? "Khoảng evidence" : "Evidence window"}</FieldLabel>
-                <div className="grid min-h-10 min-w-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center overflow-hidden rounded-xl bg-secondary/75 ring-1 ring-foreground/5 focus-within:ring-2 focus-within:ring-ring">
-                  <label className="sr-only" htmlFor="report-scope-since">{isVietnamese ? "Từ ngày" : "Since"}</label>
-                  <Input id="report-scope-since" type="date" disabled={reportPending} value={draft.since} onChange={(event) => setDraft((current) => ({ ...current, since: event.target.value }))} className="min-w-0 border-0 bg-transparent shadow-none focus-visible:ring-0" />
-                  <span className="px-1 text-sm text-muted-foreground">–</span>
-                  <label className="sr-only" htmlFor="report-scope-until">{isVietnamese ? "Đến ngày" : "Until"}</label>
-                  <Input id="report-scope-until" type="date" disabled={reportPending} value={draft.until} onChange={(event) => setDraft((current) => ({ ...current, until: event.target.value }))} className="min-w-0 border-0 bg-transparent shadow-none focus-visible:ring-0" />
-                </div>
-              </Field>
-              {invalidDates ? <p className="text-xs text-destructive">{isVietnamese ? "Ngày kết thúc phải bằng hoặc sau ngày bắt đầu." : "Until must be the same as or later than Since."}</p> : null}
-              {error ? <p role="alert" className="rounded-xl border border-destructive/35 bg-destructive/10 px-3 py-2 text-xs leading-5 text-destructive">{error}</p> : null}
-            </section>
+                    setDraft((current) => ({ ...current, accountId: String(value), selectedCampaignIds: [], comparisonCampaignIds: [] }));
+                    onAccountIdChange(String(value));
+                  }}>
+                    <HeroLabel>{isVietnamese ? "Tài khoản quảng cáo" : "Ad account"}</HeroLabel>
+                    <HeroSelect.Trigger><HeroSelect.Value /><HeroSelect.Indicator /></HeroSelect.Trigger>
+                    <HeroSelect.Popover className="heroui-scope"><ListBox>{accounts.map((account) => <ListBox.Item key={account.id} id={account.id} textValue={account.name}>{account.name}<ListBox.ItemIndicator /></ListBox.Item>)}</ListBox></HeroSelect.Popover>
+                  </HeroSelect>
+                  <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+                    <TextField isInvalid={invalidDates} variant="secondary"><HeroLabel>{isVietnamese ? "Từ ngày" : "From"}</HeroLabel><HeroInput type="date" value={draft.since} onChange={(event) => changePrimaryRange({ since: event.target.value })} /></TextField>
+                    <TextField isInvalid={invalidDates} variant="secondary"><HeroLabel>{isVietnamese ? "Đến ngày" : "To"}</HeroLabel><HeroInput type="date" value={draft.until} onChange={(event) => changePrimaryRange({ until: event.target.value })} /></TextField>
+                  </div>
+                  {invalidDates ? <p className="text-xs text-danger">{isVietnamese ? "Ngày kết thúc phải bằng hoặc sau ngày bắt đầu." : "The end date must be on or after the start date."}</p> : null}
+                  <CampaignSelectionField
+                    campaigns={campaigns}
+                    currency={currency}
+                    language={language}
+                    label={isVietnamese ? "Campaign trong báo cáo" : "Campaigns in report"}
+                    loading={loading === "campaigns" || reportPending}
+                    selectedIds={draft.selectedCampaignIds}
+                    emptyLabel={isVietnamese ? "Tất cả campaign active khi áp dụng" : "All active campaigns on apply"}
+                    onChange={(ids) => setDraft((current) => ({ ...current, selectedCampaignIds: ids, ...(current.compareMode === "campaign" ? {} : { comparisonCampaignIds: ids }) }))}
+                  />
+                </section>
 
-            <section className="grid min-w-0 gap-3">
-              <div className="text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">{isVietnamese ? "Quy tắc quyết định" : "Decision rules"}</div>
-              <div className="grid min-w-0 gap-3 sm:grid-cols-2">
-                <Field className="min-w-0">
-                  <FieldLabel>KPI pack</FieldLabel>
-                  <Select disabled={reportPending} items={[{ label: "Auto-detect", value: "auto" }, ...packItems]} value={draft.pack} onValueChange={(value) => value && setDraft((current) => ({ ...current, pack: value as KpiPack | "auto" }))}>
-                    <SelectTrigger className="h-10 w-full"><SelectValue /></SelectTrigger>
-                    <SelectContent><SelectGroup><SelectItem value="auto">{isVietnamese ? "Tự nhận diện" : "Auto-detect"}</SelectItem>{packItems.map((item) => <SelectItem key={item.value} value={item.value}>{packLabel(item.value, language)}</SelectItem>)}</SelectGroup></SelectContent>
-                  </Select>
-                </Field>
-                <Field className="min-w-0">
-                  <FieldLabel>{isVietnamese ? "So sánh" : "Compare"}</FieldLabel>
-                  <Select disabled={reportPending} items={compareItems} value={draft.compareMode} onValueChange={(value) => value && setDraft((current) => ({ ...current, compareMode: value as CompareMode }))}>
-                    <SelectTrigger className="h-10 w-full"><SelectValue /></SelectTrigger>
-                    <SelectContent><SelectGroup>{compareItems.map((item) => <SelectItem key={item.value} value={item.value}>{compareLabel(item.value, language)}</SelectItem>)}</SelectGroup></SelectContent>
-                  </Select>
-                </Field>
+                <section className="grid gap-4 border-t border-border pt-6" aria-labelledby="comparison-heading">
+                  <div><h3 id="comparison-heading" className="text-sm font-semibold">{isVietnamese ? "Đối chứng" : "Comparison"}</h3><p className="mt-1 text-xs text-muted">{isVietnamese ? "So campaign mới với campaign cũ, kể cả khi khác kỳ." : "Compare a new campaign with an older campaign, even across different periods."}</p></div>
+                  <div className="grid grid-cols-3 gap-2" role="group" aria-label={isVietnamese ? "Chế độ so sánh" : "Comparison mode"}>
+                    {compareItems.map((item) => <HeroButton key={item.value} size="sm" variant={draft.compareMode === item.value ? "primary" : "secondary"} onPress={() => {
+                      const nextMode = item.value;
+                      const range = nextMode === "off" ? { since: "", until: "" } : getCompareRange({ since: draft.since, until: draft.until }, nextMode);
+                      setDraft((current) => ({ ...current, compareMode: nextMode, comparisonCampaignIds: nextMode === "campaign" ? [] : current.selectedCampaignIds, comparisonSince: range.since, comparisonUntil: range.until }));
+                    }}>{compareLabel(item.value, language)}</HeroButton>)}
+                  </div>
+                  {draft.compareMode !== "off" ? <>
+                    <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+                      <TextField isInvalid={invalidComparisonDates} variant="secondary"><HeroLabel>{isVietnamese ? "Đối chứng từ" : "Compare from"}</HeroLabel><HeroInput type="date" value={draft.comparisonSince || ""} onChange={(event) => setDraft((current) => ({ ...current, comparisonSince: event.target.value }))} /></TextField>
+                      <TextField isInvalid={invalidComparisonDates} variant="secondary"><HeroLabel>{isVietnamese ? "Đối chứng đến" : "Compare to"}</HeroLabel><HeroInput type="date" value={draft.comparisonUntil || ""} onChange={(event) => setDraft((current) => ({ ...current, comparisonUntil: event.target.value }))} /></TextField>
+                    </div>
+                    {draft.compareMode === "campaign" ? <CampaignSelectionField campaigns={campaigns} currency={currency} language={language} label={isVietnamese ? "Campaign đối chứng" : "Comparison campaigns"} loading={loading === "campaigns" || reportPending} selectedIds={draft.comparisonCampaignIds || []} emptyLabel={isVietnamese ? "Chọn campaign cũ để đối chứng" : "Choose an older comparison campaign"} onChange={(ids) => setDraft((current) => ({ ...current, comparisonCampaignIds: ids }))} /> : null}
+                    {missingCampaignComparison ? <p className="text-xs text-danger">{isVietnamese ? "Chọn ít nhất một campaign đối chứng." : "Choose at least one comparison campaign."}</p> : null}
+                  </> : null}
+                </section>
+
+                <section className="grid gap-4 border-t border-border pt-6" aria-labelledby="rules-heading">
+                  <div><h3 id="rules-heading" className="text-sm font-semibold">{isVietnamese ? "Quy tắc quyết định" : "Decision rules"}</h3><p className="mt-1 text-xs text-muted">{isVietnamese ? "Giữ mặc định nếu bạn không có mục tiêu nội bộ." : "Keep defaults unless you have internal targets."}</p></div>
+                  <HeroSelect className="w-full" isDisabled={reportPending} value={draft.pack} variant="secondary" onChange={(value) => value && setDraft((current) => ({ ...current, pack: value as KpiPack | "auto" }))}>
+                    <HeroLabel>KPI pack</HeroLabel><HeroSelect.Trigger><HeroSelect.Value /><HeroSelect.Indicator /></HeroSelect.Trigger>
+                    <HeroSelect.Popover className="heroui-scope"><ListBox><ListBox.Item id="auto" textValue="Auto-detect">{isVietnamese ? "Tự nhận diện" : "Auto-detect"}<ListBox.ItemIndicator /></ListBox.Item>{packItems.map((item) => <ListBox.Item key={item.value} id={item.value} textValue={packLabel(item.value, language)}>{packLabel(item.value, language)}<ListBox.ItemIndicator /></ListBox.Item>)}</ListBox></HeroSelect.Popover>
+                  </HeroSelect>
+                  <label className="flex cursor-pointer items-start gap-3"><input type="checkbox" disabled={reportPending} className="mt-1 accent-[var(--primary)]" checked={thresholdsEnabled} onChange={(event) => setThresholdsEnabled(event.target.checked)} /><span><span className="block text-sm font-medium">{isVietnamese ? "Dùng mục tiêu CPA / ROAS" : "Use CPA / ROAS targets"}</span><span className="mt-0.5 block text-xs text-muted">{isVietnamese ? "Tùy chọn; chỉ nhập chỉ số bạn thực sự dùng." : "Optional; enter only the target you actually use."}</span></span></label>
+                  {thresholdsEnabled ? <div className="grid min-w-0 gap-3 sm:grid-cols-2"><TextField isInvalid={invalidThresholds} variant="secondary"><HeroLabel>{isVietnamese ? "CPA mục tiêu" : "Target CPA"}</HeroLabel><HeroInput type="number" min="0.01" step="0.01" value={draft.targetCpa} onChange={(event) => setDraft((current) => ({ ...current, targetCpa: event.target.value }))} /></TextField><TextField isInvalid={invalidThresholds} variant="secondary"><HeroLabel>{isVietnamese ? "ROAS mục tiêu" : "Target ROAS"}</HeroLabel><HeroInput type="number" min="0.01" step="0.01" value={draft.targetRoas} onChange={(event) => setDraft((current) => ({ ...current, targetRoas: event.target.value }))} /></TextField></div> : null}
+                </section>
               </div>
-              <label className="flex cursor-pointer items-start gap-3">
-                <input
-                  type="checkbox"
-                  disabled={reportPending}
-                  className="mt-1 accent-[var(--primary)]"
-                  checked={thresholdsEnabled}
-                  onChange={(event) => {
-                    const enabled = event.target.checked;
-                    setThresholdsEnabled(enabled);
-                    if (enabled) setDraft((current) => ({ ...current, targetCpa: current.targetCpa || "40", targetRoas: current.targetRoas || "2.5" }));
-                  }}
-                />
-                <span><span className="block text-sm font-medium">{isVietnamese ? "Áp dụng ngưỡng quyết định" : "Apply decision thresholds"}</span><span className="mt-0.5 block text-sm text-muted-foreground">{isVietnamese ? "Dùng mục tiêu CPA và ROAS làm guardrail trước khi scale." : "Use target CPA and ROAS as guardrails before scaling."}</span></span>
-              </label>
-              {thresholdsEnabled ? (
-                <div className="grid min-w-0 gap-3 sm:grid-cols-2">
-                  <Field className="min-w-0" data-invalid={invalidThresholds || undefined}>
-                    <FieldLabel>{isVietnamese ? "CPA mục tiêu" : "Target CPA"}</FieldLabel>
-                    <Input type="number" min="0.01" step="0.01" disabled={reportPending} value={draft.targetCpa} onChange={(event) => setDraft((current) => ({ ...current, targetCpa: event.target.value }))} />
-                  </Field>
-                  <Field className="min-w-0" data-invalid={invalidThresholds || undefined}>
-                    <FieldLabel>{isVietnamese ? "ROAS mục tiêu" : "Target ROAS"}</FieldLabel>
-                    <Input type="number" min="0.01" step="0.01" disabled={reportPending} value={draft.targetRoas} onChange={(event) => setDraft((current) => ({ ...current, targetRoas: event.target.value }))} />
-                  </Field>
-                  {invalidThresholds ? <p className="text-xs text-destructive sm:col-span-2">{isVietnamese ? "CPA và ROAS mục tiêu phải lớn hơn 0." : "Target CPA and ROAS must both be greater than 0."}</p> : null}
-                </div>
-              ) : null}
-            </section>
 
-            <section className="grid min-w-0 gap-3">
-              <div className="text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">{isVietnamese ? "Phạm vi campaign" : "Campaign scope"}</div>
-              <ReportScopeCampaignPicker
-                open={open}
-                campaigns={campaigns}
-                currency={currency}
-                language={language}
-                loading={loading === "campaigns" || reportPending}
-                selectedIds={draft.selectedCampaignIds}
-                onChange={(ids) => setDraft((current) => ({ ...current, selectedCampaignIds: ids }))}
-              />
-            </section>
-          </div>
-        </div>
+              <aside className="h-fit rounded-2xl border border-border bg-surface-secondary p-4 lg:sticky lg:top-0" data-scope-preview>
+                <div className="flex items-center justify-between gap-3"><h3 className="text-sm font-semibold">{isVietnamese ? "Sẽ làm mới" : "Refresh preview"}</h3><Chip color={unchanged ? "default" : "accent"} size="sm" variant="soft"><Chip.Label>{unchanged ? (isVietnamese ? "Hiện tại" : "Current") : (isVietnamese ? "Đã sửa" : "Edited")}</Chip.Label></Chip></div>
+                <dl className="mt-4 grid gap-4 text-xs">
+                  <div><dt className="text-muted">{isVietnamese ? "Báo cáo" : "Report"}</dt><dd className="mt-1 font-medium text-foreground">{primaryCampaigns}</dd></div>
+                  <div><dt className="text-muted">{isVietnamese ? "Kỳ chính" : "Primary period"}</dt><dd className="mt-1 font-medium text-foreground">{draft.since} - {draft.until}</dd></div>
+                  <div><dt className="text-muted">{isVietnamese ? "Đối chứng" : "Comparison"}</dt><dd className="mt-1 font-medium text-foreground">{draft.compareMode === "off" ? (isVietnamese ? "Không so sánh" : "No comparison") : `${comparisonCampaigns} · ${draft.comparisonSince} - ${draft.comparisonUntil}`}</dd></div>
+                  <div><dt className="text-muted">KPI</dt><dd className="mt-1 font-medium text-foreground">{draft.pack === "auto" ? (isVietnamese ? "Tự nhận diện" : "Auto-detect") : packLabel(draft.pack, language)}</dd></div>
+                </dl>
+                <p className="mt-5 border-t border-border pt-4 text-xs leading-5 text-muted">{isVietnamese ? "Sau khi chạy, campaign ID thực tế sẽ được đóng băng để mọi nút Làm mới giữ đúng báo cáo này." : "After the pull, exact campaign IDs are frozen so every Refresh button keeps this report in view."}</p>
+              </aside>
+            </div>
+          </HeroModal.Body>
 
-        <DialogFooter className="shrink-0 flex-row items-center justify-end gap-2 border-t border-border bg-popover px-4 py-4 sm:px-6">
-          <span className="mr-auto hidden text-[11px] text-muted-foreground sm:block">{unchanged ? (isVietnamese ? "Chưa có thay đổi để áp dụng" : "No changes to apply") : (isVietnamese ? "Cập nhật báo cáo này ngay" : "Updates this report immediately")}</span>
-          <Button type="button" variant="outline" className="rounded-full" onClick={() => handleOpenChange(false)} disabled={reportPending}>{isVietnamese ? "Hủy" : "Cancel"}</Button>
-          <Button type="button" className="rounded-full" onClick={save} disabled={!draft.accountId || unchanged || invalidDates || invalidThresholds || reportPending || loading === "campaigns"}>{reportPending ? <Spinner data-icon="inline-start" /> : null}{reportPending ? (isVietnamese ? "Đang làm mới" : "Refreshing") : unchanged ? (isVietnamese ? "Không có thay đổi" : "No changes") : error ? (isVietnamese ? "Thử làm mới lại" : "Retry refresh") : (isVietnamese ? "Áp dụng & làm mới" : "Apply & refresh")}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          <HeroModal.Footer className="border-t border-border">
+            <HeroButton data-scope-cancel variant="tertiary" onPress={() => handleOpenChange(false)} isDisabled={reportPending}>{isVietnamese ? "Hủy" : "Cancel"}</HeroButton>
+            <HeroButton data-scope-apply onPress={save} isDisabled={!draft.accountId || unchanged || invalidDates || invalidComparisonDates || missingCampaignComparison || invalidThresholds || reportPending || loading === "campaigns"}>{reportPending ? (isVietnamese ? "Đang làm mới..." : "Refreshing...") : (isVietnamese ? "Áp dụng và làm mới" : "Apply and refresh")}</HeroButton>
+          </HeroModal.Footer>
+        </HeroModal.Dialog>
+      </HeroModal.Container>
+    </HeroModal.Backdrop>
   );
 }
 
-function ReportScopeCampaignPicker({ open, campaigns, currency, language, loading, selectedIds, onChange }: {
-  open: boolean;
+function CampaignSelectionField({ campaigns, currency, language, label, loading, selectedIds, emptyLabel, onChange }: {
   campaigns: MetaCampaign[];
   currency: string;
   language: InterfaceLanguage;
+  label: string;
   loading: boolean;
   selectedIds: string[];
+  emptyLabel: string;
   onChange: (ids: string[]) => void;
 }) {
   const isVietnamese = language === "vi";
@@ -1387,20 +1421,11 @@ function ReportScopeCampaignPicker({ open, campaigns, currency, language, loadin
   const activeCampaigns = React.useMemo(() => campaigns.filter(isActiveCampaign), [campaigns]);
   const activeCampaignIds = React.useMemo(() => activeCampaigns.map((campaign) => campaign.id), [activeCampaigns]);
   const selectedSet = React.useMemo(() => new Set(selectedIds), [selectedIds]);
-  const scopedCampaigns = selectedIds.length ? campaigns.filter((campaign) => selectedSet.has(campaign.id)) : activeCampaigns;
-  const primary = scopedCampaigns[0] || campaigns[0];
   const visibleCampaigns = campaigns.filter((campaign) => `${campaign.name} ${campaign.objective || ""}`.toLowerCase().includes(query.toLowerCase())).slice(0, 30);
-  const allActive = selectedIds.length === 0;
-
-  React.useEffect(() => {
-    if (open) return;
-    setExpanded(false);
-    setQuery("");
-  }, [open]);
 
   function toggle(id: string) {
     if (loading) return;
-    onChange(toggleReportCampaignSelection({ selectedIds, activeCampaignIds, campaignId: id }));
+    onChange(selectedIds.includes(id) ? selectedIds.filter((item) => item !== id) : [...selectedIds, id]);
   }
 
   return (
@@ -1408,15 +1433,8 @@ function ReportScopeCampaignPicker({ open, campaigns, currency, language, loadin
       <div className="min-w-0 overflow-hidden rounded-2xl border border-border bg-card p-3.5">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <Badge variant={scopedCampaigns.length ? "success" : "secondary"}>{scopedCampaigns.length} {isVietnamese ? "đã chọn" : "selected"}</Badge>
-            <div className="mt-2 truncate text-sm font-medium" title={allActive ? undefined : primary?.name}>{allActive ? (isVietnamese ? "Tất cả campaign đang hoạt động" : "All active campaigns") : primary?.name || (isVietnamese ? "Chưa có campaign" : "No campaigns available")}</div>
-            <div className="mt-1 truncate text-[11px] uppercase text-muted-foreground">
-              {allActive
-                ? (isVietnamese ? "Campaign active mới sẽ tự động được đưa vào phạm vi" : "New active campaigns will be included automatically")
-                : primary
-                  ? `${campaignObjectiveLabel(primary, language)}${scopedCampaigns.length > 1 ? ` · +${scopedCampaigns.length - 1}` : ""} ${formatCampaignBudget(primary, currency, language)}`
-                  : (isVietnamese ? "Chưa có campaign" : "No campaigns available")}
-            </div>
+            <div className="text-xs text-muted-foreground">{label}</div>
+            <div className="mt-1 text-sm font-medium">{selectedIds.length ? selectedCampaignSummary(selectedIds, campaigns, language) : emptyLabel}</div>
           </div>
           <Button type="button" variant="outline" size="sm" className="shrink-0 rounded-full" onClick={() => setExpanded((current) => !current)} disabled={loading || !campaigns.length} aria-expanded={expanded}>
             {expanded ? (isVietnamese ? "Xong" : "Done") : (isVietnamese ? "Thay đổi" : "Change")}
@@ -1428,13 +1446,13 @@ function ReportScopeCampaignPicker({ open, campaigns, currency, language, loadin
         <div className="mt-3 min-w-0 overflow-hidden rounded-2xl border border-border bg-secondary/35 p-3">
           <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-2">
             <Input disabled={loading} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={isVietnamese ? "Tìm campaign..." : "Search campaigns..."} />
-            <Button type="button" variant="secondary" size="sm" onClick={() => onChange([])} disabled={loading}>{isVietnamese ? "Tất cả active" : "All active"}</Button>
+            <Button type="button" variant="secondary" size="sm" onClick={() => onChange(activeCampaignIds)} disabled={loading}>{isVietnamese ? "Chọn active" : "Select active"}</Button>
           </div>
           <div className="mt-2 flex max-h-52 flex-col gap-1 overflow-y-auto">
             {visibleCampaigns.map((campaign) => {
               const selected = selectedIds.length ? selectedSet.has(campaign.id) : isActiveCampaign(campaign);
               return (
-                <button key={campaign.id} type="button" disabled={loading} aria-pressed={selected} onClick={() => toggle(campaign.id)} className="grid w-full min-w-0 shrink-0 grid-cols-[20px_minmax(0,1fr)_auto] items-center gap-2 overflow-hidden rounded-xl px-2.5 py-2 text-left hover:bg-secondary aria-pressed:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50">
+                <button key={campaign.id} type="button" data-primary-campaign-id={campaign.id} disabled={loading} aria-pressed={selected} onClick={() => toggle(campaign.id)} className="grid w-full min-w-0 shrink-0 grid-cols-[20px_minmax(0,1fr)_auto] items-center gap-2 overflow-hidden rounded-xl px-2.5 py-2 text-left hover:bg-secondary aria-pressed:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50">
                   <span className="flex size-4 items-center justify-center rounded border border-border text-primary">{selected ? <CheckIcon className="size-3" /> : null}</span>
                   <span className="min-w-0"><span className="block truncate text-sm font-medium">{campaign.name}</span><span className="block truncate text-xs text-muted-foreground">{campaignObjectiveLabel(campaign, language)} {formatCampaignBudget(campaign, currency, language)}</span></span>
                   <Badge className="max-w-20 truncate" variant={isActiveCampaign(campaign) ? "secondary" : "outline"}>{campaignStatus(campaign)}</Badge>
@@ -1447,6 +1465,12 @@ function ReportScopeCampaignPicker({ open, campaigns, currency, language, loadin
       ) : null}
     </div>
   );
+}
+
+function selectedCampaignSummary(ids: string[], campaigns: MetaCampaign[], language: InterfaceLanguage) {
+  if (!ids.length) return language === "vi" ? "Chưa chọn campaign" : "No campaigns selected";
+  const names = ids.map((id) => campaigns.find((campaign) => campaign.id === id)?.name || id);
+  return names.length === 1 ? names[0] : `${names[0]} +${names.length - 1}`;
 }
 
 function ReportProgressDialog({ language, state, error, onClose, onRetry }: { language: InterfaceLanguage; state: "idle" | "pulling" | "ready" | "error"; error: string; onClose: () => void; onRetry: () => void }) {

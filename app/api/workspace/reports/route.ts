@@ -1,18 +1,48 @@
 import { NextResponse } from "next/server";
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { Json } from "@/lib/supabase/types";
+import { buildReportRequestKey, type ReportExecutionScope } from "@/lib/report-refresh";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { ensureActiveWorkspaceMembership, getWorkspaceAuthMode } from "@/lib/workspace-session";
 
 const reportSchema = z.object({
   account: z.object({ id: z.string().min(1), name: z.string().min(1) }).passthrough(),
-  dateRange: z.object({ since: z.string().min(1), until: z.string().min(1) }),
+  dateRange: z.object({ since: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u), until: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u) }),
   selectedPack: z.string().min(1),
+  selectedCampaigns: z.array(z.object({ id: z.string().min(1) }).passthrough()).optional(),
 }).passthrough();
+
+const dateInputSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/u);
+const optionalPositiveNumberSchema = z.string().refine((value) => !value || (Number.isFinite(Number(value)) && Number(value) > 0));
 
 const bodySchema = z.object({
   report: reportSchema,
   previousReport: reportSchema.nullable().optional(),
+  executionScope: z.object({
+    accountId: z.string().min(1),
+    selectedCampaignIds: z.array(z.string().min(1)),
+    since: dateInputSchema,
+    until: dateInputSchema,
+    pack: z.enum(["auto", "lead_gen", "messages", "sales_roas", "traffic", "awareness"]),
+    compareMode: z.enum(["off", "previous", "campaign", "wow", "mom", "yoy"]),
+    comparisonCampaignIds: z.array(z.string().min(1)),
+    comparisonSince: z.string(),
+    comparisonUntil: z.string(),
+    targetCpa: optionalPositiveNumberSchema,
+    targetRoas: optionalPositiveNumberSchema,
+  }).superRefine((scope, context) => {
+    if (scope.since > scope.until) context.addIssue({ code: "custom", message: "The report date range is invalid." });
+    if (scope.compareMode === "off") {
+      if (scope.comparisonCampaignIds.length || scope.comparisonSince || scope.comparisonUntil) context.addIssue({ code: "custom", message: "Comparison scope must be empty when comparison is off." });
+      return;
+    }
+    if (!dateInputSchema.safeParse(scope.comparisonSince).success
+      || !dateInputSchema.safeParse(scope.comparisonUntil).success
+      || scope.comparisonSince > scope.comparisonUntil) {
+      context.addIssue({ code: "custom", message: "The comparison date range is invalid." });
+    }
+  }),
   verdict: z.record(z.unknown()).nullable().optional(),
   insights: z.record(z.unknown()).nullable().optional(),
 });
@@ -34,7 +64,7 @@ export async function GET() {
 
     const { data, error } = await supabase
       .from("workspace_report_snapshots")
-      .select("id,account_id,account_name,date_since,date_until,selected_pack,report,previous_report,verdict,insights,updated_at")
+      .select("id,account_id,account_name,date_since,date_until,selected_pack,report,previous_report,execution_scope,scope_key,verdict,insights,updated_at")
       .eq("workspace_id", membership.workspace_id)
       .eq("user_id", authData.user.id)
       .order("updated_at", { ascending: false })
@@ -51,6 +81,8 @@ export async function GET() {
         selectedPack: item.selected_pack,
         report: item.report,
         previousReport: item.previous_report,
+        executionScope: item.execution_scope,
+        scopeKey: item.scope_key,
         verdict: item.verdict,
         insights: item.insights,
         updatedAt: item.updated_at,
@@ -67,6 +99,10 @@ export async function POST(request: Request) {
     const raw = await request.text();
     if (raw.length > 4_000_000) throw new Error("The report is too large to save to workspace history.");
     const body = bodySchema.parse(JSON.parse(raw));
+    assertScopeMatchesReport(body.executionScope, body.report, body.previousReport || null);
+    const scopeKey = createHash("sha256")
+      .update(buildReportRequestKey(body.executionScope as ReportExecutionScope))
+      .digest("hex");
     const supabase = await createSupabaseServerClient();
     const { data: authData, error: authError } = await supabase.auth.getUser();
     if (authError || !authData.user) throw new Error("Sign in again to save report history.");
@@ -83,13 +119,44 @@ export async function POST(request: Request) {
       selected_pack: body.report.selectedPack,
       report: asJson(body.report),
       previous_report: body.previousReport ? asJson(body.previousReport) : null,
+      execution_scope: asJson(body.executionScope),
+      scope_key: scopeKey,
       verdict: body.verdict ? asJson(body.verdict) : null,
       insights: body.insights ? asJson(body.insights) : null,
-    }, { onConflict: "workspace_id,user_id,account_id,date_since,date_until,selected_pack" });
+    }, { onConflict: "workspace_id,user_id,scope_key" });
     if (error) throw new Error("Report history could not be saved.");
     return NextResponse.json({ saved: true }, { headers: noStoreHeaders });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Report history could not be saved." }, { status: 400, headers: noStoreHeaders });
+  }
+}
+
+function assertScopeMatchesReport(
+  scope: ReportExecutionScope,
+  report: z.infer<typeof reportSchema>,
+  previousReport: z.infer<typeof reportSchema> | null,
+) {
+  if (scope.accountId !== report.account.id
+    || scope.since !== report.dateRange.since
+    || scope.until !== report.dateRange.until
+    || scope.pack !== report.selectedPack) {
+    throw new Error("The saved execution scope does not match the report.");
+  }
+  assertCampaignIdsMatch(scope.selectedCampaignIds, report.selectedCampaigns);
+  if (scope.compareMode !== "off" && previousReport
+    && (scope.comparisonSince !== previousReport.dateRange.since
+    || scope.comparisonUntil !== previousReport.dateRange.until)) {
+    throw new Error("The saved comparison scope does not match the comparison report.");
+  }
+  if (previousReport) assertCampaignIdsMatch(scope.comparisonCampaignIds, previousReport.selectedCampaigns);
+}
+
+function assertCampaignIdsMatch(scopeIds: string[], campaigns?: Array<{ id: string }>) {
+  if (!campaigns?.length) return;
+  const reportIds = [...new Set(campaigns.map((campaign) => campaign.id))].sort();
+  const expectedIds = [...new Set(scopeIds)].sort();
+  if (reportIds.length !== expectedIds.length || reportIds.some((id, index) => id !== expectedIds[index])) {
+    throw new Error("The saved campaign scope does not match the report.");
   }
 }
 
