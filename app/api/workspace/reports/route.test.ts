@@ -28,6 +28,20 @@ describe("/api/workspace/reports", () => {
       selected_pack: "sales_roas",
       report: { account: { id: "act-1", name: "Agency" } },
       previous_report: null,
+      execution_scope: {
+        accountId: "act-1",
+        selectedCampaignIds: ["campaign-1"],
+        since: "2026-07-01",
+        until: "2026-07-31",
+        pack: "sales_roas",
+        compareMode: "off",
+        comparisonCampaignIds: [],
+        comparisonSince: "",
+        comparisonUntil: "",
+        targetCpa: "",
+        targetRoas: "",
+      },
+      scope_key: "scope-1",
       verdict: null,
       insights: null,
       updated_at: "2026-08-06T00:00:00Z",
@@ -47,7 +61,13 @@ describe("/api/workspace/reports", () => {
     const json = await response.json();
 
     expect(response.status).toBe(200);
-    expect(json.reports[0]).toMatchObject({ id: "report-1", accountId: "act-1", accountName: "Agency" });
+    expect(json.reports[0]).toMatchObject({
+      id: "report-1",
+      accountId: "act-1",
+      accountName: "Agency",
+      executionScope: rows[0].execution_scope,
+      scopeKey: "scope-1",
+    });
     expect(ensureActiveWorkspaceMembership).toHaveBeenCalledWith(expect.anything(), "user-1");
   });
 
@@ -62,11 +82,24 @@ describe("/api/workspace/reports", () => {
       dateRange: { since: "2026-07-01", until: "2026-07-31" },
       selectedPack: "sales_roas",
     };
+    const executionScope = {
+      accountId: "act-1",
+      selectedCampaignIds: ["campaign-1"],
+      since: "2026-07-01",
+      until: "2026-07-31",
+      pack: "sales_roas",
+      compareMode: "campaign",
+      comparisonCampaignIds: ["campaign-old"],
+      comparisonSince: "2026-05-01",
+      comparisonUntil: "2026-05-31",
+      targetCpa: "40",
+      targetRoas: "2.5",
+    };
 
     const response = await POST(new Request("https://workspace.example/api/workspace/reports", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ report, previousReport: null, verdict: { verdict: "Hold" }, insights: { rows: [] } }),
+      body: JSON.stringify({ report, previousReport: null, executionScope, verdict: { verdict: "Hold" }, insights: { rows: [] } }),
     }));
 
     expect(response.status).toBe(200);
@@ -75,9 +108,47 @@ describe("/api/workspace/reports", () => {
       user_id: "user-1",
       account_id: "act-1",
       report,
+      execution_scope: executionScope,
+      scope_key: expect.stringMatching(/^[a-f0-9]{64}$/u),
       verdict: { verdict: "Hold" },
       insights: { rows: [] },
-    }), { onConflict: "workspace_id,user_id,account_id,date_since,date_until,selected_pack" });
+    }), { onConflict: "workspace_id,user_id,scope_key" });
+  });
+
+  it("uses different storage identities for different campaign comparisons", async () => {
+    const upsert = vi.fn().mockResolvedValue({ error: null });
+    createSupabaseServerClient.mockResolvedValue({
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: "user-1" } }, error: null }) },
+      from: vi.fn().mockReturnValue({ upsert }),
+    });
+    const report = {
+      account: { id: "act-1", name: "Agency" },
+      dateRange: { since: "2026-09-01", until: "2026-09-05" },
+      selectedPack: "sales_roas",
+    };
+    const scope = {
+      accountId: "act-1",
+      selectedCampaignIds: ["new-launch"],
+      since: "2026-09-01",
+      until: "2026-09-05",
+      pack: "sales_roas",
+      compareMode: "campaign",
+      comparisonCampaignIds: ["old-a"],
+      comparisonSince: "2026-07-01",
+      comparisonUntil: "2026-07-31",
+      targetCpa: "",
+      targetRoas: "",
+    };
+
+    for (const comparisonCampaignIds of [["old-a"], ["old-b"]]) {
+      await POST(new Request("https://workspace.example/api/workspace/reports", {
+        method: "POST",
+        body: JSON.stringify({ report, previousReport: null, executionScope: { ...scope, comparisonCampaignIds } }),
+      }));
+    }
+
+    expect(upsert).toHaveBeenCalledTimes(2);
+    expect(upsert.mock.calls[0][0].scope_key).not.toBe(upsert.mock.calls[1][0].scope_key);
   });
 
   it("clears only the signed-in user's saved report history", async () => {

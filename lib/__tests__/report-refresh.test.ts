@@ -5,15 +5,125 @@ import {
   buildReportRequestKey,
   campaignComparisonAvailable,
   currentReportScope,
+  finalizeReportExecutionScope,
   preserveRequestedCampaignSelection,
   reportCampaignSelectionsEqual,
   reportCampaignSelectionForAccount,
   reportScopeDraftsEqual,
+  resolveReportExecutionScope,
   toggleReportCampaignSelection,
+  type ReportExecutionScope,
 } from "../report-refresh";
 import { buildSampleReport } from "../sample-report";
 
 describe("current report refresh scope", () => {
+  it("binds refresh to the visible report and its exact comparison report", () => {
+    const report = buildSampleReport({
+      selectedCampaignIds: ["smp-c1"],
+      pack: "sales_roas",
+      dateRange: { since: "2026-09-01", until: "2026-09-05" },
+    });
+    const comparison = buildSampleReport({
+      selectedCampaignIds: ["smp-c2"],
+      pack: "sales_roas",
+      dateRange: { since: "2026-07-01", until: "2026-07-31" },
+    });
+
+    expect(currentReportScope(report, {
+      previousReport: comparison,
+      compareMode: "campaign",
+      targetCpa: "40.00",
+      targetRoas: "2.50",
+    })).toEqual({
+      accountId: "act_sample_demo",
+      selectedCampaignIds: ["smp-c1"],
+      since: "2026-09-01",
+      until: "2026-09-05",
+      pack: "sales_roas",
+      compareMode: "campaign",
+      comparisonCampaignIds: ["smp-c2"],
+      comparisonSince: "2026-07-01",
+      comparisonUntil: "2026-07-31",
+      targetCpa: "40",
+      targetRoas: "2.5",
+    });
+  });
+
+  it("expands the all-active shortcut into an exact execution scope", () => {
+    const draft: ReportExecutionScope = {
+      accountId: "act_1",
+      selectedCampaignIds: [],
+      since: "2026-09-01",
+      until: "2026-09-05",
+      pack: "lead_gen",
+      compareMode: "previous",
+      comparisonCampaignIds: [],
+      comparisonSince: "",
+      comparisonUntil: "",
+      targetCpa: "40.0",
+      targetRoas: "",
+    };
+
+    expect(resolveReportExecutionScope(draft, [
+      { id: "active-b", status: "ACTIVE" },
+      { id: "paused", status: "PAUSED" },
+      { id: "active-a", effective_status: "ACTIVE" },
+    ])).toEqual({
+      ...draft,
+      selectedCampaignIds: ["active-a", "active-b"],
+      comparisonCampaignIds: ["active-a", "active-b"],
+      comparisonSince: "2026-08-27",
+      comparisonUntil: "2026-08-31",
+      targetCpa: "40",
+    });
+  });
+
+  it("freezes returned campaign ids without widening an explicit report", () => {
+    const requested: ReportExecutionScope = {
+      accountId: "act_sample_demo",
+      selectedCampaignIds: [],
+      since: "2026-09-01",
+      until: "2026-09-05",
+      pack: "auto",
+      compareMode: "off",
+      comparisonCampaignIds: [],
+      comparisonSince: "",
+      comparisonUntil: "",
+      targetCpa: "",
+      targetRoas: "",
+    };
+    const report = buildSampleReport({ selectedCampaignIds: ["smp-c2"], pack: "traffic", dateRange: { since: requested.since, until: requested.until } });
+
+    expect(finalizeReportExecutionScope(requested, report, null)).toMatchObject({
+      selectedCampaignIds: ["smp-c2"],
+      pack: "traffic",
+      compareMode: "off",
+    });
+  });
+
+  it("deduplicates only executions with the same comparison and decision rules", () => {
+    const base: ReportExecutionScope = {
+      accountId: "act_1",
+      selectedCampaignIds: ["new-launch"],
+      since: "2026-09-01",
+      until: "2026-09-05",
+      pack: "sales_roas",
+      compareMode: "campaign",
+      comparisonCampaignIds: ["old-campaign"],
+      comparisonSince: "2026-07-01",
+      comparisonUntil: "2026-07-31",
+      targetCpa: "40",
+      targetRoas: "2.5",
+    };
+
+    expect(buildReportRequestKey({ ...base, selectedCampaignIds: ["new-launch"] }))
+      .not.toBe(buildReportRequestKey({ ...base, comparisonCampaignIds: ["another-control"] }));
+    expect(buildReportRequestKey(base))
+      .not.toBe(buildReportRequestKey({ ...base, comparisonSince: "2026-06-01", comparisonUntil: "2026-06-30" }));
+    expect(buildReportRequestKey(base))
+      .not.toBe(buildReportRequestKey({ ...base, targetRoas: "3" }));
+  });
+
   it("uses the report scope instead of mutable scope controls", () => {
     const report = buildSampleReport({
       selectedCampaignIds: ["smp-c1"],
