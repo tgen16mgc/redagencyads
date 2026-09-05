@@ -1,6 +1,5 @@
 import type { DiagnosticSeverity } from "@/lib/diagnosis";
 import type { NormalizedRow } from "@/lib/types";
-import { SUFFICIENCY } from "@/lib/data-sufficiency";
 
 export type AudienceOverlapStatus = "clean" | "overlap_risk" | "insufficient_data";
 

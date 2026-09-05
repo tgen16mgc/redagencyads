@@ -1,5 +1,5 @@
 import type { DiagnosticSeverity } from "@/lib/diagnosis";
-import type { KpiPack, NormalizedRow } from "@/lib/types";
+import type { NormalizedRow } from "@/lib/types";
 
 export type SpendPacingStatus = "on_pace" | "underpacing" | "severely_underpacing" | "no_budget_data";
 

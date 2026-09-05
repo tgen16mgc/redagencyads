@@ -5,7 +5,6 @@ import type {
   MetaAccount,
   MetaAdSet,
   MetaCampaign,
-  NormalizedRow,
 } from "@/lib/types";
 import { graphList, graphRequest } from "@/lib/meta-graph";
 import {

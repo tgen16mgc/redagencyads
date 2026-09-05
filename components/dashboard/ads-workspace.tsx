@@ -13,58 +13,17 @@ import {
 } from "@heroui/react";
 import { toast } from "sonner";
 import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  ComposedChart,
-  Line,
-  LineChart,
-  ReferenceLine,
-  XAxis,
-  YAxis,
-} from "recharts";
-import {
-  BotMessageSquareIcon,
   CheckIcon,
-  ChevronDownIcon,
-  ClipboardIcon,
   DatabaseIcon,
-  DownloadIcon,
-  FileTextIcon,
   SlidersHorizontalIcon,
-  SparklesIcon,
 } from "lucide-react";
-import BorderGlow from "@/components/BorderGlow";
 import type { ClientReportPdfFile } from "@/lib/client-report";
 import { buildSampleReport, SAMPLE_CAMPAIGNS } from "@/lib/sample-report";
-import { BreakdownAnalysisSection, ChartEmpty, paddedPositiveDomain } from "@/components/dashboard/breakdown-analysis";
-import { CONTEXT_CHAT_PANEL_ID } from "@/components/dashboard/context-chat-copy";
 import { CustomChartsSection } from "@/components/dashboard/custom-charts-section";
-import { DiagnosticCard } from "@/components/dashboard/diagnostic-card";
 import { PerformanceV2 } from "@/components/dashboard/performance-v2";
 import type { OverviewPerformanceTarget } from "@/lib/dashboard-overview";
-import { sanitizeAdPreviewHtml } from "@/lib/ad-preview-html";
 import { isAbortError, jsonFetch } from "@/lib/api-client";
-import { detectBaselineAnomalies, anomalyBadgeText } from "@/lib/baseline-anomaly";
 import type { CapabilityStatus } from "@/lib/capabilities";
-import { chartSeriesDot, performanceChartConfig } from "@/lib/chart-palette";
-import {
-  chartMetricUnavailableLabel,
-  chartMetricValue,
-  compactDate,
-  detectTrendAnnotation,
-  formatChartValue,
-  getPackChartSpec,
-  metricValue,
-  roundForFormat,
-  roundMetric,
-  sortByDrilldown,
-  truncateLabel,
-  type ChartFormat,
-  type ChartKey,
-} from "@/lib/chart-spec";
-import { analyzeComparisonRootCauses } from "@/lib/comparison-root-cause";
-import { classifyCreativeFatigue, computeCreativeFatigueBaseline } from "@/lib/creative-fatigue";
 import {
   type CustomKpiKey,
   deserializeCustomKpiSet,
@@ -77,8 +36,6 @@ import {
   serializeCharts,
   type CustomChartSpec,
 } from "@/lib/custom-chart";
-import type { DecisionTargets } from "@/lib/decision-confidence";
-import { runDiagnostics } from "@/lib/diagnosis";
 import type { HealthScoreSummary } from "@/lib/health-score";
 import { buildKpiComparisons } from "@/lib/metric-comparison";
 import { formatMetric } from "@/lib/metrics";
@@ -102,10 +59,8 @@ import {
   type ReportExecutionScope,
   type ReportScopeDraft,
 } from "@/lib/report-refresh";
-import { rowDecision } from "@/lib/row-decision";
 import { readStorageSlot } from "@/lib/storage-slot";
 import type {
-  AdSetWithPreviews,
   AiInsightTable,
   CompareMode,
   DashboardReport,
@@ -114,14 +69,11 @@ import type {
   KpiPack,
   MetaAccount,
   MetaCampaign,
-  NormalizedRow,
   Verdict,
 } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   Dialog,
   DialogContent,
@@ -142,10 +94,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Spinner } from "@/components/ui/spinner";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const packItems: { label: string; value: KpiPack }[] = [
@@ -173,176 +121,8 @@ const compareItems: { label: string; value: CompareMode }[] = [
 ];
 
 const adsCopy = {
-  en: {
-    scope: {
-      title: "Scope",
-      description: "Define the evidence window and rules for this report.",
-      account: "Ad account",
-      chooseAccount: "Choose account",
-      since: "Since",
-      until: "Until",
-      sourceTitle: "Source and period",
-      analysisTitle: "Analysis rules",
-      thresholdsTitle: "Decision thresholds",
-      thresholdsHelp: "Optional guardrails used by scale and budget recommendations.",
-      kpiPack: "KPI pack",
-      autoDetect: "Auto-detect",
-      kpiHelp: "Objective/name/actions decide default; override anytime.",
-      compare: "Compare",
-      pullData: "Pull data",
-      pullReport: "Pull report",
-      ready: "Ready to pull",
-      pullingReport: "Pulling report",
-      loadingAccount: "Loading account data...",
-      loadingCampaigns: "Loading campaigns before the scope can run...",
-      chooseAccountHint: "Choose an ad account to continue.",
-      invalidDate: "Until must be the same as or later than Since.",
-      checkDates: "Check dates",
-      readyHint: "The report will use the scope and decision rules shown here.",
-    },
-    empty: {
-      reportTitle: "No report loaded",
-      reportDescription: "Choose account and campaign scope, then pull report from Meta Graph API.",
-      rowsTitle: "No rows",
-      rowsDescription: "Meta returned no insight rows for this scope.",
-    },
-    campaign: {
-      label: "Campaigns",
-      selected: "selected",
-      allActive: "All active",
-      inScope: "in report scope",
-      hide: "Hide",
-      edit: "Choose",
-      search: "Search campaigns",
-      all: "Select shown",
-      customScope: "Custom scope",
-      activeCampaigns: "active campaigns",
-      loading: "Loading campaigns",
-      noObjective: "No objective",
-      none: "No campaigns found.",
-      help: "Click campaigns to build a custom scope. Leave empty to pull all active campaigns.",
-      day: "day",
-      lifetime: "lifetime",
-    },
-    adsetPreview: {
-      day: "day",
-      lifetime: "lifetime",
-    },
-    performance: {
-      title: "Performance view",
-      description: "Detected pack: {detected}. Active pack: {active}. {reason}",
-      campaigns: "Campaigns",
-      adsets: "Ad sets",
-      ads: "Ads",
-      daily: "Daily",
-    },
-    table: {
-      date: "Date",
-      name: "Name",
-      spend: "Spend",
-      impressions: "Impr.",
-      ctr: "CTR",
-      messages: "Messages",
-      leads: "Leads",
-      costMessage: "Cost/msg",
-      cpl: "CPL",
-      action: "Action",
-      creativeFatigue: "Creative",
-    },
-    verdict: {
-      provider: "Provider",
-      generate: "Generate verdict",
-      copied: "Copied",
-      copyPrompt: "Copy prompt",
-      emptyTitle: "No Verdict yet",
-      emptyDescription: "Generate after pulling report. Export will include this section once available.",
-    },
-  },
-  vi: {
-    scope: {
-      title: "Phạm vi",
-      description: "Xác định khoảng dữ liệu và quy tắc cho báo cáo này.",
-      account: "Tài khoản ads",
-      chooseAccount: "Chọn tài khoản",
-      since: "Từ ngày",
-      until: "Đến ngày",
-      sourceTitle: "Nguồn và thời gian",
-      analysisTitle: "Quy tắc phân tích",
-      thresholdsTitle: "Ngưỡng ra quyết định",
-      thresholdsHelp: "Guardrail tùy chọn cho đề xuất scale và điều chuyển ngân sách.",
-      kpiPack: "Bộ KPI",
-      autoDetect: "Tự nhận diện",
-      kpiHelp: "Objective/tên/action quyết định mặc định; có thể override.",
-      compare: "So sánh",
-      pullData: "Kéo dữ liệu",
-      pullReport: "Kéo báo cáo",
-      ready: "Sẵn sàng kéo",
-      pullingReport: "Đang kéo báo cáo",
-      loadingAccount: "Đang tải dữ liệu tài khoản...",
-      loadingCampaigns: "Đang tải campaign trước khi chạy phạm vi...",
-      chooseAccountHint: "Chọn tài khoản ads để tiếp tục.",
-      invalidDate: "Đến ngày phải bằng hoặc sau Từ ngày.",
-      checkDates: "Kiểm tra ngày",
-      readyHint: "Báo cáo sẽ dùng phạm vi và quy tắc quyết định hiển thị tại đây.",
-    },
-    empty: {
-      reportTitle: "Chưa có báo cáo",
-      reportDescription: "Chọn tài khoản và campaign, rồi kéo báo cáo từ Meta Graph API.",
-      rowsTitle: "Không có dòng",
-      rowsDescription: "Meta không trả insight rows cho phạm vi này.",
-    },
-    campaign: {
-      label: "Campaign",
-      selected: "đã chọn",
-      allActive: "Tất cả active",
-      inScope: "trong phạm vi báo cáo",
-      hide: "Ẩn",
-      edit: "Chọn",
-      search: "Tìm campaign",
-      all: "Chọn kết quả",
-      customScope: "Phạm vi tùy chỉnh",
-      activeCampaigns: "campaign active",
-      loading: "Đang tải campaign",
-      noObjective: "Không có objective",
-      none: "Không tìm thấy campaign.",
-      help: "Bấm campaign để tạo phạm vi tùy chỉnh. Để trống để kéo tất cả campaign active.",
-      day: "ngày",
-      lifetime: "lifetime",
-    },
-    adsetPreview: {
-      day: "ngày",
-      lifetime: "lifetime",
-    },
-    performance: {
-      title: "Hiệu quả",
-      description: "Bộ nhận diện: {detected}. Bộ đang dùng: {active}. {reason}",
-      campaigns: "Campaign",
-      adsets: "Ad set",
-      ads: "Ads",
-      daily: "Ngày",
-    },
-    table: {
-      date: "Ngày",
-      name: "Tên",
-      spend: "Chi tiêu",
-      impressions: "Impr.",
-      ctr: "CTR",
-      messages: "Tin nhắn",
-      leads: "Lead",
-      costMessage: "Cost/msg",
-      cpl: "CPL",
-      action: "Hành động",
-      creativeFatigue: "Creative",
-    },
-    verdict: {
-      provider: "Provider",
-      generate: "Tạo Verdict",
-      copied: "Đã copy",
-      copyPrompt: "Copy prompt",
-      emptyTitle: "Chưa có Verdict",
-      emptyDescription: "Tạo sau khi kéo báo cáo. File export sẽ có phần này khi sẵn sàng.",
-    },
-  },
+  en: { campaign: { day: "day", lifetime: "lifetime" } },
+  vi: { campaign: { day: "ngày", lifetime: "lifetime" } },
 } as const;
 
 export type AdsWorkspaceState = {
@@ -360,9 +140,7 @@ export type AdsWorkspaceState = {
   verdict: Verdict | null;
   insights: AiInsightTable | null;
   aiLoading: { verdict: boolean; insights: boolean };
-  copiedPrompt: boolean;
   scopeExpanded: boolean;
-  diagnosticsOpen: boolean;
   customKpiKeys: CustomKpiKey[] | null;
   funnelStageKeys: PerformanceStageKey[] | null;
   customCharts: CustomChartSpec[];
@@ -385,9 +163,7 @@ export function initialAdsWorkspaceState(): AdsWorkspaceState {
     verdict: null,
     insights: null,
     aiLoading: { verdict: false, insights: false },
-    copiedPrompt: false,
     scopeExpanded: false,
-    diagnosticsOpen: false,
     customKpiKeys: null,
     funnelStageKeys: null,
     customCharts: typeof window === "undefined"
@@ -424,40 +200,6 @@ function defaultDates() {
   };
 }
 
-type AiProgressState = {
-  elapsedSeconds: number;
-  percent: number;
-  stepIndex: number;
-};
-
-function useTimedProgress(active: boolean) {
-  const [progress, setProgress] = React.useState<AiProgressState | null>(null);
-
-  React.useEffect(() => {
-    if (!active) {
-      setProgress(null);
-      return;
-    }
-
-    const startedAt = Date.now();
-    const update = () => {
-      const elapsedSeconds = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
-      const stepIndex = elapsedSeconds < 10 ? 0 : elapsedSeconds < 45 ? 1 : elapsedSeconds < 100 ? 2 : 3;
-      setProgress({
-        elapsedSeconds,
-        percent: Math.min(96, 10 + elapsedSeconds * 0.6),
-        stepIndex,
-      });
-    };
-
-    update();
-    const interval = window.setInterval(update, 1000);
-    return () => window.clearInterval(interval);
-  }, [active]);
-
-  return progress;
-}
-
 export function AdsWorkspace({
   language,
   provider,
@@ -468,17 +210,13 @@ export function AdsWorkspace({
   effectiveKpis,
   healthSummary,
   reportHasData,
-  decisionTargets,
   exportingPdf,
-  chatShortcutsDisabled,
-  onProviderChange,
   onAccountIdChange,
   onLoadingChange,
   onError,
   onStateChange,
   onSaveCustomKpis,
   onExportPdf,
-  onOpenAssistant,
   onCancelInitialScope,
   onReportReady,
   initialPerformanceTarget = "overview",
@@ -494,17 +232,13 @@ export function AdsWorkspace({
   effectiveKpis: KpiCard[];
   healthSummary: HealthScoreSummary | null;
   reportHasData: boolean;
-  decisionTargets: DecisionTargets;
   exportingPdf: boolean;
-  chatShortcutsDisabled: boolean;
-  onProviderChange: (value: Provider) => void;
   onAccountIdChange: (id: string) => void;
   onLoadingChange: (value: string) => void;
   onError: (message: string) => void;
   onStateChange: React.Dispatch<React.SetStateAction<AdsWorkspaceState>>;
   onSaveCustomKpis: (keys: CustomKpiKey[]) => void;
   onExportPdf: () => Promise<ClientReportPdfFile>;
-  onOpenAssistant: () => void;
   onCancelInitialScope: () => void;
   onReportReady?: () => void;
   initialPerformanceTarget?: OverviewPerformanceTarget;
@@ -526,14 +260,11 @@ export function AdsWorkspace({
     verdict,
     insights,
     aiLoading,
-    copiedPrompt,
     scopeExpanded,
-    diagnosticsOpen,
     customKpiKeys,
     funnelStageKeys,
     customCharts,
   } = state;
-  const copy = adsCopy[language];
   const reportStartRef = React.useRef<HTMLDivElement>(null);
   const autoVerdictKeyRef = React.useRef("");
   const lastReportRequestRef = React.useRef<ReportExecutionScope | null>(null);
@@ -544,8 +275,6 @@ export function AdsWorkspace({
   const activeAiRequestRef = React.useRef<Partial<Record<keyof AdsWorkspaceState["aiLoading"], { id: number; reportKey: string; controller: AbortController }>>>({});
   const [reportFlow, setReportFlow] = React.useState<"idle" | "pulling" | "ready" | "error">("idle");
   const [reportFlowError, setReportFlowError] = React.useState("");
-  const verdictProgress = useTimedProgress(aiLoading.verdict);
-  const insightProgress = useTimedProgress(aiLoading.insights);
   const selectedAccount = accounts.find((account) => account.id === accountId);
   const updateState = React.useCallback(
     (patch: Partial<AdsWorkspaceState>) => {
@@ -562,8 +291,6 @@ export function AdsWorkspace({
     const arr = buildKpiComparisons({ report: comparisonReport, previousReport, compareMode, language });
     return new Map(arr.map((c) => [c.key, c]));
   }, [comparisonReport, previousReport, compareMode, language]);
-  const diagnostics = React.useMemo(() => (report ? runDiagnostics(report, decisionTargets) : []), [report, decisionTargets]);
-  const reportCurrency = report?.account.currency || "VND";
   const reportKey = report ? buildDashboardReportKey(report) : "";
 
   function abortAiRequests() {
@@ -852,46 +579,6 @@ export function AdsWorkspace({
     void runAi();
   }, [aiLoading.verdict, report, reportFlow, reportHasData, reportKey, verdict]);
 
-  async function runInsights() {
-    if (!report || !reportHasData || aiLoading.insights || reportFlow === "pulling") return;
-    const sourceReport = report;
-    const sourceReportKey = buildDashboardReportKey(sourceReport);
-    const request = startAiRequest("insights", sourceReportKey);
-    onError("");
-    onStateChange((current) => ({ ...current, aiLoading: { ...current.aiLoading, insights: true } }));
-    try {
-      const data = await jsonFetch<{ insights: AiInsightTable }>("/api/ai/insights", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ report: sourceReport, previousReport, compareMode, language, provider }),
-        timeoutMs: 150000,
-        signal: request.controller.signal,
-      });
-      if (activeAiRequestRef.current.insights?.id !== request.id) return;
-      onStateChange((current) => current.report && buildDashboardReportKey(current.report) === sourceReportKey
-        ? { ...current, insights: data.insights }
-        : current);
-    } catch (err) {
-      if (activeAiRequestRef.current.insights?.id === request.id && !isAbortError(err)) {
-        onError(err instanceof Error ? err.message : "Could not generate insights.");
-      }
-    } finally {
-      if (activeAiRequestRef.current.insights?.id === request.id) {
-        delete activeAiRequestRef.current.insights;
-        onStateChange((current) => current.report && buildDashboardReportKey(current.report) === sourceReportKey
-          ? { ...current, aiLoading: { ...current.aiLoading, insights: false } }
-          : current);
-      }
-    }
-  }
-
-  async function copyPrompt() {
-    if (!report || !reportHasData) return;
-    await navigator.clipboard.writeText(report.prompt);
-    updateState({ copiedPrompt: true });
-    window.setTimeout(() => updateState({ copiedPrompt: false }), 1500);
-  }
-
   return (
     <>
       <ReportProgressDialog
@@ -974,11 +661,9 @@ export function AdsWorkspace({
             accountLabel={report.account.name}
             periodLabel={`${report.dateRange.since} – ${report.dateRange.until}`}
             scopeLabel={packLabel(report.selectedPack, language)}
-            campaigns={campaigns}
             selectedCampaignIds={selectedCampaignIds}
             since={since}
             until={until}
-            pack={pack}
             compareMode={compareMode}
             funnelStageKeys={funnelStageKeys}
             exporting={exportingPdf}
@@ -1513,217 +1198,6 @@ function ReportProgressDialog({ language, state, error, onClose, onRetry }: { la
   );
 }
 
-function ReportSkeleton({ language }: { language: InterfaceLanguage }) {
-  const isVietnamese = language === "vi";
-  const steps = isVietnamese
-    ? ["Campaign", "Ad set", "Insight", "Breakdown"]
-    : ["Campaigns", "Ad sets", "Insights", "Breakdowns"];
-  const [activeStep, setActiveStep] = React.useState(0);
-  const [percent, setPercent] = React.useState(8);
-
-  React.useEffect(() => {
-    const startedAt = Date.now();
-    const interval = window.setInterval(() => {
-      const elapsed = (Date.now() - startedAt) / 1000;
-      setActiveStep(Math.min(steps.length - 1, Math.floor(elapsed / 3)));
-      setPercent(Math.min(92, 8 + elapsed * 7));
-    }, 400);
-    return () => window.clearInterval(interval);
-  }, [steps.length]);
-
-  return (
-    <Card className="border-border">
-      <CardContent className="py-4">
-        <div className="mb-3 flex items-center gap-2 text-sm font-medium">
-          <Spinner className="size-4" />
-          {isVietnamese ? "Đang kéo dữ liệu từ Meta và chuẩn bị dashboard..." : "Pulling Meta data and preparing your dashboard..."}
-        </div>
-        <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2" role="status" aria-live="polite">
-          {steps.map((step, index) => {
-            const done = index < activeStep;
-            const active = index === activeStep;
-            return (
-              <div key={step} className="flex items-center gap-1.5 text-xs">
-                <span
-                  className={`flex size-4 items-center justify-center rounded-full ${
-                    done ? "bg-primary text-primary-foreground" : active ? "workbench-step-active bg-primary" : "border bg-muted"
-                  }`}
-                >
-                  {done ? <CheckIcon className="size-3" /> : null}
-                </span>
-                <span className={done || active ? "font-medium text-foreground" : "text-muted-foreground"}>{step}</span>
-              </div>
-            );
-          })}
-        </div>
-        <div className="mb-4 h-1.5 overflow-hidden rounded-full bg-muted">
-          <div
-            className="h-full w-full origin-left rounded-full bg-primary transition-transform duration-500"
-            style={{ transform: `scaleX(${percent / 100})` }}
-          />
-        </div>
-        <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-          {Array.from({ length: 6 }).map((_, index) => (
-            <Skeleton key={index} className="h-28" />
-          ))}
-        </section>
-      </CardContent>
-    </Card>
-  );
-}
-
-function RunningAdSetsPanel({
-  adsets,
-  currency,
-  language,
-}: {
-  adsets: AdSetWithPreviews[];
-  currency: string;
-  language: InterfaceLanguage;
-}) {
-  const isVietnamese = language === "vi";
-  const eyebrow = isVietnamese ? "Cấu trúc & Quảng cáo" : "Ad Set Preview";
-  const title = isVietnamese ? "Ad set & Creative đang chạy" : "Running Ad Sets & Creatives";
-  const description = isVietnamese
-    ? "Xem trước cấu trúc ad set active và bài đăng ad post đang chạy (banner, caption, ảnh, video)."
-    : "Preview active ad set structure and currently running ad posts (banner, caption, image, video).";
-
-  const [selectedAdSetId, setSelectedAdSetId] = React.useState<string>(adsets[0]?.id || "");
-  const [selectedAdId, setSelectedAdId] = React.useState<string | null>(null);
-
-  const selectedAdSet = adsets.find((a) => a.id === selectedAdSetId) || adsets[0];
-
-  React.useEffect(() => {
-    if (selectedAdSet?.ads && selectedAdSet.ads.length > 0) {
-      setSelectedAdId(selectedAdSet.ads[0].id);
-    } else {
-      setSelectedAdId(null);
-    }
-  }, [selectedAdSetId, selectedAdSet?.ads]);
-
-  if (!adsets || !adsets.length) return null;
-
-  const selectedAd = selectedAdSet?.ads?.find((ad) => ad.id === selectedAdId) || selectedAdSet?.ads?.[0];
-  const hasMultipleAdSets = adsets.length > 1;
-
-  return (
-    <div className="w-full rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5" data-print-flow>
-      <div className="mb-6 flex flex-col gap-1.5">
-        <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{eyebrow}</div>
-        <h2 className="text-xl font-semibold leading-none tracking-tight text-foreground">{title}</h2>
-        <p className="text-sm text-muted-foreground">{description}</p>
-      </div>
-
-      <div className={`grid gap-6 ${hasMultipleAdSets ? "grid-cols-1 md:grid-cols-12" : "grid-cols-1"}`}>
-        {hasMultipleAdSets && (
-          <div className="flex flex-col gap-2 md:col-span-4 lg:col-span-3">
-            <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              {isVietnamese ? "Chọn Ad Set" : "Select Ad Set"}
-            </div>
-            <div className="flex max-h-[600px] flex-col gap-2 overflow-y-auto pr-2">
-              {adsets.map((adset) => {
-                const isSelected = selectedAdSetId === adset.id;
-                return (
-                  <button
-                    key={adset.id}
-                    onClick={() => setSelectedAdSetId(adset.id)}
-                    className={`group flex w-full flex-col items-start gap-1 rounded-xl px-4 py-3 text-left transition-colors ${
-                      isSelected
-                        ? "border border-border/50 bg-background font-medium text-foreground shadow-sm"
-                        : "border border-transparent bg-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-                    }`}
-                  >
-                    <span className="line-clamp-2 text-sm">{adset.name}</span>
-                    <span className={`text-xs ${isSelected ? "text-muted-foreground" : "opacity-70"}`}>
-                      {formatAdSetBudget(adset, currency, language)}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        <div className={hasMultipleAdSets ? "flex flex-col gap-4 md:col-span-8 lg:col-span-9" : "flex flex-col gap-4"}>
-          <div className="rounded-xl border bg-background/50 p-5 shadow-sm">
-            <div className="mb-5 flex flex-wrap items-start justify-between gap-3 border-b border-border/60 pb-4">
-              <div className="min-w-0 flex-1">
-                <h3 className="font-heading text-lg font-semibold">{selectedAdSet.name}</h3>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {isVietnamese ? "Campaign: " : "Campaign: "}
-                  <span className="font-medium text-foreground/80">{selectedAdSet.campaignName}</span>
-                </p>
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <Badge variant="outline" className="rounded-full bg-background/50 backdrop-blur-sm">
-                  {formatAdSetBudget(selectedAdSet, currency, language)}
-                </Badge>
-                <Badge variant="secondary" className="rounded-full">
-                  {selectedAdSet.status}
-                </Badge>
-              </div>
-            </div>
-
-            {selectedAdSet.ads && selectedAdSet.ads.length > 0 ? (
-              <>
-                {selectedAdSet.ads.length > 1 && (
-                  <div className="mb-5 flex flex-wrap gap-2">
-                    {selectedAdSet.ads.map((ad, idx) => {
-                      const isAdSelected = selectedAdId === ad.id;
-                      return (
-                        <button
-                          key={ad.id}
-                          onClick={() => setSelectedAdId(ad.id)}
-                          className={`rounded-full px-4 py-1.5 text-xs font-medium transition-colors ${
-                            isAdSelected
-                              ? "bg-primary text-primary-foreground shadow-sm"
-                              : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground"
-                          }`}
-                        >
-                          {ad.name || `Creative ${idx + 1}`}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {selectedAd ? (
-                  <div className="flex flex-col gap-4">
-                    <div className="flex flex-wrap items-center justify-between gap-2 pb-1">
-                      <div className="min-w-0 flex-1 truncate text-sm font-semibold">{selectedAd.name}</div>
-                      <span className="shrink-0 text-xs text-muted-foreground">ID: {selectedAd.id}</span>
-                    </div>
-                    {selectedAd.previewHtml ? (
-                      <div
-                        className="flex w-full justify-center overflow-x-auto rounded-xl border bg-muted/20 p-4 sm:p-6"
-                        data-ad-preview-frame
-                      >
-                        <div
-                          className="relative max-h-[75vh] w-full max-w-[500px] overflow-y-auto overflow-x-hidden rounded-xl border border-border/50 bg-white shadow-sm [&_iframe]:!block [&_iframe]:!w-full [&_iframe]:!max-w-full [&_iframe]:!border-0"
-                          data-ad-preview-html
-                          dangerouslySetInnerHTML={{ __html: sanitizeAdPreviewHtml(selectedAd.previewHtml) }}
-                        />
-                      </div>
-                    ) : (
-                      <div className="flex h-40 items-center justify-center rounded-xl border border-dashed bg-muted/10 text-xs text-muted-foreground">
-                        {isVietnamese ? "Không tải được bản xem trước" : "Unable to load ad preview"}
-                      </div>
-                    )}
-                  </div>
-                ) : null}
-              </>
-            ) : (
-              <p className="text-sm italic text-muted-foreground">
-                {isVietnamese ? "Không có ad nào hoạt động trong ad set này." : "No active ads found in this ad set."}
-              </p>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 const ZERO_DECIMAL_CURRENCIES = ["VND", "JPY", "KRW"];
 
 function getBudgetDivider(currency?: string): number {
@@ -1772,341 +1246,6 @@ function formatCampaignBudget(campaign: MetaCampaign, currency: string, language
   return "";
 }
 
-function formatAdSetBudget(adset: AdSetWithPreviews, currency: string, language: InterfaceLanguage) {
-  const copy = adsCopy[language].adsetPreview;
-  const divider = getBudgetDivider(currency);
-  if (adset.dailyBudget > 0) return `${formatMetric(adset.dailyBudget / divider, "currency", currency)}/${copy.day}`;
-  if (adset.lifetimeBudget > 0) return `${formatMetric(adset.lifetimeBudget / divider, "currency", currency)} ${copy.lifetime}`;
-  return language === "vi" ? "Không có ngân sách trực tiếp" : "No direct budget";
-}
-
-function ComparisonPanel({
-  current,
-  previous,
-  mode,
-  language,
-}: {
-  current: DashboardReport;
-  previous: DashboardReport;
-  mode: CompareMode;
-  language: InterfaceLanguage;
-}) {
-  const isVietnamese = language === "vi";
-  const rootCauses = analyzeComparisonRootCauses(current, previous);
-  return (
-    <div className="rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5">
-      <div className="mb-6 flex flex-col gap-1.5">
-        <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-          {isVietnamese ? "Động lực So sánh" : "Comparison Drivers"}
-        </div>
-        <h2 className="text-xl font-semibold leading-none tracking-tight text-foreground">
-          {isVietnamese ? "Yếu tố dẫn dắt so sánh" : "Comparison Drivers"}: {modeLabel(mode, language)}
-        </h2>
-        <p className="text-sm leading-6 text-muted-foreground">
-          {isVietnamese ? "Thẻ KPI phía trên cho biết chỉ số nào đã thay đổi; phần này giải thích campaign/ad set nào đang dẫn dắt thay đổi đó." : "The KPI cards above show what changed; this section explains which matched campaigns or ad sets drove the movement."}{" "}
-          {isVietnamese ? "Hiện tại" : "Current"} {current.dateRange.since} {isVietnamese ? "đến" : "to"} {current.dateRange.until}.{" "}
-          {isVietnamese ? "Kỳ trước" : "Previous"} {previous.dateRange.since} {isVietnamese ? "đến" : "to"} {previous.dateRange.until}.
-        </p>
-      </div>
-
-      <div className="rounded-xl border bg-background/50 p-5 shadow-sm">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              {isVietnamese ? "Nguyên nhân chính" : "Root-cause drivers"}
-            </div>
-            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{rootCauses.summary[language]}</p>
-          </div>
-          <Badge variant={rootCauses.status === "drivers_found" ? "secondary" : "outline"} className="shrink-0 rounded-full bg-background/50 backdrop-blur-sm">
-            {rootCauses.status === "drivers_found" ? (isVietnamese ? "Có driver" : "Drivers found") : isVietnamese ? "Chưa rõ" : "No clear driver"}
-          </Badge>
-        </div>
-        {rootCauses.drivers.length > 0 ? (
-          <div className="mt-5 grid gap-3 md:grid-cols-3">
-            {rootCauses.drivers.map((driver) => (
-              <div key={driver.rowId} className="rounded-xl border bg-card/70 p-4 text-sm shadow-sm">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="truncate font-medium">{driver.rowName}</div>
-                    <div className="mt-0.5 text-xs text-muted-foreground">{driver.rowLevel}</div>
-                  </div>
-                  <Badge variant={driver.direction === "negative" ? "destructive" : "secondary"} className="shrink-0 rounded-full">
-                    {driver.direction === "negative" ? (isVietnamese ? "Xấu" : "Negative") : isVietnamese ? "Tốt" : "Positive"}
-                  </Badge>
-                </div>
-                <ul className="mt-4 flex flex-col gap-2 text-xs leading-5 text-muted-foreground">
-                  {driver.evidence.slice(0, 4).map((item) => (
-                    <li key={item} className="flex gap-2">
-                      <span className="mt-2 size-1 shrink-0 rounded-full bg-muted-foreground/60" />
-                      <span>{item}</span>
-                    </li>
-                  ))}
-                </ul>
-                <p className="mt-4 border-t pt-3 text-xs leading-5 text-foreground/90">{driver.action[language]}</p>
-              </div>
-            ))}
-          </div>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-function AiProgressStatus({
-  kind,
-  provider,
-  progress,
-  language,
-}: {
-  kind: "verdict" | "insights";
-  provider: Provider;
-  progress: AiProgressState | null;
-  language: InterfaceLanguage;
-}) {
-  if (!progress) return null;
-
-  const isVietnamese = language === "vi";
-  const currentProviderLabel = providerLabel(provider, language);
-  const verdictSteps = isVietnamese
-    ? ["Tạo Verdict local", `Gọi ${currentProviderLabel}`, "Đợi model phản hồi", "Đọc JSON và kiểm tra kết quả"]
-    : ["Generating local Verdict", `Calling ${currentProviderLabel}`, "Waiting for model response", "Parsing JSON and checking result"];
-  const insightSteps = isVietnamese
-    ? ["Chuẩn bị prompt insight", `Gọi ${currentProviderLabel}`, "Đợi model phản hồi", "Sắp xếp insight ưu tiên"]
-    : ["Preparing insight prompt", `Calling ${currentProviderLabel}`, "Waiting for model response", "Organizing priority insights"];
-  const steps = kind === "verdict" ? verdictSteps : insightSteps;
-  const stepText = steps[Math.min(progress.stepIndex, steps.length - 1)];
-  const elapsedText = isVietnamese ? `${progress.elapsedSeconds}s đã trôi qua` : `${progress.elapsedSeconds}s elapsed`;
-
-  return (
-    <div className="mb-4 rounded-md bg-muted/45 px-4 py-3" role="status" aria-live="polite" data-print-hidden>
-      <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
-        <div className="flex min-w-0 items-center gap-2">
-          <Spinner className="size-4 shrink-0" />
-          <span className="font-medium">{stepText}</span>
-        </div>
-        <Badge variant="outline" className="shrink-0">
-          {elapsedText}
-        </Badge>
-      </div>
-      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-background">
-        <div
-          className="h-full w-full origin-left rounded-full bg-primary transition-transform duration-500"
-          style={{ transform: `scaleX(${progress.percent / 100})` }}
-        />
-      </div>
-    </div>
-  );
-}
-
-function VerdictPanel({
-  provider,
-  loading,
-  progress,
-  verdict,
-  copiedPrompt,
-  language,
-  onProviderChange,
-  onGenerate,
-  onCopyPrompt,
-}: {
-  provider: Provider;
-  loading: boolean;
-  progress: AiProgressState | null;
-  verdict: Verdict | null;
-  copiedPrompt: boolean;
-  language: InterfaceLanguage;
-  onProviderChange: (value: Provider) => void;
-  onGenerate: () => void;
-  onCopyPrompt: () => void;
-}) {
-  const isVietnamese = language === "vi";
-  const copy = adsCopy[language].verdict;
-  return (
-    <div className="rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5" data-print-break data-print-flow>
-      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-        <div className="flex max-w-2xl flex-col gap-1.5">
-          <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-            {isVietnamese ? "Bộ máy quyết định" : "Decision Engine"}
-          </p>
-          <h2 className="text-xl font-semibold tracking-tight">Verdict</h2>
-          <p className="text-sm text-muted-foreground">
-            {isVietnamese
-              ? "Verdict local có thể chạy không cần model; chế độ auto dùng AI để cải thiện khi có key."
-              : "Local Verdict works without a model call; auto uses AI enhancement when a provider key exists."}
-          </p>
-        </div>
-        <div className="flex flex-col gap-2 md:flex-row md:items-end" data-print-hidden>
-          <Field className="md:w-56">
-            <FieldLabel>{copy.provider}</FieldLabel>
-            <Select
-              items={providerItems}
-              value={provider}
-              onValueChange={(value) => {
-                if (value) onProviderChange(value as Provider);
-              }}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  {providerItems.map((item) => (
-                    <SelectItem key={item.value} value={item.value}>
-                      {providerLabel(item.value, language)}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </Field>
-          {!verdict && !loading ? (
-            <BorderGlow
-              active
-              interactive
-              showShadow={false}
-              borderRadius={999}
-              borderWidth={2.5}
-              coneSpread={18}
-              glowRadius={22}
-              glowIntensity={1.5}
-              backgroundColor="transparent"
-            >
-              <Button onClick={onGenerate} className="w-full">
-                <SparklesIcon data-icon="inline-start" />
-                {copy.generate}
-              </Button>
-            </BorderGlow>
-          ) : (
-            <Button onClick={onGenerate} disabled={loading}>
-              {loading ? <Spinner data-icon="inline-start" /> : <SparklesIcon data-icon="inline-start" />}
-              {copy.generate}
-            </Button>
-          )}
-          <Button type="button" variant="outline" onClick={onCopyPrompt}>
-            <ClipboardIcon data-icon="inline-start" />
-            {copiedPrompt ? copy.copied : copy.copyPrompt}
-          </Button>
-        </div>
-      </div>
-      <div className="mt-5 flex flex-col gap-4">
-        {loading ? <AiProgressStatus kind="verdict" provider={provider} progress={progress} language={language} /> : null}
-        {verdict ? (
-          <VerdictCard verdict={verdict} language={language} />
-        ) : (
-          <Empty className="rounded-xl border bg-background/50">
-            <EmptyHeader>
-              <EmptyTitle>{copy.emptyTitle}</EmptyTitle>
-              <EmptyDescription>{copy.emptyDescription}</EmptyDescription>
-            </EmptyHeader>
-          </Empty>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function InsightPanel({
-  provider,
-  insights,
-  loading,
-  progress,
-  compareMode,
-  hasComparison,
-  language,
-  onGenerate,
-}: {
-  provider: Provider;
-  insights: AiInsightTable | null;
-  loading: boolean;
-  progress: AiProgressState | null;
-  compareMode: CompareMode;
-  hasComparison: boolean;
-  language: InterfaceLanguage;
-  onGenerate: () => void;
-}) {
-  const visibleRows = insights?.rows.slice(0, 5) || [];
-  const isVietnamese = language === "vi";
-  return (
-    <div className="rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5" data-print-flow>
-      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-        <div className="flex max-w-2xl flex-col gap-1.5">
-          <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-            {isVietnamese ? "Chuyên gia AI" : "AI Analyst"}
-          </p>
-          <h2 className="text-xl font-semibold tracking-tight">{isVietnamese ? "Tóm tắt insight AI" : "AI insight brief"}</h2>
-          <p className="text-sm text-muted-foreground">
-            {isVietnamese
-              ? compareMode !== "off" && hasComparison
-                ? "Các thay đổi chính, nguyên nhân và hành động đề xuất."
-                : "Các hành động ưu tiên. Dữ liệu chi tiết nằm trong bảng drilldown."
-              : compareMode !== "off" && hasComparison
-                ? "Top comparison deltas, causes, and actions."
-                : "Top action items. Full raw performance stays in drilldown tables."}
-          </p>
-        </div>
-        <div className="flex justify-start md:justify-end" data-print-hidden>
-          <Button type="button" onClick={onGenerate} disabled={loading}>
-            {loading ? <Spinner data-icon="inline-start" /> : <FileTextIcon data-icon="inline-start" />}
-            {isVietnamese ? "Tạo insight" : "Generate insights"}
-          </Button>
-        </div>
-      </div>
-      <div className="mt-5 flex flex-col gap-4">
-        {loading ? <AiProgressStatus kind="insights" provider={provider} progress={progress} language={language} /> : null}
-        {insights ? (
-          <div className="flex flex-col gap-3">
-            <div className="rounded-xl border bg-background/50 p-4">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="secondary">{providerLabel(insights.provider, language)}</Badge>
-                <Badge variant="outline">{insights.confidence} confidence</Badge>
-                <span className="text-sm text-muted-foreground">{insights.summary}</span>
-              </div>
-            </div>
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {visibleRows.map((row, index) => (
-                <div key={`${row.area}-${index}`} className="rounded-xl border bg-card/70 p-4 shadow-sm" data-print-expand>
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="truncate text-sm font-medium">{row.area}</div>
-                    <Badge variant={row.priority === "high" ? "destructive" : row.priority === "medium" ? "secondary" : "outline"}>
-                      {row.priority}
-                    </Badge>
-                  </div>
-                  <p className="mt-2 line-clamp-2 text-sm font-medium leading-5" data-print-expand>
-                    {row.insight}
-                  </p>
-                  <p className="mt-2 line-clamp-2 text-xs leading-5 text-muted-foreground" data-print-expand>
-                    {row.evidence}
-                  </p>
-                  <Separator className="my-3" />
-                  <p className="line-clamp-2 text-sm leading-5" data-print-expand>
-                    {row.action}
-                  </p>
-                </div>
-              ))}
-            </div>
-            {insights.rows.length > visibleRows.length ? (
-              <p className="text-xs text-muted-foreground" data-print-hidden>
-                {isVietnamese
-                  ? `Đang hiển thị ${visibleRows.length}/${insights.rows.length} insight ưu tiên. Xem bảng hiệu quả để drilldown sâu hơn.`
-                  : `Showing top ${visibleRows.length} of ${insights.rows.length}. Use performance tables for deeper drilldown.`}
-              </p>
-            ) : null}
-          </div>
-        ) : (
-          <Empty className="rounded-xl border bg-background/50">
-            <EmptyHeader>
-              <EmptyTitle>{isVietnamese ? "Chưa có insight AI" : "No insight table yet"}</EmptyTitle>
-              <EmptyDescription>
-                {isVietnamese ? "Tạo sau khi kéo báo cáo. Nội dung sẽ theo chế độ so sánh." : "Generate after report pull. It adapts to compare mode."}
-              </EmptyDescription>
-            </EmptyHeader>
-          </Empty>
-        )}
-      </div>
-    </div>
-  );
-}
-
 export function providerLabel(provider: Provider, language: InterfaceLanguage, capabilities?: CapabilityStatus[]) {
   if (provider === "9router") return language === "vi" ? "Trợ lý AI" : "AI assistant";
   if (provider === "prompt") return language === "vi" ? "Luật local" : "Local rules only";
@@ -2140,455 +1279,4 @@ function modeLabel(mode: CompareMode, language: InterfaceLanguage = "en") {
   if (mode === "mom") return "MoM";
   if (mode === "yoy") return "YoY";
   return language === "vi" ? "Tắt" : "Off";
-}
-
-function averageRows(rows: NormalizedRow[], key: ChartKey): number | null {
-  const values = rows
-    .map((row) => chartMetricValue(row, key))
-    .filter((value): value is number => value !== null);
-  if (!values.length) return null;
-  return values.reduce((sum, value) => sum + value, 0) / values.length;
-}
-
-function roundedChartMetric(
-  row: NormalizedRow,
-  key: ChartKey,
-  round: (value: number) => number,
-): number | null {
-  const value = chartMetricValue(row, key);
-  return value === null ? null : round(value);
-}
-
-function performanceTooltipValue(
-  value: unknown,
-  key: ChartKey,
-  format: ChartFormat,
-  currency: string,
-  language: InterfaceLanguage,
-): string {
-  if (value == null) return `— · ${chartMetricUnavailableLabel(key, language)}`;
-  return formatChartValue(Number(value), format, currency);
-}
-
-function PerformanceCharts({ report, language }: { report: DashboardReport; language: InterfaceLanguage }) {
-  const currency = report.account.currency || "VND";
-  const spec = getPackChartSpec(report.selectedPack, language);
-  const trendAnnotation = spec.trendKeys.map((key) => detectTrendAnnotation(report.dailyRows, key)).find((annotation) => annotation !== null);
-  const anomalyResult = detectBaselineAnomalies(report.dailyRows);
-  const referenceRows = report.dailyRows.filter((row) => Boolean(row.date)).slice(0, -Math.min(7, Math.floor(report.dailyRows.length / 2)));
-  const trendReferenceValue = referenceRows.length ? averageRows(referenceRows, spec.trendKeys[0]) : null;
-  const efficiencyReferenceValue = referenceRows.length ? averageRows(referenceRows, spec.efficiencyKeys[0]) : null;
-  const diagnosticReferenceValue = Math.max(spec.referenceLine?.value || 0, spec.diagnosticKeys.includes("ctr") ? 1 : 0);
-  const dailyData = report.dailyRows.map((row) => ({
-    date: compactDate(row.date),
-    spend: Math.round(row.spend),
-    messages: row.messages,
-    replies: row.replies,
-    leads: row.leads,
-    purchases: row.purchases,
-    linkClicks: row.linkClicks,
-    clicks: row.clicks,
-    impressions: row.impressions,
-    reach: row.reach,
-    costPerMessage: roundedChartMetric(row, "costPerMessage", Math.round),
-    costPerReply: roundedChartMetric(row, "costPerReply", Math.round),
-    cpl: roundedChartMetric(row, "cpl", Math.round),
-    cpaPurchase: roundedChartMetric(row, "cpaPurchase", Math.round),
-    cpc: roundedChartMetric(row, "cpc", roundMetric),
-    cpm: roundedChartMetric(row, "cpm", roundMetric),
-    roas: roundedChartMetric(row, "roas", roundMetric),
-    frequency: roundedChartMetric(row, "frequency", roundMetric),
-    ctr: roundedChartMetric(row, "ctr", roundMetric),
-  }));
-  const adsetData = [...report.adsetRows]
-    .sort((a, b) => sortByDrilldown(a, b, spec.drilldownKey, spec.higherIsBetter))
-    .slice(0, 7)
-    .map((row) => ({
-      name: truncateLabel(row.name),
-      spend: Math.round(row.spend),
-      result: roundForFormat(metricValue(row, spec.drilldownKey), spec.drilldownFormat),
-    }));
-
-  if (!dailyData.length && !adsetData.length) {
-    return (
-      <div className="rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5" data-print-flow>
-        <div className="flex max-w-2xl flex-col gap-1.5">
-          <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-            {language === "vi" ? "Không gian phân tích" : "Analytics Workspace"}
-          </p>
-          <h2 className="text-xl font-semibold tracking-tight">{language === "vi" ? "Chưa có dữ liệu biểu đồ" : "No chart data yet"}</h2>
-          <p className="text-sm text-muted-foreground">
-            {language === "vi" ? "Cần dữ liệu theo ngày hoặc ad set để hiển thị xu hướng." : "Daily or ad set data is needed to show performance trends."}
-          </p>
-        </div>
-        <div className="mt-5 rounded-xl border bg-background/50 p-4">
-          <ChartEmpty language={language} />
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <section className="grid min-w-0 gap-4 xl:grid-cols-3">
-      <div className="min-w-0 rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5 xl:col-span-2">
-        <div className="flex min-w-0 flex-col items-start gap-3 sm:flex-row sm:justify-between">
-          <div className="flex min-w-0 max-w-2xl flex-col gap-1.5">
-            <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-              {language === "vi" ? "Theo dõi xu hướng" : "Trend Monitor"}
-            </p>
-            <h2 className="text-xl font-semibold tracking-tight">{spec.trendTitle}</h2>
-            <p className="text-sm text-muted-foreground">{spec.trendDescription}</p>
-          </div>
-          <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
-            {anomalyResult.status === "anomalies_found" ? (
-              anomalyResult.anomalies.slice(0, 2).map((anomaly) => (
-                <Badge key={anomaly.key} variant={anomaly.severity === "danger" ? "destructive" : "outline"} className="shrink-0">
-                  {anomalyBadgeText(anomaly, language)}
-                </Badge>
-              ))
-            ) : null}
-            {trendAnnotation ? <Badge variant="outline" className="shrink-0">{trendAnnotation.label}</Badge> : null}
-          </div>
-        </div>
-        <div className="mt-5 min-w-0 overflow-hidden rounded-xl border bg-background/50 p-4">
-          {dailyData.length ? (
-            <ChartContainer config={performanceChartConfig} className="h-[280px] w-full">
-              <ComposedChart data={dailyData} margin={{ left: 8, right: 8, top: 8, bottom: 0 }}>
-                <CartesianGrid vertical={false} />
-                <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={8} minTickGap={16} />
-                <YAxis yAxisId="spend" hide domain={paddedPositiveDomain()} />
-                <YAxis yAxisId="outcomes" orientation="right" hide domain={paddedPositiveDomain(trendReferenceValue)} />
-                {trendReferenceValue ? <ReferenceLine yAxisId="outcomes" y={trendReferenceValue} stroke="var(--chart-reference)" strokeDasharray="2 4" /> : null}
-                <ChartTooltip
-                  filterNull={false}
-                  content={
-                    <ChartTooltipContent
-                      formatter={(value, name) => performanceTooltipValue(
-                        value,
-                        name as ChartKey,
-                        name === "spend" ? "currency" : spec.metricFormats[name as ChartKey] || "number",
-                        currency,
-                        language,
-                      )}
-                    />
-                  }
-                />
-                <Bar yAxisId="spend" dataKey="spend" fill="var(--color-spend)" radius={[3, 3, 0, 0]} />
-                {spec.trendKeys.map((key) => (
-                  <Line key={key} yAxisId="outcomes" type="monotone" dataKey={key} connectNulls={false} stroke={`var(--color-${key})`} strokeWidth={trendAnnotation?.key === key ? 3 : 2} dot={false} />
-                ))}
-              </ComposedChart>
-            </ChartContainer>
-          ) : (
-            <ChartEmpty language={language} />
-          )}
-        </div>
-      </div>
-
-      <div className="min-w-0 rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5">
-        <div className="flex max-w-2xl flex-col gap-1.5">
-          <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-            {language === "vi" ? "Đường hiệu quả" : "Efficiency Curve"}
-          </p>
-          <h2 className="text-xl font-semibold tracking-tight">{spec.efficiencyTitle}</h2>
-          <p className="text-sm text-muted-foreground">{spec.efficiencyDescription}</p>
-        </div>
-        <div className="mt-5 min-w-0 overflow-hidden rounded-xl border bg-background/50 p-4">
-          {dailyData.length ? (
-            <ChartContainer config={performanceChartConfig} className="h-[280px] w-full">
-              <LineChart data={dailyData} margin={{ left: 8, right: 8, top: 8, bottom: 0 }}>
-                <CartesianGrid vertical={false} />
-                <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={8} minTickGap={16} />
-                <YAxis hide domain={paddedPositiveDomain(efficiencyReferenceValue)} />
-                {efficiencyReferenceValue ? <ReferenceLine y={efficiencyReferenceValue} stroke="var(--chart-reference)" strokeDasharray="2 4" /> : null}
-                <ChartTooltip
-                  filterNull={false}
-                  content={
-                    <ChartTooltipContent
-                      formatter={(value, name) => performanceTooltipValue(
-                        value,
-                        name as ChartKey,
-                        spec.metricFormats[name as ChartKey] || "currency",
-                        currency,
-                        language,
-                      )}
-                    />
-                  }
-                />
-                {spec.efficiencyKeys.map((key) => (
-                  <Line key={key} type="monotone" dataKey={key} connectNulls={false} stroke={`var(--color-${key})`} strokeWidth={2} dot={chartSeriesDot(key, 2.5)} />
-                ))}
-              </LineChart>
-            </ChartContainer>
-          ) : (
-            <ChartEmpty language={language} />
-          )}
-        </div>
-      </div>
-
-      <div className="min-w-0 rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5">
-        <div className="flex max-w-2xl flex-col gap-1.5">
-          <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-            {language === "vi" ? "Tín hiệu chẩn đoán" : "Diagnostic Signal"}
-          </p>
-          <h2 className="text-xl font-semibold tracking-tight">{spec.diagnosticTitle}</h2>
-          <p className="text-sm text-muted-foreground">{spec.diagnosticDescription}</p>
-        </div>
-        <div className="mt-5 min-w-0 overflow-hidden rounded-xl border bg-background/50 p-4">
-          {dailyData.length ? (
-            <ChartContainer config={performanceChartConfig} className="h-[240px] w-full">
-              <LineChart data={dailyData} margin={{ left: 8, right: 8, top: 8, bottom: 0 }}>
-                <CartesianGrid vertical={false} />
-                <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={8} minTickGap={18} />
-                <YAxis hide domain={paddedPositiveDomain(diagnosticReferenceValue)} />
-                {spec.referenceLine ? <ReferenceLine y={spec.referenceLine.value} stroke="var(--destructive)" strokeDasharray="4 4" /> : null}
-                {spec.diagnosticKeys.includes("ctr") ? <ReferenceLine y={1} stroke="var(--chart-reference)" strokeDasharray="2 4" /> : null}
-                <ChartTooltip
-                  filterNull={false}
-                  content={
-                    <ChartTooltipContent
-                      formatter={(value, name) => performanceTooltipValue(
-                        value,
-                        name as ChartKey,
-                        spec.metricFormats[name as ChartKey] || "number",
-                        currency,
-                        language,
-                      )}
-                    />
-                  }
-                />
-                {spec.diagnosticKeys.map((key) => (
-                  <Line key={key} type="monotone" dataKey={key} connectNulls={false} stroke={`var(--color-${key})`} strokeWidth={2} dot={false} />
-                ))}
-              </LineChart>
-            </ChartContainer>
-          ) : (
-            <ChartEmpty language={language} />
-          )}
-        </div>
-      </div>
-
-      <div className="min-w-0 rounded-2xl border bg-card/70 p-4 shadow-sm sm:p-5 xl:col-span-2">
-        <div className="flex max-w-2xl flex-col gap-1.5">
-          <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-            {language === "vi" ? "Phân rã nhóm quảng cáo" : "Ad Set Drilldown"}
-          </p>
-          <h2 className="text-xl font-semibold tracking-tight">{spec.drilldownTitle}</h2>
-          <p className="text-sm text-muted-foreground">{spec.drilldownDescription}</p>
-        </div>
-        <div className="mt-5 min-w-0 overflow-hidden rounded-xl border bg-background/50 p-4">
-          {adsetData.length ? (
-            <ChartContainer config={performanceChartConfig} className="h-[240px] w-full">
-              <BarChart data={adsetData} layout="vertical" margin={{ left: 12, right: 8, top: 4, bottom: 4 }}>
-                <CartesianGrid horizontal={false} />
-                <XAxis type="number" hide domain={paddedPositiveDomain()} />
-                <YAxis dataKey="name" type="category" tickLine={false} axisLine={false} width={142} tickMargin={8} />
-                <ChartTooltip
-                  content={
-                    <ChartTooltipContent
-                      formatter={(value, name) => (
-                        <span className="tabular-nums">
-                          {formatChartValue(Number(value), name === "spend" ? "currency" : spec.drilldownFormat, currency)}
-                        </span>
-                      )}
-                    />
-                  }
-                />
-                <Bar dataKey="spend" fill="var(--color-spend)" radius={4} />
-                <Bar dataKey="result" fill="var(--color-result)" radius={4} />
-              </BarChart>
-            </ChartContainer>
-          ) : (
-            <ChartEmpty language={language} />
-          )}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function PerformanceTable({
-  rows,
-  currency,
-  language,
-  daily = false,
-  pack,
-}: {
-  rows: NormalizedRow[];
-  currency: string;
-  language: InterfaceLanguage;
-  daily?: boolean;
-  pack?: KpiPack;
-}) {
-  const copy = adsCopy[language];
-  if (!rows.length) {
-    return (
-      <Empty className="border">
-        <EmptyHeader>
-          <EmptyTitle>{copy.empty.rowsTitle}</EmptyTitle>
-          <EmptyDescription>{copy.empty.rowsDescription}</EmptyDescription>
-        </EmptyHeader>
-      </Empty>
-    );
-  }
-  return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>{daily ? copy.table.date : copy.table.name}</TableHead>
-          <TableHead className="text-right">{copy.table.spend}</TableHead>
-          <TableHead className="text-right">{copy.table.impressions}</TableHead>
-          <TableHead className="text-right">{copy.table.ctr}</TableHead>
-          <TableHead className="text-right">{copy.table.messages}</TableHead>
-          <TableHead className="text-right">{copy.table.leads}</TableHead>
-          <TableHead className="text-right">{copy.table.costMessage}</TableHead>
-          <TableHead className="text-right">{copy.table.cpl}</TableHead>
-          <TableHead>{copy.table.creativeFatigue}</TableHead>
-          {pack ? <TableHead>{copy.table.action}</TableHead> : null}
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {(() => {
-          const fatigueBaseline = daily ? null : computeCreativeFatigueBaseline(rows);
-          return rows.map((row) => {
-          const action = pack ? rowDecision(row, pack, language) : null;
-          const creativeSignal = classifyCreativeFatigue(row, fatigueBaseline);
-          return (
-            <TableRow key={`${row.level}-${row.id}-${row.date || ""}`} className="hover:bg-muted/40 transition-colors">
-              <TableCell className="max-w-48 truncate font-medium">{daily ? row.date : row.name}</TableCell>
-              <TableCell className="text-right tabular-nums">{formatMetric(row.spend, "currency", currency)}</TableCell>
-              <TableCell className="text-right tabular-nums">{formatMetric(row.impressions, "number")}</TableCell>
-              <TableCell className="text-right tabular-nums">{formatMetric(row.ctr, "percent")}</TableCell>
-              <TableCell className="text-right tabular-nums">{formatMetric(row.messages, "number")}</TableCell>
-              <TableCell className="text-right tabular-nums">{formatMetric(row.leads, "number")}</TableCell>
-              <TableCell className="text-right tabular-nums">{formatMetric(row.costPerMessage, "currency", currency)}</TableCell>
-              <TableCell className="text-right tabular-nums">{formatMetric(row.cpl, "currency", currency)}</TableCell>
-              {creativeSignal ? (
-                <TableCell className="min-w-44">
-                  <div className="flex flex-col gap-1">
-                    <Badge variant={creativeSignal.severity === "danger" ? "destructive" : creativeSignal.severity === "warning" ? "outline" : "secondary"}>
-                      {creativeSignal.label[language]}
-                    </Badge>
-                    <span className="text-xs text-muted-foreground">{creativeSignal.reason[language]}</span>
-                  </div>
-                </TableCell>
-              ) : null}
-              {action ? (
-                <TableCell>
-                  <Badge variant={action.intent === "danger" ? "destructive" : action.intent === "good" ? "success" : "outline"}>
-                    {action.label}
-                  </Badge>
-                </TableCell>
-              ) : null}
-            </TableRow>
-          );
-          });
-        })()}
-      </TableBody>
-    </Table>
-  );
-}
-
-function VerdictCard({ verdict, language }: { verdict: Verdict; language: InterfaceLanguage }) {
-  const isVietnamese = language === "vi";
-  const nextActions = [...verdict.budget_moves, ...verdict.tests].filter(Boolean).slice(0, 3);
-  const highlights = verdict.winners.filter(Boolean).slice(0, 3);
-  const risks = verdict.risks.filter(Boolean).slice(0, 3);
-  const detailRows = [
-    { title: isVietnamese ? "Điểm yếu" : "Losers", rows: verdict.losers },
-    { title: isVietnamese ? "Điều chỉnh ngân sách" : "Budget moves", rows: verdict.budget_moves },
-    { title: isVietnamese ? "Thử nghiệm đề xuất" : "Tests", rows: verdict.tests },
-    { title: isVietnamese ? "Giả định dữ liệu" : "Assumptions", rows: verdict.assumptions },
-  ];
-  return (
-    <div className="flex flex-col gap-4 rounded-lg border bg-muted/20 p-4" data-print-expand>
-      <div className="grid gap-4 xl:grid-cols-[1fr_360px]">
-        <div>
-          <div className="text-xs font-medium uppercase text-muted-foreground">
-            {isVietnamese ? "Verdict hiệu quả tháng" : "Monthly performance Verdict"}
-          </div>
-          <p className="mt-2 max-w-5xl text-base font-medium leading-7 md:text-lg">{compactText(verdict.verdict, 420)}</p>
-        </div>
-        <div className="rounded-lg border bg-background p-3">
-          <div className="flex flex-wrap gap-1.5">
-            <Badge variant="outline">{providerLabel(verdict.provider, language)}</Badge>
-            <Badge variant="secondary">{verdict.confidence} confidence</Badge>
-          </div>
-          <Separator className="my-3" />
-          <div className="text-xs font-medium uppercase text-muted-foreground">
-            {isVietnamese ? "Đề xuất tối ưu kỳ tiếp theo" : "Next-period optimization recommendations"}
-          </div>
-          <CompactList rows={nextActions} emptyLabel={isVietnamese ? "Chưa có đề xuất." : "No recommendations."} />
-        </div>
-      </div>
-
-      <div className="grid gap-3 md:grid-cols-2">
-        <InsightSummary
-          title={isVietnamese ? "Điểm hiệu quả" : "What is working"}
-          rows={highlights}
-          emptyLabel={isVietnamese ? "Chưa có tín hiệu tốt rõ ràng." : "No clear positive signal."}
-        />
-        <InsightSummary
-          title={isVietnamese ? "Rủi ro cần xử lý" : "Risks to address"}
-          rows={risks}
-          emptyLabel={isVietnamese ? "Chưa có rủi ro rõ ràng." : "No clear risk."}
-        />
-      </div>
-
-      <details className="rounded-lg border bg-background p-3" data-print-hidden>
-        <summary className="cursor-pointer text-sm font-medium">
-          {isVietnamese ? "Xem chi tiết AI" : "View AI detail"}
-        </summary>
-        <div className="mt-3 grid gap-3 md:grid-cols-2">
-          {detailRows.map((group) => (
-            <InsightSummary key={group.title} title={group.title} rows={group.rows.filter(Boolean).slice(0, 5)} emptyLabel={isVietnamese ? "Không có dữ liệu." : "No items."} />
-          ))}
-        </div>
-      </details>
-    </div>
-  );
-}
-
-function InsightSummary({ title, rows, emptyLabel }: { title: string; rows: string[]; emptyLabel: string }) {
-  const visibleRows = rows.filter(Boolean);
-  return (
-    <div className="rounded-lg border bg-background p-3">
-      <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{title}</div>
-      {visibleRows.length ? (
-        <ul className="mt-2 flex flex-col gap-2">
-          {visibleRows.map((row, index) => (
-            <li key={`${row}-${index}`} className="flex gap-2.5 text-sm leading-5">
-              <span className="mt-[6px] size-2 shrink-0 rounded-full bg-primary/60" />
-              <span>{compactText(row, 180)}</span>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="mt-2 text-sm text-muted-foreground">{emptyLabel}</p>
-      )}
-    </div>
-  );
-}
-
-function CompactList({ rows, emptyLabel }: { rows: string[]; emptyLabel: string }) {
-  if (!rows.length) return <p className="mt-2 text-sm text-muted-foreground">{emptyLabel}</p>;
-  return (
-    <ol className="mt-2 flex flex-col gap-2">
-      {rows.map((row, index) => (
-        <li key={`${row}-${index}`} className="flex gap-2.5 text-sm leading-5">
-          <span className="mt-px flex size-5 shrink-0 items-center justify-center rounded-md bg-primary/10 text-xs font-semibold text-primary">
-            {index + 1}
-          </span>
-          <span>{compactText(row, 170)}</span>
-        </li>
-      ))}
-    </ol>
-  );
-}
-
-function compactText(value: string, maxLength: number) {
-  if (value.length <= maxLength) return value;
-  const clipped = value.slice(0, maxLength).trim();
-  const sentenceEnd = Math.max(clipped.lastIndexOf("."), clipped.lastIndexOf("!"), clipped.lastIndexOf("?"));
-  return `${(sentenceEnd > maxLength * 0.55 ? clipped.slice(0, sentenceEnd + 1) : clipped).trim()}...`;
 }

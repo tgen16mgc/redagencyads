@@ -4,12 +4,10 @@ import * as React from "react";
 import { toast } from "sonner";
 import {
   ActivityIcon,
-  ArrowLeftIcon,
   BarChart3Icon,
   BotMessageSquareIcon,
   CalendarClockIcon,
   BrainIcon,
-  CheckIcon,
   ChevronDownIcon,
   DatabaseIcon,
   DownloadIcon,
@@ -67,7 +65,7 @@ import type { CompetitorEvidenceStatus, CompetitorFetchResult, CompetitorPlatfor
 import { buildWorkflowSteps, dashboardWorkflowDestination, type DashboardWorkflowStep } from "@/lib/dashboard-workflow";
 import { canOpenDashboardView, initialDashboardViewFromSearch, shouldLoadAdsWorkspaceData, type DashboardView } from "@/lib/dashboard-access";
 import { advanceOverviewPerformanceIntent, sampleModeForReport, type OverviewPerformanceIntent, type OverviewPerformanceTarget } from "@/lib/dashboard-overview";
-import { buildSampleReport, SAMPLE_CAMPAIGNS } from "@/lib/sample-report";
+import { buildSampleReport} from "@/lib/sample-report";
 import { buildUnknownCapabilitySnapshot, type CapabilityStatus } from "@/lib/capabilities";
 import { isAbortError, jsonFetch } from "@/lib/api-client";
 import { hasReportSignal } from "@/lib/data-sufficiency";
@@ -93,9 +91,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
-import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
@@ -181,19 +178,6 @@ const SIDEBAR_STORAGE_KEY = "decision-workspace-sidebar-expanded";
 
 const uiCopy = {
   en: {
-    token: {
-      title: "Decision Operations Workspace",
-      description: "Connect Meta account.",
-      storage: "Facebook Login and pasted tokens are validated server-side, encrypted, and stored only in an HttpOnly session cookie.",
-      rejected: "Connection rejected",
-      facebookLogin: "Login with Facebook",
-      facebookHelp: "Requests ads_read for reporting plus Page permissions for publishing.",
-      manualToken: "Manual token fallback",
-      field: "Access token",
-      placeholder: "Paste Meta access token",
-      help: "Use a token only when Facebook Login is unavailable. Do not use shared tokens for hosted public deployments.",
-      submit: "Validate token",
-    },
     loading: {
       title: "Loading session",
       description: "Restoring your saved session.",
@@ -243,19 +227,6 @@ const uiCopy = {
     },
   },
   vi: {
-    token: {
-      title: "Decision Operations Workspace",
-      description: "Kết nối tài khoản Meta.",
-      storage: "Facebook Login và token dán thủ công đều được kiểm tra trên server, mã hóa và chỉ lưu trong HttpOnly session cookie.",
-      rejected: "Kết nối bị từ chối",
-      facebookLogin: "Đăng nhập bằng Facebook",
-      facebookHelp: "Yêu cầu ads_read để đọc báo cáo và quyền Page để đăng bài.",
-      manualToken: "Dùng token thủ công khi cần",
-      field: "Access token",
-      placeholder: "Dán Meta access token",
-      help: "Chỉ dùng token khi Facebook Login chưa khả dụng. Không dùng token dùng chung cho bản public.",
-      submit: "Xác thực token",
-    },
     loading: {
       title: "Đang tải session",
       description: "Đang khôi phục phiên đăng nhập của bạn.",
@@ -1467,17 +1438,13 @@ export function DashboardShell() {
                   effectiveKpis={effectiveKpis}
                   healthSummary={healthSummary}
                   reportHasData={reportHasData}
-                  decisionTargets={decisionTargets}
                   exportingPdf={exportingPdf}
-                  chatShortcutsDisabled={chatOpen}
-                  onProviderChange={setProvider}
                   onAccountIdChange={setAccountId}
                   onLoadingChange={setLoading}
                   onError={setError}
                   onStateChange={setAdsWorkspace}
                   onSaveCustomKpis={saveCustomKpis}
                   onExportPdf={exportPdf}
-                  onOpenAssistant={() => setChatOpen((current) => !current)}
                   onCancelInitialScope={() => setAdsWorkspace((current) => ({ ...current, scopeExpanded: false }))}
                   onReportReady={() => {
                     setPerformanceIntent((current) => advanceOverviewPerformanceIntent(current));
@@ -1515,17 +1482,13 @@ export function DashboardShell() {
               effectiveKpis={effectiveKpis}
               healthSummary={healthSummary}
               reportHasData={reportHasData}
-              decisionTargets={decisionTargets}
               exportingPdf={exportingPdf}
-              chatShortcutsDisabled={chatOpen}
-              onProviderChange={setProvider}
               onAccountIdChange={setAccountId}
               onLoadingChange={setLoading}
               onError={setError}
               onStateChange={setAdsWorkspace}
               onSaveCustomKpis={saveCustomKpis}
               onExportPdf={exportPdf}
-              onOpenAssistant={() => setChatOpen((current) => !current)}
               onCancelInitialScope={() => setActiveView("overview")}
               initialPerformanceTarget={performanceIntent.target}
               initialPerformanceTargetKey={performanceIntent.key}
@@ -1634,130 +1597,6 @@ export function DashboardShell() {
         onUseSample={viewSampleReport}
       />
     </>
-  );
-}
-
-function TokenScreen(props: {
-  token: string;
-  error: string;
-  loading: boolean;
-  language: ReportLanguage;
-  intendedView: ActiveView;
-  facebookOAuthConfigured: boolean | null;
-  embedded?: boolean;
-  onLanguageChange: (value: ReportLanguage) => void;
-  onBack: () => void;
-  onTokenChange: (value: string) => void;
-  onUseCompetitor: () => void;
-  onViewSample?: () => void;
-  onSubmit: (event: React.FormEvent) => void;
-}) {
-  const copy = uiCopy[props.language].token;
-  const isVietnamese = props.language === "vi";
-  const tokenInputId = React.useId();
-  const publishing = props.intendedView === "publisher";
-  const oauthReturnTo = publishing ? "publisher" : "ads";
-  const destination = publishing
-    ? isVietnamese ? "Vận hành đăng bài" : "Publishing operations"
-    : isVietnamese ? "Chẩn đoán hiệu quả" : "Performance diagnosis";
-
-  const gateCard = (
-    <section className="v2-panel grid min-h-[640px] overflow-hidden lg:grid-cols-[minmax(0,1.15fr)_minmax(420px,0.85fr)]">
-      <div className="relative flex min-h-[420px] flex-col overflow-hidden border-b border-border p-6 sm:p-9 lg:min-h-0 lg:border-r lg:border-b-0">
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_78%_56%,rgba(4,133,247,0.78),rgba(4,133,247,0.2)_28%,transparent_58%)] opacity-90" />
-        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(145deg,rgba(6,6,7,0.18),rgba(6,6,7,0.88))]" />
-        <div className="relative flex items-center gap-3">
-          <span className="flex size-10 items-center justify-center rounded-xl border border-primary bg-primary/10 text-primary"><WaypointsIcon className="size-5" /></span>
-          <div><div className="text-sm font-semibold">Decision Workspace</div><div className="text-[10px] uppercase tracking-[0.06em] text-muted-foreground">Read agency / operations</div></div>
-        </div>
-
-        <div className="relative my-auto max-w-2xl py-12">
-          <Badge variant="secondary">{isVietnamese ? "AI performance intelligence" : "AI performance intelligence"}</Badge>
-          <h1 className="mt-5 text-[clamp(2.5rem,6vw,4.25rem)] font-semibold leading-[1.02] tracking-[-0.06em]">
-            {isVietnamese ? "Biến dữ liệu quảng cáo thành bước đi tiếp theo." : "Turn ad data into next moves."}
-          </h1>
-          <p className="mt-5 max-w-xl text-base leading-7 text-muted-foreground sm:text-lg">
-            {isVietnamese ? "Một command center tập trung để đọc hiệu quả, tìm rủi ro và biến mọi review thành một quyết định." : "A focused command center for reading performance, finding risk, and leaving every review with a decision."}
-          </p>
-          <div className="mt-12 max-w-xl rounded-2xl border border-border bg-card/90 p-4 backdrop-blur">
-            <div className="text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">Decision pulse</div>
-            <div className="mt-1 text-sm font-medium">{isVietnamese ? "3 tín hiệu sẵn sàng xem xét" : "3 signals ready for review"}</div>
-            <p className="mt-3 text-xs leading-5 text-muted-foreground">{isVietnamese ? "Hiệu quả đang ổn định. Creative fatigue bắt đầu xuất hiện. Một campaign đã sẵn sàng để scale." : "Efficiency is stable. Creative fatigue is emerging. One campaign is ready to scale."}</p>
-          </div>
-        </div>
-
-        <div className="relative flex items-center gap-2 text-xs text-muted-foreground"><ShieldCheckIcon className="size-4 text-success" />{isVietnamese ? "Workspace bảo mật · nguồn đã kết nối luôn riêng tư" : "Secure workspace · connected sources stay private"}</div>
-      </div>
-
-      <div className="flex items-center justify-center bg-background/70 p-5 sm:p-8">
-        <div className="w-full max-w-md rounded-2xl border border-border bg-card p-5 shadow-2xl shadow-black/20 sm:p-7">
-          <span className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary"><KeyRoundIcon className="size-5" /></span>
-          <CardDescription className="mt-4">{destination}</CardDescription>
-          <CardTitle className="mt-1 text-2xl">{isVietnamese ? "Kết nối workspace của bạn" : "Connect your workspace"}</CardTitle>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            {publishing
-              ? isVietnamese ? "Xác minh Page và quyền tạo nội dung để tiếp tục vận hành đăng bài." : "Verify Page access and content permissions to continue publishing operations."
-              : isVietnamese ? "Xác minh account, campaign và insight để tạo chẩn đoán có evidence." : "Verify account, campaign, and insight access to produce an evidence-backed diagnosis."}
-          </p>
-
-          {props.error ? <Alert variant="destructive" className="mt-5"><AlertTitle>{copy.rejected}</AlertTitle><AlertDescription>{props.error}</AlertDescription></Alert> : null}
-
-          {props.facebookOAuthConfigured === true ? (
-            <div className="mt-6">
-              <Button type="button" className="w-full" onClick={() => { window.location.href = `/api/auth/facebook/start?returnTo=${oauthReturnTo}`; }}>
-                <ShieldCheckIcon data-icon="inline-start" />
-                {copy.facebookLogin}
-              </Button>
-              <FieldDescription className="mt-2 break-words">{copy.facebookHelp}</FieldDescription>
-            </div>
-          ) : (
-            <Alert className="mt-6"><AlertTitle>{props.facebookOAuthConfigured === null ? (isVietnamese ? "Đang kiểm tra Facebook Login…" : "Checking Facebook Login availability…") : (isVietnamese ? "Dùng Meta access token" : "Use a Meta access token")}</AlertTitle><AlertDescription>{props.facebookOAuthConfigured === null ? (isVietnamese ? "Bạn vẫn có thể dùng token bên dưới." : "You can still use a token below.") : (isVietnamese ? "Facebook Login chưa khả dụng trên bản triển khai này." : "Facebook Login is not available on this deployment.")}</AlertDescription></Alert>
-          )}
-
-          <div className="my-5 flex items-center gap-3 text-[10px] uppercase tracking-[0.06em] text-muted-foreground"><Separator className="flex-1" />{copy.manualToken}<Separator className="flex-1" /></div>
-
-          <form onSubmit={props.onSubmit} className="flex min-w-0 flex-col gap-4">
-            <FieldGroup>
-              <Field>
-                <FieldLabel htmlFor={tokenInputId}>{copy.field}</FieldLabel>
-                <Input id={tokenInputId} value={props.token} onChange={(event) => props.onTokenChange(event.target.value)} type="password" autoComplete="off" minLength={20} placeholder={copy.placeholder} className="w-full" required />
-                <FieldDescription className="break-words">{publishing ? (isVietnamese ? "Dùng để kiểm tra Page và quyền CREATE_CONTENT." : "Used to verify Pages and CREATE_CONTENT permissions.") : (isVietnamese ? "Dùng để đọc account, campaign và insight cho KPI và verdict." : "Used to read account, campaign, and insight data for KPIs and Verdicts.")}</FieldDescription>
-              </Field>
-            </FieldGroup>
-            <Button type="submit" disabled={props.loading || props.token.trim().length < 20} className="w-full">
-              {props.loading ? <Spinner data-icon="inline-start" /> : <KeyRoundIcon data-icon="inline-start" />}
-              {copy.submit}
-            </Button>
-          </form>
-
-          <div className="mt-5 flex flex-col gap-2">
-            {props.onViewSample ? <Button type="button" variant="outline" onClick={props.onViewSample} className="w-full"><BarChart3Icon data-icon="inline-start" />{isVietnamese ? "Xem báo cáo mẫu" : "View a sample report"}</Button> : null}
-            <Button type="button" variant="ghost" onClick={props.onUseCompetitor} className="w-full"><SearchIcon data-icon="inline-start" />{isVietnamese ? "Mở evidence đối thủ" : "Open competitor evidence"}</Button>
-          </div>
-
-          <div className="mt-5 border-t border-border pt-4 text-xs leading-5 text-muted-foreground">
-            <span className="flex items-start gap-2"><CheckIcon className="mt-0.5 size-3.5 shrink-0 text-success" />{copy.storage}</span>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-
-  if (props.embedded) return gateCard;
-
-  return (
-    <main className="min-h-svh bg-background p-4 md:p-8">
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-4">
-        <div className="flex items-center justify-between gap-3">
-          <Button type="button" variant="ghost" onClick={props.onBack}>
-            <ArrowLeftIcon data-icon="inline-start" />
-            {isVietnamese ? "Về tổng quan" : "Back to overview"}
-          </Button>
-          <LanguageToggle language={props.language} onChange={props.onLanguageChange} />
-        </div>
-        {gateCard}
-      </div>
-    </main>
   );
 }
 

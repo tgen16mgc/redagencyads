@@ -24,3 +24,22 @@ skills-lock.json
 .env*
 # heroui-agents-md
 .heroui-docs/
+
+# Local artifacts and tool state
+.DS_Store
+*.log
+/tmp/
+/output/
+/supabase/.temp/
+/.mcp.json
+/.claude/agents/
+/.claude/commands/
+/.claude/skills/
+/.claude/tasks.json
+/.codex/hooks.json
+/.hallmark/
+/.od-skills/
+/.superpowers/
+/.understand-anything/
+/agent/
+/plugin-source/

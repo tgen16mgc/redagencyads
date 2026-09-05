@@ -4,14 +4,12 @@ import * as React from "react";
 import { toast } from "sonner";
 import {
   ArrowRightIcon,
-  BarChart3Icon,
   CheckCircle2Icon,
   ClipboardListIcon,
   DownloadIcon,
   FileChartColumnIncreasingIcon,
   GitCompareArrowsIcon,
   LayoutGridIcon,
-  Layers3Icon,
   ListIcon,
   RefreshCwIcon,
   ShieldAlertIcon,
@@ -39,7 +37,7 @@ import { buildDriverConcentration, evidenceCostLabel, selectStageContributors, t
 import { buildPerformanceStages, type PerformanceStage, type PerformanceStageKey } from "@/lib/performance-stages";
 import { buildPlatformEfficiencyPoints } from "@/lib/segment-efficiency";
 import { buildReportRequestKey, type ReportExecutionScope } from "@/lib/report-refresh";
-import type { AiInsightTable, CompareMode, DashboardReport, InterfaceLanguage, KpiCard, KpiPack, MetaCampaign, NormalizedRow, Verdict } from "@/lib/types";
+import type { AiInsightTable, CompareMode, DashboardReport, InterfaceLanguage, KpiCard, NormalizedRow, Verdict } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import {
   ActionPlanModal,
@@ -66,11 +64,9 @@ type PerformanceV2Props = {
   accountLabel: string;
   periodLabel: string;
   scopeLabel: string;
-  campaigns: MetaCampaign[];
   selectedCampaignIds: string[];
   since: string;
   until: string;
-  pack: KpiPack | "auto";
   compareMode: CompareMode;
   funnelStageKeys: PerformanceStageKey[] | null;
   exporting: boolean;
@@ -104,11 +100,9 @@ export function PerformanceV2({
   accountLabel,
   periodLabel,
   scopeLabel,
-  campaigns,
   selectedCampaignIds,
   since,
   until,
-  pack,
   compareMode,
   funnelStageKeys,
   exporting,
@@ -985,13 +979,6 @@ function packLabel(pack: DashboardReport["selectedPack"], language: InterfaceLan
 
 function compact(value: number) {
   return new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(Number.isFinite(value) ? value : 0);
-}
-
-function compactSentence(value: string, maxLength: number) {
-  const normalized = value.replace(/\s+/g, " ").trim();
-  if (normalized.length <= maxLength) return normalized;
-  const shortened = normalized.slice(0, maxLength - 1).replace(/\s+\S*$/, "");
-  return `${shortened || normalized.slice(0, maxLength - 1)}…`;
 }
 
 function currencyValue(value: number, currency: string) {

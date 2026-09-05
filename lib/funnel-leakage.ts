@@ -1,6 +1,6 @@
 import type { DiagnosticSeverity } from "@/lib/diagnosis";
 import type { NormalizedRow } from "@/lib/types";
-import { SUFFICIENCY, hasFunnelClickVolume } from "@/lib/data-sufficiency";
+import { hasFunnelClickVolume } from "@/lib/data-sufficiency";
 
 export const FUNNEL_BENCHMARKS = {
   clickToCart: 0.05,
