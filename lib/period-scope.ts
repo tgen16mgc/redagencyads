@@ -9,6 +9,7 @@ export function isPeriodPreset(days: number): days is PeriodPreset {
 }
 
 export function inclusiveDays(range: ReportingRange) {
+  if (!validDate(range.since) || !validDate(range.until) || range.since > range.until) return 0;
   const since = new Date(`${range.since}T00:00:00Z`).getTime();
   const until = new Date(`${range.until}T00:00:00Z`).getTime();
   if (Number.isNaN(since) || Number.isNaN(until)) return 0;
@@ -17,7 +18,14 @@ export function inclusiveDays(range: ReportingRange) {
 
 export function rangeFromDays(days: number, until: string): ReportingRange {
   const end = until || new Date().toISOString().slice(0, 10);
+  if (!validDate(end) || !Number.isInteger(days) || days < 1 || days > 3660) return { since: "", until: "" };
   const start = new Date(`${end}T00:00:00Z`);
   start.setUTCDate(start.getUTCDate() - days + 1);
   return { since: start.toISOString().slice(0, 10), until: end };
+}
+
+function validDate(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }

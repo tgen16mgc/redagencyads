@@ -9,7 +9,7 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --radius: 0.75rem;
+  --radius: 0.375rem;
   --background: #060607;
   --foreground: #fcfcfc;
   --card: #18181b;
@@ -89,7 +89,7 @@
 }
 
 .light {
-  --radius: 0.75rem;
+  --radius: 0.375rem;
   --background: #f7f7f8;
   --foreground: #111113;
   --card: #ffffff;
@@ -3278,15 +3278,15 @@
 
 .v2-panel {
   border: 1px solid var(--border);
-  border-radius: 20px;
+  border-radius: 6px;
   background: var(--card);
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--foreground) 3%, transparent);
 }
 
 .v2-subtle-panel {
   border: 1px solid var(--border);
-  border-radius: 14px;
-  background: color-mix(in srgb, var(--card) 86%, var(--background));
+  border-radius: 4px;
+  background: var(--card);
 }
 
 .v2-section-title {
@@ -3804,3 +3804,25 @@
     display: block !important;
   }
 }
+
+/* Compact analytics surfaces share one hierarchy across report views. */
+.v2-shell { background: var(--background); }
+.v2-shell .v2-panel { box-shadow: none; }
+.v2-shell .workbench-fade-up { animation: none; }
+.v2-page { min-width: 0; padding-bottom: 40px; }
+.analytics-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); border-block: 1px solid var(--border); }
+.analytics-kpis .v2-subtle-panel { border: 0; border-radius: 0; border-right: 1px solid var(--border); background: transparent; padding: 18px 16px; }
+.analytics-kpis .v2-subtle-panel > :first-child { font-size: 11px; text-transform: none; letter-spacing: 0; }
+.analytics-kpis .v2-subtle-panel > :nth-child(2) { font-size: 24px; letter-spacing: -0.03em; }
+.analytics-kpis .v2-subtle-panel > .h-0\.5 { display: none; }
+.analytics-table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.analytics-table th, .analytics-table td { padding: 12px 16px; text-align: right; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.analytics-table th { background: var(--secondary); color: var(--muted-foreground); font-weight: 500; }
+.analytics-table th:first-child, .analytics-table td:first-child { text-align: left; }
+.analytics-table tbody tr:hover { background: var(--secondary); }
+.v2-shell button:focus-visible, .v2-shell input:focus-visible, .v2-shell summary:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
+@media (max-width: 640px) { .analytics-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .analytics-kpis .v2-subtle-panel > :nth-child(2) { font-size: 20px; } }
+
+.v2-topbar { background: var(--background); backdrop-filter: none; }
+.v2-rail-button, .v2-brand-button, .v2-icon-button, .v2-rail-collapse { border-radius: 5px; }
+.v2-mobile-nav { border-radius: 6px; background: var(--card); backdrop-filter: none; box-shadow: none; }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { buildReport } from "@/lib/meta";
 import { requireToken, sessionErrorStatus } from "@/lib/session";
+import { inclusiveDays } from "@/lib/period-scope";
 
 const packSchema = z.enum(["lead_gen", "messages", "sales_roas", "traffic", "awareness"]).optional();
 
@@ -11,6 +12,9 @@ export async function GET(request: Request) {
     const accountId = z.string().min(1).parse(url.searchParams.get("accountId"));
     const since = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).parse(url.searchParams.get("since"));
     const until = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).parse(url.searchParams.get("until"));
+    if (!inclusiveDays({ since, until })) {
+      return NextResponse.json({ error: "Choose valid dates with the start on or before the end." }, { status: 400 });
+    }
     const campaignIds = url.searchParams.getAll("campaignId").filter(Boolean);
     const pack = packSchema.parse(url.searchParams.get("pack") || undefined);
     const token = await requireToken();

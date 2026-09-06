@@ -107,12 +107,12 @@ export function AppSidebar<T extends string>({
           <button
             type="button"
             className="v2-brand-button"
-            aria-label="Decision Workspace"
-            title="Decision Workspace"
+            aria-label="Meta Analytics"
+            title="Meta Analytics"
             onClick={() => onActiveViewChange(appItems[0].value)}
           >
             <WaypointsIcon aria-hidden="true" />
-            <span className="v2-rail-brand-label">Decision Workspace</span>
+            <span className="v2-rail-brand-label">Meta Analytics</span>
           </button>
           <button
             type="button"
@@ -147,19 +147,6 @@ export function AppSidebar<T extends string>({
       </div>
 
       <div className="v2-rail-account">
-        <button
-          type="button"
-          className={cn("v2-rail-button", assistantOpen && "is-active")}
-          data-context-chat-trigger="true"
-          aria-label={`${aiStatusTitle}: ${aiProviderLabel}`}
-          aria-expanded={assistantOpen}
-          title={`${aiSetupLabel}: ${aiProviderLabel}`}
-          onClick={onOpenAssistant}
-        >
-          <SparklesIcon aria-hidden="true" />
-          <span className={cn("v2-status-dot", aiStatusClass)} aria-hidden="true" />
-          <span className="v2-rail-label">{aiSetupLabel}</span>
-        </button>
         <button
           type="button"
           className="v2-rail-button"
@@ -206,17 +193,6 @@ export function AppMobileNav<T extends string>({
 
   return (
     <div className="v2-mobile-nav" data-print-hidden>
-      <button
-        type="button"
-        className="v2-mobile-brand"
-        data-context-chat-trigger="true"
-        aria-label={`${aiStatusTitle}: ${aiProviderLabel}`}
-        aria-expanded={assistantOpen}
-        onClick={onOpenAssistant}
-      >
-        <SparklesIcon aria-hidden="true" />
-        <span className={cn("v2-status-dot", aiStatusClass)} aria-hidden="true" />
-      </button>
       <AppNav activeView={activeView} appItems={appItems} functionsLabel={functionsLabel} onActiveViewChange={onActiveViewChange} />
     </div>
   );

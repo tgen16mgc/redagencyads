@@ -280,6 +280,8 @@ export function formatRatePct(value: number, currency = "VND") {
 }
 
 export function formatMetric(value: number, format: KpiCard["format"], currency = "VND") {
+  if (!Number.isFinite(value)) return "—";
+  if (!/^[A-Z]{3}$/.test(currency)) currency = "VND";
   const locale = metricLocale(currency);
   if (format === "currency") {
     return new Intl.NumberFormat(locale, {

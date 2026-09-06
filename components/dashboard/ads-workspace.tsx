@@ -19,7 +19,6 @@ import {
 } from "lucide-react";
 import type { ClientReportPdfFile } from "@/lib/client-report";
 import { buildSampleReport, SAMPLE_CAMPAIGNS } from "@/lib/sample-report";
-import { CustomChartsSection } from "@/components/dashboard/custom-charts-section";
 import { PerformanceV2 } from "@/components/dashboard/performance-v2";
 import type { OverviewPerformanceTarget } from "@/lib/dashboard-overview";
 import { isAbortError, jsonFetch } from "@/lib/api-client";
@@ -266,7 +265,6 @@ export function AdsWorkspace({
     customCharts,
   } = state;
   const reportStartRef = React.useRef<HTMLDivElement>(null);
-  const autoVerdictKeyRef = React.useRef("");
   const lastReportRequestRef = React.useRef<ReportExecutionScope | null>(null);
   const reportRequestSequenceRef = React.useRef(0);
   const reportReadySequenceRef = React.useRef(0);
@@ -572,12 +570,7 @@ export function AdsWorkspace({
     }
   }
 
-  React.useEffect(() => {
-    if (!report || !reportHasData || verdict || aiLoading.verdict || reportFlow === "pulling") return;
-    if (autoVerdictKeyRef.current === reportKey) return;
-    autoVerdictKeyRef.current = reportKey;
-    void runAi();
-  }, [aiLoading.verdict, report, reportFlow, reportHasData, reportKey, verdict]);
+
 
   return (
     <>
@@ -673,31 +666,6 @@ export function AdsWorkspace({
             onRefresh={(scope) => void pullReport(scope || executionScope || currentReportScope(report, { previousReport, compareMode, targetCpa, targetRoas }))}
             onExport={onExportPdf}
             onReviewActions={runAi}
-            customizeAction={
-              <CustomKpiSetSheet
-                defaultKpis={report.kpis}
-                language={language}
-                selectedKeys={customKpiKeys || effectiveKpis.map((kpi) => kpi.key as CustomKpiKey)}
-                funnelPack={report.selectedPack}
-                funnelStageKeys={funnelStageKeys || defaultPerformanceStageKeys(report.selectedPack)}
-                onSave={onSaveCustomKpis}
-                onSaveFunnelStages={(keys) => updateState({ funnelStageKeys: keys })}
-              />
-            }
-            evidenceExtra={
-              <CustomChartsSection
-                controllerOnly
-                report={report}
-                language={language}
-                saved={customCharts}
-                onSavedChange={(update) => {
-                  onStateChange((current) => ({
-                    ...current,
-                    customCharts: typeof update === "function" ? update(current.customCharts) : update,
-                  }));
-                }}
-              />
-            }
             initialTab={initialPerformanceTarget}
             initialTabKey={initialPerformanceTargetKey}
           />

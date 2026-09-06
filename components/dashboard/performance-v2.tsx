@@ -1,13 +1,14 @@
 "use client";
 
 import * as React from "react";
+import { analyticsNumber, selectAnalyticsRows } from "@/lib/analytics-table";
+import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import {
   ArrowRightIcon,
   CheckCircle2Icon,
   ClipboardListIcon,
   DownloadIcon,
-  FileChartColumnIncreasingIcon,
   GitCompareArrowsIcon,
   LayoutGridIcon,
   ListIcon,
@@ -28,11 +29,9 @@ import {
   YAxis,
 } from "recharts";
 import { FATIGUE_FREQUENCY_THRESHOLD, buildCreativeSignals } from "@/lib/creative-signals";
-import { conciseVerdict } from "@/lib/verdict-summary";
-import { localizeHealthCheck, type HealthScoreSummary } from "@/lib/health-score";
+import type { HealthScoreSummary } from "@/lib/health-score";
 import type { ClientReportPdfFile } from "@/lib/client-report";
 import { formatComparisonChangePct, metricMovementIsBad, type MetricComparisonDelta } from "@/lib/metric-comparison";
-import { formatMetric } from "@/lib/metrics";
 import { buildDriverConcentration, evidenceCostLabel, selectStageContributors, trackedOutcomeValue } from "@/lib/performance-display";
 import { buildPerformanceStages, type PerformanceStage, type PerformanceStageKey } from "@/lib/performance-stages";
 import { buildPlatformEfficiencyPoints } from "@/lib/segment-efficiency";
@@ -167,10 +166,10 @@ export function PerformanceV2({
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-[-0.035em] sm:text-[28px]">
-            {isVietnamese ? "Điều gì cần thay đổi tiếp theo?" : "What should change next?"}
+            {isVietnamese ? "Điều gì cần thay đổi tiếp theo?" : "Performance"}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {isVietnamese ? "Theo dõi chi tiêu từ lượt tiếp cận đến kết quả, rồi xử lý điểm nghẽn lớn nhất." : "Trace spend from reach to result, then fix the biggest constraint."}
+            {isVietnamese ? "Theo dõi chi tiêu từ lượt tiếp cận đến kết quả, rồi xử lý điểm nghẽn lớn nhất." : "Review results, compare periods, and inspect spend."}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -178,18 +177,17 @@ export function PerformanceV2({
             <SlidersHorizontalIcon data-icon="inline-start" />
             {isVietnamese ? "Sửa phạm vi" : "Edit scope"}
           </Button>
-          <Button type="button" size="sm" onClick={openActionPlan}>
-            <SparklesIcon data-icon="inline-start" />
-            {reviewing ? (isVietnamese ? "Đang phân tích" : "Reviewing") : (isVietnamese ? "Xem hành động" : "Review actions")}
-          </Button>
+
         </div>
       </div>
+
+      {compareMode !== "off" && !previousReport ? <p role="status" className="text-sm text-muted-foreground">{isVietnamese ? "Chưa có dữ liệu so sánh. Chỉ hiển thị kỳ hiện tại." : "Comparison data is unavailable. Showing the current period only."}</p> : null}
 
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as (typeof tabValues)[number])}>
         <div className="flex flex-col gap-3 border-b border-border pb-3 xl:flex-row xl:items-center xl:justify-between">
           <ScrollShadow hideScrollBar orientation="horizontal" size={28} className="w-full min-w-0 xl:max-w-[430px]">
             <TabsList className="h-auto min-w-max justify-start rounded-none bg-transparent p-0">
-              {tabValues.map((value) => (
+              {tabValues.filter((value) => value !== "setup" && value !== "creatives").map((value) => (
                 <TabsTrigger
                   key={value}
                   value={value}
@@ -202,7 +200,7 @@ export function PerformanceV2({
           </ScrollShadow>
 
           <div className="flex min-w-0 flex-wrap items-center gap-2">
-            {customizeAction}
+
             <button type="button" disabled={reportLoading} className="v2-subtle-panel max-w-[280px] truncate px-3 py-2 text-left text-xs text-muted-foreground hover:border-primary/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50" title={accountLabel} onClick={onEditScope}><b className="font-medium text-foreground">Account:</b> {accountLabel}</button>
             <button type="button" disabled={reportLoading} className="v2-subtle-panel px-3 py-2 text-xs text-muted-foreground hover:border-primary/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50" aria-label={`${isVietnamese ? "Đổi khoảng ngày" : "Change date range"}: ${periodLabel}`} onClick={onEditScope}><b className="font-medium text-foreground">{isVietnamese ? "Ngày:" : "Dates:"}</b> {periodLabel}</button>
             <button type="button" disabled={reportLoading} className="v2-subtle-panel flex items-center gap-1.5 px-3 py-2 text-xs text-muted-foreground hover:border-primary/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50" onClick={onEditScope}><GitCompareArrowsIcon className="size-3.5" /><b className="font-medium text-foreground">{isVietnamese ? "So sánh:" : "Compare:"}</b> {comparisonLabel(compareMode, language)}</button>
@@ -313,99 +311,13 @@ function OverviewTab({
   onReviewActions: () => void;
 }) {
   const isVietnamese = language === "vi";
-  const decisionTitle = conciseVerdict(verdict?.verdict || primary.decision);
-  const actionRows = verdict ? [...verdict.budget_moves, ...verdict.tests].filter(Boolean).slice(0, 2) : risks.slice(0, 2).map((item) => item.detail[language]);
-  const totalChecks = healthSummary?.items.length || report.health.checks.length;
-  const passedChecks = healthSummary?.counts.healthy ?? report.health.checks.filter((check) => check.status === "pass").length;
-  const blockingCount = healthSummary?.counts.danger ?? report.health.checks.filter((check) => check.status === "fail").length;
-  const watchCount = healthSummary?.counts.warning ?? report.health.checks.filter((check) => check.status === "warning").length;
-  const primaryRisk = risks[0];
-  const constraintTitle = primaryRisk?.title[language] || (isVietnamese ? "Không có rào cản nghiêm trọng" : "No critical constraint detected");
-  const constraintDetail = primaryRisk?.detail[language] || healthSummary?.summary[language] || report.packReason;
-  const guardedAction = actionRows[0] || decisionTitle;
-
   return (
-    <div className="grid gap-4">
-      <div className="v2-primary-constraint" data-severity={blockingCount > 0 ? "danger" : watchCount > 0 ? "warning" : "healthy"}>
-        <div className="v2-primary-constraint-main">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant={blockingCount > 0 ? "destructive" : watchCount > 0 ? "outline" : "success"}>
-              {blockingCount > 0 ? (isVietnamese ? "Rào cản chính" : "Primary constraint") : watchCount > 0 ? (isVietnamese ? "Ưu tiên rà soát" : "Review priority") : (isVietnamese ? "Không có blocker" : "No blocker")}
-            </Badge>
-            <span className="v2-primary-constraint-score">{isVietnamese ? "Điểm sức khỏe" : "Health score"}: {healthSummary?.score ?? report.health.score}/100</span>
-          </div>
-          <h2>{constraintTitle}</h2>
-          <p>{constraintDetail}</p>
-          <div className="v2-primary-constraint-evidence">
-            <span><b>{passedChecks}/{Math.max(totalChecks, 1)}</b>{isVietnamese ? " kiểm tra sức khỏe đạt" : " health checks passed"}</span>
-            <span><b>{primary.label}</b>{isVietnamese ? " chỉ số kết quả chính" : " primary result metric"}</span>
-            <span><b>{packLabel(report.selectedPack, language)}</b>{isVietnamese ? " bộ quy tắc KPI" : " KPI ruleset"}</span>
-          </div>
-          <button type="button" className="v2-primary-verdict" onClick={onReviewActions}>
-            <span>{isVietnamese ? "Verdict hiện tại" : "Current Verdict"}</span>
-            <strong>{decisionTitle}</strong>
-            <ArrowRightIcon />
-          </button>
-        </div>
-
-        <aside className="v2-primary-action">
-          <span className="v2-primary-action-label">{isVietnamese ? "Hành động có guardrail" : "Guarded next action"}</span>
-          <h3>{guardedAction}</h3>
-          <p>{isVietnamese ? "Rà evidence trước khi áp dụng. Mọi thay đổi ngân sách đều bị giới hạn ở 20% mỗi bước." : "Review the evidence before applying it. Every budget change stays within the 20% per-step guardrail."}</p>
-          <div className="v2-primary-action-guardrail"><ShieldAlertIcon /><span><b>20%</b>{isVietnamese ? " trần thay đổi ngân sách" : " budget-move ceiling"}</span></div>
-          <div className="mt-auto flex flex-wrap gap-2 pt-4">
-            <Button type="button" size="sm" onClick={onReviewActions}>{isVietnamese ? "Rà hành động" : "Review action"}</Button>
-            <Button type="button" size="sm" variant="outline" onClick={onOpenEvidence}>{isVietnamese ? "Mở evidence" : "Open evidence"}</Button>
-          </div>
-        </aside>
-
-        <div className="v2-primary-metrics">
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
-            {effectiveKpis.map((kpi) => (
-              <MetricTile
-                key={kpi.key}
-                label={kpi.label}
-                value={kpi.key === "healthScore" ? `${healthSummary?.score ?? report.health.score}/100` : formatKpi(report, kpi, currency)}
-                tone={kpi.intent === "danger" ? "warning" : kpi.intent === "good" ? "success" : "primary"}
-                comparison={kpi.key === "healthScore" ? undefined : kpiComparisons?.get(kpi.key)}
-              />
-            ))}
-          </div>
-        </div>
+    <div className="grid min-w-0 gap-5">
+      <div className="analytics-kpis">
+        {[{ key: "spend", label: isVietnamese ? "Chi tiêu" : "Spend", format: "currency" } as KpiCard, ...effectiveKpis.filter((kpi) => kpi.key !== "healthScore" && kpi.key !== "spend")].slice(0, 6).map((kpi) => <MetricTile key={kpi.key} label={kpi.label} value={formatKpi(report, kpi, currency)} tone="primary" comparison={kpi.key === "healthScore" ? undefined : kpiComparisons?.get(kpi.key)} />)}
       </div>
-
-      <div className="v2-panel p-4 sm:p-5">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h2 className="v2-section-title">{isVietnamese ? "Sức khỏe phễu" : "Funnel health"}</h2>
-            <p className="v2-section-copy">{isVietnamese ? "Volume, chi phí và chuyển động theo kỳ — mở điểm rò rỉ để xem evidence." : "Stage rate, cost and period movement — open the highlighted leak for evidence."}</p>
-          </div>
-          <button type="button" className="text-xs font-medium text-primary" onClick={onOpenFunnel}>{isVietnamese ? "Mở phễu" : "Open funnel"}</button>
-        </div>
-        <StageGrid stages={stages} language={language} />
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(300px,0.7fr)]">
-        <TrendPanel language={language} report={report} primary={primary} />
-        <div className="v2-panel p-4 sm:p-5">
-          <div className="flex items-center justify-between">
-            <h2 className="v2-section-title">{isVietnamese ? "Hành động đề xuất" : "Recommended actions"}</h2>
-            <Badge variant="success">{actionRows.length} {isVietnamese ? "sẵn sàng" : "ready"}</Badge>
-          </div>
-          <div className="mt-4 flex flex-col gap-4">
-            {actionRows.length ? actionRows.map((row, index) => (
-              <div key={`${row}-${index}`}>
-                <div className="text-sm font-medium">{index === 0 ? (isVietnamese ? "Xử lý rào cản chính" : "Address the primary constraint") : (isVietnamese ? "Bảo vệ lần scale tiếp theo" : "Protect the next scale move")}</div>
-                <p className="mt-1 text-xs leading-5 text-muted-foreground">{row}</p>
-              </div>
-            )) : (
-              <p className="text-sm text-muted-foreground">{isVietnamese ? "Tạo Verdict để nhận action plan có evidence." : "Generate a Verdict to get an evidence-backed action plan."}</p>
-            )}
-          </div>
-          {insights?.rows?.[0] ? <p className="mt-4 border-t border-border pt-4 text-xs leading-5 text-muted-foreground">{insights.rows[0].insight}</p> : null}
-          <Button type="button" size="sm" className="mt-4 w-full" onClick={onReviewActions}>{isVietnamese ? "Mở action plan" : "Open action plan"}</Button>
-        </div>
-      </div>
+      <TrendPanel language={language} report={report} primary={primary} />
+      <EvidenceTab language={language} report={report} healthSummary={healthSummary} currency={currency} />
     </div>
   );
 }
@@ -692,103 +604,57 @@ function CreativesTab({ language, report, currency, selectedIds, onSelectionChan
 }
 
 function EvidenceTab({ language, report, healthSummary, currency }: { language: InterfaceLanguage; report: DashboardReport; healthSummary: HealthScoreSummary | null; currency: string }) {
-  const isVietnamese = language === "vi";
+  const vi = language === "vi";
   const [level, setLevel] = React.useState<"campaign" | "adset" | "ad" | "daily">("campaign");
-  const [methodologyOpen, setMethodologyOpen] = React.useState(false);
-  const [allRowsVisible, setAllRowsVisible] = React.useState(false);
-  const rows = level === "campaign" ? report.campaignRows : level === "adset" ? report.adsetRows : level === "ad" ? report.adRows : report.dailyRows;
-  const visibleRows = allRowsVisible ? rows : rows.slice(0, 8);
-  const primaryKey = resultKey(report.selectedPack);
-  const costLabel = evidenceCostLabel(report.selectedPack, language);
-  const methodologyItems = methodologyOpen
-    ? (isVietnamese ? [
-        ["Định nghĩa chỉ số", "Link CPC = chi tiêu ÷ click link; chi phí outcome theo KPI pack = chi tiêu ÷ outcome được theo dõi."],
-        ["Mức đủ dữ liệu", "Phân tích rò rỉ cần ít nhất 100 click link và các sự kiện ở bước sau."],
-        ["Logic so sánh", "Các hàng được khớp theo ID entity trước khi quy biến động theo kỳ."],
-        ["Nhận diện KPI pack", "KPI pack được chọn có thể khác với pack tự động nhận diện."],
-        ["Giả định provider", "Chẩn đoán xác định cục bộ vẫn hoạt động khi không có AI provider."],
-        ["Giới hạn đã biết", "Không lưu doanh thu quy gán thô; ROAS chỉ hiển thị khi có tracking mua hàng."],
-      ] : [
-        ["Metric definitions", "Link CPC uses spend ÷ link clicks; active outcome cost uses spend ÷ the tracked KPI-pack outcome."],
-        ["Data sufficiency", "Leakage requires at least 100 link clicks and downstream events."],
-        ["Comparison logic", "Rows are matched by entity ID before period movement is attributed."],
-        ["Pack detection", "The selected pack may differ from the auto-detected pack."],
-        ["Provider assumptions", "Local deterministic diagnostics remain available without an AI provider."],
-        ["Known limitations", "Raw attributed revenue is not stored; ROAS appears only when purchase tracking is available."],
-      ])
-    : (isVietnamese ? [
-        ["Định nghĩa chỉ số", "Mỗi chỉ số kết quả và hiệu quả tuân theo KPI pack hiện tại cùng ánh xạ action Meta đã chuẩn hóa."],
-        ["Mức đủ dữ liệu", "Giá trị không khả dụng vẫn được ghi là chưa theo dõi; giao diện không đổi dữ liệu thiếu thành số 0."],
-      ] : [
-        ["Metric definitions", "Each result and efficiency metric follows the active KPI pack and normalized Meta action mapping."],
-        ["Data sufficiency", "Unavailable values remain unavailable; the interface never converts missing tracking into zero."],
-      ]);
-  const diagnostics = healthSummary?.items || report.health.checks.map((check) => {
-    const vietnamese = localizeHealthCheck(check, "vi");
-    return {
-      id: `health-${check.id}`,
-      severity: check.status === "fail" ? "danger" as const : check.status === "warning" ? "warning" as const : "healthy" as const,
-      title: { en: check.label, vi: vietnamese.label },
-      detail: { en: check.detail, vi: vietnamese.detail },
-    };
-  });
-  const healthyCount = healthSummary?.counts.healthy ?? report.health.checks.filter((item) => item.status === "pass").length;
-  const issueCount = healthSummary
-    ? healthSummary.counts.danger + healthSummary.counts.warning
-    : report.health.checks.filter((item) => item.status !== "pass").length;
-  const healthSeverity = healthSummary?.severity
-    ?? (report.health.checks.some((item) => item.status === "fail") ? "danger" : report.health.checks.some((item) => item.status === "warning") ? "warning" : "healthy");
-  const packDetail = report.selectedPack === report.detectedPack
-    ? (isVietnamese ? "Tự nhận diện · có thể chỉnh" : "Auto-detected · editable")
-    : (isVietnamese ? `Đã chọn thủ công · tự nhận diện ${packLabel(report.detectedPack, language)}` : `Manual override · detected ${packLabel(report.detectedPack, language)}`);
-  const sourceDetail = report.source === "sample"
-    ? (isVietnamese ? "Dữ liệu minh họa · không phải evidence Meta trực tiếp" : "Illustrative data · not live Meta evidence")
-    : (isVietnamese ? "Dữ liệu account có thể truy vết" : "Traceable account data");
-
-  React.useEffect(() => setAllRowsVisible(false), [level, report]);
-
-  return (
-    <div className="grid gap-4">
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <SignalCard eyebrow={isVietnamese ? "Nguồn" : "Source"} title={report.source === "sample" ? (isVietnamese ? "Dữ liệu mẫu" : "Sample data") : "Meta API"} detail={sourceDetail} tone={report.source === "sample" ? "warning" : "success"} />
-        <SignalCard eyebrow={isVietnamese ? "Độ mới" : "Freshness"} title={relativeTime(report.pulledAt, language)} detail={new Date(report.pulledAt).toLocaleString(isVietnamese ? "vi-VN" : "en-US")} tone="success" />
-        <SignalCard eyebrow="KPI pack" title={packLabel(report.selectedPack, language)} detail={packDetail} tone="primary" />
-        <SignalCard eyebrow={isVietnamese ? "Sức khỏe" : "Health"} title={`${healthSummary?.score ?? report.health.score} / 100`} detail={isVietnamese ? `${healthyCount} đạt · ${issueCount} cần xem` : `${healthyCount} pass · ${issueCount} to review`} tone={healthSeverity === "healthy" ? "success" : healthSeverity === "danger" ? "danger" : "warning"} />
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(300px,0.72fr)]">
-        <div className="v2-panel overflow-hidden p-4 sm:p-5">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><h2 className="v2-section-title">{isVietnamese ? "Evidence hiệu quả thô" : "Raw performance evidence"}</h2><p className="v2-section-copy">{isVietnamese ? "Mọi kết luận đều có thể truy về hàng Meta đã chuẩn hóa." : "Every conclusion remains traceable to normalized Meta rows."}</p></div><Button type="button" variant="outline" size="sm" onClick={() => window.dispatchEvent(new Event("v2:open-custom-chart"))}><FileChartColumnIncreasingIcon data-icon="inline-start" />{isVietnamese ? "Biểu đồ tùy chỉnh" : "Custom chart"}</Button></div>
-          <div className="mt-4 flex gap-1 border-b border-border">
-            {(["campaign", "adset", "ad", "daily"] as const).map((value) => <button key={value} type="button" className={cn("border-b-2 px-3 py-2 text-xs capitalize", level === value ? "border-primary text-foreground" : "border-transparent text-muted-foreground")} onClick={() => setLevel(value)}>{value === "adset" ? "Ad sets" : value === "ad" ? "Ads" : value === "daily" ? (isVietnamese ? "Ngày" : "Daily") : (isVietnamese ? "Campaign" : "Campaigns")}</button>)}
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[700px] text-left text-xs">
-              <thead className="border-b border-border text-[10px] uppercase tracking-[0.05em] text-muted-foreground"><tr><th className="py-3 font-medium">{isVietnamese ? "Đối tượng" : "Entity"}</th><th className="py-3 font-medium">{isVietnamese ? "Chi tiêu" : "Spend"}</th><th className="py-3 font-medium">{isVietnamese ? "Lượt hiển thị" : "Impressions"}</th><th className="py-3 font-medium">{isVietnamese ? "Click link" : "Link clicks"}</th><th className="py-3 font-medium">{primaryLabel(report.selectedPack, language)}</th><th className="py-3 font-medium">{costLabel}</th><th className="py-3 font-medium">ROAS</th></tr></thead>
-              <tbody>{visibleRows.map((row) => <tr key={`${row.id}-${row.date || ""}`} className="border-b border-border/55 last:border-0"><td className="py-3 pr-4"><div className="font-medium">{level === "daily" ? row.date : row.name}</div><div className="mt-0.5 text-muted-foreground">{entityLevelLabel(row.level, language)} · {row.date || (isVietnamese ? "Đang hoạt động" : "Active")}</div></td><td className="py-3 pr-4 tabular-nums">{currencyValue(row.spend, currency)}</td><td className="py-3 pr-4 tabular-nums">{compact(row.impressions)}</td><td className="py-3 pr-4 tabular-nums">{compact(row.linkClicks)}</td><td className="py-3 pr-4 tabular-nums">{compact(Number(row[primaryKey] || 0))}</td><td className="py-3 pr-4 tabular-nums">{primaryRowCost(row, report.selectedPack, currency)}</td><td className="py-3 tabular-nums">{trackedOutcomeValue(row, "purchases", row.roas.toFixed(1), language)}</td></tr>)}</tbody>
-            </table>
-          </div>
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-            <div className="text-[11px] text-muted-foreground">{visibleRows.length}/{rows.length} {isVietnamese ? "hàng đang hiển thị" : "rows shown"} · {report.account.currency || "VND"} · {report.account.timezone_name || (isVietnamese ? "múi giờ tài khoản" : "account timezone")}</div>
-            {rows.length > 8 ? <Button type="button" variant="ghost" size="sm" onClick={() => setAllRowsVisible((current) => !current)}>{allRowsVisible ? (isVietnamese ? "Thu gọn" : "Show less") : (isVietnamese ? `Hiện tất cả ${rows.length}` : `Show all ${rows.length}`)}</Button> : null}
-          </div>
-        </div>
-
-        <div className="v2-panel p-4 sm:p-5">
-          <div className="flex items-center justify-between"><h2 className="v2-section-title">{isVietnamese ? "Chẩn đoán" : "Diagnostics"}</h2><Badge variant="outline">{issueCount} {isVietnamese ? "cần xem" : "to review"}</Badge></div>
-          <div className="mt-4 flex flex-col gap-4">
-            {diagnostics.slice(0, 5).map((check) => <div key={check.id} className="grid grid-cols-[18px_minmax(0,1fr)] gap-2.5">{check.severity === "healthy" ? <CheckCircle2Icon className="mt-0.5 size-4 text-success" /> : check.severity === "danger" ? <ShieldAlertIcon className="mt-0.5 size-4 text-destructive" /> : <TriangleAlertIcon className="mt-0.5 size-4 text-warning" />}<div><div className="text-sm font-medium">{check.title[language]}</div><p className="mt-0.5 text-xs leading-5 text-muted-foreground">{check.detail[language]}</p></div></div>)}
-          </div>
-          <div className="mt-5 border-t border-border pt-4"><div className="text-sm font-medium">{isVietnamese ? "Nguồn gốc dữ liệu" : "Data provenance"}</div><p className="mt-1 text-xs leading-5 text-muted-foreground">{isVietnamese ? "Meta Marketing API · hàng account, campaign, ad set, ad, ngày và breakdown. Kết quả từ provider không thay thế evidence nguồn." : "Meta Marketing API · account, campaign, ad set, ad, daily and breakdown rows. Provider output never replaces source evidence."}</p></div>
-          <div className="mt-4 divide-y divide-border border-y border-border">
-            {methodologyItems.map(([label, detail]) => <div key={label} className="py-3"><div className="text-xs font-medium">{label}</div><p className="mt-2 text-xs leading-5 text-muted-foreground">{detail}</p></div>)}
-          </div>
-          <Button type="button" variant="ghost" size="sm" className="mt-3" onClick={() => setMethodologyOpen((value) => !value)}>{methodologyOpen ? (isVietnamese ? "Thu gọn phương pháp" : "Collapse methodology") : (isVietnamese ? "Xem đầy đủ phương pháp" : "Full methodology")}</Button>
-          <div className="mt-4 flex flex-wrap justify-end gap-2"><Button type="button" variant="outline" size="sm" onClick={async () => { await navigator.clipboard.writeText(report.prompt); toast.success(isVietnamese ? "Đã sao chép evidence" : "Evidence copied", { description: isVietnamese ? "Phạm vi, phương pháp và nhãn dữ liệu thiếu hiện tại đã được bao gồm." : "The active scope, methodology and missing-data labels are included." }); }}><ClipboardListIcon data-icon="inline-start" />{isVietnamese ? "Sao chép evidence" : "Copy evidence"}</Button><Button type="button" size="sm" onClick={() => window.dispatchEvent(new Event("v2:open-export"))}><DownloadIcon data-icon="inline-start" />{isVietnamese ? "Xuất báo cáo" : "Export report"}</Button></div>
-        </div>
-      </div>
+  const [selectedId, setSelectedId] = React.useState<string | null>(null);
+  const [query, setQuery] = React.useState("");
+  const [waste, setWaste] = React.useState(false);
+  const [sortKey, setSortKey] = React.useState<keyof NormalizedRow>("spend");
+  const [direction, setDirection] = React.useState<"asc" | "desc">("desc");
+  const [page, setPage] = React.useState(0);
+  const key = resultKey(report.selectedPack);
+  const source = level === "campaign" ? report.campaignRows : level === "adset" ? report.adsetRows : level === "ad" ? report.adRows : report.dailyRows;
+  const selected = source.find((row) => row.id === selectedId);
+  React.useEffect(() => setSelectedId(null), [level, report]);
+  const rows = selectAnalyticsRows(source, query, key, waste, sortKey, direction);
+  const pages = Math.max(1, Math.ceil(rows.length / 25));
+  const currentPage = Math.min(page, pages - 1);
+  const visible = rows.slice(currentPage * 25, (currentPage + 1) * 25);
+  React.useEffect(() => setPage(0), [level, query, waste, sortKey, direction, report]);
+  const columns: [keyof NormalizedRow, string][] = [[level === "daily" ? "date" : "name", vi ? "Tên" : "Name"], ["spend", vi ? "Chi tiêu" : "Spend"], ["impressions", "Impressions"], ["linkClicks", "Link clicks"], [key, primaryLabel(report.selectedPack, language)], ["roas", "ROAS"]];
+  const issues = healthSummary?.items.filter((item) => item.severity !== "healthy") || [];
+  return <section className="v2-panel min-w-0" aria-label={vi ? "Bảng hiệu quả" : "Performance table"}>
+    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border p-4">
+      <h2 className="v2-section-title">{vi ? "Chi tiết hiệu quả" : "Performance details"}</h2>
+      <Button variant="outline" size="sm" disabled={!rows.length} onClick={() => downloadRowsCsv(rows, `meta-${level}.csv`)}>Export CSV</Button>
     </div>
-  );
+    <div className="flex flex-wrap gap-1 border-b border-border px-4" role="group" aria-label="Entity level">
+      {(["campaign", "adset", "ad", "daily"] as const).map((value) => <button key={value} type="button" aria-pressed={level === value} className={cn("border-b-2 px-3 py-3 text-xs", level === value ? "border-primary font-semibold" : "border-transparent text-muted-foreground")} onClick={() => setLevel(value)}>{({ campaign: "Campaigns", adset: "Ad sets", ad: "Ads", daily: "Daily" })[value]}</button>)}
+    </div>
+    <div className="flex flex-wrap items-center gap-4 p-4">
+      <Input className="max-w-sm" aria-label="Search entities" placeholder={vi ? "Tìm tên hoặc ID…" : "Search name or ID…"} value={query} onChange={(event) => setQuery(event.target.value)} />
+      <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={waste} onChange={(event) => setWaste(event.target.checked)} />{vi ? "Chi tiêu không có kết quả" : "Spend without results"}</label>
+      <span className="text-xs text-muted-foreground">{rows.length} {vi ? "hàng" : "rows"}</span>
+    </div>
+    {selected ? <aside className="mx-4 mb-4 border border-border p-4" aria-label="Entity details">
+      <div className="flex items-start justify-between gap-4"><div><h3 className="text-sm font-semibold">{selected.name}</h3><p className="mt-1 break-all text-xs text-muted-foreground">{selected.id}</p></div><Button size="sm" variant="ghost" onClick={() => setSelectedId(null)}>Close</Button></div>
+      <p className="mt-2 text-xs text-muted-foreground">{[selected.campaignName, selected.adsetName].filter(Boolean).join(" / ")}</p>
+      <div className="mt-3 flex flex-wrap gap-5 text-xs"><span>CTR: {analyticsNumber(selected.ctr)}%</span><span>Frequency: {analyticsNumber(selected.frequency)}</span><span>Reach: {analyticsNumber(selected.reach)}</span></div>
+      {level === "campaign" || level === "adset" ? <Button className="mt-3" size="sm" variant="outline" onClick={() => { setQuery(selected.id); setLevel(level === "campaign" ? "adset" : "ad"); }}>View {level === "campaign" ? "ad sets" : "ads"}</Button> : null}
+    </aside> : null}
+    <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Scrollable performance data">
+      <table className="analytics-table w-full min-w-[760px] text-xs">
+        <thead><tr>{columns.map(([field, label]) => <th key={field} aria-sort={sortKey === field ? direction === "asc" ? "ascending" : "descending" : "none"}><button type="button" onClick={() => { setSortKey(field); setDirection(sortKey === field && direction === "desc" ? "asc" : "desc"); }}>{label}{sortKey === field ? direction === "asc" ? " ↑" : " ↓" : ""}</button></th>)}<th>{evidenceCostLabel(report.selectedPack, language)}</th></tr></thead>
+        <tbody>{visible.map((row) => <tr key={`${row.id}-${row.date || ""}`}><td><button type="button" className="max-w-[320px] truncate text-left font-medium hover:underline" title={row.name} aria-expanded={selectedId === row.id} onClick={() => setSelectedId(selectedId === row.id ? null : row.id)}>{level === "daily" ? row.date : row.name}</button><div className="mt-1 max-w-[320px] truncate text-muted-foreground">{level === "daily" ? "" : row.id}</div></td><td>{analyticsNumber(row.spend, currency)}</td><td>{analyticsNumber(row.impressions)}</td><td>{analyticsNumber(row.linkClicks)}</td><td>{(row.metricAvailability as Record<string, string> | undefined)?.[key] === "not_tracked" ? (vi ? "Chưa theo dõi" : "Not tracked") : analyticsNumber(Number(row[key]))}</td><td>{trackedOutcomeValue(row, "purchases", Number.isFinite(row.roas) ? `${row.roas.toFixed(2)}x` : "—", language)}</td><td>{Number(row[key]) > 0 ? primaryRowCost(row, report.selectedPack, currency) : "—"}</td></tr>)}</tbody>
+      </table>
+      {!visible.length ? <p className="p-8 text-center text-sm text-muted-foreground" role="status">{vi ? "Không có hàng phù hợp với bộ lọc." : "No rows match these filters."}</p> : null}
+    </div>
+    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border p-3 text-xs text-muted-foreground">
+      <span>{currency} · {report.account.timezone_name || "Account timezone"} · {report.source === "sample" ? "Sample data" : "Meta Marketing API"}</span>
+      <div className="flex items-center gap-3"><Button size="sm" variant="ghost" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>Previous</Button><span>{currentPage + 1} / {pages}</span><Button size="sm" variant="ghost" disabled={currentPage + 1 >= pages} onClick={() => setPage(currentPage + 1)}>Next</Button></div>
+    </div>
+    {issues.length ? <details className="border-t border-border p-4"><summary className="cursor-pointer text-xs font-medium">{issues.length} {vi ? "kiểm tra cần xem" : "diagnostic checks to review"}</summary><div className="mt-3 divide-y divide-border">{issues.map((item) => <div key={item.id} className="py-3"><p className="text-sm font-medium">{item.title[language]}</p><p className="mt-1 text-xs text-muted-foreground">{item.detail[language]}</p></div>)}</div></details> : null}
+  </section>;
 }
 
 function StageGrid({ stages, language, large = false, onSelect }: { stages: Stage[]; language: InterfaceLanguage; large?: boolean; onSelect?: (stage: Stage) => void }) {
@@ -814,10 +680,10 @@ function StageGrid({ stages, language, large = false, onSelect }: { stages: Stag
 
 function TrendPanel({ language, report, primary, embedded = false }: { language: InterfaceLanguage; report: DashboardReport; primary: ReturnType<typeof primaryResult>; embedded?: boolean }) {
   const isVietnamese = language === "vi";
-  const data = report.dailyRows.map((row) => ({
+  const data = [...report.dailyRows].sort((a, b) => (a.date || "").localeCompare(b.date || "")).map((row) => ({
     date: row.date?.slice(5) || "",
-    value: Number(row[primary.key] || 0),
-    efficiency: primary.costKey ? Number(row[primary.costKey] || 0) : row.cpc,
+    value: Number.isFinite(Number(row[primary.key])) ? Number(row[primary.key]) : null,
+    efficiency: Number(row[primary.key]) > 0 && Number.isFinite(Number(row[primary.costKey])) ? (primary.costKey ? Number(row[primary.costKey]) : row.cpc) : null,
   }));
   const chart = (
     <div className="h-48 w-full">
@@ -826,13 +692,13 @@ function TrendPanel({ language, report, primary, embedded = false }: { language:
           <CartesianGrid stroke="var(--border)" vertical={false} strokeOpacity={0.75} />
           <XAxis dataKey="date" tick={{ fill: "var(--muted-foreground)", fontSize: 10 }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
           <YAxis yAxisId="value" tick={{ fill: "var(--muted-foreground)", fontSize: 10 }} tickLine={false} axisLine={false} />
-          <YAxis yAxisId="efficiency" orientation="right" hide />
+          <YAxis yAxisId="efficiency" orientation="right" tick={{ fill: "var(--muted-foreground)", fontSize: 10 }} tickLine={false} axisLine={false} />
           <Tooltip
-            contentStyle={{ background: "var(--popover)", border: "1px solid var(--border)", borderRadius: 12, fontSize: 12 }}
+            contentStyle={{ background: "var(--popover)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 12 }}
             formatter={(value, name) => [name === "efficiency" ? currencyValue(Number(value), report.account.currency || "VND") : compact(Number(value)), name === "efficiency" ? primary.costLabel : primary.label]}
           />
-          <Line yAxisId="value" type="monotone" dataKey="value" stroke="var(--primary)" strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} isAnimationActive={false} />
-          <Line yAxisId="efficiency" type="monotone" dataKey="efficiency" stroke="var(--warning)" strokeWidth={1.75} strokeDasharray="5 4" dot={false} isAnimationActive={false} />
+          <Line yAxisId="value" type="linear" dataKey="value" stroke="var(--primary)" strokeWidth={2} dot={false} activeDot={{ r: 4 }} isAnimationActive={false} />
+          <Line yAxisId="efficiency" type="linear" dataKey="efficiency" stroke="var(--warning)" strokeWidth={1.75} strokeDasharray="5 4" dot={false} isAnimationActive={false} />
         </LineChart>
       </ResponsiveContainer>
     </div>
@@ -859,7 +725,7 @@ function SignalCard({ eyebrow, title, detail, tone }: { eyebrow: string; title: 
 
 function MetricTile({ label, value, tone, comparison }: { label: string; value: string; tone: "success" | "warning" | "primary"; comparison?: MetricComparisonDelta }) {
   const comparisonBad = comparison ? metricMovementIsBad(comparison.key, comparison.change) : false;
-  return <div className="v2-subtle-panel min-w-20 p-3"><div className="text-[9px] font-medium uppercase tracking-[0.05em] text-muted-foreground">{label}</div><div className="mt-1 text-sm font-semibold tabular-nums">{value}</div>{comparison ? <div className={cn("mt-1 text-[10px] font-medium", comparison.change === 0 ? "text-muted-foreground" : comparisonBad ? "text-warning" : "text-success")}>{comparison.change > 0 ? "↑ " : comparison.change < 0 ? "↓ " : "→ "}{formatComparisonChangePct(comparison.changePct)} <span className="font-normal">{comparison.descriptor}</span></div> : <div className={cn("mt-1 h-0.5 w-6 rounded-full", tone === "success" ? "bg-success" : tone === "warning" ? "bg-warning" : "bg-primary")} />}</div>;
+  return <div className="v2-subtle-panel min-w-20 p-3"><div className="text-[9px] font-medium uppercase tracking-[0.05em] text-muted-foreground">{label}</div><div className="mt-1 text-sm font-semibold tabular-nums">{value}</div>{comparison ? <div className={cn("mt-1 text-[10px] font-medium", (comparison.change === 0 || comparison.key === "spend") ? "text-muted-foreground" : comparisonBad ? "text-warning" : "text-success")}>{comparison.change > 0 ? "↑ " : comparison.change < 0 ? "↓ " : "→ "}{formatComparisonChangePct(comparison.changePct)} <span className="font-normal">{comparison.descriptor}</span></div> : <div className={cn("mt-1 h-0.5 w-6 rounded-full", tone === "success" ? "bg-success" : tone === "warning" ? "bg-warning" : "bg-primary")} />}</div>;
 }
 
 function ReportStat({ label, value }: { label: string; value: string }) {
@@ -910,11 +776,18 @@ function entityLevelLabel(level: NormalizedRow["level"], language: InterfaceLang
 
 function formatKpi(report: DashboardReport, kpi: KpiCard, currency: string) {
   if (kpi.key === "healthScore") return `${report.health.score}/100`;
-  return formatMetric(Number(report.totals[kpi.key] || 0), kpi.format, currency);
+  const availability = report.totals.metricAvailability as Record<string, string> | undefined;
+  if (availability?.[kpi.key] === "not_tracked") return "Not tracked";
+  const value = Number(report.totals[kpi.key]);
+  if (!Number.isFinite(value)) return "—";
+  if (kpi.format === "currency") return analyticsNumber(value, currency);
+  if (kpi.format === "percent") return `${analyticsNumber(value)}%`;
+  if (kpi.format === "ratio") return `${analyticsNumber(value)}x`;
+  return analyticsNumber(value);
 }
 
 function tabLabel(tab: (typeof tabValues)[number], language: InterfaceLanguage) {
-  const labels = { overview: { en: "Overview", vi: "Tổng quan" }, funnel: { en: "Funnel", vi: "Phễu" }, drivers: { en: "Drivers", vi: "Động lực" }, setup: { en: "Setup", vi: "Thiết lập" }, creatives: { en: "Creatives", vi: "Creative" }, evidence: { en: "Evidence", vi: "Evidence" } };
+  const labels = { overview: { en: "Overview", vi: "Tổng quan" }, funnel: { en: "Funnel", vi: "Phễu" }, drivers: { en: "Drivers", vi: "Động lực" }, setup: { en: "Setup", vi: "Thiết lập" }, creatives: { en: "Creatives", vi: "Creative" }, evidence: { en: "Campaigns & ads", vi: "Chiến dịch & quảng cáo" } };
   return labels[tab][language];
 }
 
@@ -958,7 +831,7 @@ function primaryRowCost(row: NormalizedRow, pack: DashboardReport["selectedPack"
 }
 
 function downloadRowsCsv(rows: NormalizedRow[], filename: string) {
-  const headers = ["name", "campaignName", "adsetName", "level", "spend", "impressions", "reach", "linkClicks", "ctr", "cpc", "cpm", "frequency", "leads", "messages", "purchases", "cpaPurchase", "roas"] as const;
+  const headers = ["id", "date", "name", "campaignName", "adsetName", "level", "spend", "impressions", "reach", "linkClicks", "ctr", "cpc", "cpm", "frequency", "leads", "messages", "purchases", "cpaPurchase", "roas"] as const;
   const escape = (value: unknown) => `"${String(value ?? "").replaceAll('"', '""')}"`;
   const csv = [headers.join(","), ...rows.map((row) => headers.map((key) => escape(row[key])).join(","))].join("\n");
   const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
@@ -978,14 +851,17 @@ function packLabel(pack: DashboardReport["selectedPack"], language: InterfaceLan
 }
 
 function compact(value: number) {
+  if (!Number.isFinite(value)) return "—";
   return new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(Number.isFinite(value) ? value : 0);
 }
 
 function currencyValue(value: number, currency: string) {
-  return new Intl.NumberFormat("en", { style: "currency", currency: currency || "VND", notation: "compact", maximumFractionDigits: 1 }).format(Number.isFinite(value) ? value : 0);
+  return analyticsNumber(value, currency);
 }
 
+
 function relativeTime(value: string, language: InterfaceLanguage) {
+  if (!Number.isFinite(new Date(value).getTime())) return "—";
   const minutes = Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 60000));
   if (minutes < 1) return language === "vi" ? "Vừa xong" : "Just now";
   if (minutes < 60) return `${minutes} ${language === "vi" ? "phút trước" : "min ago"}`;

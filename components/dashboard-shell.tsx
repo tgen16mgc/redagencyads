@@ -30,7 +30,7 @@ import {
   XIcon,
 } from "lucide-react";
 import { AppMobileNav, AppSidebar, type AppSidebarItem, type WorkflowSidebarItem } from "@/components/dashboard/app-sidebar";
-import { WorkspaceOverview } from "@/components/dashboard/workspace-overview";
+import { AnalyticsHome } from "@/components/dashboard/analytics-home";
 import {
   WorkspaceNotifications,
   WorkspaceSearch,
@@ -209,8 +209,8 @@ const uiCopy = {
       competitorCrumb: "Verified research",
       tiktokCrumb: "TikTok public intelligence",
       publisherCrumb: "Meta Pages API",
-      overviewTitle: "Decision command center",
-      adsTitle: "Performance diagnosis",
+      overviewTitle: "Reports",
+      adsTitle: "Meta Ads",
       competitorTitle: "Competitor evidence",
       tiktokTitle: "TikTok tracker",
       intelligenceCrumb: "Canonical data layer",
@@ -258,7 +258,7 @@ const uiCopy = {
       competitorCrumb: "Nghiên cứu công khai",
       tiktokCrumb: "Tình báo public TikTok",
       publisherCrumb: "Meta Pages API",
-      overviewTitle: "Decision command center",
+      overviewTitle: "Reports",
       adsTitle: "Chẩn đoán hiệu quả",
       competitorTitle: "Evidence đối thủ",
       tiktokTitle: "Theo dõi TikTok",
@@ -426,7 +426,7 @@ export function DashboardShell() {
   );
   const appNavItems = React.useMemo<AppSidebarItem<ActiveView>[]>(
     () =>
-      appSections.map(({ value, icon }) => ({
+      appSections.filter(({ value }) => value === "overview" || value === "ads" || value === "competitor").map(({ value, icon }) => ({
         value,
         icon,
         label: appSectionLabel(value, language),
@@ -1151,7 +1151,7 @@ export function DashboardShell() {
   report?.campaignRows.forEach((campaign) => campaignSearchItems.set(campaign.id, { id: campaign.id, name: campaign.name }));
 
   const workspaceCommands: WorkspaceCommand[] = [
-    ...appSections.map(({ value }) => ({
+    ...appSections.filter(({ value }) => value === "overview" || value === "ads" || value === "competitor").map(({ value }) => ({
       id: `navigate-${value}`,
       group: "Navigate" as const,
       label: appSectionLabel(value, language),
@@ -1193,15 +1193,6 @@ export function DashboardShell() {
       icon: "settings",
       keywords: ["profile", "team", "source", "rules"],
       onSelect: () => { setSettingsTab("workspace"); setSettingsOpen(true); },
-    },
-    {
-      id: "action-assistant",
-      group: "Actions",
-      label: language === "vi" ? "Hỏi Decision Assistant" : "Ask the Decision Assistant",
-      description: language === "vi" ? "Mở trợ lý với context của workspace hiện tại" : "Open the assistant with the current workspace context",
-      icon: "assistant",
-      keywords: ["chat", "help", "assistant"],
-      onSelect: () => setChatOpen(true),
     },
     {
       id: "action-performance-scope",
@@ -1284,7 +1275,7 @@ export function DashboardShell() {
           aiProviderLabel={providerLabel(provider, language, capabilities)}
           appItems={appNavItems}
           functionsLabel={copy.nav.functions}
-          showWorkflow={activeView === "ads"}
+          showWorkflow={false}
           workflowLabel={copy.nav.workflow}
           workflowItems={workflowNavItems}
           aiSetupLabel={copy.nav.aiSetup}
@@ -1400,7 +1391,7 @@ export function DashboardShell() {
             <div className="min-h-[480px]" aria-hidden="true" />
           ) : activeView === "overview" ? (
             <>
-              <WorkspaceOverview
+              <AnalyticsHome
                 authenticated={authenticated}
                 capabilities={capabilities}
                 language={language}

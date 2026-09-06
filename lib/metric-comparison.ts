@@ -104,6 +104,7 @@ export function metricMovementIsBad(key: keyof NormalizedRow | string, change: n
 
 export function formatComparisonChangePct(value: number | null, language: ReportLanguage = "en") {
   if (value === null) return language === "vi" ? "mới" : "new";
+  if (!Number.isFinite(value)) return "—";
   const sign = value > 0 ? "+" : "";
   const locale = language === "vi" ? "vi-VN" : "en-US";
   return `${sign}${value.toLocaleString(locale, { maximumFractionDigits: 1 })}%`;

@@ -18,6 +18,12 @@ describe("rangeFromDays", () => {
 });
 
 describe("inclusiveDays", () => {
+  it("rejects reversed, malformed, and impossible calendar dates", () => {
+    expect(inclusiveDays({ since: "2026-08-05", until: "2026-08-01" })).toBe(0);
+    expect(inclusiveDays({ since: "2026-02-30", until: "2026-03-05" })).toBe(0);
+    expect(rangeFromDays(NaN, "2026-08-05")).toEqual({ since: "", until: "" });
+    expect(rangeFromDays(7, "invalid")).toEqual({ since: "", until: "" });
+  });
   it("counts both boundary days", () => {
     expect(inclusiveDays({ since: "2026-07-30", until: "2026-08-05" })).toBe(7);
     expect(inclusiveDays({ since: "2026-08-05", until: "2026-08-05" })).toBe(1);
