@@ -19,9 +19,9 @@ import {
 } from "lucide-react";
 import { Label as HeroLabel, ScrollShadow, Switch as HeroSwitch } from "@heroui/react";
 import {
+  Area,
+  AreaChart,
   CartesianGrid,
-  Line,
-  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -163,11 +163,11 @@ export function PerformanceV2({
   }, [report.adRows]);
 
   return (
-    <section className="flex flex-col gap-4" data-current-report-scope data-account-id={report.account.id} data-campaign-ids={selectedCampaignIds.join(",")} data-since={since} data-until={until} data-compare-mode={compareMode} data-comparison-campaign-ids={previousReport?.selectedCampaigns.map((campaign) => campaign.id).join(",") || ""} data-comparison-since={previousReport?.dateRange.since || ""} data-comparison-until={previousReport?.dateRange.until || ""}>
+    <section className="plain-performance flex flex-col gap-4" data-current-report-scope data-account-id={report.account.id} data-campaign-ids={selectedCampaignIds.join(",")} data-since={since} data-until={until} data-compare-mode={compareMode} data-comparison-campaign-ids={previousReport?.selectedCampaigns.map((campaign) => campaign.id).join(",") || ""} data-comparison-since={previousReport?.dateRange.since || ""} data-comparison-until={previousReport?.dateRange.until || ""}>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-[-0.035em] sm:text-[28px]">
-            {isVietnamese ? "Điều gì cần thay đổi tiếp theo?" : "What should change next?"}
+            {isVietnamese ? "Phân tích hiệu suất" : "Performance insights"}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {isVietnamese ? "Theo dõi chi tiêu từ lượt tiếp cận đến kết quả, rồi xử lý điểm nghẽn lớn nhất." : "Trace spend from reach to result, then fix the biggest constraint."}
@@ -186,7 +186,7 @@ export function PerformanceV2({
       </div>
 
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as (typeof tabValues)[number])}>
-        <div className="flex flex-col gap-3 border-b border-border pb-3 xl:flex-row xl:items-center xl:justify-between">
+        <div className="plain-performance-toolbar flex flex-col gap-3">
           <ScrollShadow hideScrollBar orientation="horizontal" size={28} className="w-full min-w-0 xl:max-w-[430px]">
             <TabsList className="h-auto min-w-max justify-start rounded-none bg-transparent p-0">
               {tabValues.map((value) => (
@@ -324,90 +324,102 @@ function OverviewTab({
   const constraintDetail = primaryRisk?.detail[language] || healthSummary?.summary[language] || report.packReason;
   const guardedAction = actionRows[0] || decisionTitle;
 
+  const period = `${report.dateRange.since} – ${report.dateRange.until}`;
+
   return (
-    <div className="grid gap-4">
-      <div className="v2-primary-constraint" data-severity={blockingCount > 0 ? "danger" : watchCount > 0 ? "warning" : "healthy"}>
-        <div className="v2-primary-constraint-main">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant={blockingCount > 0 ? "destructive" : watchCount > 0 ? "outline" : "success"}>
-              {blockingCount > 0 ? (isVietnamese ? "Rào cản chính" : "Primary constraint") : watchCount > 0 ? (isVietnamese ? "Ưu tiên rà soát" : "Review priority") : (isVietnamese ? "Không có blocker" : "No blocker")}
-            </Badge>
-            <span className="v2-primary-constraint-score">{isVietnamese ? "Điểm sức khỏe" : "Health score"}: {healthSummary?.score ?? report.health.score}/100</span>
-          </div>
-          <h2>{constraintTitle}</h2>
-          <p>{constraintDetail}</p>
-          <div className="v2-primary-constraint-evidence">
-            <span><b>{passedChecks}/{Math.max(totalChecks, 1)}</b>{isVietnamese ? " kiểm tra sức khỏe đạt" : " health checks passed"}</span>
-            <span><b>{primary.label}</b>{isVietnamese ? " chỉ số kết quả chính" : " primary result metric"}</span>
-            <span><b>{packLabel(report.selectedPack, language)}</b>{isVietnamese ? " bộ quy tắc KPI" : " KPI ruleset"}</span>
-          </div>
-          <button type="button" className="v2-primary-verdict" onClick={onReviewActions}>
-            <span>{isVietnamese ? "Verdict hiện tại" : "Current Verdict"}</span>
-            <strong>{decisionTitle}</strong>
-            <ArrowRightIcon />
-          </button>
+    <div className="plain-overview">
+      <section className="plain-panel" aria-label={isVietnamese ? "Tổng quan chỉ số" : "Metrics overview"}>
+        <div className="plain-panel-heading">
+          <h2>{isVietnamese ? "Tổng quan" : "Overview"}</h2>
+          <span className="plain-period">{period}</span>
         </div>
-
-        <aside className="v2-primary-action">
-          <span className="v2-primary-action-label">{isVietnamese ? "Hành động có guardrail" : "Guarded next action"}</span>
-          <h3>{guardedAction}</h3>
-          <p>{isVietnamese ? "Rà evidence trước khi áp dụng. Mọi thay đổi ngân sách đều bị giới hạn ở 20% mỗi bước." : "Review the evidence before applying it. Every budget change stays within the 20% per-step guardrail."}</p>
-          <div className="v2-primary-action-guardrail"><ShieldAlertIcon /><span><b>20%</b>{isVietnamese ? " trần thay đổi ngân sách" : " budget-move ceiling"}</span></div>
-          <div className="mt-auto flex flex-wrap gap-2 pt-4">
-            <Button type="button" size="sm" onClick={onReviewActions}>{isVietnamese ? "Rà hành động" : "Review action"}</Button>
-            <Button type="button" size="sm" variant="outline" onClick={onOpenEvidence}>{isVietnamese ? "Mở evidence" : "Open evidence"}</Button>
-          </div>
-        </aside>
-
-        <div className="v2-primary-metrics">
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
-            {effectiveKpis.map((kpi) => (
-              <MetricTile
-                key={kpi.key}
-                label={kpi.label}
-                value={kpi.key === "healthScore" ? `${healthSummary?.score ?? report.health.score}/100` : formatKpi(report, kpi, currency)}
-                tone={kpi.intent === "danger" ? "warning" : kpi.intent === "good" ? "success" : "primary"}
-                comparison={kpi.key === "healthScore" ? undefined : kpiComparisons?.get(kpi.key)}
-              />
-            ))}
-          </div>
+        <div className="plain-featured-metrics">
+          {effectiveKpis.slice(0, 3).map((kpi) => (
+            <OverviewMetric key={kpi.key} kpi={kpi} report={report} healthSummary={healthSummary} comparison={kpi.key === "healthScore" ? undefined : kpiComparisons?.get(kpi.key)} language={language} featured />
+          ))}
         </div>
+        {effectiveKpis.length > 3 ? <div className="plain-secondary-metrics">
+          {effectiveKpis.slice(3).map((kpi) => (
+            <OverviewMetric key={kpi.key} kpi={kpi} report={report} healthSummary={healthSummary} comparison={kpi.key === "healthScore" ? undefined : kpiComparisons?.get(kpi.key)} language={language} />
+          ))}
+        </div> : null}
+        {!effectiveKpis.length ? <p className="plain-empty">{isVietnamese ? "Chọn chỉ số trong Tùy chỉnh KPI để hiển thị tổng quan." : "Choose metrics in Customize KPIs to populate this overview."}</p> : null}
+      </section>
+
+      <section className="plain-panel plain-volume">
+        <div className="plain-panel-heading">
+          <h2>{isVietnamese ? "Kết quả theo thời gian" : "Performance over time"}</h2>
+          <span className="plain-period">{period}</span>
+        </div>
+        <div className="plain-volume-summary">
+          <div><span>{primary.label}</span><strong>{formatMetric(Number(report.totals[primary.key] || 0), "number", currency)}</strong></div>
+          <div className="plain-chart-legend"><span><i />{primary.label}</span><span><i />{primary.costLabel}</span></div>
+        </div>
+        <TrendPanel language={language} report={report} primary={primary} embedded overview />
+      </section>
+
+      <div className="plain-diagnostics">
+        <section className="plain-panel">
+          <div className="plain-panel-heading">
+            <h2>{isVietnamese ? "Chẩn đoán" : "Diagnosis"}</h2>
+            <Badge variant={blockingCount > 0 ? "destructive" : watchCount > 0 ? "outline" : "success"}>{healthSummary?.score ?? report.health.score}/100</Badge>
+          </div>
+          <h3 className="plain-diagnosis-title">{constraintTitle}</h3>
+          <p className="plain-body">{constraintDetail}</p>
+          <div className="plain-diagnosis-meta"><span>{passedChecks}/{Math.max(totalChecks, 1)} {isVietnamese ? "kiểm tra đạt" : "checks passed"}</span><span>{packLabel(report.selectedPack, language)}</span></div>
+          <button type="button" className="plain-verdict" onClick={onReviewActions}><span>{decisionTitle}</span><ArrowRightIcon size={16} /></button>
+        </section>
+        <section className="plain-panel">
+          <div className="plain-panel-heading"><h2>{isVietnamese ? "Hành động tiếp theo" : "Next action"}</h2><ShieldAlertIcon size={17} className="text-muted-foreground" /></div>
+          <h3 className="plain-diagnosis-title">{guardedAction}</h3>
+          <p className="plain-body">{isVietnamese ? "Rà soát bằng chứng trước khi áp dụng. Giới hạn thay đổi ngân sách: 20% mỗi bước." : "Review the evidence before applying. Budget changes are limited to 20% per step."}</p>
+          {actionRows[1] ? <p className="plain-body plain-followup">{actionRows[1]}</p> : null}
+          {insights?.rows?.[0] ? <p className="plain-body plain-followup">{insights.rows[0].insight}</p> : null}
+          <div className="plain-panel-actions"><Button type="button" size="sm" onClick={onReviewActions}>{isVietnamese ? "Rà hành động" : "Review action"}</Button><Button type="button" size="sm" variant="outline" onClick={onOpenEvidence}>{isVietnamese ? "Mở bằng chứng" : "Open evidence"}</Button></div>
+        </section>
       </div>
-
-      <div className="v2-panel p-4 sm:p-5">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h2 className="v2-section-title">{isVietnamese ? "Sức khỏe phễu" : "Funnel health"}</h2>
-            <p className="v2-section-copy">{isVietnamese ? "Volume, chi phí và chuyển động theo kỳ — mở điểm rò rỉ để xem evidence." : "Stage rate, cost and period movement — open the highlighted leak for evidence."}</p>
-          </div>
-          <button type="button" className="text-xs font-medium text-primary" onClick={onOpenFunnel}>{isVietnamese ? "Mở phễu" : "Open funnel"}</button>
-        </div>
+      <section className="plain-panel plain-funnel">
+        <div className="plain-panel-heading"><h2>{isVietnamese ? "Sức khỏe phễu" : "Funnel health"}</h2><button type="button" className="plain-text-action" onClick={onOpenFunnel}>{isVietnamese ? "Mở phễu" : "Open funnel"}<ArrowRightIcon size={14} /></button></div>
         <StageGrid stages={stages} language={language} />
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(300px,0.7fr)]">
-        <TrendPanel language={language} report={report} primary={primary} />
-        <div className="v2-panel p-4 sm:p-5">
-          <div className="flex items-center justify-between">
-            <h2 className="v2-section-title">{isVietnamese ? "Hành động đề xuất" : "Recommended actions"}</h2>
-            <Badge variant="success">{actionRows.length} {isVietnamese ? "sẵn sàng" : "ready"}</Badge>
-          </div>
-          <div className="mt-4 flex flex-col gap-4">
-            {actionRows.length ? actionRows.map((row, index) => (
-              <div key={`${row}-${index}`}>
-                <div className="text-sm font-medium">{index === 0 ? (isVietnamese ? "Xử lý rào cản chính" : "Address the primary constraint") : (isVietnamese ? "Bảo vệ lần scale tiếp theo" : "Protect the next scale move")}</div>
-                <p className="mt-1 text-xs leading-5 text-muted-foreground">{row}</p>
-              </div>
-            )) : (
-              <p className="text-sm text-muted-foreground">{isVietnamese ? "Tạo Verdict để nhận action plan có evidence." : "Generate a Verdict to get an evidence-backed action plan."}</p>
-            )}
-          </div>
-          {insights?.rows?.[0] ? <p className="mt-4 border-t border-border pt-4 text-xs leading-5 text-muted-foreground">{insights.rows[0].insight}</p> : null}
-          <Button type="button" size="sm" className="mt-4 w-full" onClick={onReviewActions}>{isVietnamese ? "Mở action plan" : "Open action plan"}</Button>
-        </div>
-      </div>
+      </section>
     </div>
   );
+}
+
+function OverviewMetric({ kpi, report, healthSummary, comparison, language, featured = false }: {
+  kpi: KpiCard;
+  report: DashboardReport;
+  healthSummary: HealthScoreSummary | null;
+  comparison?: MetricComparisonDelta;
+  language: InterfaceLanguage;
+  featured?: boolean;
+}) {
+  const gradientId = React.useId().replace(/:/g, "");
+  const currency = report.account.currency || "VND";
+  const isVietnamese = language === "vi";
+  const data = kpi.key === "healthScore" ? [] : report.dailyRows.map((row) => ({ date: row.date, value: typeof row[kpi.key as keyof NormalizedRow] === "number" ? Number(row[kpi.key as keyof NormalizedRow]) : null }));
+  const hasData = data.some((row) => row.value !== null && Number.isFinite(row.value));
+  const value = kpi.key === "healthScore" ? `${healthSummary?.score ?? report.health.score}/100` : formatKpi(report, kpi, currency);
+  const bad = comparison ? metricMovementIsBad(comparison.key, comparison.change) : false;
+  return <article className="plain-metric">
+    <h3>{kpi.label}</h3>
+    <div className="plain-metric-value">{value}</div>
+    <div className="plain-metric-comparison" data-tone={comparison && comparison.change !== 0 ? bad ? "negative" : "positive" : "neutral"}>
+      {comparison ? <><span>{formatComparisonChangePct(comparison.changePct, language)}</span> {comparison.descriptor}</> : <span>{isVietnamese ? "Trong kỳ đã chọn" : "In selected period"}</span>}
+    </div>
+    {featured ? hasData ? <div className="plain-metric-chart" role="img" aria-label={`${kpi.label}: ${isVietnamese ? "xu hướng theo ngày" : "daily trend"}`}>
+      <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
+        <AreaChart data={data} margin={{ top: 8, right: 0, bottom: 0, left: 0 }}>
+          <defs><linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="var(--plain-chart)" stopOpacity={0.2} /><stop offset="100%" stopColor="var(--plain-chart)" stopOpacity={0} /></linearGradient></defs>
+          <CartesianGrid horizontal={false} stroke="var(--border)" strokeOpacity={0.4} />
+          <XAxis dataKey="date" tickFormatter={(date: string) => date?.slice(5) || ""} axisLine={false} tickLine={false} minTickGap={45} tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} />
+          <YAxis orientation="right" width={42} axisLine={false} tickLine={false} tickCount={3} tickFormatter={(value: number) => compact(value)} tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} />
+          <Tooltip contentStyle={{ background: "var(--popover)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }} formatter={(value) => [formatMetric(Number(value), kpi.format, currency), kpi.label]} />
+          <Area type="monotone" dataKey="value" stroke="var(--plain-chart)" strokeWidth={2} fill={`url(#${gradientId})`} isAnimationActive={false} connectNulls={false} activeDot={{ r: 3, strokeWidth: 2, fill: "var(--card)" }} />
+        </AreaChart>
+      </ResponsiveContainer>
+    </div> : <div className="plain-metric-chart plain-empty">{isVietnamese ? "Chưa có dữ liệu theo ngày" : "Daily trend unavailable"}</div> : null}
+  </article>;
 }
 
 function FunnelTab({ language, report, healthSummary, stages, currency, onOpenEvidence, onSelectStage }: { language: InterfaceLanguage; report: DashboardReport; healthSummary: HealthScoreSummary | null; stages: Stage[]; currency: string; onOpenEvidence: () => void; onSelectStage: (stage: Stage) => void }) {
@@ -812,28 +824,30 @@ function StageGrid({ stages, language, large = false, onSelect }: { stages: Stag
   );
 }
 
-function TrendPanel({ language, report, primary, embedded = false }: { language: InterfaceLanguage; report: DashboardReport; primary: ReturnType<typeof primaryResult>; embedded?: boolean }) {
+function TrendPanel({ language, report, primary, embedded = false, overview = false }: { language: InterfaceLanguage; report: DashboardReport; primary: ReturnType<typeof primaryResult>; embedded?: boolean; overview?: boolean }) {
   const isVietnamese = language === "vi";
   const data = report.dailyRows.map((row) => ({
     date: row.date?.slice(5) || "",
     value: Number(row[primary.key] || 0),
     efficiency: primary.costKey ? Number(row[primary.costKey] || 0) : row.cpc,
   }));
-  const chart = (
-    <div className="h-48 w-full">
+  const gradientId = React.useId().replace(/:/g, "");
+  const chart = !data.length ? <div className="plain-empty">{isVietnamese ? "Chưa có dữ liệu theo ngày" : "Daily trend unavailable"}</div> : (
+    <div className={overview ? "plain-volume-chart" : "h-48 w-full"}>
       <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1} initialDimension={{ width: 780, height: 192 }}>
-        <LineChart data={data} margin={{ top: 12, right: 4, left: -24, bottom: 0 }}>
-          <CartesianGrid stroke="var(--border)" vertical={false} strokeOpacity={0.75} />
+        <AreaChart data={data} margin={{ top: 12, right: 4, left: overview ? 0 : -24, bottom: 0 }}>
+          <defs><linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={overview ? "var(--plain-chart)" : "var(--primary)"} stopOpacity={0.2} /><stop offset="100%" stopColor={overview ? "var(--plain-chart)" : "var(--primary)"} stopOpacity={0} /></linearGradient></defs>
+          <CartesianGrid stroke="var(--border)" vertical={overview} horizontal={!overview} strokeOpacity={0.4} />
           <XAxis dataKey="date" tick={{ fill: "var(--muted-foreground)", fontSize: 10 }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
-          <YAxis yAxisId="value" tick={{ fill: "var(--muted-foreground)", fontSize: 10 }} tickLine={false} axisLine={false} />
+          <YAxis yAxisId="value" orientation={overview ? "right" : "left"} tick={{ fill: "var(--muted-foreground)", fontSize: 10 }} tickLine={false} axisLine={false} />
           <YAxis yAxisId="efficiency" orientation="right" hide />
           <Tooltip
             contentStyle={{ background: "var(--popover)", border: "1px solid var(--border)", borderRadius: 12, fontSize: 12 }}
             formatter={(value, name) => [name === "efficiency" ? currencyValue(Number(value), report.account.currency || "VND") : compact(Number(value)), name === "efficiency" ? primary.costLabel : primary.label]}
           />
-          <Line yAxisId="value" type="monotone" dataKey="value" stroke="var(--primary)" strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} isAnimationActive={false} />
-          <Line yAxisId="efficiency" type="monotone" dataKey="efficiency" stroke="var(--warning)" strokeWidth={1.75} strokeDasharray="5 4" dot={false} isAnimationActive={false} />
-        </LineChart>
+          <Area yAxisId="value" type="monotone" dataKey="value" fill={`url(#${gradientId})`} stroke={overview ? "var(--plain-chart)" : "var(--primary)"} strokeWidth={2} dot={false} activeDot={{ r: 4 }} isAnimationActive={false} />
+          <Area yAxisId="efficiency" type="monotone" dataKey="efficiency" fill="none" stroke={overview ? "var(--plain-chart-secondary)" : "var(--warning)"} strokeWidth={1.75} strokeDasharray="5 4" dot={false} isAnimationActive={false} />
+        </AreaChart>
       </ResponsiveContainer>
     </div>
   );
@@ -855,11 +869,6 @@ function SignalCard({ eyebrow, title, detail, tone }: { eyebrow: string; title: 
       <div className="mt-1 text-xs leading-5 text-muted-foreground">{detail}</div>
     </div>
   );
-}
-
-function MetricTile({ label, value, tone, comparison }: { label: string; value: string; tone: "success" | "warning" | "primary"; comparison?: MetricComparisonDelta }) {
-  const comparisonBad = comparison ? metricMovementIsBad(comparison.key, comparison.change) : false;
-  return <div className="v2-subtle-panel min-w-20 p-3"><div className="text-[9px] font-medium uppercase tracking-[0.05em] text-muted-foreground">{label}</div><div className="mt-1 text-sm font-semibold tabular-nums">{value}</div>{comparison ? <div className={cn("mt-1 text-[10px] font-medium", comparison.change === 0 ? "text-muted-foreground" : comparisonBad ? "text-warning" : "text-success")}>{comparison.change > 0 ? "↑ " : comparison.change < 0 ? "↓ " : "→ "}{formatComparisonChangePct(comparison.changePct)} <span className="font-normal">{comparison.descriptor}</span></div> : <div className={cn("mt-1 h-0.5 w-6 rounded-full", tone === "success" ? "bg-success" : tone === "warning" ? "bg-warning" : "bg-primary")} />}</div>;
 }
 
 function ReportStat({ label, value }: { label: string; value: string }) {

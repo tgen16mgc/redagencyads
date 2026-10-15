@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-15T16:25:07.718003+00:00",
+  "title": "Performance overview — scoped design extension",
+  "extensions": {
+    "breakpoints": [
+      {
+        "name": "Performance stacked layout",
+        "value": "760px"
+      }
+    ],
+    "shadows": [
+      {
+        "name": "Performance panel separation",
+        "value": "none",
+        "purpose": "Thin borders and surface contrast separate panels."
+      }
+    ]
+  },
+  "components": [],
+  "narrative": {
+    "northStar": "Plain Insights",
+    "overview": "This scoped exception implements the Plain Insights direction for the Performance dashboard only. Its mode is operate: compact metrics, readable trends, and immediately reachable diagnosis and action review.",
+    "keyCharacteristics": [],
+    "rules": [],
+    "dos": [],
+    "donts": []
+  }
+}

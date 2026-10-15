@@ -126,3 +126,29 @@ Before shipping a screen, confirm:
 4. Status color and glow communicate meaning rather than decoration.
 5. Keyboard, reduced-motion, 375px mobile, and print behavior still work.
 6. Refresh, scope, and selection actions cannot overlap, silently reset drafts, or replace newer state with stale responses.
+
+## Performance overview
+
+This scoped exception implements the Plain Insights direction for the Performance dashboard only. Its mode is **operate**: compact metrics, readable trends, and immediately reachable diagnosis and action review. The pinned [Plain Insights reference](https://mobbin.com/sites/sections/afca15ea-9d2f-499b-aaa8-c88bbaaf1a17) informs composition; advertising metrics and evidence come from the application.
+
+### Colors
+
+The light presentation uses white semantic card surfaces on a pale lavender canvas (`#f7f7fa`), thin borders (`#e6e7ef`), violet actions (`#605deb`), and primary/secondary chart strokes (`#6664ff` / `#aaa8ff`). This surface supports light and dark themes, overriding the earlier dark-only foundation within this scope. Dark mode retains semantic graphite surfaces and uses light violet (`#aaa8ff`) for actions and focus rings.
+
+### Typography
+
+Retain Geist and tabular metrics. Page titles are 24px; panel headings 18px; featured values 23px; metric labels and body text 12px. Comparisons remain subordinate at 10px. Long values must wrap without pushing panels beyond the viewport.
+
+### Layout
+
+Use a dense stack of thin-border panels with 10px gaps and 24px internal padding. The first panel shows up to three selected metrics with compact area charts, followed by secondary metrics when selected. A larger trend panel follows, then diagnosis and next-action panels, and funnel health. At widths up to 760px, featured charts and diagnostic panels stack, secondary metrics use two columns, and panel padding reduces to 18px. The content width caps at 1480px.
+
+### Elevation & Depth
+
+Use borders and surface contrast for separation. Panels have 10px corners; compact controls use 7px corners. Selected tabs use a restrained violet tint with no shadow.
+
+### Components
+
+Metric charts use a violet stroke with a fading area fill and no entry animation. The larger trend distinguishes the cost series with a lighter dashed stroke. Preserve actual report scope, comparison context, missing-data messages, diagnosis, evidence links, and guarded action review. Charts must not manufacture a trend when daily data is unavailable. Retain visible keyboard focus and dark-theme comparison colors.
+
+Implementation authority: the final Performance overview block in `app/globals.css` and `components/dashboard/performance-v2.tsx`. These local decisions do not replace the rules for other workspaces.
