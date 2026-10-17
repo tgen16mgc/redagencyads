@@ -3,7 +3,7 @@ import { ZodError } from "zod";
 import { funnelHypothesisRequestSchema } from "@/lib/ai/funnel-hypothesis-contract";
 import { generateFunnelHypotheses } from "@/lib/ai/funnel-hypothesis";
 import { chatClientKey, consumeChatRateLimit, isSameOriginRequest } from "@/lib/ai/chat-security";
-import { activeAiProviderName, hasAiProviderCredentials, NineRouterAbortError, NineRouterTimeoutError } from "@/lib/ai/transport";
+import { activeAiProviderName, hasAiProviderCredentials, NineRouterAbortError, NineRouterProviderError, NineRouterTimeoutError } from "@/lib/ai/transport";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -28,6 +28,8 @@ export async function POST(request: Request) {
     if (error instanceof ZodError || error instanceof SyntaxError) return reply({ code: "invalid_request" }, 400);
     if (error instanceof NineRouterTimeoutError) return reply({ code: "timeout" }, 504);
     if (error instanceof NineRouterAbortError) return reply({ code: "cancelled" }, 499);
+    console.warn("funnel_ai_request_failed", { provider: activeAiProviderName(), status: error instanceof NineRouterProviderError ? error.status : 502 });
+    if (error instanceof NineRouterProviderError && error.status === 429) return reply({ code: "provider_busy" }, 503);
     // Never expose upstream diagnostics, credentials or report content.
     return reply({ code: "provider_unavailable" }, 502);
   }

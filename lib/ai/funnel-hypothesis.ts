@@ -1,6 +1,6 @@
 import { funnelHypothesisOutputSchema, type FunnelHypothesisRequest } from "@/lib/ai/funnel-hypothesis-contract";
 import { funnelMetricLabel } from "@/lib/funnel-analysis";
-import { nineRouterChatCompletion, parseJsonObject, NineRouterProviderError } from "@/lib/ai/transport";
+import { activeAiProviderName, nineRouterChatCompletion, parseJsonObject, NineRouterProviderError, NineRouterTimeoutError } from "@/lib/ai/transport";
 
 export function funnelHypothesisEvidence(input: FunnelHypothesisRequest) {
   const { observation: o, language } = input;
@@ -38,7 +38,19 @@ export function parseFunnelHypotheses(text: string, input: FunnelHypothesisReque
 }
 
 export async function generateFunnelHypotheses(input: FunnelHypothesisRequest, signal?: AbortSignal) {
-  const text = await nineRouterChatCompletion(funnelHypothesisMessages(input), { jsonMode: true, maxTokens: 2200, signal });
-  try { return parseFunnelHypotheses(text, input); }
-  catch { throw new NineRouterProviderError("AI returned an invalid hypothesis response.", 502); }
+  const messages = funnelHypothesisMessages(input);
+  const generate = async (model?: string) => {
+    const text = await nineRouterChatCompletion(messages, { jsonMode: true, maxTokens: 2200, signal, model, timeoutMs: 35_000 });
+    try { return parseFunnelHypotheses(text, input); }
+    catch { throw new NineRouterProviderError("AI returned an invalid hypothesis response.", 502); }
+  };
+  try { return await generate(); }
+  catch (error) {
+    // Free models can lose capacity. Use OpenRouter's free-model router once;
+    // never silently switch this feature to a paid model or another provider.
+    const temporary = error instanceof NineRouterTimeoutError || error instanceof NineRouterProviderError && (error.status === 408 || error.status === 429 || error.status >= 500);
+    if (activeAiProviderName() !== "openrouter" || !temporary || signal?.aborted) throw error;
+    console.warn("funnel_ai_free_fallback", { status: error instanceof NineRouterProviderError ? error.status : 504 });
+    return generate("openrouter/free");
+  }
 }

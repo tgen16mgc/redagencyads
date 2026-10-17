@@ -37,6 +37,7 @@ export function FunnelAiSuggestions({ observation, language, draft, onApply }: {
     forbidden: t("Your workspace access could not be verified. Refresh the page and sign in again.", "Chưa xác minh được quyền truy cập workspace. Tải lại trang và đăng nhập lại."),
     rate_limit: t("Too many requests. Wait a few minutes, then try again. Your draft has not changed.", "Bạn đã gửi nhiều yêu cầu. Chờ vài phút rồi thử lại. Bản nháp chưa thay đổi."),
     timeout: t("AI took too long. Try again; your draft has not changed.", "AI phản hồi quá lâu. Thử lại; bản nháp chưa thay đổi."),
+    provider_busy: t("The AI provider is at capacity. Wait a few minutes and try again, or keep writing below.", "Nhà cung cấp AI đang quá tải. Chờ vài phút rồi thử lại, hoặc tiếp tục tự viết bên dưới."),
     unavailable: t("AI suggestions are unavailable right now. Try again or keep writing below. Your draft has not changed.", "Hiện chưa lấy được gợi ý AI. Thử lại hoặc tiếp tục tự viết bên dưới. Bản nháp chưa thay đổi."),
   };
 

@@ -24,6 +24,19 @@ function nineRouterResponse(content: string, finishReason: string) {
   });
 }
 
+describe("per-request AI model selection", () => {
+  it("uses a free fallback for one request without changing the configured model", async () => {
+    vi.stubEnv("OPENROUTER_API_KEY", "test-key");
+    vi.stubEnv("OPENROUTER_MODEL", "configured-model");
+    const fetchSpy = vi.fn().mockImplementation(() => Promise.resolve(nineRouterResponse("{}", "stop")));
+    vi.stubGlobal("fetch", fetchSpy);
+    await nineRouterChatCompletion([{ role: "user", content: "test" }], { model: "openrouter/free", timeoutMs: 35_000 });
+    await nineRouterChatCompletion([{ role: "user", content: "test" }]);
+    expect(JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body)).model).toBe("openrouter/free");
+    expect(JSON.parse(String(fetchSpy.mock.calls[1]?.[1]?.body)).model).toBe("configured-model");
+  });
+});
+
 describe("parseJsonObject", () => {
   it("parses a plain JSON object", () => {
     expect(parseJsonObject('{"verdict":"ok"}')).toEqual({ verdict: "ok" });

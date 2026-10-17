@@ -5,7 +5,7 @@ import { funnelHypothesisRequest, funnelHypothesisRequestSchema } from "@/lib/ai
 import { funnelHypothesisEvidence, funnelHypothesisMessages, parseFunnelHypotheses } from "@/lib/ai/funnel-hypothesis";
 import { POST } from "@/app/api/ai/funnel-hypotheses/route";
 import { resetChatRateLimits } from "@/lib/ai/chat-security";
-import { hasAiProviderCredentials, nineRouterChatCompletion, NineRouterTimeoutError } from "@/lib/ai/transport";
+import { hasAiProviderCredentials, nineRouterChatCompletion, NineRouterProviderError, NineRouterTimeoutError } from "@/lib/ai/transport";
 
 vi.mock("@/lib/ai/transport", async importOriginal => ({
   ...await importOriginal<typeof import("@/lib/ai/transport")>(),
@@ -112,5 +112,17 @@ describe("funnel hypotheses API", () => {
     const response = await POST(request());
     expect(response.status).toBe(429);
     expect(Number(response.headers.get("retry-after"))).toBeGreaterThan(0);
+  });
+  it("recovers from model capacity errors using only a bounded free-model fallback", async () => {
+    vi.mocked(nineRouterChatCompletion).mockRejectedValueOnce(new NineRouterProviderError("At capacity", 429)).mockResolvedValueOnce(JSON.stringify(output()));
+    expect((await POST(request())).status).toBe(200);
+    expect(nineRouterChatCompletion).toHaveBeenLastCalledWith(expect.any(Array), expect.objectContaining({ model: "openrouter/free", timeoutMs: 35_000 }));
+  });
+  it("reports provider capacity separately after the free fallback is exhausted", async () => {
+    vi.mocked(nineRouterChatCompletion).mockRejectedValue(new NineRouterProviderError("At capacity", 429));
+    const response = await POST(request());
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ code: "provider_busy" });
+    expect(nineRouterChatCompletion).toHaveBeenCalledTimes(2);
   });
 });

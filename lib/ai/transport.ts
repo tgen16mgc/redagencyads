@@ -413,11 +413,11 @@ export async function nineRouterChatCompletionStream(
 
 export async function nineRouterChatCompletion(
   messages: NineRouterMessage[],
-  options: { jsonMode?: boolean; maxTokens?: number; signal?: AbortSignal } = {},
+  options: { jsonMode?: boolean; maxTokens?: number; signal?: AbortSignal; model?: string; timeoutMs?: number } = {},
 ) {
   const config = aiGatewayConfig();
   const controller = new AbortController();
-  const timeoutMs = positiveMs(config.timeoutMs, 45000);
+  const timeoutMs = positiveMs(options.timeoutMs ?? config.timeoutMs, 45000);
   let timedOut = false;
   const timeout = setTimeout(() => {
     timedOut = true;
@@ -434,7 +434,7 @@ export async function nineRouterChatCompletion(
   try {
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       const body: Record<string, unknown> = {
-        model: config.model,
+        model: options.model || config.model,
         messages,
         temperature: 0.2,
         max_tokens: Math.min(requestedMaxTokens + (attempt - 1) * 600, 2400),
