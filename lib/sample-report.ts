@@ -147,7 +147,7 @@ function sumBases(seeds: RowBase[]): RowBase {
   );
   const outcomeKeys: OutcomeMetricKey[] = ["messages", "replies", "leads", "purchases", "addToCart", "initiateCheckout"];
   const trackedMetrics: OutcomeMetricKey[] = outcomeKeys
-    .filter((key) => seeds.some((seed) => seed.trackedMetrics?.includes(key) || Object.prototype.hasOwnProperty.call(seed, key)));
+    .filter((key) => seeds.some((seed) => seed.trackedMetrics ? seed.trackedMetrics.includes(key) : Object.prototype.hasOwnProperty.call(seed, key)));
   return { ...total, trackedMetrics };
 }
 
@@ -206,21 +206,27 @@ function buildDailyRows(accountTotal: RowBase, dateRange: { since: string; until
     return Number((weeklyPulse * growth).toFixed(3));
   });
   const weightSum = weights.reduce((sum, weight) => sum + weight, 0);
+  // Cumulative rounding preserves small event totals instead of rounding every day to zero.
+  let cumulativeWeight = 0;
   return weights.map((weight, index) => {
-    const share = weight / weightSum;
-    const dip = index === 20 ? 0.45 : 1;
+    const before = cumulativeWeight / weightSum;
+    cumulativeWeight += weight;
+    const after = index === weights.length - 1 ? 1 : cumulativeWeight / weightSum;
+    const allocate = (value = 0) => Math.round(value * after) - Math.round(value * before);
     return makeRow(
       "daily",
       { id: `smp-day-${index}`, name: new Date(since.getTime() + index * 86_400_000).toISOString().slice(0, 10), date: new Date(since.getTime() + index * 86_400_000).toISOString().slice(0, 10) },
       {
-        spend: Math.round(accountTotal.spend * share),
-        impressions: Math.round(accountTotal.impressions * share),
+        spend: allocate(accountTotal.spend),
+        impressions: allocate(accountTotal.impressions),
         reach: Math.round((accountTotal.reach / dayCount) * weight * 2.2),
-        clicks: Math.round(accountTotal.clicks * share),
-        linkClicks: Math.round(accountTotal.linkClicks * share),
-        messages: Math.round((accountTotal.messages || 0) * share),
-        replies: Math.round((accountTotal.replies || 0) * share),
-        leads: Math.max(0, Math.round((accountTotal.leads || 0) * share * dip)),
+        clicks: allocate(accountTotal.clicks),
+        linkClicks: allocate(accountTotal.linkClicks),
+        messages: allocate(accountTotal.messages),
+        replies: allocate(accountTotal.replies),
+        leads: allocate(accountTotal.leads),
+        purchases: allocate(accountTotal.purchases),
+        trackedMetrics: accountTotal.trackedMetrics,
       },
     );
   });

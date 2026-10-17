@@ -105,9 +105,6 @@ export function buildPerformanceStages({ stageKeys, ...args }: StageArgs): Perfo
   return selected.map((item, index) => ({
     ...item,
     label: `${String(index + 1).padStart(2, "0")} · ${item.name.toUpperCase()}`,
-    relation: index === 0
-      ? item.relation
-      : `${selected[index - 1].name} → ${item.name}`,
   }));
 }
 

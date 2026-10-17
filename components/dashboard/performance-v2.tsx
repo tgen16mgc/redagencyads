@@ -33,7 +33,7 @@ import { localizeHealthCheck, type HealthScoreSummary } from "@/lib/health-score
 import type { ClientReportPdfFile } from "@/lib/client-report";
 import { formatComparisonChangePct, metricMovementIsBad, type MetricComparisonDelta } from "@/lib/metric-comparison";
 import { formatMetric } from "@/lib/metrics";
-import { buildDriverConcentration, evidenceCostLabel, selectStageContributors, trackedOutcomeValue } from "@/lib/performance-display";
+import { buildDriverConcentration, evidenceCostLabel, trackedOutcomeValue } from "@/lib/performance-display";
 import { buildPerformanceStages, type PerformanceStage, type PerformanceStageKey } from "@/lib/performance-stages";
 import { buildPlatformEfficiencyPoints } from "@/lib/segment-efficiency";
 import { buildReportRequestKey, type ReportExecutionScope } from "@/lib/report-refresh";
@@ -47,6 +47,7 @@ import {
   StageEvidenceSheet,
 } from "@/components/dashboard/performance-v2-overlays";
 import { MetaCreativeCover, MetaCreativeFocusPreview } from "@/components/dashboard/meta-creative-media";
+import { defaultFunnelView, PerformanceFunnel } from "@/components/dashboard/performance-funnel";
 import { CampaignSetupTab } from "@/components/dashboard/campaign-setup";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -69,6 +70,7 @@ type PerformanceV2Props = {
   until: string;
   compareMode: CompareMode;
   funnelStageKeys: PerformanceStageKey[] | null;
+  businessTargets?: { cpa?: string; roas?: string };
   exporting: boolean;
   reviewing: boolean;
   reportLoading: boolean;
@@ -105,6 +107,7 @@ export function PerformanceV2({
   until,
   compareMode,
   funnelStageKeys,
+  businessTargets,
   exporting,
   reviewing,
   reportLoading,
@@ -121,9 +124,12 @@ export function PerformanceV2({
 }: PerformanceV2Props) {
   const isVietnamese = language === "vi";
   const [activeTab, setActiveTab] = React.useState<(typeof tabValues)[number]>(initialTab === "actions" ? "overview" : initialTab);
+  const [funnelView, setFunnelView] = React.useState(defaultFunnelView);
+  React.useEffect(() => { setFunnelView(defaultFunnelView); }, [report]);
   const [exportOpen, setExportOpen] = React.useState(false);
   const [actionPlanOpen, setActionPlanOpen] = React.useState(false);
   const [selectedStage, setSelectedStage] = React.useState<Stage | null>(null);
+  const [entityFunnelStage, setEntityFunnelStage] = React.useState<PerformanceStageKey | null>(null);
   const [selectedEntity, setSelectedEntity] = React.useState<NormalizedRow | null>(null);
   const [creativeComparisonOpen, setCreativeComparisonOpen] = React.useState(false);
   const [selectedCreativeIds, setSelectedCreativeIds] = React.useState<string[]>([]);
@@ -214,6 +220,8 @@ export function PerformanceV2({
           {activeTab === "overview" ? <OverviewTab
             language={language}
             report={report}
+            previousReport={previousReport}
+            compareMode={compareMode}
             effectiveKpis={effectiveKpis}
             kpiComparisons={kpiComparisons}
             healthSummary={healthSummary}
@@ -224,20 +232,25 @@ export function PerformanceV2({
             risks={risks}
             currency={currency}
             onOpenEvidence={() => setActiveTab("evidence")}
-            onOpenFunnel={() => setActiveTab("funnel")}
+            onOpenFunnel={(key) => { setFunnelView(current => ({ ...current, selectedKey: key ?? null, trend: "rate", target: null })); setActiveTab("funnel"); }}
             onReviewActions={openActionPlan}
           /> : null}
         </TabsContent>
 
         <TabsContent value="funnel" className="mt-4">
-          {activeTab === "funnel" ? <FunnelTab
+          {activeTab === "funnel" ? <PerformanceFunnel
             language={language}
             report={report}
-            healthSummary={healthSummary}
+            previousReport={previousReport}
+            compareMode={compareMode}
             stages={stages}
-            currency={currency}
-            onOpenEvidence={() => setSelectedStage(stages.find((stage) => stage.tone === "warning") || stages.at(-1) || null)}
+            viewState={funnelView}
+            businessTargets={businessTargets}
+            onViewStateChange={setFunnelView}
+            onEditScope={onEditScope}
             onSelectStage={setSelectedStage}
+            onSelectEntity={(row, key) => { setSelectedEntity(row); setEntityFunnelStage(key); }}
+            onNavigate={setActiveTab}
           /> : null}
         </TabsContent>
 
@@ -275,7 +288,7 @@ export function PerformanceV2({
       <ExportDiagnosisDialog open={exportOpen} onOpenChange={setExportOpen} report={report} accountLabel={accountLabel} periodLabel={periodLabel} language={language} exporting={exporting} onPreparePdf={onExport} />
       <ActionPlanModal open={actionPlanOpen} onOpenChange={setActionPlanOpen} report={report} verdict={verdict} healthSummary={healthSummary} language={language} loading={reviewing} onGenerate={onReviewActions} onExport={() => setExportOpen(true)} />
       <StageEvidenceSheet stage={selectedStage} onOpenChange={(open) => !open && setSelectedStage(null)} report={report} onReviewAction={() => { setSelectedStage(null); setActionPlanOpen(true); }} />
-      <EntityDetailSheet row={selectedEntity} onOpenChange={(open) => !open && setSelectedEntity(null)} report={report} onOpenAction={() => { setSelectedEntity(null); setActionPlanOpen(true); }} />
+      <EntityDetailSheet row={selectedEntity} funnelStageKey={activeTab === "funnel" ? entityFunnelStage : null} previousReport={compareMode !== "off" ? previousReport : null} language={language} onOpenChange={(open) => { if (!open) { setSelectedEntity(null); setEntityFunnelStage(null); } }} report={report} onOpenAction={() => { setSelectedEntity(null); setActionPlanOpen(true); }} />
       <CreativeComparisonDialog open={creativeComparisonOpen} onOpenChange={setCreativeComparisonOpen} rows={selectedCreativeIds.map((id) => report.adRows.find((row) => row.id === id)).filter((row): row is NormalizedRow => Boolean(row))} report={report} onOpenEvidence={() => { setCreativeComparisonOpen(false); setActiveTab("evidence"); }} />
     </section>
   );
@@ -284,6 +297,8 @@ export function PerformanceV2({
 function OverviewTab({
   language,
   report,
+  previousReport,
+  compareMode,
   effectiveKpis,
   kpiComparisons,
   healthSummary,
@@ -299,6 +314,8 @@ function OverviewTab({
 }: {
   language: InterfaceLanguage;
   report: DashboardReport;
+  previousReport: DashboardReport | null;
+  compareMode: CompareMode;
   effectiveKpis: KpiCard[];
   kpiComparisons: Map<keyof NormalizedRow, MetricComparisonDelta> | null;
   healthSummary: HealthScoreSummary | null;
@@ -309,7 +326,7 @@ function OverviewTab({
   risks: HealthScoreSummary["items"];
   currency: string;
   onOpenEvidence: () => void;
-  onOpenFunnel: () => void;
+  onOpenFunnel: (key?: PerformanceStageKey) => void;
   onReviewActions: () => void;
 }) {
   const isVietnamese = language === "vi";
@@ -358,6 +375,8 @@ function OverviewTab({
         <TrendPanel language={language} report={report} primary={primary} embedded overview />
       </section>
 
+      <PerformanceFunnel compact report={report} previousReport={previousReport} compareMode={compareMode} stages={stages} language={language} onOpenFunnel={onOpenFunnel} />
+
       <div className="plain-diagnostics">
         <section className="plain-panel">
           <div className="plain-panel-heading">
@@ -378,10 +397,6 @@ function OverviewTab({
           <div className="plain-panel-actions"><Button type="button" size="sm" onClick={onReviewActions}>{isVietnamese ? "Rà hành động" : "Review action"}</Button><Button type="button" size="sm" variant="outline" onClick={onOpenEvidence}>{isVietnamese ? "Mở bằng chứng" : "Open evidence"}</Button></div>
         </section>
       </div>
-      <section className="plain-panel plain-funnel">
-        <div className="plain-panel-heading"><h2>{isVietnamese ? "Sức khỏe phễu" : "Funnel health"}</h2><button type="button" className="plain-text-action" onClick={onOpenFunnel}>{isVietnamese ? "Mở phễu" : "Open funnel"}<ArrowRightIcon size={14} /></button></div>
-        <StageGrid stages={stages} language={language} />
-      </section>
     </div>
   );
 }
@@ -420,85 +435,6 @@ function OverviewMetric({ kpi, report, healthSummary, comparison, language, feat
       </ResponsiveContainer>
     </div> : <div className="plain-metric-chart plain-empty">{isVietnamese ? "Chưa có dữ liệu theo ngày" : "Daily trend unavailable"}</div> : null}
   </article>;
-}
-
-function FunnelTab({ language, report, healthSummary, stages, currency, onOpenEvidence, onSelectStage }: { language: InterfaceLanguage; report: DashboardReport; healthSummary: HealthScoreSummary | null; stages: Stage[]; currency: string; onOpenEvidence: () => void; onSelectStage: (stage: Stage) => void }) {
-  const isVietnamese = language === "vi";
-  const leakStage = [...stages].reverse().find((stage) => stage.tone === "warning");
-  const focusStage = leakStage || [...stages].reverse().find((stage) => stage.tone === "primary") || stages.at(-1)!;
-  const hasLeak = Boolean(leakStage);
-  const contributorSelection = selectStageContributors(report.adsetRows, focusStage.key);
-  const rows = contributorSelection.rows;
-  const contributorBasisLabel = stageContributorLabel(contributorSelection.basis, language);
-
-  return (
-    <div className="grid gap-4">
-      <div className="v2-panel p-4 sm:p-5">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h2 className="v2-section-title">{isVietnamese ? "Phễu thích ứng" : "Adaptive performance funnel"}</h2>
-            <p className="v2-section-copy">{isVietnamese ? "Mỗi bước kết hợp volume với metric hiệu quả có thể hành động." : "Every stage pairs volume with the efficiency metric that can actually be acted on."}</p>
-          </div>
-          <Badge variant="secondary">{packLabel(report.selectedPack, language)}</Badge>
-        </div>
-        <StageGrid stages={stages} language={language} large onSelect={onSelectStage} />
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(300px,0.7fr)]">
-        <div className="v2-panel p-4 sm:p-5">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <h2 className="v2-section-title">
-                {hasLeak
-                  ? `${focusStage.label} ${isVietnamese ? "— chẩn đoán" : "stage diagnosis"}`
-                  : isVietnamese ? "Không phát hiện rò rỉ nghiêm trọng" : "No critical leak detected"}
-              </h2>
-              <p className="v2-section-copy">
-                {hasLeak
-                  ? isVietnamese ? "Tín hiệu hiệu quả phía trên nhưng mất mát tăng ở bước được đánh dấu." : "Upstream delivery is intact, but loss concentrates at the highlighted step."
-                  : isVietnamese ? "Tất cả các bước đang nằm trong ngưỡng hiện tại; tiếp tục theo dõi evidence trước khi scale." : "Every monitored stage is within its current threshold; keep watching the evidence before scaling."}
-              </p>
-            </div>
-            <Badge variant={hasLeak ? "outline" : "success"}>
-              {hasLeak ? (isVietnamese ? "Rò rỉ lớn nhất" : "Largest leak") : (isVietnamese ? "Luồng khỏe" : "Healthy flow")}
-            </Badge>
-          </div>
-          <div className="mt-5 grid gap-3 sm:grid-cols-3">
-            <ReportStat
-              label={hasLeak ? (isVietnamese ? "Tỷ lệ bước" : "Stage rate") : (isVietnamese ? "Bước khỏe" : "Healthy stages")}
-              value={hasLeak ? focusStage.efficiency : `${stages.length}/${stages.length}`}
-            />
-            <ReportStat label={isVietnamese ? "Volume" : "Volume"} value={stageValue(focusStage, language)} />
-            <ReportStat label={isVietnamese ? "Độ tin cậy" : "Confidence"} value={(healthSummary?.score ?? report.health.score) >= 75 ? (isVietnamese ? "Cao" : "High") : (isVietnamese ? "Vừa" : "Medium")} />
-          </div>
-          <div className="mt-5">
-            <TrendPanel language={language} report={report} primary={primaryResult(report, language)} embedded />
-          </div>
-        </div>
-
-        <div className="v2-panel p-4 sm:p-5">
-          <div className="flex items-center justify-between">
-            <h2 className="v2-section-title">{isVietnamese ? "Evidence theo phân khúc" : "Stage evidence"}</h2>
-            <Badge variant="outline">{rows.length} {isVietnamese ? "đóng góp" : "contributors"}</Badge>
-          </div>
-          <p className="mt-1 text-[11px] text-muted-foreground">{isVietnamese ? `Xếp hạng theo ${contributorBasisLabel}` : `Ranked by ${contributorBasisLabel}`}</p>
-          <div className="mt-4 flex flex-col gap-4">
-            {rows.length ? rows.map((row) => (
-              <div key={row.id}>
-                <div className="text-sm font-medium">{row.name}</div>
-                <div className="mt-1 text-xs text-muted-foreground">{stageContributorDetail(row, contributorSelection.basis, currency, language)}</div>
-              </div>
-            )) : <p className="text-xs leading-5 text-muted-foreground">{isVietnamese ? "Chưa có dữ liệu ad set cho bước này." : "No ad-set evidence is available for this stage."}</p>}
-          </div>
-          <div className="mt-5 border-t border-border pt-4">
-            <div className="text-sm font-medium">{isVietnamese ? "Guardrail quyết định" : "Decision guardrail"}</div>
-            <p className="mt-1 text-xs leading-5 text-muted-foreground">{isVietnamese ? "Giữ chi tiêu ổn định cho đến khi tỷ lệ bước cải thiện qua ba kỳ liên tiếp." : "Hold the next scale move until the weak stage improves for three consecutive periods."}</p>
-          </div>
-          <Button type="button" size="sm" className="mt-5" onClick={onOpenEvidence}>{isVietnamese ? "Mở evidence" : "Open evidence"}</Button>
-        </div>
-      </div>
-    </div>
-  );
 }
 
 function DriversTab({ language, report, currency, onSelectEntity }: { language: InterfaceLanguage; report: DashboardReport; currency: string; onSelectEntity: (row: NormalizedRow) => void }) {
@@ -803,27 +739,6 @@ function EvidenceTab({ language, report, healthSummary, currency }: { language: 
   );
 }
 
-function StageGrid({ stages, language, large = false, onSelect }: { stages: Stage[]; language: InterfaceLanguage; large?: boolean; onSelect?: (stage: Stage) => void }) {
-  const columns = stages.length === 2 ? "xl:grid-cols-2" : stages.length === 3 ? "xl:grid-cols-3" : stages.length === 4 ? "xl:grid-cols-4" : "xl:grid-cols-5";
-  return (
-    <div className={cn("mt-4 grid gap-2 sm:grid-cols-2", columns)}>
-      {stages.map((stage) => {
-        const content = <>
-          {stage.tone === "warning" ? <span className="absolute inset-x-0 top-0 h-0.5 bg-warning" /> : null}
-          <div className="flex items-center justify-between gap-2"><span className="text-[10px] font-medium uppercase tracking-[0.05em] text-muted-foreground">{stage.label}</span><Badge variant={stage.tone === "success" ? "success" : stage.tone === "warning" ? "outline" : "secondary"}>{stage.statusLabel}</Badge></div>
-          <div className="mt-3 flex items-end gap-2"><span className="text-lg font-semibold tabular-nums">{stage.value === null ? (language === "vi" ? "Chưa theo dõi" : "Not tracked") : compact(stage.value)}</span>{stage.value === null ? null : <span className="pb-0.5 text-[10px] text-muted-foreground">{stage.unit}</span>}</div>
-          <div className="mt-2 text-xs">{stage.efficiency}</div>
-          <div className={cn("mt-1 text-[11px]", stage.tone === "warning" ? "text-warning" : stage.tone === "success" ? "text-success" : "text-primary")}>{stage.movement}</div>
-        </>;
-        const className = cn("v2-subtle-panel relative overflow-hidden p-3 text-left", large && "min-h-32", stage.tone === "warning" && "border-warning/70", onSelect && "cursor-pointer transition-colors hover:border-primary/60 hover:bg-primary/5");
-        return onSelect
-          ? <button key={stage.key} type="button" onClick={() => onSelect(stage)} className={className}>{content}</button>
-          : <div key={stage.key} className={className}>{content}</div>;
-      })}
-    </div>
-  );
-}
-
 function TrendPanel({ language, report, primary, embedded = false, overview = false }: { language: InterfaceLanguage; report: DashboardReport; primary: ReturnType<typeof primaryResult>; embedded?: boolean; overview?: boolean }) {
   const isVietnamese = language === "vi";
   const data = report.dailyRows.map((row) => ({
@@ -882,34 +797,6 @@ function primaryResult(report: DashboardReport, language: InterfaceLanguage) {
   if (report.selectedPack === "lead_gen") return { key: "leads" as keyof NormalizedRow, costKey: "cpl" as keyof NormalizedRow, label: "Leads", costLabel: "CPL", decision: isVietnamese ? "Giữ volume lead, xử lý nguồn chất lượng thấp trước khi scale." : "Hold lead volume. Fix the lowest-quality source before scaling." };
   if (report.selectedPack === "traffic") return { key: "linkClicks" as keyof NormalizedRow, costKey: "cpc" as keyof NormalizedRow, label: isVietnamese ? "Click link" : "Link clicks", costLabel: "CPC", decision: isVietnamese ? "Giảm CPC nhưng không đánh đổi chất lượng traffic." : "Reduce CPC without trading away traffic quality." };
   return { key: "reach" as keyof NormalizedRow, costKey: "cpm" as keyof NormalizedRow, label: isVietnamese ? "Tiếp cận" : "Reach", costLabel: "CPM", decision: isVietnamese ? "Mở rộng reach trong khi giữ frequency dưới ngưỡng fatigue." : "Expand reach while keeping frequency below fatigue risk." };
-}
-
-function stageValue(stage: Stage, language: InterfaceLanguage) {
-  return stage.value === null ? (language === "vi" ? "Chưa theo dõi" : "Not tracked") : `${compact(stage.value)} ${stage.unit}`;
-}
-
-function stageContributorLabel(basis: keyof NormalizedRow, language: InterfaceLanguage) {
-  const labels: Partial<Record<keyof NormalizedRow, Record<InterfaceLanguage, string>>> = {
-    spend: { en: "spend", vi: "chi tiêu" },
-    reach: { en: "reach", vi: "tiếp cận" },
-    impressions: { en: "impressions", vi: "lượt hiển thị" },
-    linkClicks: { en: "link clicks", vi: "click link" },
-    addToCart: { en: "add to carts", vi: "lượt thêm giỏ" },
-    initiateCheckout: { en: "checkouts", vi: "lượt checkout" },
-    purchases: { en: "purchases", vi: "mua hàng" },
-    leads: { en: "leads", vi: "lead" },
-    messages: { en: "conversations", vi: "hội thoại" },
-    replies: { en: "replies", vi: "phản hồi" },
-    frequency: { en: "frequency", vi: "tần suất" },
-  };
-  return labels[basis]?.[language] || String(basis);
-}
-
-function stageContributorDetail(row: NormalizedRow, basis: keyof NormalizedRow, currency: string, language: InterfaceLanguage) {
-  const label = stageContributorLabel(basis, language);
-  if (basis === "spend") return `${label} ${currencyValue(row.spend, currency)} · CTR ${row.ctr.toFixed(2)}%`;
-  const value = basis === "frequency" ? Number(row.frequency || 0).toFixed(1) : compact(Number(row[basis] || 0));
-  return `${label} ${value} · ${language === "vi" ? "chi tiêu" : "spend"} ${currencyValue(row.spend, currency)}`;
 }
 
 function entityLevelLabel(level: NormalizedRow["level"], language: InterfaceLanguage) {

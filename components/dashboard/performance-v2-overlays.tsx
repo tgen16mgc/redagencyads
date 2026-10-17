@@ -17,7 +17,8 @@ import {
 import type { HealthScoreSummary } from "@/lib/health-score";
 import type { ClientReportPdfFile } from "@/lib/client-report";
 import { buildCreativeComparisonVerdict } from "@/lib/creative-comparison";
-import type { PerformanceStage } from "@/lib/performance-stages";
+import { funnelMetricLabel, funnelRateDelta, hasLowFunnelVolume, measureFunnelStage } from "@/lib/funnel-analysis";
+import type { PerformanceStage, PerformanceStageKey } from "@/lib/performance-stages";
 import type { CompareMode, DashboardReport, InterfaceLanguage, KpiPack, MetaCampaign, NormalizedRow, Verdict } from "@/lib/types";
 import { isPeriodPreset, rangeFromDays } from "@/lib/period-scope";
 import { reportCampaignSelectionsEqual, toggleReportCampaignSelection } from "@/lib/report-refresh";
@@ -477,17 +478,63 @@ export function StageEvidenceSheet({ stage, onOpenChange, report, onReviewAction
   return (
     <Sheet open={Boolean(stage)} onOpenChange={onOpenChange}>
       <SheetContent className="w-full overflow-y-auto border-l border-border bg-popover sm:max-w-[480px]">
-        {stage && model ? <><SheetHeader className="p-6"><Badge className="mb-2 w-fit" variant={stage.availability === "available" ? "secondary" : "outline"}>{stage.category}</Badge><SheetTitle className="text-xl font-semibold">{stage.name} evidence</SheetTitle><SheetDescription>{stage.relation} · {stage.availability === "not_tracked" ? "tracking required" : stage.efficiency}</SheetDescription></SheetHeader><div className="grid gap-5 px-6 pb-6"><div className="rounded-2xl bg-card p-4"><div className="flex items-center justify-between text-[10px] uppercase tracking-[0.06em] text-muted-foreground"><span>{model.signalLabel}</span><Badge variant={stage.availability === "available" ? "success" : "outline"}>{model.statusLabel}</Badge></div><div className="mt-3 text-base font-semibold">{model.headline}</div><p className="mt-2 text-xs leading-5 text-muted-foreground">{model.description}</p></div><div><div className="mb-2 flex items-center justify-between"><h3 className="font-semibold">{model.contributorsTitle}</h3><Badge variant="outline">{model.contributorsBadge}</Badge></div>{model.contributors.map((row) => <div key={row.title} className="rounded-xl px-3 py-2.5"><div className="text-sm font-medium">{row.title}</div><div className="mt-0.5 text-xs text-muted-foreground">{row.detail}</div></div>)}</div><AccordionList items={model.accordions} /></div><SheetFooter className="flex-row justify-end border-t border-border bg-popover p-6"><Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button><Button onClick={onReviewAction}>{model.ctaLabel}</Button></SheetFooter></> : null}
+        {stage && model ? <><SheetHeader className="p-6"><Badge className="mb-2 w-fit" variant={stage.availability === "available" ? "secondary" : "outline"}>{stage.category}</Badge><SheetTitle className="text-xl font-semibold">{stage.name} evidence</SheetTitle><SheetDescription>{stage.relation} · {stage.availability === "not_tracked" ? "tracking required" : stage.efficiency}</SheetDescription></SheetHeader><div className="grid gap-5 px-6 pb-6"><div className="rounded-2xl bg-card p-4"><div className="flex items-center justify-between text-[10px] uppercase tracking-[0.06em] text-muted-foreground"><span>{model.signalLabel}</span><Badge variant={model.statusLabel === "Events recorded" ? "secondary" : "outline"}>{model.statusLabel}</Badge></div><div className="mt-3 text-base font-semibold">{model.headline}</div><p className="mt-2 text-xs leading-5 text-muted-foreground">{model.description}</p></div><div><div className="mb-2 flex items-center justify-between"><h3 className="font-semibold">{model.contributorsTitle}</h3><Badge variant="outline">{model.contributorsBadge}</Badge></div>{model.contributors.map((row) => <div key={row.title} className="rounded-xl px-3 py-2.5"><div className="text-sm font-medium">{row.title}</div><div className="mt-0.5 text-xs text-muted-foreground">{row.detail}</div></div>)}</div><AccordionList items={model.accordions} /></div><SheetFooter className="flex-row justify-end border-t border-border bg-popover p-6"><Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button><Button onClick={onReviewAction}>{model.ctaLabel}</Button></SheetFooter></> : null}
       </SheetContent>
     </Sheet>
   );
 }
 
-export function EntityDetailSheet({ row, onOpenChange, report, onOpenAction }: { row: NormalizedRow | null; onOpenChange: (open: boolean) => void; report: DashboardReport; onOpenAction: () => void }) {
+export function EntityDetailSheet({ row, onOpenChange, report, onOpenAction, funnelStageKey, previousReport, language = "en" }: {
+  row: NormalizedRow | null;
+  onOpenChange: (open: boolean) => void;
+  report: DashboardReport;
+  onOpenAction: () => void;
+  funnelStageKey?: PerformanceStageKey | null;
+  previousReport?: DashboardReport | null;
+  language?: InterfaceLanguage;
+}) {
+  const currencyCode = report.account.currency || "VND";
+  const vi = language === "vi";
+  const t = (en: string, vn: string) => vi ? vn : en;
+  const measure = row && funnelStageKey ? measureFunnelStage(row, funnelStageKey) : null;
+  const priorRows = row?.level === "ad" ? previousReport?.adRows : row?.level === "adset" ? previousReport?.adsetRows : previousReport?.campaignRows;
+  const baseline = priorRows?.find(item => item.id === row?.id) ?? null;
+  const delta = row && funnelStageKey ? funnelRateDelta(row, baseline, funnelStageKey) : null;
+  const lowVolume = row && funnelStageKey ? hasLowFunnelVolume(row, funnelStageKey) : false;
+  const chain = row ? [
+    report.campaignRows.find(item => item.id === (row.campaignId || (row.level === "campaign" ? row.id : ""))),
+    report.adsetRows.find(item => item.id === (row.adsetId || (row.level === "adset" ? row.id : ""))),
+    row.level === "ad" ? row : undefined,
+  ].filter((item): item is NormalizedRow => Boolean(item)) : [];
+  const ratioLabel = measure?.denominatorKey ? `${funnelMetricLabel(measure.metric, language)} / ${funnelMetricLabel(measure.denominatorKey, language)}` : null;
+  const formatCount = (value: number | null) => value === null ? "—" : new Intl.NumberFormat(vi ? "vi-VN" : "en-US", { maximumFractionDigits: 2 }).format(value);
+  const stageSummary = measure ? `${formatCount(measure.value)} ${funnelMetricLabel(measure.metric, language)}${ratioLabel ? ` · ${formatCount(measure.rate)}% (${ratioLabel})` : ""}` : "";
   return (
     <Sheet open={Boolean(row)} onOpenChange={onOpenChange}>
       <SheetContent className="w-full overflow-y-auto border-l border-border bg-popover sm:max-w-[480px]">
-        {row ? <><SheetHeader className="p-6"><Badge className="mb-2 w-fit" variant="secondary">Entity detail</Badge><SheetTitle className="text-xl font-semibold">{row.name}</SheetTitle><SheetDescription>Campaign → Ad set → Ad</SheetDescription></SheetHeader><div className="grid gap-5 px-6 pb-6"><div className="rounded-2xl bg-card p-4"><div className="flex items-center justify-between text-[10px] uppercase tracking-[0.06em] text-muted-foreground"><span>Entity decision</span><Badge variant={row.frequency >= 3 ? "outline" : "success"}>{row.frequency >= 3 ? "Review" : "Healthy"}</Badge></div><div className="mt-3 text-base font-semibold">CTR {row.ctr.toFixed(2)}% · CPA {currency(row.cpaPurchase || row.cpl || row.costPerMessage || row.cpc, report.account.currency || "VND")}</div><p className="mt-2 text-xs leading-5 text-muted-foreground">Entity drill-down keeps stage metrics, trend, creative and provenance in one evidence chain.</p></div><div><div className="mb-2 flex items-center justify-between"><h3 className="font-semibold">Evidence chain</h3><Badge variant="outline">3 levels</Badge></div>{[row.campaignName || report.campaignRows[0]?.name, row.adsetName || row.name, row.name].filter(Boolean).map((name, index) => <div key={`${name}-${index}`} className="rounded-xl px-3 py-2"><div className="text-sm font-medium">{name}</div><div className="text-xs text-muted-foreground">{index === 0 ? "Campaign" : index === 1 ? "Ad set" : "Ad"} · spend {currency(row.spend, report.account.currency || "VND")}</div></div>)}</div><AccordionList items={[["Stage metrics", `CTR ${row.ctr.toFixed(2)}% · CPC ${currency(row.cpc, report.account.currency || "VND")} · frequency ${row.frequency.toFixed(1)}.`], ["Period movement", `Spend ${currency(row.spend, report.account.currency || "VND")} in the selected period.`], ["Breakdowns", topPlacement(report)], ["Creative preview", row.adFormat || "Creative preview is available when Meta returns the asset."], ["Recommended action", row.frequency >= 3 ? "Refresh the opening while preserving the proven hook." : "Keep this entity in the active mix and monitor efficiency."], ["Evidence provenance", "Campaign, ad set and ad rows share the same selected scope."]]} /></div><SheetFooter className="flex-row justify-end border-t border-border bg-popover p-6"><Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button><Button onClick={onOpenAction}>Open action</Button></SheetFooter></> : null}
+        {row ? <>
+          <SheetHeader className="p-6"><Badge className="mb-2 w-fit" variant="secondary">{t("Entity detail", "Chi tiết đối tượng")}</Badge><SheetTitle className="text-xl font-semibold">{row.name}</SheetTitle><SheetDescription>{t("Campaign → Ad set → Ad", "Chiến dịch → Nhóm quảng cáo → Quảng cáo")}</SheetDescription></SheetHeader>
+          <div className="grid gap-5 px-6 pb-6">
+            {measure ? <div className="rounded-xl bg-card p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground"><span>{t("Selected funnel step", "Bước phễu đã chọn")}</span><Badge variant="outline">{measure.value === null ? t("Tracking gap", "Thiếu theo dõi") : lowVolume ? t("Low event volume", "Ít sự kiện") : t("Events recorded", "Đã ghi nhận sự kiện")}</Badge></div>
+              <h3 className="mt-3 font-semibold">{stageSummary}</h3>
+              {measure.denominatorKey ? <p className="mt-2 text-xs text-muted-foreground">{formatCount(measure.value)} / {formatCount(measure.denominator)} {funnelMetricLabel(measure.denominatorKey, language).toLocaleLowerCase()}</p> : null}
+              <p className="mt-2 text-xs text-muted-foreground">{t("Cost / event", "Chi phí / sự kiện")}: {measure.cost === null ? "—" : currency(measure.cost, currencyCode)}</p>
+              <p className="mt-2 text-xs text-muted-foreground">{delta === null ? t("No matched, usable rate baseline", "Chưa có mốc tỷ lệ tương ứng khả dụng") : `${delta > 0 ? "+" : ""}${formatCount(delta)} ${t("pp vs baseline", "điểm % so với mốc")}`}</p>
+              {lowVolume ? <p className="mt-3 text-xs leading-5 text-muted-foreground">{t("Few recorded events. Compare volume and outcome quality before changing spend; tracking availability is not proof of confidence.", "Số sự kiện còn ít. Đối chiếu số lượng và chất lượng kết quả trước khi đổi chi tiêu; có dữ liệu chưa chứng minh độ tin cậy.")}</p> : null}
+            </div> : <div className="rounded-xl bg-card p-4"><div className="text-xs text-muted-foreground">Entity metrics</div><div className="mt-3 font-semibold">CTR {row.ctr.toFixed(2)}% · frequency {row.frequency.toFixed(1)}</div><p className="mt-2 text-xs text-muted-foreground">Review outcome costs and quality before changing this entity.</p></div>}
+            <div><div className="mb-2 flex items-center justify-between"><h3 className="font-semibold">{t("Evidence chain", "Chuỗi bằng chứng")}</h3><Badge variant="outline">{chain.length} {t("levels", "cấp")}</Badge></div>{chain.map(item => <div key={`${item.level}-${item.id}`} className="rounded-xl px-3 py-2"><div className="text-sm font-medium">{item.name}</div><div className="text-xs text-muted-foreground">{item.level} · {t("spend", "chi tiêu")} {currency(item.spend, currencyCode)}</div></div>)}</div>
+            <AccordionList items={[
+              ["Stage metrics", measure ? stageSummary : `CTR ${row.ctr.toFixed(2)}% · CPC ${currency(row.cpc, currencyCode)} · frequency ${row.frequency.toFixed(1)}.`],
+              ["Period movement", delta !== null ? `${formatCount(delta)} pp vs matched baseline.` : `Spend ${currency(row.spend, currencyCode)} in the selected period. No matched rate baseline available.`],
+              ["Breakdowns", "Use the selected-stage table to compare peers. Account-wide placement totals do not establish this entity's placement performance."],
+              ["Creative preview", row.adFormat || "Creative preview is available when Meta returns the asset."],
+              ["Recommended action", measure?.value === null ? "Check event tracking before judging results." : "Review event volume, efficiency and business quality before changing spend. Aggregate events do not establish the cause."],
+              ["Evidence provenance", "Only matching campaign, ad set and ad IDs from the current report are shown in the chain."],
+            ]} />
+          </div>
+          <SheetFooter className="flex-row justify-end border-t border-border bg-popover p-6"><Button variant="outline" onClick={() => onOpenChange(false)}>{t("Close", "Đóng")}</Button><Button onClick={onOpenAction}>{t("Open action", "Xem hành động")}</Button></SheetFooter>
+        </> : null}
       </SheetContent>
     </Sheet>
   );
@@ -622,7 +669,7 @@ type StageEvidenceModel = {
 function stageEvidence(stage: PerformanceStage, report: DashboardReport): StageEvidenceModel {
   const totals = report.totals;
   const currencyCode = report.account.currency || "VND";
-  const tracked = stage.availability === "available";
+  const lowVolume = hasLowFunnelVolume(totals, stage.key);
   const notTracked = stage.availability === "not_tracked";
   const metricDefinition = stageDefinition(stage.key);
   const sourceRows = ["exposure", "reach", "impressions", "saturation"].includes(stage.key)
@@ -633,7 +680,7 @@ function stageEvidence(stage: PerformanceStage, report: DashboardReport): StageE
     title: row.name,
     detail: stageRowDetail(row, stage.key, currencyCode),
   }));
-  const statusLabel = notTracked ? "Tracking gap" : stage.availability === "insufficient" ? "Insufficient data" : "Sufficient data";
+  const statusLabel = notTracked ? "Tracking gap" : lowVolume ? "Low event volume" : "Events recorded";
   const headline = stageHeadline(stage, report);
   const description = notTracked
     ? `${metricDefinition} Missing events remain Not tracked; the interface never converts them into zero.`
@@ -643,7 +690,7 @@ function stageEvidence(stage: PerformanceStage, report: DashboardReport): StageE
     ? `${stage.name} events are unavailable in the selected Meta rows.`
     : stage.availability === "insufficient"
       ? `The source is connected, but this scope does not contain enough ${stage.unit} to judge the stage.`
-      : `${compact(stage.value || 0)} tracked ${stage.unit} are available in the selected scope.`;
+      : `${compact(stage.value || 0)} tracked ${stage.unit} are available in the selected scope.${lowVolume ? " Fewer than 30 events: small changes can move the rate sharply." : ""} Availability is not a confidence assessment and does not establish outcome quality.`;
   const recommendedAction = notTracked
     ? `Reconnect ${stage.name.toLowerCase()} tracking before making a downstream scaling decision.`
     : stage.tone === "warning"

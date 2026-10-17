@@ -82,7 +82,7 @@ describe("buildPerformanceStages", () => {
     });
 
     expect(stages.map((stage) => stage.key)).toEqual(["exposure", "traffic", "conversations", "lead"]);
-    expect(stages.at(-1)).toMatchObject({ name: "Lead", relation: "Conversation → Lead" });
+    expect(stages.at(-1)).toMatchObject({ name: "Lead", relation: "Link clicks → Leads" });
   });
 
   it("serializes valid unique funnel stages and falls back to the active pack", () => {

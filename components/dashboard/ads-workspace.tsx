@@ -666,6 +666,7 @@ export function AdsWorkspace({
             until={until}
             compareMode={compareMode}
             funnelStageKeys={funnelStageKeys}
+            businessTargets={{ cpa: executionScope?.targetCpa, roas: executionScope?.targetRoas }}
             exporting={exportingPdf}
             reviewing={aiLoading.verdict}
             reportLoading={loading === "report"}

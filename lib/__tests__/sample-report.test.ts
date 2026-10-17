@@ -64,6 +64,16 @@ describe("buildSampleReport", () => {
     expect(messages.totals.metricAvailability).toMatchObject({ messages: "tracked", replies: "tracked", leads: "tracked" });
   });
 
+  it("preserves daily event totals and tracking availability for low-volume scopes", () => {
+    const scoped = buildSampleReport({ selectedCampaignIds: ["smp-c3"], dateRange: { since: "2026-10-01", until: "2026-10-17" } });
+    for (const key of ["spend", "impressions", "clicks", "linkClicks", "messages", "replies", "leads", "purchases"] as const) {
+      expect(scoped.dailyRows.reduce((sum, row) => sum + row[key], 0), key).toBe(scoped.totals[key]);
+    }
+    expect(scoped.dailyRows.some(row => row.leads > 0)).toBe(true);
+    expect(scoped.dailyRows.every(row => row.metricAvailability?.leads === "tracked")).toBe(true);
+    expect(scoped.dailyRows.every(row => row.metricAvailability?.purchases === "not_tracked")).toBe(true);
+  });
+
   it("models previous-period sample data instead of fabricating a zero delta", () => {
     const current = buildSampleReport({ dateRange: { since: "2026-07-01", until: "2026-07-30" } });
     const previous = buildSampleReport({ dateRange: { since: "2026-06-01", until: "2026-06-30" } });
